@@ -2,6 +2,19 @@
 // Manages API dispatching, race-condition safety, caching, and diagnostics.
 
 const GCP_KEY_STORAGE_KEY = 'sunvine_gcp_places_api_key';
+const GEOAPIFY_KEY_STORAGE_KEY = 'sunvine_geoapify_api_key';
+
+export function getSavedGeoapifyApiKey() {
+  return localStorage.getItem(GEOAPIFY_KEY_STORAGE_KEY) || import.meta.env.VITE_GEOAPIFY_API_KEY || '';
+}
+
+export function saveGeoapifyApiKey(key) {
+  if (!key || key.trim().length === 0) {
+    localStorage.removeItem(GEOAPIFY_KEY_STORAGE_KEY);
+  } else {
+    localStorage.setItem(GEOAPIFY_KEY_STORAGE_KEY, key.trim());
+  }
+}
 
 // Phase 4: Production Solar Query Matrix
 export const PRODUCTION_SOLAR_KEYWORD_MATRIX = {
@@ -102,6 +115,7 @@ export async function fetchGooglePlacesNearby({
   }
 
   const effectiveKey = apiKey || getSavedGooglePlacesApiKey();
+  const effectiveGeoapifyKey = getSavedGeoapifyApiKey();
 
   try {
     const res = await fetch('/api/places-nearby', {
@@ -117,7 +131,8 @@ export async function fetchGooglePlacesNearby({
         radiusMeters,
         keywords,
         accuracy,
-        apiKey: effectiveKey
+        apiKey: effectiveKey,
+        geoapifyKey: effectiveGeoapifyKey
       })
     });
 

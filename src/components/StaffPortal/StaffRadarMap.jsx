@@ -6,6 +6,8 @@ import {
   fetchGooglePlacesNearby,
   getSavedGooglePlacesApiKey,
   saveGooglePlacesApiKey,
+  getSavedGeoapifyApiKey,
+  saveGeoapifyApiKey,
   DEFAULT_ACTIVE_QUERIES,
   PRODUCTION_SOLAR_KEYWORD_MATRIX
 } from '../../services/googlePlacesNearbyService';
@@ -66,6 +68,13 @@ export default function StaffRadarMap() {
   const [manualQueryInput, setManualQueryInput] = useState('');
   const [isGeocodingManual, setIsGeocodingManual] = useState(false);
   const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
+  const [geoapifyKeyInput, setGeoapifyKeyInput] = useState(() => getSavedGeoapifyApiKey());
+
+  const handleSaveGeoapifyKey = () => {
+    saveGeoapifyApiKey(geoapifyKeyInput);
+    addToast('Geoapify Places API key saved!', 'success');
+    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
+  };
 
   // Core Search Execution (Phase 5, 8, 9, 10)
   const executeLeadSearch = useCallback(
@@ -1074,24 +1083,35 @@ export default function StaffRadarMap() {
                 </div>
               </div>
 
-              {/* GCP API Key input */}
+              {/* Option 2: Geoapify Places API Key (100% Free - 3,000 req/day - No Card) */}
               <div className="pt-2 border-t border-surface-container-high space-y-1.5">
-                <label className="block text-[11px] font-semibold text-secondary">
-                  Configure / Override Google Cloud Places API Key:
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                    Option 2: Geoapify Places Key (Free 3,000 req/day - No Credit Card):
+                  </label>
+                  <a
+                    href="https://myprojects.geoapify.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-primary font-bold hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Get Free Key (30s)</span>
+                    <span className="material-symbols-outlined text-[11px]">open_in_new</span>
+                  </a>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="password"
-                    value={gcpKeyInput}
-                    onChange={(e) => setGcpKeyInput(e.target.value)}
-                    placeholder="AIzaSy..."
+                    value={geoapifyKeyInput}
+                    onChange={(e) => setGeoapifyKeyInput(e.target.value)}
+                    placeholder="Enter Geoapify Key..."
                     className="flex-1 h-8 px-2.5 rounded-lg bg-surface-container border border-surface-container-high text-xs font-mono text-on-surface outline-none"
                   />
                   <button
-                    onClick={handleSaveGcpKey}
-                    className="h-8 px-3 bg-primary text-on-primary font-bold rounded-lg text-xs cursor-pointer"
+                    onClick={handleSaveGeoapifyKey}
+                    className="h-8 px-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-xs cursor-pointer"
                   >
-                    Save &amp; Test
+                    Save &amp; Search
                   </button>
                 </div>
               </div>
