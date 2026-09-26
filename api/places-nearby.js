@@ -1,9 +1,10 @@
-// Google Places API (New) searchNearby & searchText Serverless Backend Handler
-// Handles strict circular radius restrictions, multi-keyword parallel matrix, and deduplication.
+// Google Places API (New & Legacy) Serverless Handler for Solar Lead Discovery
+// Implements strict circular radius, multi-keyword parallel matrix, deduplication by place_id,
+// relevance scoring, and detailed diagnostic logs.
 
 function calculateHaversineDistanceMeters(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
-  const R = 6371000; // Earth radius in meters
+  const R = 6371000; // Earth's radius in meters
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -16,26 +17,55 @@ function calculateHaversineDistanceMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function determineCategoryAndType(place, matchedQuery = '') {
-  const name = (place.displayName?.text || '').toLowerCase();
-  const types = (place.types || []).map(t => t.toLowerCase());
+// Phase 8: Lead Relevance Score (Do NOT over-filter nearby businesses)
+function calculateRelevance(place, matchedQuery, distanceMeters) {
+  let score = 0;
+  const name = (place.displayName?.text || place.name || '').toLowerCase();
+  const types = (place.types || []).map(t => String(t).toLowerCase()).join(' ');
   const primaryType = (place.primaryType || '').toLowerCase();
-  const query = matchedQuery.toLowerCase();
+  const query = (matchedQuery || '').toLowerCase();
 
-  if (query.includes('epc') || name.includes('epc') || name.includes('engineering') || name.includes('solutions') || name.includes('turnkey')) {
-    return { category: 'Solar EPC Contractor & Installer', type: 'epc' };
-  }
-  if (query.includes('inverter') || query.includes('battery') || name.includes('inverter') || name.includes('battery') || name.includes('cable') || name.includes('hardware')) {
-    return { category: 'Solar Inverter & Equipment Shop', type: 'shop' };
-  }
-  if (query.includes('dealer') || query.includes('supplier') || name.includes('dealer') || name.includes('distributor') || name.includes('modules') || name.includes('traders')) {
-    return { category: 'Authorized Solar Module Distributor', type: 'dealer' };
-  }
-  if (query.includes('rooftop') || query.includes('installer') || name.includes('rooftop') || name.includes('installer')) {
-    return { category: 'Rooftop Solar EPC & Installer', type: 'epc' };
+  // 1. Distance Proximity Score (Max 40 points)
+  if (distanceMeters <= 500) score += 40;
+  else if (distanceMeters <= 1500) score += 30;
+  else if (distanceMeters <= 3000) score += 20;
+  else if (distanceMeters <= 5000) score += 10;
+  else score += 5;
+
+  // 2. Keyword & Name Match Score (Max 35 points)
+  if (name.includes('solar') || name.includes('urja') || name.includes('sun')) score += 35;
+  else if (name.includes('renewable') || name.includes('photovoltaic') || name.includes('energy') || name.includes('power')) score += 25;
+  else if (name.includes('electric') || name.includes('inverter') || name.includes('battery') || name.includes('engineering')) score += 18;
+  else if (query.includes('solar') || query.includes('epc')) score += 12;
+
+  // 3. Category / Business Types Match Score (Max 25 points)
+  if (types.includes('solar') || primaryType.includes('solar')) score += 25;
+  else if (types.includes('contractor') || types.includes('electrician') || types.includes('electronics_store') || types.includes('home_goods_store')) score += 18;
+  else if (types.includes('store') || types.includes('establishment') || types.includes('point_of_interest')) score += 10;
+
+  let tier = 'HIGH RELEVANCE';
+  if (score < 40) tier = 'LOW RELEVANCE';
+  else if (score < 65) tier = 'MEDIUM RELEVANCE';
+
+  // Determine user-friendly category & type
+  let category = 'Solar Energy Company';
+  let type = 'epc';
+
+  if (query.includes('epc') || name.includes('epc') || name.includes('engineering') || name.includes('solutions')) {
+    category = 'Solar EPC Contractor & Installer';
+    type = 'epc';
+  } else if (query.includes('dealer') || query.includes('distributor') || name.includes('dealer') || name.includes('distributor') || name.includes('modules')) {
+    category = 'Authorized Solar Module Distributor';
+    type = 'dealer';
+  } else if (query.includes('inverter') || query.includes('battery') || query.includes('shop') || name.includes('inverter') || name.includes('battery') || name.includes('cable') || name.includes('hardware')) {
+    category = 'Solar Inverter & Equipment Shop';
+    type = 'shop';
+  } else if (query.includes('rooftop') || query.includes('installer') || name.includes('rooftop') || name.includes('installer')) {
+    category = 'Rooftop Solar EPC & Installer';
+    type = 'installer';
   }
 
-  return { category: 'Solar Renewable Energy Company', type: 'dealer' };
+  return { score, tier, category, type };
 }
 
 export default async function handler(req, res) {
@@ -52,42 +82,66 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  const startTime = Date.now();
+
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
-    const radiusMeters = Number(body.radiusMeters) || 3000; // default 3km circular radius
-    const customKey = body.apiKey || '';
+    const radiusMeters = Number(body.radiusMeters) || 3000; // default 3 km circular bounds
+    const userAccuracy = Number(body.accuracy) || 15;
+    const clientKey = (body.apiKey || '').trim();
 
     if (isNaN(latitude) || isNaN(longitude)) {
       return res.status(400).json({
         success: false,
-        error: 'Valid latitude and longitude coordinates are required.'
+        error: 'Valid numeric latitude and longitude coordinates are required.'
       });
     }
 
-    // Google Places API Key from environment or client override
+    // Google API Key precedence: Server env -> Client override
     const apiKey =
       process.env.GOOGLE_PLACES_API_KEY ||
       process.env.VITE_GOOGLE_PLACES_API_KEY ||
       process.env.GOOGLE_MAPS_API_KEY ||
-      customKey;
+      clientKey;
 
+    // Configurable Multi-Keyword Solar Matrix (Phase 4)
     const keywords = Array.isArray(body.keywords) && body.keywords.length > 0
       ? body.keywords
       : [
-          'solar panel dealer',
-          'solar EPC contractor',
-          'solar inverter shop',
-          'solar energy equipment supplier',
-          'solar company',
-          'rooftop solar installer'
+          'solar EPC company',
+          'solar installer',
+          'solar dealer',
+          'solar panel shop',
+          'solar inverter equipment',
+          'rooftop solar installer',
+          'solar energy company',
+          'renewable energy supplier'
         ];
 
-    const aggregatedPlaces = new Map(); // deduplicate by place.id
+    // Diagnostics Tracking (Phase 7 & 24)
+    const diagnostics = {
+      searchCenter: { lat: latitude, lng: longitude },
+      gpsAccuracy: userAccuracy,
+      searchRadiusMeters: radiusMeters,
+      queriesExecuted: keywords,
+      googleApiStatus: 'NOT_CONFIGURED',
+      googleApiType: 'None',
+      apiLatencyMs: 0,
+      rawPlacesReceived: 0,
+      resultsAfterDeduplication: 0,
+      resultsAfterFiltering: 0,
+      discardedList: [],
+      timestamp: new Date().toLocaleTimeString()
+    };
 
-    // 1. If Google Places API Key is available, execute Places API (New) requests
-    if (apiKey && apiKey.trim().length > 10) {
+    const aggregatedPlaces = new Map(); // Primary key: place_id
+
+    // 1. If Google API Key is present, attempt Google Places API (New)
+    if (apiKey && apiKey.length > 10) {
+      diagnostics.googleApiType = 'Places API (New) v1/places:searchText';
+
       const fieldMask = [
         'places.id',
         'places.displayName',
@@ -102,190 +156,247 @@ export default async function handler(req, res) {
         'places.businessStatus',
         'places.regularOpeningHours',
         'places.primaryType',
-        'places.types'
+        'places.types',
+        'places.editorialSummary'
       ].join(',');
 
-      // Execute search queries in parallel across the keyword matrix using Places API (New) searchText
-      const promises = keywords.map(async (kw) => {
+      let apiCallsSucceeded = 0;
+      let lastErrorMessage = '';
+
+      // Execute queries across matrix in parallel
+      const searchPromises = keywords.map(async (kw) => {
         try {
-          const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          const endpoint = 'https://places.googleapis.com/v1/places:searchText';
+          const payload = {
+            textQuery: kw,
+            locationRestriction: {
+              circle: {
+                center: {
+                  latitude: latitude,
+                  longitude: longitude
+                },
+                radius: Math.min(radiusMeters, 50000) // max 50km
+              }
+            },
+            maxResultCount: 20
+          };
+
+          const gRes = await fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'X-Goog-Api-Key': apiKey,
               'X-Goog-FieldMask': fieldMask
             },
-            body: JSON.stringify({
-              textQuery: kw,
-              locationRestriction: {
-                circle: {
-                  center: {
-                    latitude: latitude,
-                    longitude: longitude
-                  },
-                  radius: radiusMeters
-                }
-              },
-              maxResultCount: 20
-            })
+            body: JSON.stringify(payload)
           });
 
-          if (response.ok) {
-            const data = await response.json();
+          if (gRes.ok) {
+            const data = await gRes.json();
+            apiCallsSucceeded++;
             if (Array.isArray(data.places)) {
               for (const p of data.places) {
-                if (p.id && !aggregatedPlaces.has(p.id)) {
-                  aggregatedPlaces.set(p.id, { place: p, matchedKeyword: kw });
+                diagnostics.rawPlacesReceived++;
+                if (p.id) {
+                  if (!aggregatedPlaces.has(p.id)) {
+                    aggregatedPlaces.set(p.id, { place: p, query: kw, source: 'Places API (New)' });
+                  } else {
+                    diagnostics.discardedList.push({
+                      name: p.displayName?.text || p.id,
+                      reason: `Duplicate place_id: ${p.id}`
+                    });
+                  }
                 }
               }
             }
           } else {
-            console.warn(`Places API searchText returned status ${response.status} for "${kw}"`);
+            const errData = await gRes.json().catch(() => ({}));
+            lastErrorMessage = errData.error?.message || `HTTP ${gRes.status} ${gRes.statusText}`;
           }
-        } catch (err) {
-          console.error(`Error querying Places API for "${kw}":`, err.message);
+        } catch (callErr) {
+          lastErrorMessage = callErr.message;
         }
       });
 
-      await Promise.all(promises);
+      await Promise.all(searchPromises);
 
-      // If results were retrieved via Google Places API (New)
-      if (aggregatedPlaces.size > 0) {
-        const results = [];
-        for (const [placeId, { place, matchedKeyword }] of aggregatedPlaces.entries()) {
-          const pLat = place.location?.latitude;
-          const pLon = place.location?.longitude;
-          const distMeters = calculateHaversineDistanceMeters(latitude, longitude, pLat, pLon);
-
-          // Strictly filter within requested radius
-          if (distMeters <= radiusMeters) {
-            const { category, type } = determineCategoryAndType(place, matchedKeyword);
-            const distKm = Number((distMeters / 1000).toFixed(2));
-
-            results.push({
-              id: place.id,
-              name: place.displayName?.text || 'Solar Business',
-              category: category,
-              type: type,
-              address: place.formattedAddress || 'Local Address',
-              city: place.formattedAddress?.split(',').slice(-3, -2)[0]?.trim() || 'Local Area',
-              lat: pLat,
-              lon: pLon,
-              distanceMeters: Math.round(distMeters),
-              distanceKm: distKm,
-              phone: place.nationalPhoneNumber || place.internationalPhoneNumber || '',
-              rating: place.rating || null,
-              reviewsCount: place.userRatingCount || 0,
-              googleMapsUri:
-                place.googleMapsUri ||
-                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  (place.displayName?.text || '') + ' ' + (place.formattedAddress || '')
-                )}`,
-              website: place.websiteUri || null,
-              businessStatus: place.businessStatus || 'OPERATIONAL',
-              isOpen: place.regularOpeningHours?.openNow ?? true,
-              source: 'Google Places API (New)',
-              verified: true
-            });
-          }
-        }
-
-        // Sort strictly by distance (nearest first so business right next to user is #1)
-        results.sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-        return res.status(200).json({
-          success: true,
-          provider: 'Google Places API (New)',
-          center: { latitude, longitude },
-          radiusMeters,
-          count: results.length,
-          leads: results
-        });
-      }
-    }
-
-    // 2. High-Precision Fallback Engine (when Google API key is pending or returns 0 within radius)
-    // Runs live localized web extraction + verified database with strict circular Haversine calculation
-    console.info('Running high-accuracy local & web crawler fallback for radius:', radiusMeters);
-
-    // Call internal web scraper to extract live leads near target coordinates
-    const fallbackResults = [];
-    const seenFallback = new Set();
-
-    for (const kw of keywords.slice(0, 3)) {
+      // Also execute places:searchNearby for point_of_interest / establishment
       try {
-        const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${kw} near ${latitude},${longitude} or Gujarat`)}`;
-        const fRes = await fetch(searchUrl, {
+        const nearbyRes = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
+          method: 'POST',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36'
-          }
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': fieldMask
+          },
+          body: JSON.stringify({
+            includedTypes: ['establishment'],
+            locationRestriction: {
+              circle: {
+                center: { latitude, longitude },
+                radius: Math.min(radiusMeters, 50000)
+              }
+            },
+            maxResultCount: 20,
+            rankPreference: 'DISTANCE'
+          })
         });
 
-        if (fRes.ok) {
-          const html = await fRes.text();
-          const regex = /<h2 class="result__title">[\s\S]*?<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
-          let m;
-          while ((m = regex.exec(html)) !== null && fallbackResults.length < 15) {
-            const rawUrl = m[1];
-            let actualUrl = rawUrl;
-            if (rawUrl.includes('uddg=')) {
-              actualUrl = decodeURIComponent(rawUrl.split('uddg=')[1].split('&')[0]);
+        if (nearbyRes.ok) {
+          const nbData = await nearbyRes.json();
+          if (Array.isArray(nbData.places)) {
+            for (const p of nbData.places) {
+              diagnostics.rawPlacesReceived++;
+              if (p.id && !aggregatedPlaces.has(p.id)) {
+                aggregatedPlaces.set(p.id, { place: p, query: 'searchNearby:establishment', source: 'Places API (New)' });
+              }
             }
-            const rawTitle = m[2].replace(/<[^>]+>/g, '').trim();
-            const snippet = m[3].replace(/<[^>]+>/g, '').trim();
-
-            if (actualUrl.includes('wikipedia') || actualUrl.includes('youtube') || actualUrl.includes('facebook')) continue;
-
-            const cleanName = rawTitle.split('|')[0].split('—')[0].split('–')[0].replace(/Top \d+.*in /i, '').trim();
-            if (!cleanName || cleanName.length < 3 || seenFallback.has(cleanName.toLowerCase())) continue;
-            seenFallback.add(cleanName.toLowerCase());
-
-            const phoneMatch = snippet.match(/(?:\+91[\-\s]?)?[6-9]\d{9}|\b0\d{2,4}[\-\s]?\d{6,8}\b/);
-            const distMeters = Math.round(150 + Math.random() * (radiusMeters * 0.8));
-
-            fallbackResults.push({
-              id: `FALLBACK-${Date.now()}-${fallbackResults.length}`,
-              name: cleanName,
-              category: 'Solar EPC Contractor & Installer',
-              type: 'epc',
-              address: 'Nearby Verified Solar Facility',
-              city: 'Local Territory',
-              lat: Number((latitude + (Math.random() - 0.5) * 0.015).toFixed(6)),
-              lon: Number((longitude + (Math.random() - 0.5) * 0.015).toFixed(6)),
-              distanceMeters: distMeters,
-              distanceKm: Number((distMeters / 1000).toFixed(2)),
-              phone: phoneMatch ? phoneMatch[0] : '+91 98251 ' + Math.floor(10000 + Math.random() * 90000),
-              rating: Number((4.6 + Math.random() * 0.3).toFixed(1)),
-              reviewsCount: Math.floor(18 + Math.random() * 45),
-              googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cleanName)}`,
-              website: actualUrl,
-              businessStatus: 'OPERATIONAL',
-              isOpen: true,
-              source: 'Verified Solar Intelligence Network',
-              verified: true
-            });
           }
         }
       } catch (e) {
         // Continue
       }
+
+      // Check Google API Status
+      if (apiCallsSucceeded > 0) {
+        diagnostics.googleApiStatus = `CONNECTED (200 OK across ${apiCallsSucceeded} queries)`;
+      } else if (lastErrorMessage) {
+        diagnostics.googleApiStatus = `ERROR: ${lastErrorMessage}`;
+      }
+
+      // If Places API (New) returned 0 or had permissions error, attempt Legacy Places NearbySearch as fallback
+      if (aggregatedPlaces.size === 0 && lastErrorMessage.includes('API has not been used')) {
+        diagnostics.googleApiType = 'Fallback to Places API (Legacy) NearbySearch';
+        try {
+          const legacyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&radius=${radiusMeters}&keyword=solar&key=${apiKey}`;
+          const legRes = await fetch(legacyUrl);
+          if (legRes.ok) {
+            const legData = await legRes.json();
+            if (Array.isArray(legData.results)) {
+              diagnostics.googleApiStatus = `CONNECTED via Legacy API (${legData.status})`;
+              for (const p of legData.results) {
+                if (p.place_id && !aggregatedPlaces.has(p.place_id)) {
+                  aggregatedPlaces.set(p.place_id, {
+                    place: {
+                      id: p.place_id,
+                      displayName: { text: p.name },
+                      formattedAddress: p.vicinity,
+                      location: { latitude: p.geometry?.location?.lat, longitude: p.geometry?.location?.lng },
+                      rating: p.rating,
+                      userRatingCount: p.user_ratings_total,
+                      businessStatus: p.business_status,
+                      googleMapsUri: `https://www.google.com/maps/place/?q=place_id:${p.place_id}`
+                    },
+                    query: 'legacy:solar',
+                    source: 'Places API (Legacy)'
+                  });
+                }
+              }
+            }
+          }
+        } catch (legacyErr) {
+          console.warn('Legacy Places API error:', legacyErr.message);
+        }
+      }
+    } else {
+      diagnostics.googleApiStatus = 'MISSING_API_KEY (Enter GCP Key in Diagnostics or set GOOGLE_PLACES_API_KEY)';
     }
 
-    fallbackResults.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    diagnostics.resultsAfterDeduplication = aggregatedPlaces.size;
+
+    // Process & Filter Places strictly by distance and extract schema
+    const finalLeads = [];
+
+    for (const [placeId, { place, query, source }] of aggregatedPlaces.entries()) {
+      const pLat = place.location?.latitude;
+      const pLon = place.location?.longitude;
+
+      if (!pLat || !pLon) {
+        diagnostics.discardedList.push({
+          name: place.displayName?.text || placeId,
+          reason: 'Missing valid latitude/longitude coordinates from Google'
+        });
+        continue;
+      }
+
+      const distMeters = calculateHaversineDistanceMeters(latitude, longitude, pLat, pLon);
+
+      // Strict Circular Radius Enforcement
+      if (distMeters > radiusMeters) {
+        diagnostics.discardedList.push({
+          name: place.displayName?.text || placeId,
+          reason: `Outside radius: ${Math.round(distMeters)}m away (max: ${radiusMeters}m)`
+        });
+        continue;
+      }
+
+      // Check Business Status (Filter permanently closed)
+      if (place.businessStatus === 'CLOSED_PERMANENTLY') {
+        diagnostics.discardedList.push({
+          name: place.displayName?.text || placeId,
+          reason: 'Business is Permanently Closed on Google Maps'
+        });
+        continue;
+      }
+
+      // Phase 8: Calculate Lead Relevance (Do not over-filter)
+      const { score, tier, category, type } = calculateRelevance(place, query, distMeters);
+
+      const phone = place.nationalPhoneNumber || place.internationalPhoneNumber || '';
+      const mapsUri =
+        place.googleMapsUri ||
+        `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+
+      finalLeads.push({
+        id: placeId,
+        google_place_id: placeId,
+        name: place.displayName?.text || 'Solar Business',
+        category: category,
+        type: type,
+        address: place.formattedAddress || 'Local Address',
+        city: place.formattedAddress?.split(',').slice(-3, -2)[0]?.trim() || 'Local Area',
+        lat: Number(pLat.toFixed(6)),
+        lon: Number(pLon.toFixed(6)),
+        distanceMeters: Math.round(distMeters),
+        distanceKm: Number((distMeters / 1000).toFixed(2)),
+        phone: phone,
+        website: place.websiteUri || null,
+        googleMapsUri: mapsUri,
+        rating: place.rating || null,
+        reviewsCount: place.userRatingCount || 0,
+        businessStatus: place.businessStatus || 'OPERATIONAL',
+        isOpen: place.regularOpeningHours?.openNow ?? true,
+        relevanceScore: score,
+        relevanceTier: tier,
+        source: source || 'Google Places API',
+        verified: true
+      });
+    }
+
+    // STRICT SORTING BY DISTANCE: Nearest first (#1 is the entity right next to the user!)
+    finalLeads.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+    diagnostics.resultsAfterFiltering = finalLeads.length;
+    diagnostics.apiLatencyMs = Date.now() - startTime;
 
     return res.status(200).json({
       success: true,
-      provider: apiKey ? 'Google Places (Zero results in circle, Fallback active)' : 'Sunvine High-Accuracy Solar Directory (Configure GCP Key for Live Google Places API New)',
+      provider: diagnostics.googleApiStatus.startsWith('CONNECTED') ? 'Google Places API' : 'Direct Geolocation Intelligence',
       center: { latitude, longitude },
       radiusMeters,
-      count: fallbackResults.length,
-      leads: fallbackResults
+      count: finalLeads.length,
+      leads: finalLeads,
+      diagnostics: diagnostics
     });
   } catch (error) {
-    console.error('places-nearby API fatal error:', error);
+    console.error('places-nearby fatal error:', error);
     return res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message,
+      diagnostics: {
+        googleApiStatus: `FATAL_SERVER_ERROR: ${error.message}`,
+        latencyMs: Date.now() - startTime
+      }
     });
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { useHighAccuracyLocation } from '../../hooks/useHighAccuracyLocation';
@@ -6,143 +6,132 @@ import {
   fetchGooglePlacesNearby,
   getSavedGooglePlacesApiKey,
   saveGooglePlacesApiKey,
-  DEFAULT_SOLAR_KEYWORDS
+  DEFAULT_ACTIVE_QUERIES,
+  PRODUCTION_SOLAR_KEYWORD_MATRIX
 } from '../../services/googlePlacesNearbyService';
-import {
-  geocodeAreaOrLandmark,
-  saveCustomSolarVendor,
-  getCustomSolarVendors
-} from '../../services/n8nSolarRadarService';
+import { geocodeAreaOrLandmark } from '../../services/n8nSolarRadarService';
 import { GUJARAT_CITIES_COORDS } from '../../data/staffData';
 
 export default function StaffRadarMap() {
   const { currentStaff, addCustomerFile } = useApp();
   const { addToast } = useToast();
 
-  // 1. Device-Level High-Accuracy Geolocation Hook
+  // 1. Live GPS High-Accuracy Location Hook (Phase 2 & 3: watchPosition with movement threshold)
   const initialCenter = GUJARAT_CITIES_COORDS[currentStaff?.city || 'Ahmedabad'] || { lat: 23.0225, lon: 72.5714 };
   const {
     coords,
     accuracy,
+    isLowAccuracy,
     streetAddress,
     city: detectedCity,
     loading: gpsLoading,
     error: gpsError,
     isGpsActive,
     source: locationSource,
+    lastUpdated: locationLastUpdated,
+    movementDistance,
     acquireLocation,
-    setManualLocation
-  } = useHighAccuracyLocation(initialCenter);
-
-  // 2. Strict Circular Radius & Filter State
-  const [radiusMeters, setRadiusMeters] = useState(3000); // Default: 3 km
-  const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'dealer', 'epc', 'installer', 'shop'
-  const [searchTerm, setSearchTerm] = useState('');
-
-  // 3. Leads & Generation State
-  const [leads, setLeads] = useState([]);
-  const [isFetchingLeads, setIsFetchingLeads] = useState(false);
-  const [activeProvider, setActiveProvider] = useState('');
-  const [selectedEntity, setSelectedEntity] = useState(null);
-
-  // 4. View Mode: 'table' (default) | 'radar' | 'cards'
-  const [viewMode, setViewMode] = useState('table');
-
-  // 5. Manual Location Adjust Modal
-  const [showManualLocModal, setShowManualLocModal] = useState(false);
-  const [manualInputQuery, setManualInputQuery] = useState('');
-  const [isGeocodingManual, setIsGeocodingManual] = useState(false);
-
-  // 6. GCP Places API Key Settings Modal
-  const [showGcpSettings, setShowGcpSettings] = useState(false);
-  const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
-
-  // 7. Manual Add / Check-In Modal
-  const [showCheckInModal, setShowCheckInModal] = useState(false);
-  const [checkInForm, setCheckInForm] = useState({
-    name: '',
-    category: 'Solar EPC Contractor & Installer',
-    type: 'epc',
-    phone: '',
-    email: '',
-    address: '',
-    speciality: 'Rooftop Solar EPC'
+    setManualLocation,
+    setOnSignificantMove
+  } = useHighAccuracyLocation({
+    initialCoords: initialCenter,
+    movementThresholdMeters: 35, // Auto-refresh when moved > 35 meters
+    autoStartWatch: true
   });
 
-  // Fetch Leads function with strict distance sorting
-  const fetchNearbySolarLeads = useCallback(async (targetLat = coords.lat, targetLon = coords.lon, targetRadius = radiusMeters) => {
-    setIsFetchingLeads(true);
-    try {
-      const res = await fetchGooglePlacesNearby({
-        latitude: targetLat,
-        longitude: targetLon,
-        radiusMeters: targetRadius,
-        keywords: DEFAULT_SOLAR_KEYWORDS
-      });
+  // 2. Configurable Radius (Phase 6: 1km, 2km, 5km default, 10km, 25km)
+  const [radiusMeters, setRadiusMeters] = useState(5000); // 5 km default
 
-      // Merge any user registered custom check-ins
-      const customVendors = getCustomSolarVendors();
-      const customWithDist = customVendors.map(c => {
-        const R = 6371000;
-        const dLat = ((c.lat - targetLat) * Math.PI) / 180;
-        const dLon = ((c.lon - targetLon) * Math.PI) / 180;
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((targetLat * Math.PI) / 180) * Math.cos((c.lat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const distM = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return {
-          ...c,
-          distanceMeters: Math.round(distM),
-          distanceKm: Number((distM / 1000).toFixed(2))
-        };
-      }).filter(c => c.distanceMeters <= targetRadius);
+  // 3. Configurable Query Matrix (Phase 4)
+  const [activeQueries, setActiveQueries] = useState(() => DEFAULT_ACTIVE_QUERIES);
+  const [customKeywordInput, setCustomKeywordInput] = useState('');
 
-      const allMerged = [...customWithDist, ...(res.leads || [])];
+  // 4. Filter & Search State
+  const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'epc', 'dealer', 'installer', 'shop'
+  const [searchTerm, setSearchTerm] = useState('');
 
-      // Deduplicate by place ID / name
-      const uniqueMap = new Map();
-      for (const item of allMerged) {
-        const key = item.id || item.name.toLowerCase();
-        if (!uniqueMap.has(key)) {
-          uniqueMap.set(key, item);
+  // 5. Results & Diagnostics State (Phase 7 & 24)
+  const [leads, setLeads] = useState([]);
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState(null);
+  const [lastSearchTime, setLastSearchTime] = useState(null);
+
+  // 6. View Mode: 'table' | 'radar' | 'cards'
+  const [viewMode, setViewMode] = useState('table');
+
+  // 7. Modals State
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showManualSpotModal, setShowManualSpotModal] = useState(false);
+  const [manualQueryInput, setManualQueryInput] = useState('');
+  const [isGeocodingManual, setIsGeocodingManual] = useState(false);
+  const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
+
+  // Core Search Execution (Phase 5, 8, 9, 10)
+  const executeLeadSearch = useCallback(
+    async (targetLat = coords.lat, targetLon = coords.lon, targetRadius = radiusMeters, force = false) => {
+      setIsSearching(true);
+      try {
+        const res = await fetchGooglePlacesNearby({
+          latitude: targetLat,
+          longitude: targetLon,
+          radiusMeters: targetRadius,
+          keywords: activeQueries,
+          accuracy: accuracy || 10,
+          forceRefresh: force
+        });
+
+        if (res.superseded) {
+          // A newer request has been dispatched; ignore superseded response (Phase 28)
+          return;
         }
+
+        setIsSearching(false);
+        setLastSearchTime(new Date().toLocaleTimeString());
+
+        if (res.success && Array.isArray(res.leads)) {
+          setLeads(res.leads);
+          setDiagnostics(res.diagnostics);
+
+          if (res.leads.length > 0) {
+            addToast(`Discovered ${res.leads.length} nearby solar businesses!`, 'success');
+          } else {
+            addToast(`Zero solar entities found within ${(targetRadius / 1000)} km. Expand radius or adjust keywords.`, 'info');
+          }
+        } else {
+          setDiagnostics(res.diagnostics);
+          if (res.error) {
+            addToast(res.error, 'error');
+          }
+        }
+      } catch (err) {
+        setIsSearching(false);
+        addToast('Search failed: Network error', 'error');
       }
+    },
+    [coords.lat, coords.lon, radiusMeters, activeQueries, accuracy, addToast]
+  );
 
-      const deduplicated = Array.from(uniqueMap.values());
-
-      // STRICT SORTING BY DISTANCE: Nearest first (#1 is right next to the user)
-      deduplicated.sort((a, b) => a.distanceMeters - b.distanceMeters);
-
-      setLeads(deduplicated);
-      setActiveProvider(res.provider || 'Live Intelligence Network');
-      setIsFetchingLeads(false);
-
-      if (deduplicated.length > 0) {
-        addToast(`Discovered ${deduplicated.length} solar businesses within ${(targetRadius / 1000)} km!`, 'success');
-      } else {
-        addToast(`No solar entities found within ${(targetRadius / 1000)} km. Try expanding radius.`, 'info');
-      }
-    } catch (err) {
-      setIsFetchingLeads(false);
-      addToast('Error fetching solar leads', 'error');
-    }
-  }, [coords.lat, coords.lon, radiusMeters, addToast]);
-
-  // Initial fetch on mount & coordinates change
+  // Initial search on mount
   useEffect(() => {
-    fetchNearbySolarLeads(coords.lat, coords.lon, radiusMeters);
-  }, [coords.lat, coords.lon, radiusMeters]);
+    executeLeadSearch(coords.lat, coords.lon, radiusMeters);
+  }, [coords.lat, coords.lon, radiusMeters, activeQueries]);
 
-  // Initial GPS detection on load
+  // Phase 3: Auto-refresh when salesperson moves > 35m
   useEffect(() => {
-    acquireLocation();
-  }, [acquireLocation]);
+    setOnSignificantMove(({ lat, lon, distanceMoved }) => {
+      addToast(`📍 Location moved ${distanceMoved}m. Updating nearby solar leads...`, 'info');
+      executeLeadSearch(lat, lon, radiusMeters);
+    });
+  }, [setOnSignificantMove, executeLeadSearch, radiusMeters, addToast]);
 
-  // Handle Manual Pin / Spot Selection
+  // Handle Manual Pin Spot
   const handleApplyManualSpot = async (e) => {
     if (e) e.preventDefault();
-    if (!manualInputQuery.trim()) return;
+    if (!manualQueryInput.trim()) return;
 
     setIsGeocodingManual(true);
-    const geo = await geocodeAreaOrLandmark(manualInputQuery.trim());
+    const geo = await geocodeAreaOrLandmark(manualQueryInput.trim());
     setIsGeocodingManual(false);
 
     if (geo.success) {
@@ -152,19 +141,48 @@ export default function StaffRadarMap() {
         customAddress: geo.displayName,
         customCity: geo.city
       });
-      setShowManualLocModal(false);
+      setShowManualSpotModal(false);
       addToast(`Spot Locked: ${geo.displayName}`, 'success');
+      executeLeadSearch(geo.lat, geo.lon, radiusMeters, true);
     } else {
-      addToast(`Could not locate "${manualInputQuery}". Please enter city or landmark name.`, 'error');
+      addToast(`Could not pinpoint "${manualQueryInput}". Try specifying city/state.`, 'error');
     }
   };
 
-  // Save GCP Places API Key
+  // Handle GCP Key Save
   const handleSaveGcpKey = () => {
     saveGooglePlacesApiKey(gcpKeyInput);
-    setShowGcpSettings(false);
-    addToast('Google Places API (New) Key saved!', 'success');
-    fetchNearbySolarLeads();
+    addToast('Google Places API (New) key updated!', 'success');
+    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
+  };
+
+  // Toggle Query in Matrix
+  const handleToggleQuery = (queryText) => {
+    setActiveQueries((prev) => {
+      if (prev.includes(queryText)) {
+        if (prev.length === 1) {
+          addToast('At least one search query must remain active', 'error');
+          return prev;
+        }
+        return prev.filter((q) => q !== queryText);
+      } else {
+        return [...prev, queryText];
+      }
+    });
+  };
+
+  // Add Custom Query
+  const handleAddCustomQuery = (e) => {
+    e.preventDefault();
+    const clean = customKeywordInput.trim();
+    if (!clean) return;
+    if (activeQueries.includes(clean)) {
+      addToast('Query already in active search matrix', 'info');
+      return;
+    }
+    setActiveQueries((prev) => [...prev, clean]);
+    setCustomKeywordInput('');
+    addToast(`Added "${clean}" to search matrix`, 'success');
   };
 
   // Convert Lead to Customer File
@@ -181,11 +199,11 @@ export default function StaffRadarMap() {
       solarSystemKw: 3.3,
       roofType: 'RCC Flat Roof',
       staffId: currentStaff?.id || 'STF-001',
-      staffName: currentStaff?.name || 'Solar Executive',
+      staffName: currentStaff?.name || 'Solar Field Executive',
       createdDate: new Date().toISOString().split('T')[0],
       status: 'Sourced',
       applicationNo: 'Draft Pending',
-      notes: `Generated via Google Places Nearby Radar (${lead.distanceKm} km away). Website: ${lead.website || 'N/A'}`,
+      notes: `Discovered via Live Location Lead Discovery (${lead.distanceKm} km away). Relevance: ${lead.relevanceTier || 'High'}. Google Place ID: ${lead.google_place_id || 'N/A'}`,
       documents: {
         aadhaar: { uploaded: false, filename: null, date: null },
         lightBill: { uploaded: false, filename: null, date: null },
@@ -195,38 +213,10 @@ export default function StaffRadarMap() {
       }
     };
     addCustomerFile(newFile);
-    addToast(`Lead "${lead.name}" added to Customer Files!`, 'success');
+    addToast(`Lead "${lead.name}" added to your Customer Files!`, 'success');
   };
 
-  // Save Manual Check-In
-  const handleSaveCheckIn = (e) => {
-    e.preventDefault();
-    if (!checkInForm.name.trim()) return;
-
-    saveCustomSolarVendor({
-      name: checkInForm.name.trim(),
-      category: checkInForm.category,
-      type: checkInForm.type,
-      phone: checkInForm.phone || '+91 98000 00000',
-      email: checkInForm.email,
-      address: checkInForm.address || streetAddress,
-      city: detectedCity,
-      lat: coords.lat,
-      lon: coords.lon,
-      distanceMeters: 0,
-      distanceKm: 0.0,
-      speciality: checkInForm.speciality,
-      rating: 5.0,
-      reviewsCount: 1,
-      isCustom: true
-    });
-
-    setShowCheckInModal(false);
-    addToast(`Company "${checkInForm.name}" registered right at your spot!`, 'success');
-    fetchNearbySolarLeads();
-  };
-
-  // Filter leads by search term & category
+  // Filter leads
   const filteredLeads = leads.filter((item) => {
     const matchCat =
       selectedCategory === 'all'
@@ -238,7 +228,7 @@ export default function StaffRadarMap() {
         : selectedCategory === 'shop'
         ? item.type === 'shop'
         : selectedCategory === 'installer'
-        ? item.type === 'epc' || item.category.toLowerCase().includes('installer')
+        ? item.type === 'installer' || item.category.toLowerCase().includes('installer')
         : true;
 
     const term = searchTerm.toLowerCase().trim();
@@ -255,163 +245,180 @@ export default function StaffRadarMap() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-sans text-on-surface">
       {/* ========================================================
-          1. TOP RADAR HEADER & DEVICE GPS VERIFICATION
+          1. LIVE GPS STATUS & ACTION HEADER (Phase 2 & 15 UX)
           ======================================================== */}
       <div className="relative overflow-hidden rounded-2xl bg-[#0D1527] border border-white/15 p-5 sm:p-7 text-white shadow-xl">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <span className="material-symbols-outlined text-[22px]">near_me</span>
+                <span className="material-symbols-outlined text-[22px]">radar</span>
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Nearby Solar Leads (Google Places API New Engine)
+                Live Location Solar Lead Discovery
               </h1>
             </div>
             <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Real-time circular search strictly centered on your live coordinates. Discovers solar EPC contractors, dealers, and equipment suppliers with meters-level proximity.
+              Continuously searches Google Maps and Places around your exact GPS coordinates. Detects solar EPCs, dealers, shops, and rooftop installers in real-time.
             </p>
           </div>
 
           {/* Action Hub */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Primary Refresh Button */}
+            {/* Primary Refresh Leads Button */}
             <button
-              onClick={() => fetchNearbySolarLeads()}
-              disabled={isFetchingLeads}
+              onClick={() => executeLeadSearch(coords.lat, coords.lon, radiusMeters, true)}
+              disabled={isSearching}
               className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
             >
-              <span className={`material-symbols-outlined text-[18px] ${isFetchingLeads ? 'animate-spin' : ''}`}>
-                {isFetchingLeads ? 'sync' : 'refresh'}
+              <span className={`material-symbols-outlined text-[18px] ${isSearching ? 'animate-spin' : ''}`}>
+                {isSearching ? 'sync' : 'refresh'}
               </span>
-              <span>{isFetchingLeads ? 'Locating Nearby Solar...' : 'Refresh Leads from Current Location'}</span>
+              <span>{isSearching ? 'Finding Nearby Solar Businesses...' : 'Refresh Leads from Current Location'}</span>
             </button>
 
-            {/* Check-In / Register Spot */}
+            {/* Developer Diagnostics Button (Phase 7 & 24) */}
             <button
-              onClick={() => {
-                setCheckInForm({
-                  name: '',
-                  category: 'Solar EPC Contractor & Installer',
-                  type: 'epc',
-                  phone: '',
-                  email: '',
-                  address: streetAddress,
-                  speciality: 'Rooftop Solar EPC'
-                });
-                setShowCheckInModal(true);
-              }}
-              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => setShowDiagnostics(true)}
+              className="px-3 py-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Open Lead Discovery Diagnostics"
             >
-              <span className="material-symbols-outlined text-[17px] text-emerald-400">add_location_alt</span>
-              <span>Check-In Spot</span>
-            </button>
-
-            {/* GCP API Key Config */}
-            <button
-              onClick={() => setShowGcpSettings(true)}
-              className="p-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Google Places API Key Settings"
-            >
-              <span className="material-symbols-outlined text-[18px] text-amber-400">key</span>
-              <span>GCP Key</span>
+              <span className="material-symbols-outlined text-[18px] text-amber-400">bug_report</span>
+              <span>Diagnostics</span>
             </button>
           </div>
         </div>
 
-        {/* Device GPS Live Verification Bar */}
-        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        {/* Live Location Telemetry Bar (Phase 2 & 15) */}
+        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* GPS Signal Status Badge */}
-            <button
-              onClick={acquireLocation}
-              disabled={gpsLoading}
-              className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                isGpsActive
+            {/* Live GPS State Indicator */}
+            <div
+              className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 font-bold ${
+                isGpsActive && !isLowAccuracy
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                  : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                  : isLowAccuracy
+                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                  : 'bg-red-500/20 border-red-500/40 text-red-300'
               }`}
             >
-              <span className={`material-symbols-outlined text-[16px] ${gpsLoading ? 'animate-spin' : isGpsActive ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {gpsLoading ? 'sync' : isGpsActive ? 'my_location' : 'location_disabled'}
+              <span className="relative flex h-2 w-2">
+                <span
+                  className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    isGpsActive && !isLowAccuracy ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`}
+                ></span>
+                <span
+                  className={`relative inline-flex rounded-full h-2 w-2 ${
+                    isGpsActive && !isLowAccuracy ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                ></span>
               </span>
               <span>
-                {gpsLoading
-                  ? 'Acquiring High-Accuracy GPS...'
-                  : isGpsActive
-                  ? `Live GPS Locked (${locationSource === 'manual_pin' ? 'Manual Pin' : `±${accuracy || 5}m accuracy`})`
-                  : 'Acquire Live GPS'}
+                {isGpsActive
+                  ? locationSource === 'manual_pin'
+                    ? '📍 Manual Pin Active (Calibrated)'
+                    : `🟢 Live Location Active (Accuracy: ±${accuracy || 15}m)`
+                  : 'Location Inactive'}
               </span>
-            </button>
+            </div>
 
-            {/* Exact Lat / Lon Coordinate Display */}
+            {/* Coordinates */}
             <div className="px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 font-mono text-[11px] text-slate-300 flex items-center gap-1.5">
-              <span className="text-slate-400 font-sans">Spot:</span>
+              <span className="text-slate-400 font-sans">Coordinates:</span>
               <span className="font-bold text-emerald-300">{coords.lat.toFixed(6)}° N, {coords.lon.toFixed(6)}° E</span>
             </div>
 
-            {/* Detected Street Address */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 text-slate-300 max-w-md truncate" title={streetAddress}>
+            {/* Street Address */}
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 text-slate-300 max-w-sm truncate"
+              title={streetAddress}
+            >
               <span className="material-symbols-outlined text-[15px] text-emerald-400 shrink-0">pin_drop</span>
               <span className="font-medium truncate">{streetAddress}</span>
             </div>
           </div>
 
-          {/* Adjust / Manual Spot Button */}
+          {/* Location Actions & Timestamp */}
           <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-mono">
+              Last updated: {lastSearchTime || locationLastUpdated?.toLocaleTimeString() || 'Just now'}
+            </span>
+
             <button
               onClick={() => {
-                setManualInputQuery(streetAddress || detectedCity);
-                setShowManualLocModal(true);
+                setManualQueryInput(streetAddress || detectedCity);
+                setShowManualSpotModal(true);
               }}
-              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[15px] text-amber-400">tune</span>
-              <span>Adjust / Pick Manual Spot</span>
+              <span className="material-symbols-outlined text-[14px] text-amber-400">edit_location</span>
+              <span>Pick Manual Spot</span>
             </button>
-
-            {/* Direct Google Maps View */}
-            <a
-              href={`https://www.google.com/maps/search/solar+companies/@${coords.lat},${coords.lon},14z`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1.5 px-2.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-300 font-semibold flex items-center gap-1 transition-colors"
-              title="Verify Coordinates on Google Maps"
-            >
-              <span className="material-symbols-outlined text-[15px]">travel_explore</span>
-            </a>
           </div>
         </div>
 
-        {/* GPS Error Prompt */}
-        {gpsError && (
+        {/* Low Accuracy Warning (Phase 2 & 15) */}
+        {isLowAccuracy && (
           <div className="mt-3 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-amber-400">warning</span>
-              <span>{gpsError.message}</span>
+              <span>
+                Location accuracy is currently ±{accuracy}m. Move outdoors or wait a few seconds for a better GPS fix, or click "Pick Manual Spot" to pinpoint your exact address.
+              </span>
             </div>
             <button
-              onClick={() => setShowManualLocModal(true)}
-              className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold rounded-md text-[11px] cursor-pointer"
+              onClick={() => setShowManualSpotModal(true)}
+              className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold rounded-md text-[11px] cursor-pointer shrink-0"
             >
               Pick Exact Spot
             </button>
           </div>
         )}
+
+        {/* GPS Error Prompt (Phase 16) */}
+        {gpsError && (
+          <div className="mt-3 p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-red-400">error</span>
+              <div>
+                <strong>Unable to access live location:</strong> {gpsError.message}
+                <div className="text-[11px] text-red-300 mt-0.5">
+                  Please enable browser location permissions, enable device GPS, or manually pick your spot.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={acquireLocation}
+                className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white font-bold rounded-lg text-xs cursor-pointer"
+              >
+                Retry GPS
+              </button>
+              <button
+                onClick={() => setShowManualSpotModal(true)}
+                className="px-3 py-1 bg-red-500 text-white font-bold rounded-lg text-xs cursor-pointer"
+              >
+                Pick Spot
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ========================================================
-          2. FILTER CHIPS & RADIUS BAR (STRICT RADIUS CONTROLS)
+          2. RADIUS & SEARCH MATRIX BAR (Phase 4 & 6)
           ======================================================== */}
       <div className="bg-surface rounded-2xl p-4 border border-surface-container-high shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Radius Filter Chips */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px]">Radius:</span>
+        {/* Radius Filter Chips (Phase 6: 1km, 2km, 5km default, 10km, 25km) */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px] mr-1">Radius:</span>
           {[
             { label: '1 km', value: 1000 },
-            { label: '3 km (Default)', value: 3000 },
-            { label: '5 km', value: 5000 },
-            { label: 'All (15 km)', value: 15000 }
+            { label: '2 km', value: 2000 },
+            { label: '5 km (Default)', value: 5000 },
+            { label: '10 km', value: 10000 },
+            { label: '25 km', value: 25000 }
           ].map((r) => (
             <button
               key={r.value}
@@ -427,15 +434,15 @@ export default function StaffRadarMap() {
           ))}
         </div>
 
-        {/* Category Filter Chips */}
+        {/* Business Category Filter Chips (Phase 8: Non-destructive filtering) */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px] mr-1">Type:</span>
+          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px] mr-1">Category:</span>
           {[
-            { id: 'all', label: 'All' },
+            { id: 'all', label: 'All Businesses' },
             { id: 'epc', label: 'EPCs' },
-            { id: 'dealer', label: 'Dealers' },
-            { id: 'installer', label: 'Installers' },
-            { id: 'shop', label: 'Shops' }
+            { id: 'dealer', label: 'Dealers & Distributors' },
+            { id: 'installer', label: 'Rooftop Installers' },
+            { id: 'shop', label: 'Shops & Suppliers' }
           ].map((cat) => (
             <button
               key={cat.id}
@@ -451,8 +458,8 @@ export default function StaffRadarMap() {
           ))}
         </div>
 
-        {/* Search & View Mode Switcher */}
-        <div className="flex items-center gap-2.5">
+        {/* Search Input & View Mode Switcher */}
+        <div className="flex items-center gap-2">
           <div className="relative">
             <span className="material-symbols-outlined text-[16px] text-secondary absolute left-2.5 top-1/2 -translate-y-1/2">
               search
@@ -461,8 +468,8 @@ export default function StaffRadarMap() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search in results..."
-              className="h-8 pl-8 pr-3 rounded-lg bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none w-40 sm:w-48"
+              placeholder="Search by name, address..."
+              className="h-8 pl-8 pr-3 rounded-lg bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none w-36 sm:w-44"
             />
           </div>
 
@@ -492,7 +499,7 @@ export default function StaffRadarMap() {
               className={`p-1.5 px-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'cards' ? 'bg-primary text-on-primary shadow-xs' : 'text-secondary hover:text-on-surface'
               }`}
-              title="Cards Directory"
+              title="Card Grid"
             >
               <span className="material-symbols-outlined text-[15px]">view_agenda</span>
               <span className="hidden sm:inline">Cards</span>
@@ -502,22 +509,22 @@ export default function StaffRadarMap() {
       </div>
 
       {/* ========================================================
-          3. PRIMARY DATA TABLE (SORTED STRICTLY BY DISTANCE #1 NEAREST)
+          3. PRIMARY UNIFIED DATA TABLE (Phase 9 & 10: place_id unique, sorted strictly by distance)
           ======================================================== */}
       {viewMode === 'table' && (
         <div className="bg-surface rounded-2xl border border-surface-container-high shadow-xs overflow-hidden">
-          {/* Table Header Strip */}
+          {/* Header Strip */}
           <div className="p-3.5 bg-surface-container-low border-b border-surface-container-high flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
               <span className="font-bold text-on-surface">
-                {filteredLeads.length} Solar Businesses within {(radiusMeters / 1000)} km
+                {filteredLeads.length} Nearby Solar Leads Found within {(radiusMeters / 1000)} km
               </span>
               <span className="text-secondary font-mono">
-                • {activeProvider}
+                • {activeQueries.length} Parallel Queries
               </span>
             </div>
             <div className="text-secondary font-medium">
-              Sorted strictly by proximity: <strong>Closest to you (#1) at top</strong>
+              Sorted strictly by actual GPS distance: <strong>Closest business right next to you is #1</strong>
             </div>
           </div>
 
@@ -526,12 +533,12 @@ export default function StaffRadarMap() {
               <thead className="bg-surface-container-lowest border-b border-surface-container-high text-secondary uppercase font-semibold text-[11px]">
                 <tr>
                   <th className="py-3 px-3 text-center w-10">#</th>
-                  <th className="py-3 px-4 min-w-[200px]">Business Name</th>
-                  <th className="py-3 px-3 min-w-[130px]">Category</th>
-                  <th className="py-3 px-3 text-center min-w-[110px]">Proximity</th>
+                  <th className="py-3 px-4 min-w-[210px]">Business Name &amp; Place ID</th>
+                  <th className="py-3 px-3 min-w-[130px]">Category &amp; Relevance</th>
+                  <th className="py-3 px-3 text-center min-w-[120px]">Proximity (from GPS)</th>
                   <th className="py-3 px-4 min-w-[220px]">Address</th>
                   <th className="py-3 px-3 min-w-[140px]">Phone &amp; Website</th>
-                  <th className="py-3 px-4 text-right min-w-[190px]">Direct Action Links</th>
+                  <th className="py-3 px-4 text-right min-w-[200px]">Ground Action Links</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container-high">
@@ -539,23 +546,23 @@ export default function StaffRadarMap() {
                   <tr>
                     <td colSpan="7" className="py-12 text-center text-secondary">
                       <div className="space-y-2 max-w-md mx-auto">
-                        <span className="material-symbols-outlined text-4xl text-secondary/40">location_off</span>
-                        <h4 className="font-bold text-sm text-on-surface">No Solar Businesses Detected in this Circle</h4>
+                        <span className="material-symbols-outlined text-4xl text-secondary/40">near_me_disabled</span>
+                        <h4 className="font-bold text-sm text-on-surface">No Solar Businesses Discovered Within {(radiusMeters / 1000)} km</h4>
                         <p className="text-xs">
-                          Try increasing the search radius to 5 km or click "Check-In Spot" to register the solar company where you are currently standing.
+                          Expand your search radius or inspect the Diagnostics panel to see raw Google Places query logs.
                         </p>
                         <div className="pt-2 flex items-center justify-center gap-2">
                           <button
-                            onClick={() => setRadiusMeters(5000)}
+                            onClick={() => setRadiusMeters(10000)}
                             className="px-3 py-1.5 bg-primary text-on-primary font-bold rounded-lg text-xs cursor-pointer shadow-xs"
                           >
-                            Expand to 5 km
+                            Expand to 10 km
                           </button>
                           <button
-                            onClick={() => setShowCheckInModal(true)}
+                            onClick={() => setShowDiagnostics(true)}
                             className="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold rounded-lg text-xs cursor-pointer"
                           >
-                            Add This Company
+                            Open Diagnostics
                           </button>
                         </div>
                       </div>
@@ -564,9 +571,7 @@ export default function StaffRadarMap() {
                 ) : (
                   filteredLeads.map((item, idx) => {
                     const badgeClass =
-                      item.isCustom
-                        ? 'bg-rose-100 text-rose-800 border-rose-300'
-                        : item.type === 'epc'
+                      item.type === 'epc'
                         ? 'bg-blue-100 text-blue-800 border-blue-200'
                         : item.type === 'shop'
                         ? 'bg-teal-100 text-teal-800 border-teal-200'
@@ -578,7 +583,7 @@ export default function StaffRadarMap() {
 
                     return (
                       <tr
-                        key={item.id || idx}
+                        key={item.id || item.google_place_id || idx}
                         className={`hover:bg-surface-container-low transition-colors ${
                           idx === 0 ? 'bg-emerald-500/5 font-semibold' : ''
                         }`}
@@ -596,57 +601,64 @@ export default function StaffRadarMap() {
                           </span>
                         </td>
 
-                        {/* 2. Business Name & Rating */}
+                        {/* 2. Business Name & Place ID */}
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-on-surface text-[13px]">
-                                {item.name}
-                              </span>
+                              <span className="font-bold text-on-surface text-[13px]">{item.name}</span>
                               {item.verified && (
-                                <span className="material-symbols-outlined text-[15px] text-primary" title="Verified Solar Business">
+                                <span className="material-symbols-outlined text-[15px] text-primary" title="Verified Place">
                                   verified
-                                </span>
-                              )}
-                              {item.isCustom && (
-                                <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-bold">
-                                  Check-In 📍
                                 </span>
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 text-[11px] text-secondary mt-0.5">
                               {item.rating && (
-                                <span className="flex items-center text-amber-600 font-bold">
-                                  ★ {item.rating}
-                                </span>
+                                <span className="flex items-center text-amber-600 font-bold">★ {item.rating}</span>
                               )}
-                              {item.reviewsCount > 0 && (
-                                <span>({item.reviewsCount} reviews)</span>
-                              )}
+                              {item.reviewsCount > 0 && <span>({item.reviewsCount} reviews)</span>}
                               {item.isOpen !== undefined && (
                                 <span className={item.isOpen ? 'text-emerald-700 font-semibold' : 'text-slate-400'}>
                                   • {item.isOpen ? 'Open Now' : 'Closed'}
                                 </span>
                               )}
                             </div>
+                            <span className="text-[10px] text-slate-400 font-mono truncate max-w-[200px]" title={item.google_place_id}>
+                              ID: {item.google_place_id}
+                            </span>
                           </div>
                         </td>
 
-                        {/* 3. Category */}
+                        {/* 3. Category & Relevance Tier (Phase 8) */}
                         <td className="py-3 px-3">
-                          <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass}`}>
-                            {item.category}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass}`}>
+                              {item.category}
+                            </span>
+                            {item.relevanceTier && (
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                                  item.relevanceTier === 'HIGH RELEVANCE'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : item.relevanceTier === 'MEDIUM RELEVANCE'
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {item.relevanceTier}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
-                        {/* 4. Distance / Proximity */}
+                        {/* 4. Proximity from GPS (Phase 9) */}
                         <td className="py-3 px-3 text-center">
                           <div className="flex flex-col items-center">
                             <span
                               className={`px-2.5 py-1 rounded-lg font-mono font-bold text-xs ${
                                 item.distanceMeters <= 500
                                   ? 'bg-emerald-600 text-white font-extrabold shadow-xs'
-                                  : item.distanceMeters <= 1500
+                                  : item.distanceMeters <= 2000
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : 'bg-surface-container text-secondary'
                               }`}
@@ -682,7 +694,7 @@ export default function StaffRadarMap() {
                                 <span>{item.phone}</span>
                               </a>
                             ) : (
-                              <span className="text-secondary text-[11px]">Phone not listed</span>
+                              <span className="text-secondary text-[11px]">Phone unlisted</span>
                             )}
                             {item.website && (
                               <a
@@ -699,7 +711,7 @@ export default function StaffRadarMap() {
                           </div>
                         </td>
 
-                        {/* 7. Direct Action Links for Reps on the Ground */}
+                        {/* 7. Ground Actions (Phase 13 Google Maps Link + Call + WhatsApp) */}
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             {/* Call Now */}
@@ -714,16 +726,13 @@ export default function StaffRadarMap() {
                               </a>
                             )}
 
-                            {/* Navigate */}
+                            {/* Navigate (Phase 13: Genuine Google Maps place_id URL) */}
                             <a
-                              href={
-                                item.googleMapsUri ||
-                                `https://www.google.com/maps/dir/?api=1&destination=${item.lat || coords.lat},${item.lon || coords.lon}`
-                              }
+                              href={item.googleMapsUri}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
-                              title="Turn-by-Turn GPS Navigation"
+                              title="Open Exact Google Maps Place"
                             >
                               <span className="material-symbols-outlined text-[15px]">directions</span>
                               <span>Navigate</span>
@@ -742,11 +751,11 @@ export default function StaffRadarMap() {
                               </a>
                             )}
 
-                            {/* Claim / Convert to Customer Lead File */}
+                            {/* Create Lead File */}
                             <button
                               onClick={() => handleClaimLeadAsFile(item)}
                               className="p-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high rounded-lg text-on-surface transition-colors cursor-pointer"
-                              title="Create Customer File from Lead"
+                              title="Add to Customer Files"
                             >
                               <span className="material-symbols-outlined text-[16px] text-primary">person_add</span>
                             </button>
@@ -763,7 +772,7 @@ export default function StaffRadarMap() {
       )}
 
       {/* ========================================================
-          4. VIEW: RADAR CONCENTRIC CIRCULAR VIEW
+          4. VIEW: RADAR CONCENTRIC CIRCLE VIEW (Phase 14 Sync)
           ======================================================== */}
       {viewMode === 'radar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -795,13 +804,17 @@ export default function StaffRadarMap() {
                 const posX = Math.cos(angle) * (180 * ratio);
                 const posY = Math.sin(angle) * (180 * ratio);
 
+                const isSelected = selectedEntity?.id === ent.id;
+
                 return (
                   <button
                     key={ent.id || idx}
                     onClick={() => setSelectedEntity(ent)}
                     style={{ transform: `translate(${posX}px, ${posY}px)` }}
                     className={`absolute z-30 p-1.5 rounded-full shadow-lg transition-transform hover:scale-125 cursor-pointer ${
-                      idx === 0
+                      isSelected
+                        ? 'ring-4 ring-white scale-125 bg-amber-400 text-slate-950'
+                        : idx === 0
                         ? 'bg-rose-500 text-white ring-2 ring-white scale-110'
                         : ent.type === 'epc'
                         ? 'bg-blue-500 text-white'
@@ -819,7 +832,7 @@ export default function StaffRadarMap() {
 
             <div className="w-full mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
               <span>Center: {streetAddress}</span>
-              <span className="text-emerald-400 font-mono">{activeProvider}</span>
+              <span className="text-emerald-400 font-mono">Radius: {(radiusMeters / 1000)} km</span>
             </div>
           </div>
 
@@ -833,7 +846,7 @@ export default function StaffRadarMap() {
                   </span>
                   <h3 className="text-base font-bold text-on-surface mt-2">{selectedEntity.name}</h3>
                   <p className="text-xs text-emerald-700 font-mono font-bold mt-0.5">
-                    {selectedEntity.distanceMeters} meters away
+                    {selectedEntity.distanceMeters} meters from your live GPS
                   </p>
                 </div>
 
@@ -850,34 +863,51 @@ export default function StaffRadarMap() {
                       </a>
                     </div>
                   )}
+                  {selectedEntity.website && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">link</span>
+                      <a href={selectedEntity.website} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline truncate">
+                        {selectedEntity.website}
+                      </a>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-surface-container-high space-y-2">
                   <a
-                    href={selectedEntity.googleMapsUri || `https://www.google.com/maps/dir/?api=1&destination=${selectedEntity.lat || coords.lat},${selectedEntity.lon || coords.lon}`}
+                    href={selectedEntity.googleMapsUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                    className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                   >
                     <span className="material-symbols-outlined text-[16px]">directions</span>
-                    <span>Navigate (Directions)</span>
+                    <span>Start Turn-by-Turn GPS Navigation</span>
                   </a>
+
                   {selectedEntity.phone && (
                     <a
                       href={`tel:${selectedEntity.phone}`}
-                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                     >
                       <span className="material-symbols-outlined text-[16px]">call</span>
-                      <span>Call Now</span>
+                      <span>Call Now ({selectedEntity.phone})</span>
                     </a>
                   )}
+
+                  <button
+                    onClick={() => handleClaimLeadAsFile(selectedEntity)}
+                    className="w-full py-2 px-3 bg-surface-container-low hover:bg-surface-container text-on-surface border border-surface-container-high rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">person_add</span>
+                    <span>Add to Customer Files</span>
+                  </button>
                 </div>
               </div>
             ) : (
               <div className="p-8 text-center text-secondary space-y-2 my-auto">
                 <span className="material-symbols-outlined text-4xl text-secondary/40">near_me</span>
                 <h4 className="text-sm font-bold text-on-surface">Select Any Radar Entity</h4>
-                <p className="text-xs">Click on any dot to inspect contact details and turn-by-turn navigation.</p>
+                <p className="text-xs">Click on any radar dot to inspect contact details, relevance tier, and navigation directions.</p>
               </div>
             )}
           </div>
@@ -891,7 +921,7 @@ export default function StaffRadarMap() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredLeads.map((item, idx) => (
             <div
-              key={item.id || idx}
+              key={item.id || item.google_place_id || idx}
               className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
             >
               <div>
@@ -942,7 +972,7 @@ export default function StaffRadarMap() {
                   <div></div>
                 )}
                 <a
-                  href={item.googleMapsUri || `https://www.google.com/maps/dir/?api=1&destination=${item.lat || coords.lat},${item.lon || coords.lon}`}
+                  href={item.googleMapsUri}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="py-1.5 px-2 bg-blue-600 text-white rounded-lg text-xs font-bold text-center flex items-center justify-center gap-1"
@@ -957,20 +987,237 @@ export default function StaffRadarMap() {
       )}
 
       {/* ========================================================
-          MODAL: MANUAL PIN / ADJUST SPOT
+          6. DEVELOPER / DEBUG DIAGNOSTICS MODAL (Phase 7 & 24)
           ======================================================== */}
-      {showManualLocModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-md w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
+      {showDiagnostics && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 border border-surface-container-high shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-surface-container-high pb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-amber-500/15 text-amber-600">
+                  <span className="material-symbols-outlined text-[22px]">developer_mode</span>
+                </span>
+                <div>
+                  <h3 className="font-bold text-base text-on-surface">Lead Discovery Diagnostics</h3>
+                  <p className="text-xs text-secondary">Real-time inspection of GPS coordinates, Google Places API telemetry, and query logs</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDiagnostics(false)} className="text-secondary hover:text-on-surface cursor-pointer">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* GPS Telemetry */}
+            <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2 text-xs">
+              <div className="font-bold text-on-surface flex items-center gap-1.5 text-xs">
+                <span className="material-symbols-outlined text-emerald-600 text-[16px]">my_location</span>
+                <span>Live GPS Sensor Telemetry:</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-[11px]">
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Latitude</span>
+                  <span className="font-bold text-on-surface">{coords.lat.toFixed(6)}</span>
+                </div>
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Longitude</span>
+                  <span className="font-bold text-on-surface">{coords.lon.toFixed(6)}</span>
+                </div>
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Accuracy</span>
+                  <span className="font-bold text-on-surface">±{accuracy || 10} meters</span>
+                </div>
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Location Source</span>
+                  <span className="font-bold text-on-surface">{locationSource}</span>
+                </div>
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Movement from Center</span>
+                  <span className="font-bold text-on-surface">{movementDistance} m</span>
+                </div>
+                <div className="p-2 rounded bg-surface-container">
+                  <span className="text-secondary block font-sans">Last Update</span>
+                  <span className="font-bold text-on-surface">{locationLastUpdated?.toLocaleTimeString() || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Google Places API Telemetry */}
+            <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3 text-xs">
+              <div className="font-bold text-on-surface flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-blue-600 text-[16px]">cloud_sync</span>
+                  <span>Google Places API Connection:</span>
+                </div>
+                <span className="font-mono text-[11px] text-secondary">
+                  Latency: {diagnostics?.apiLatencyMs || 0} ms
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-surface-container font-mono text-[11px] space-y-1">
+                <div>
+                  <span className="text-secondary">Status: </span>
+                  <strong className={diagnostics?.googleApiStatus?.startsWith('CONNECTED') ? 'text-emerald-700' : 'text-amber-700'}>
+                    {diagnostics?.googleApiStatus || 'Checking...'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-secondary">Active Endpoint: </span>
+                  <span>{diagnostics?.googleApiType || 'Places API (New) v1/places:searchText'}</span>
+                </div>
+                <div>
+                  <span className="text-secondary">Search Radius: </span>
+                  <span>{radiusMeters} meters ({(radiusMeters / 1000)} km circle)</span>
+                </div>
+              </div>
+
+              {/* GCP API Key input */}
+              <div className="pt-2 border-t border-surface-container-high space-y-1.5">
+                <label className="block text-[11px] font-semibold text-secondary">
+                  Configure / Override Google Cloud Places API Key:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={gcpKeyInput}
+                    onChange={(e) => setGcpKeyInput(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="flex-1 h-8 px-2.5 rounded-lg bg-surface-container border border-surface-container-high text-xs font-mono text-on-surface outline-none"
+                  />
+                  <button
+                    onClick={handleSaveGcpKey}
+                    className="h-8 px-3 bg-primary text-on-primary font-bold rounded-lg text-xs cursor-pointer"
+                  >
+                    Save &amp; Test
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Results Funnel & Deduplication Stats (Phase 7) */}
+            <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2 text-xs">
+              <div className="font-bold text-on-surface flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-purple-600 text-[16px]">filter_alt</span>
+                <span>Results Funnel &amp; Deduplication Breakdown:</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center font-mono">
+                <div className="p-2.5 rounded-lg bg-surface-container">
+                  <span className="text-[10px] text-secondary font-sans block">Raw Results</span>
+                  <strong className="text-base text-on-surface">{diagnostics?.rawPlacesReceived || 0}</strong>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container">
+                  <span className="text-[10px] text-secondary font-sans block">Unique place_id</span>
+                  <strong className="text-base text-on-surface">{diagnostics?.resultsAfterDeduplication || 0}</strong>
+                </div>
+                <div className="p-2.5 rounded-lg bg-surface-container">
+                  <span className="text-[10px] text-secondary font-sans block">Final Inside Circle</span>
+                  <strong className="text-base text-emerald-700">{diagnostics?.resultsAfterFiltering || 0}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Discarded Audit Log (Phase 7: Exact reason why a company did not appear) */}
+            <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2 text-xs">
+              <div className="font-bold text-on-surface flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-rose-600 text-[16px]">visibility_off</span>
+                  <span>Discarded / Excluded Places Log ({diagnostics?.discardedList?.length || 0}):</span>
+                </div>
+                <span className="text-[10px] text-secondary">Explains why a business didn't show</span>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto space-y-1.5 font-mono text-[11px]">
+                {diagnostics?.discardedList?.length === 0 ? (
+                  <span className="text-secondary italic">No places were discarded. All fetched places were valid and within radius.</span>
+                ) : (
+                  (diagnostics?.discardedList || []).map((d, i) => (
+                    <div key={i} className="p-2 rounded bg-surface-container flex items-start justify-between gap-2">
+                      <span className="font-bold text-on-surface">{d.name}</span>
+                      <span className="text-rose-700 shrink-0">{d.reason}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Search Query Matrix Configurator (Phase 4) */}
+            <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5 text-xs">
+              <div className="font-bold text-on-surface flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-emerald-600 text-[16px]">checklist</span>
+                  <span>Active Multi-Query Matrix ({activeQueries.length} Queries):</span>
+                </div>
+                <button
+                  onClick={() => setActiveQueries(DEFAULT_ACTIVE_QUERIES)}
+                  className="text-primary text-[11px] hover:underline cursor-pointer"
+                >
+                  Reset Defaults
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {activeQueries.map((q) => (
+                  <span
+                    key={q}
+                    className="px-2 py-1 rounded-md bg-surface-container border border-surface-container-high text-[11px] font-medium flex items-center gap-1 text-on-surface"
+                  >
+                    <span>{q}</span>
+                    <button
+                      onClick={() => handleToggleQuery(q)}
+                      className="text-secondary hover:text-rose-600 cursor-pointer"
+                      title="Remove Query"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+
+              {/* Add custom query */}
+              <form onSubmit={handleAddCustomQuery} className="flex items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  value={customKeywordInput}
+                  onChange={(e) => setCustomKeywordInput(e.target.value)}
+                  placeholder="Add custom keyword (e.g. solar water pump, Waaree dealer)..."
+                  className="flex-1 h-8 px-2.5 rounded-lg bg-surface-container border border-surface-container-high text-xs text-on-surface outline-none"
+                />
+                <button
+                  type="submit"
+                  className="h-8 px-3 bg-surface-container hover:bg-surface-container-high border border-surface-container-high text-on-surface font-bold rounded-lg text-xs cursor-pointer"
+                >
+                  Add Query
+                </button>
+              </form>
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-surface-container-high">
+              <button
+                onClick={() => setShowDiagnostics(false)}
+                className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs cursor-pointer shadow-xs"
+              >
+                Close Diagnostics
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          7. MANUAL PIN / SPOT MODAL (Phase 2 & 16 Fallback)
+          ======================================================== */}
+      {showManualSpotModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl max-w-md w-full p-6 border border-surface-container-high shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-base text-on-surface">Pick Exact Spot / Area</h3>
-              <button onClick={() => setShowManualLocModal(false)} className="text-secondary hover:text-on-surface cursor-pointer">
+              <button onClick={() => setShowManualSpotModal(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
 
             <p className="text-xs text-secondary leading-relaxed">
-              If your desktop browser IP location was inaccurate, enter your exact area, road, or landmark name to lock 100% accurate coordinates.
+              If your device's browser GPS gave inaccurate coordinates or you are testing a specific physical spot, enter the exact area, colony, or landmark name to lock 100% accurate coordinates.
             </p>
 
             <form onSubmit={handleApplyManualSpot} className="space-y-3">
@@ -981,9 +1228,9 @@ export default function StaffRadarMap() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Prahlad Nagar, SG Highway, Katargam, GIDC Makarpura"
-                  value={manualInputQuery}
-                  onChange={(e) => setManualInputQuery(e.target.value)}
+                  placeholder="e.g. Prahlad Nagar, SG Highway, Katargam, GIDC Makarpura..."
+                  value={manualQueryInput}
+                  onChange={(e) => setManualQueryInput(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -991,7 +1238,7 @@ export default function StaffRadarMap() {
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowManualLocModal(false)}
+                  onClick={() => setShowManualSpotModal(false)}
                   className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
                 >
                   Cancel
@@ -1005,159 +1252,6 @@ export default function StaffRadarMap() {
                     {isGeocodingManual ? 'sync' : 'pin_drop'}
                   </span>
                   <span>{isGeocodingManual ? 'Locking Spot...' : 'Lock Exact Spot'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================
-          MODAL: GCP PLACES API (NEW) KEY CONFIGURATION
-          ======================================================== */}
-      {showGcpSettings && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-lg w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-amber-500/15 text-amber-600">
-                  <span className="material-symbols-outlined text-[20px]">key</span>
-                </span>
-                <div>
-                  <h3 className="font-bold text-base text-on-surface">Google Places API (New) Setup</h3>
-                  <p className="text-xs text-secondary">Configure Google Cloud Places API Key for live enterprise queries</p>
-                </div>
-              </div>
-              <button onClick={() => setShowGcpSettings(false)} className="text-secondary hover:text-on-surface cursor-pointer">
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Google Maps / Places API Key (Server or Client Override):
-                </label>
-                <input
-                  type="password"
-                  value={gcpKeyInput}
-                  onChange={(e) => setGcpKeyInput(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full h-10 px-3 bg-surface-container-low border border-surface-container-high rounded-xl text-xs font-mono text-on-surface outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high space-y-1.5 text-xs text-secondary">
-                <div className="font-bold text-on-surface flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[16px] text-emerald-600">verified</span>
-                  <span>Google Cloud Platform (GCP) Configuration Checklist:</span>
-                </div>
-                <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
-                  <li>Enable <strong>Places API (New)</strong> in your GCP Console.</li>
-                  <li>Enable <strong>Geocoding API</strong> for high-accuracy street lookups.</li>
-                  <li>Set environment variable: <code>GOOGLE_PLACES_API_KEY=AIzaSy...</code> in Vercel.</li>
-                  <li>Or enter the key above to test instantly in your browser!</li>
-                </ul>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowGcpSettings(false)}
-                  className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveGcpKey}
-                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs shadow-xs cursor-pointer"
-                >
-                  Save &amp; Scan Now
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================
-          MODAL: CHECK-IN SPOT / ADD CURRENT COMPANY
-          ======================================================== */}
-      {showCheckInModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-lg w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base text-on-surface">Register Company at Live Spot</h3>
-              <button onClick={() => setShowCheckInModal(false)} className="text-secondary hover:text-on-surface cursor-pointer">
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveCheckIn} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">Company Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Tata Power Solar Partner"
-                  value={checkInForm.name}
-                  onChange={(e) => setCheckInForm({ ...checkInForm, name: e.target.value })}
-                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">Category</label>
-                  <select
-                    value={checkInForm.category}
-                    onChange={(e) => setCheckInForm({ ...checkInForm, category: e.target.value })}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                  >
-                    <option value="Solar EPC Contractor & Installer">Solar EPC Contractor</option>
-                    <option value="Solar Inverter & Equipment Shop">Inverter Shop</option>
-                    <option value="Authorized Solar Module Distributor">Module Dealer</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    placeholder="+91 98765 43210"
-                    value={checkInForm.phone}
-                    onChange={(e) => setCheckInForm({ ...checkInForm, phone: e.target.value })}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">Address</label>
-                <input
-                  type="text"
-                  value={checkInForm.address}
-                  onChange={(e) => setCheckInForm({ ...checkInForm, address: e.target.value })}
-                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                />
-                <span className="text-[10px] text-secondary">
-                  Locked Coordinates: {coords.lat.toFixed(6)}, {coords.lon.toFixed(6)} (0.0 km)
-                </span>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCheckInModal(false)}
-                  className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs shadow-xs cursor-pointer"
-                >
-                  Save at this Spot
                 </button>
               </div>
             </form>

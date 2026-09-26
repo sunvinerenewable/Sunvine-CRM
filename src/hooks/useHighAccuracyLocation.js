@@ -1,4 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+
+// Haversine distance in meters
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // Reverse Geocoding helper with detailed street/locality extraction
 async function reverseGeocodeHighAccuracy(lat, lon) {
@@ -9,7 +24,7 @@ async function reverseGeocodeHighAccuracy(lat, lon) {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
       {
-        headers: { 'Accept': 'application/json' },
+        headers: { Accept: 'application/json' },
         signal: controller.signal
       }
     );
@@ -35,19 +50,23 @@ async function reverseGeocodeHighAccuracy(lat, lon) {
       };
     }
   } catch (err) {
-    // Fallback on network timeout
+    // Network or timeout fallback
   }
 
   return {
     success: false,
-    streetAddress: `Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`,
+    streetAddress: `${lat.toFixed(6)}° N, ${lon.toFixed(6)}° E`,
     city: 'Local Area',
     state: 'Gujarat',
     fullAddress: `${lat.toFixed(6)}, ${lon.toFixed(6)}`
   };
 }
 
-export function useHighAccuracyLocation(initialCoords = { lat: 23.0225, lon: 72.5714 }) {
+export function useHighAccuracyLocation({
+  initialCoords = { lat: 23.0225, lon: 72.5714 },
+  movementThresholdMeters = 35, // Trigger search update only when user moved > 35m
+  autoStartWatch = true
+} = {}) {
   const [coords, setCoords] = useState(initialCoords);
   const [accuracy, setAccuracy] = useState(null); // accuracy in meters
   const [streetAddress, setStreetAddress] = useState('Detecting exact street location...');
@@ -56,13 +75,91 @@ export function useHighAccuracyLocation(initialCoords = { lat: 23.0225, lon: 72.
   const [error, setError] = useState(null);
   const [isGpsActive, setIsGpsActive] = useState(false);
   const [source, setSource] = useState('default'); // 'device_gps' | 'manual_pin' | 'default'
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [movementDistance, setMovementDistance] = useState(0);
 
-  // Device-level High-Accuracy Geolocation Request
+  // References to track previous coordinates and watch ID
+  const lastSearchCoordsRef = useRef(initialCoords);
+  const watchIdRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  // On location update callback (optional consumer listener)
+  const onSignificantMoveRef = useRef(null);
+  const setOnSignificantMove = useCallback((callback) => {
+    onSignificantMoveRef.current = callback;
+  }, []);
+
+  const handlePositionUpdate = useCallback(async (pos) => {
+    if (!isMountedRef.current) return;
+    const lat = Number(pos.coords.latitude.toFixed(6));
+    const lon = Number(pos.coords.longitude.toFixed(6));
+    const accMeters = pos.coords.accuracy ? Math.round(pos.coords.accuracy) : null;
+
+    const distFromLast = haversineMeters(
+      lastSearchCoordsRef.current.lat,
+      lastSearchCoordsRef.current.lon,
+      lat,
+      lon
+    );
+
+    setCoords({ lat, lon });
+    setAccuracy(accMeters);
+    setIsGpsActive(true);
+    setSource('device_gps');
+    setLoading(false);
+    setError(null);
+    setLastUpdated(new Date());
+    setMovementDistance(Math.round(distFromLast));
+
+    // Check if movement threshold is exceeded
+    if (distFromLast >= movementThresholdMeters) {
+      lastSearchCoordsRef.current = { lat, lon };
+      if (onSignificantMoveRef.current) {
+        onSignificantMoveRef.current({ lat, lon, accuracy: accMeters, distanceMoved: Math.round(distFromLast) });
+      }
+    }
+
+    // Reverse geocode to get street address
+    const geo = await reverseGeocodeHighAccuracy(lat, lon);
+    if (isMountedRef.current) {
+      setStreetAddress(geo.streetAddress);
+      if (geo.city) setCity(geo.city);
+    }
+  }, [movementThresholdMeters]);
+
+  const handlePositionError = useCallback((err) => {
+    if (!isMountedRef.current) return;
+    setLoading(false);
+    let userMessage = 'Unable to access your live location.';
+    let errCode = 'UNKNOWN';
+
+    switch (err.code) {
+      case 1: // PERMISSION_DENIED
+        errCode = 'PERMISSION_DENIED';
+        userMessage = 'Location access was denied. Please allow location in your browser or enter your area manually.';
+        break;
+      case 2: // POSITION_UNAVAILABLE
+        errCode = 'POSITION_UNAVAILABLE';
+        userMessage = 'Live GPS signal unavailable on this device. You can pick your spot manually.';
+        break;
+      case 3: // TIMEOUT
+        errCode = 'TIMEOUT';
+        userMessage = 'GPS request timed out. Please retry or pick your area manually.';
+        break;
+      default:
+        userMessage = err.message || userMessage;
+    }
+
+    setError({ code: errCode, message: userMessage });
+    setIsGpsActive(false);
+  }, []);
+
+  // One-time explicit acquire
   const acquireLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError({
         code: 'NOT_SUPPORTED',
-        message: 'Device Geolocation API is not supported by your browser.'
+        message: 'Device Geolocation API is not supported by this browser.'
       });
       return;
     }
@@ -72,87 +169,102 @@ export function useHighAccuracyLocation(initialCoords = { lat: 23.0225, lon: 72.
 
     const geoOptions = {
       enableHighAccuracy: true,
-      timeout: 15000,
+      timeout: 10000,
       maximumAge: 0
     };
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(6));
-        const lon = Number(pos.coords.longitude.toFixed(6));
-        const accMeters = pos.coords.accuracy ? Math.round(pos.coords.accuracy) : null;
+    navigator.geolocation.getCurrentPosition(handlePositionUpdate, handlePositionError, geoOptions);
+  }, [handlePositionUpdate, handlePositionError]);
 
-        setCoords({ lat, lon });
-        setAccuracy(accMeters);
-        setIsGpsActive(true);
-        setSource('device_gps');
-        setLoading(false);
+  // Start continuous live tracking via watchPosition
+  const startWatchingLocation = useCallback(() => {
+    if (!navigator.geolocation) return;
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
 
-        // Fetch street address via reverse geocode
-        const geoResult = await reverseGeocodeHighAccuracy(lat, lon);
-        setStreetAddress(geoResult.streetAddress);
-        if (geoResult.city) setCity(geoResult.city);
-      },
-      (err) => {
-        setLoading(false);
-        let userMessage = 'Unable to retrieve your location.';
-        let errCode = 'UNKNOWN';
+    setLoading(true);
+    const geoOptions = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    };
 
-        switch (err.code) {
-          case 1: // PERMISSION_DENIED
-            errCode = 'PERMISSION_DENIED';
-            userMessage = 'Location permission was denied. Please allow GPS access in your browser or pick your spot manually.';
-            break;
-          case 2: // POSITION_UNAVAILABLE
-            errCode = 'POSITION_UNAVAILABLE';
-            userMessage = 'High accuracy GPS signal unavailable. Please use the manual location pin below.';
-            break;
-          case 3: // TIMEOUT
-            errCode = 'TIMEOUT';
-            userMessage = 'Location request timed out. Retrying or manual pinpoint recommended.';
-            break;
-          default:
-            userMessage = err.message || userMessage;
-        }
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        handlePositionUpdate,
+        handlePositionError,
+        geoOptions
+      );
+    } catch (e) {
+      console.warn('watchPosition failed to initialize:', e);
+    }
+  }, [handlePositionUpdate, handlePositionError]);
 
-        setError({ code: errCode, message: userMessage });
-        setIsGpsActive(false);
-      },
-      geoOptions
-    );
+  const stopWatchingLocation = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
   }, []);
 
-  // Set location manually (via map pin or area search)
+  // Set manual coordinates / spot
   const setManualLocation = useCallback(async ({ lat, lon, customAddress = null, customCity = null }) => {
+    stopWatchingLocation();
     const cleanLat = Number(Number(lat).toFixed(6));
     const cleanLon = Number(Number(lon).toFixed(6));
 
     setCoords({ lat: cleanLat, lon: cleanLon });
-    setAccuracy(5); // manual pin has 5m virtual accuracy
+    setAccuracy(5); // Manual spot is calibrated to ±5m
     setIsGpsActive(true);
     setSource('manual_pin');
     setError(null);
+    setLastUpdated(new Date());
+    lastSearchCoordsRef.current = { lat: cleanLat, lon: cleanLon };
 
     if (customAddress) {
       setStreetAddress(customAddress);
       if (customCity) setCity(customCity);
     } else {
-      const geoResult = await reverseGeocodeHighAccuracy(cleanLat, cleanLon);
-      setStreetAddress(geoResult.streetAddress);
-      if (geoResult.city) setCity(geoResult.city);
+      const geo = await reverseGeocodeHighAccuracy(cleanLat, cleanLon);
+      if (isMountedRef.current) {
+        setStreetAddress(geo.streetAddress);
+        if (geo.city) setCity(geo.city);
+      }
     }
-  }, []);
+  }, [stopWatchingLocation]);
+
+  // Lifecycle
+  useEffect(() => {
+    isMountedRef.current = true;
+    if (autoStartWatch) {
+      startWatchingLocation();
+    } else {
+      acquireLocation();
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      stopWatchingLocation();
+    };
+  }, [autoStartWatch, startWatchingLocation, acquireLocation, stopWatchingLocation]);
 
   return {
     coords,
     accuracy,
+    isLowAccuracy: accuracy !== null && accuracy > 100,
     streetAddress,
     city,
     loading,
     error,
     isGpsActive,
     source,
+    lastUpdated,
+    movementDistance,
     acquireLocation,
-    setManualLocation
+    startWatchingLocation,
+    stopWatchingLocation,
+    setManualLocation,
+    setOnSignificantMove
   };
 }
