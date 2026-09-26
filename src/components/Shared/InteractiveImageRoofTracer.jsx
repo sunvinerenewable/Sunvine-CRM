@@ -98,16 +98,42 @@ export default function InteractiveImageRoofTracer({
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isLoopClosed, setIsLoopClosed] = useState(() => initialCorners && initialCorners.length >= 3);
 
-  // Keyboard listeners (Shift for Ortho, Ctrl+Z for Undo, Enter to Finish)
+  // SketchUp Dynamic Inline Dimensioning State
+  const [isSketchUpMeasureMode, setIsSketchUpMeasureMode] = useState(true);
+  const [pendingSegment, setPendingSegment] = useState(null);
+  const [segmentLengthInput, setSegmentLengthInput] = useState('');
+  const [scalePctPerFt, setScalePctPerFt] = useState(0);
+  const lengthInputRef = useRef(null);
+
+  // Auto-focus and select measurement input when pending segment activates
+  useEffect(() => {
+    if (pendingSegment && lengthInputRef.current) {
+      const timer = setTimeout(() => {
+        lengthInputRef.current?.focus();
+        lengthInputRef.current?.select();
+      }, 40);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingSegment]);
+
+  // Keyboard listeners (Shift for Ortho, Ctrl+Z for Undo, Enter for dimension confirmation / finish)
   useEffect(() => {
     const handleKeyDown = e => {
       if (e.key === 'Shift') setIsShiftDown(true);
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         handleUndo();
-      } else if (e.key === 'Enter' && activeStep === 'draw' && pins.length >= 3) {
+      } else if (e.key === 'Enter') {
+        if (pendingSegment) {
+          e.preventDefault();
+          confirmPendingSegment();
+        } else if (activeStep === 'draw' && pins.length >= 3) {
+          e.preventDefault();
+          finalizeSidesFromPins(pins);
+        }
+      } else if (e.key === 'Escape' && pendingSegment) {
         e.preventDefault();
-        finalizeSidesFromPins(pins);
+        cancelPendingSegment();
       }
     };
 
@@ -121,7 +147,7 @@ export default function InteractiveImageRoofTracer({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [activeStep, pins]);
+  }, [activeStep, pins, pendingSegment, segmentLengthInput]);
 
   // Sync initialCorners if AI finishes in background
   useEffect(() => {
@@ -166,6 +192,7 @@ export default function InteractiveImageRoofTracer({
   };
 
   // Convert pins into sides with accurate 8-point compass directions (handles non-90° angles!)
+  // Convert pins into sides with accurate 8-point compass directions (handles non-90° angles!)
   const finalizeSidesFromPins = useCallback(
     pinsList => {
       const n = pinsList.length;
@@ -179,7 +206,15 @@ export default function InteractiveImageRoofTracer({
         const dy = p2.yPct - p1.yPct;
 
         const compass = getCompassDirection(dx, dy);
-        const existingLen = sides[i]?.lengthFt || p1.lengthFt || 10;
+        let existingLen = sides[i]?.lengthFt || p1.lengthFt;
+
+        // Auto-calculate closing wall length if scale is calibrated
+        if (scalePctPerFt > 0 && (!existingLen || i === n - 1)) {
+          const pixelDist = Math.hypot(dx, dy);
+          existingLen = Math.max(1, Math.round(pixelDist / scalePctPerFt));
+        } else if (!existingLen) {
+          existingLen = 10;
+        }
 
         newSides.push({
           side: i + 1,
@@ -192,9 +227,10 @@ export default function InteractiveImageRoofTracer({
       setSides(newSides);
       if (onSidesChange) onSidesChange(newSides);
       setIsLoopClosed(true);
+      setPendingSegment(null);
       setActiveStep('dimensions');
     },
-    [sides, onSidesChange]
+    [sides, onSidesChange, scalePctPerFt]
   );
 
   // Apply snap logic (if ortho snap active or shift held, snap to 90°; otherwise FREE point-to-point)
@@ -221,6 +257,82 @@ export default function InteractiveImageRoofTracer({
     };
   };
 
+  // SketchUp Inline Measurement: Cancel current pending segment
+  const cancelPendingSegment = () => {
+    setPendingSegment(null);
+  };
+
+  // SketchUp Inline Measurement: Confirm pending segment with specific value
+  const confirmPendingSegmentWithValue = lenVal => {
+    if (!pendingSegment) return;
+    const len = Math.max(1, parseFloat(lenVal) || pendingSegment.defaultLengthFt || 10);
+    const { fromPin, dx, dy, distPct, compass, wallIndex } = pendingSegment;
+
+    // Unit direction vector
+    const lengthPct = distPct || 1;
+    const ux = dx / lengthPct;
+    const uy = dy / lengthPct;
+
+    // Calibrate or use existing scale (% per foot)
+    let currentScale = scalePctPerFt;
+    if (!currentScale || currentScale <= 0) {
+      currentScale = distPct / len;
+      setScalePctPerFt(currentScale);
+    }
+
+    // Target distance in percentage according to exact feet entered
+    let targetDistPct = len * currentScale;
+
+    // Boundary check so drawing stays nicely in view (2% to 98%)
+    let newXPct = fromPin.xPct + ux * targetDistPct;
+    let newYPct = fromPin.yPct + uy * targetDistPct;
+
+    if (newXPct < 2 || newXPct > 98 || newYPct < 2 || newYPct > 98) {
+      const maxAllowedX = ux > 0 ? (98 - fromPin.xPct) / ux : ux < 0 ? (2 - fromPin.xPct) / ux : Infinity;
+      const maxAllowedY = uy > 0 ? (98 - fromPin.yPct) / uy : uy < 0 ? (2 - fromPin.yPct) / uy : Infinity;
+      const maxAllowedDist = Math.max(5, Math.min(Math.abs(maxAllowedX), Math.abs(maxAllowedY)));
+      if (targetDistPct > maxAllowedDist) {
+        targetDistPct = maxAllowedDist;
+        currentScale = targetDistPct / len;
+        setScalePctPerFt(currentScale);
+        newXPct = fromPin.xPct + ux * targetDistPct;
+        newYPct = fromPin.yPct + uy * targetDistPct;
+      }
+    }
+
+    const newPin = {
+      id: `pin_${wallIndex + 1}`,
+      xPct: Number(Math.max(1, Math.min(99, newXPct)).toFixed(1)),
+      yPct: Number(Math.max(1, Math.min(99, newYPct)).toFixed(1)),
+      label: `P${wallIndex + 1}`,
+      lengthFt: len
+    };
+
+    const newSide = {
+      side: wallIndex,
+      name: `Side ${wallIndex} (${compass.label})`,
+      lengthFt: len,
+      direction: compass.code
+    };
+
+    setPins(prev => [...prev, newPin]);
+    setSides(prev => {
+      const next = [...prev];
+      next[wallIndex - 1] = newSide;
+      if (onSidesChange) onSidesChange(next);
+      return next;
+    });
+
+    setPendingSegment(null);
+  };
+
+  // SketchUp Inline Measurement: Confirm using current input box value
+  const confirmPendingSegment = () => {
+    if (!pendingSegment) return;
+    const len = Math.max(1, parseFloat(segmentLengthInput) || pendingSegment.defaultLengthFt || 10);
+    confirmPendingSegmentWithValue(len);
+  };
+
   // 1. CLICK OR MOUSE DOWN
   const handleMouseDown = e => {
     const coords = getCoordinatesFromEvent(e);
@@ -233,13 +345,22 @@ export default function InteractiveImageRoofTracer({
       const firstPin = pins[0];
       const distToFirst = Math.hypot(coords.xPct - firstPin.xPct, coords.yPct - firstPin.yPct);
       if (distToFirst < 6.5) {
+        if (pendingSegment) {
+          confirmPendingSegment();
+        }
         finalizeSidesFromPins(pins);
         return;
       }
     }
 
+    // If currently awaiting length confirmation for previous click, auto-confirm it first!
+    if (pendingSegment) {
+      confirmPendingSegment();
+      return;
+    }
+
     if (toolMode === 'pen') {
-      // PHOTOSHOP PEN TOOL MODE: Point-to-Point Straight Line
+      // PHOTOSHOP / SKETCHUP PEN TOOL MODE
       if (pins.length === 0) {
         // Place first anchor P1
         setPins([
@@ -251,18 +372,49 @@ export default function InteractiveImageRoofTracer({
             lengthFt: 30
           }
         ]);
+        setPendingSegment(null);
       } else {
         const lastPin = pins[pins.length - 1];
         const snapped = computeTargetPoint(lastPin, coords);
+        const dx = snapped.xPct - lastPin.xPct;
+        const dy = snapped.yPct - lastPin.yPct;
+        const distPct = Math.hypot(dx, dy);
 
-        const newPin = {
-          id: `pin_${pins.length + 1}`,
-          xPct: Number(snapped.xPct.toFixed(1)),
-          yPct: Number(snapped.yPct.toFixed(1)),
-          label: `P${pins.length + 1}`,
-          lengthFt: 10
-        };
-        setPins(prev => [...prev, newPin]);
+        if (distPct < 2) return; // ignore accidental micro-clicks
+
+        const compass = getCompassDirection(dx, dy);
+
+        let estLen = 25;
+        if (scalePctPerFt > 0) {
+          estLen = Math.max(1, Math.round(distPct / scalePctPerFt));
+        } else {
+          estLen = Math.max(5, Math.round(distPct * 0.75));
+        }
+
+        if (isSketchUpMeasureMode) {
+          // Trigger SketchUp Inline Measurement HUD
+          setPendingSegment({
+            fromPin: lastPin,
+            targetCoords: snapped,
+            dx,
+            dy,
+            distPct,
+            compass,
+            wallIndex: pins.length,
+            defaultLengthFt: estLen
+          });
+          setSegmentLengthInput(String(estLen));
+        } else {
+          // Standard instant drop
+          const newPin = {
+            id: `pin_${pins.length + 1}`,
+            xPct: Number(snapped.xPct.toFixed(1)),
+            yPct: Number(snapped.yPct.toFixed(1)),
+            label: `P${pins.length + 1}`,
+            lengthFt: estLen
+          };
+          setPins(prev => [...prev, newPin]);
+        }
       }
     } else {
       // FREEHAND DRAG MODE
@@ -360,10 +512,15 @@ export default function InteractiveImageRoofTracer({
     setCurrentStroke([]);
   };
 
-  // Undo last placed corner
+  // Undo last placed corner or cancel pending segment
   const handleUndo = () => {
+    if (pendingSegment) {
+      setPendingSegment(null);
+      return;
+    }
     if (pins.length === 0) return;
     setPins(prev => prev.slice(0, prev.length - 1));
+    setSides(prev => prev.slice(0, Math.max(0, prev.length - 1)));
     setIsLoopClosed(false);
     setActiveStep('draw');
   };
@@ -372,6 +529,8 @@ export default function InteractiveImageRoofTracer({
   const handleReset = () => {
     setPins([]);
     setSides([]);
+    setPendingSegment(null);
+    setScalePctPerFt(0);
     setIsLoopClosed(false);
     setActiveStep('draw');
   };
@@ -498,9 +657,19 @@ export default function InteractiveImageRoofTracer({
     });
   };
 
-  // Real-time Pen Tool Guide Line from last pin to mouse
+  // Real-time Pen Tool Guide Line from last pin to mouse (or pending confirmed line)
   const getGuideLine = () => {
-    if (activeStep !== 'draw' || pins.length === 0 || !mousePos) return null;
+    if (activeStep !== 'draw') return null;
+    if (pendingSegment) {
+      return {
+        x1: pendingSegment.fromPin.xPct,
+        y1: pendingSegment.fromPin.yPct,
+        x2: pendingSegment.targetCoords.xPct,
+        y2: pendingSegment.targetCoords.yPct,
+        isPending: true
+      };
+    }
+    if (pins.length === 0 || !mousePos) return null;
     const lastPin = pins[pins.length - 1];
     const snapped = computeTargetPoint(lastPin, mousePos);
 
@@ -508,7 +677,8 @@ export default function InteractiveImageRoofTracer({
       x1: lastPin.xPct,
       y1: lastPin.yPct,
       x2: snapped.xPct,
-      y2: snapped.yPct
+      y2: snapped.yPct,
+      isPending: false
     };
   };
 
@@ -585,6 +755,21 @@ export default function InteractiveImageRoofTracer({
                   {isOrthoSnap ? 'square_foot' : 'timeline'}
                 </span>
                 <span>{isOrthoSnap ? '📐 90° Ortho Lock' : '⚡ Free Angle (Any Slant)'}</span>
+              </button>
+
+              {/* SketchUp Instant Dimension Tool Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsSketchUpMeasureMode(!isSketchUpMeasureMode)}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 transition-all cursor-pointer ${
+                  isSketchUpMeasureMode
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+                }`}
+                title="Toggle SketchUp-style instant wall measurement on each corner click"
+              >
+                <span className="material-symbols-outlined text-[16px]">straighten</span>
+                <span>{isSketchUpMeasureMode ? '📏 Auto-Measure (SketchUp)' : 'Free Drop'}</span>
               </button>
 
               {/* Pen Tool vs Freehand Drag */}
@@ -707,18 +892,19 @@ export default function InteractiveImageRoofTracer({
       </div>
 
       {/* Main Drawing Viewport & Overlay Canvas */}
-      <div
-        ref={containerRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleMouseDown}
-        onTouchMove={handleMouseMove}
-        onTouchEnd={handleMouseUp}
-        className={`w-full relative min-h-[460px] max-h-[620px] overflow-auto flex items-center justify-center bg-[#070D18] p-4 select-none ${
-          activeStep === 'draw' ? 'cursor-crosshair' : 'cursor-default'
-        }`}
-      >
+      <div className="relative w-full">
+        <div
+          ref={containerRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onTouchStart={handleMouseDown}
+          onTouchMove={handleMouseMove}
+          onTouchEnd={handleMouseUp}
+          className={`w-full relative min-h-[460px] max-h-[620px] overflow-auto flex items-center justify-center bg-[#070D18] p-4 select-none ${
+            activeStep === 'draw' ? 'cursor-crosshair' : 'cursor-default'
+          }`}
+        >
         <div
           style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center center' }}
           className="relative inline-block transition-transform duration-100"
@@ -782,7 +968,7 @@ export default function InteractiveImageRoofTracer({
               );
             })}
 
-            {/* Photoshop Pen Tool: Live Rubber-Band Straight Guide Line from last placed pin to mouse cursor */}
+            {/* Photoshop / SketchUp: Live Straight Guide Line from last placed pin to mouse cursor */}
             {activeStep === 'draw' && guideLine && !isLoopClosed && (
               <g>
                 <line
@@ -790,22 +976,59 @@ export default function InteractiveImageRoofTracer({
                   y1={`${guideLine.y1}%`}
                   x2={`${guideLine.x2}%`}
                   y2={`${guideLine.y2}%`}
-                  stroke="#38BDF8"
-                  strokeWidth="3"
-                  strokeDasharray="5 3"
+                  stroke={guideLine.isPending ? '#10B981' : '#38BDF8'}
+                  strokeWidth={guideLine.isPending ? '4.5' : '3'}
+                  strokeDasharray={guideLine.isPending ? '6 3' : '5 3'}
                   strokeLinecap="round"
                 />
                 <circle
                   cx={`${guideLine.x2}%`}
                   cy={`${guideLine.y2}%`}
-                  r="5"
-                  fill="#38BDF8"
+                  r={guideLine.isPending ? '7' : '5'}
+                  fill={guideLine.isPending ? '#10B981' : '#38BDF8'}
                   stroke="#0F172A"
                   strokeWidth="2"
                 />
+                {guideLine.isPending && (
+                  <circle
+                    cx={`${guideLine.x2}%`}
+                    cy={`${guideLine.y2}%`}
+                    r="11"
+                    fill="none"
+                    stroke="#10B981"
+                    strokeWidth="2"
+                    strokeDasharray="3 2"
+                    className="animate-spin"
+                  />
+                )}
               </g>
             )}
           </svg>
+
+          {/* Real-time Guide Line Dimension Tag */}
+          {activeStep === 'draw' && guideLine && !isLoopClosed && (
+            <div
+              style={{
+                left: `${(guideLine.x1 + guideLine.x2) / 2}%`,
+                top: `${(guideLine.y1 + guideLine.y2) / 2}%`,
+                transform: 'translate(-50%, -140%)'
+              }}
+              className={`absolute z-30 pointer-events-none px-2.5 py-0.5 rounded-md font-mono text-[11px] font-black shadow-2xl whitespace-nowrap transition-all flex items-center gap-1 ${
+                guideLine.isPending
+                  ? 'bg-emerald-400 text-slate-950 border border-emerald-300 ring-2 ring-emerald-400/50 animate-pulse'
+                  : 'bg-slate-950/90 text-sky-300 border border-sky-400/40'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px]">straighten</span>
+              <span>
+                {guideLine.isPending
+                  ? `${segmentLengthInput || pendingSegment?.defaultLengthFt} ft`
+                  : scalePctPerFt > 0
+                  ? `${Math.max(1, Math.round(Math.hypot(guideLine.x2 - guideLine.x1, guideLine.y2 - guideLine.y1) / scalePctPerFt))} ft`
+                  : 'Aim & Click'}
+              </span>
+            </div>
+          )}
 
           {/* Sleek, Tiny CAD Corner Pinpoints (Non-blocking during draw!) */}
           {pins.map((pin, idx) => {
@@ -898,6 +1121,93 @@ export default function InteractiveImageRoofTracer({
         </div>
       </div>
 
+      {/* Dynamic SketchUp Inline Dimension HUD */}
+        {activeStep === 'draw' && pendingSegment && (
+          <div
+            onMouseDown={e => e.stopPropagation()}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md border-2 border-emerald-500 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 max-w-lg w-[94%] sm:w-auto animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
+                  दीवार {pendingSegment.wallIndex} का माप ({pendingSegment.compass?.label || pendingSegment.compass?.code})
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
+                SketchUp Auto-Scale 📐
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <div className="flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-700 focus-within:border-emerald-400 transition-colors">
+                <span className="material-symbols-outlined text-emerald-400 text-[18px]">straighten</span>
+                <input
+                  ref={lengthInputRef}
+                  type="number"
+                  min="1"
+                  max="500"
+                  step="0.5"
+                  value={segmentLengthInput}
+                  onChange={e => setSegmentLengthInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      confirmPendingSegment();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      cancelPendingSegment();
+                    }
+                  }}
+                  className="w-20 bg-transparent text-white font-mono font-black text-lg outline-none text-center"
+                  placeholder={String(pendingSegment.defaultLengthFt)}
+                />
+                <span className="text-xs font-bold text-slate-400">ft</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={confirmPendingSegment}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-[#6CBF3D] hover:brightness-110 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-lg cursor-pointer whitespace-nowrap active:scale-95 transition-transform"
+              >
+                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                <span>Confirm &amp; Next (Enter ↵)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={cancelPendingSegment}
+                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 transition-transform"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+                <span>Cancel</span>
+              </button>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-slate-800/80">
+              <span className="text-[10px] text-slate-400 font-semibold shrink-0">Quick presets:</span>
+              {[10, 15, 20, 25, 30, 40, 50].map(val => (
+                <button
+                  key={`quick_${val}`}
+                  type="button"
+                  onClick={() => confirmPendingSegmentWithValue(val)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold cursor-pointer transition-all shrink-0 ${
+                    parseFloat(segmentLengthInput) === val
+                      ? 'bg-emerald-500 text-slate-950 font-black ring-2 ring-emerald-400/50'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {val}&apos;
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* STAGE 1 BOTTOM HELPER BAR */}
       {activeStep === 'draw' && (
         <div className="p-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-300 flex-wrap gap-2">
@@ -910,13 +1220,17 @@ export default function InteractiveImageRoofTracer({
             </span>
             <span>•</span>
             <span className="text-slate-400">
-              {pins.length === 0 ? (
+              {pendingSegment ? (
+                <span className="text-emerald-400 font-semibold">
+                  👉 Side {pendingSegment.wallIndex} की लम्बाई (feet) भरें और <b>Enter</b> दबाएं—लाइन सही अनुपात (scale) में बनेगी।
+                </span>
+              ) : pins.length === 0 ? (
                 <>
                   👉 नक़्शे के पहले कोने (Corner 1) पर <b>क्लिक</b> करें। <b>(Point-to-Point सीधी लाइन चालू है—कोई भी तिरछा या 90° कोना बना सकते हैं)</b>
                 </>
               ) : pins.length < 3 ? (
                 <>
-                  👉 अगले कोने पर क्लिक करते जाएं—सीधी लाइन अपने-आप जुड़ती जाएगी (तिरछी या सीधी दोनों सम्भव)।
+                  👉 अगले कोने पर क्लिक करते जाएं—SketchUp की तरह तुरंत फीट (feet) माप भरें।
                 </>
               ) : (
                 <>
