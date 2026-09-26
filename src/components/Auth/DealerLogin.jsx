@@ -234,15 +234,25 @@ export default function DealerLogin() {
             </span>
           </div>
 
-          {/* Super Admin Login Button */}
-          <button
-            className="w-full h-10 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-secondary-fixed font-label-md text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] border border-surface-container-high"
-            onClick={() => setAuthView('admin_login')}
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[18px] text-primary">shield</span>
-            <span>Super Admin &amp; HQ Login</span>
-          </button>
+          {/* Portal Switchers */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="h-10 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-secondary-fixed font-label-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] border border-surface-container-high"
+              onClick={() => setAuthView('staff_login')}
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[16px] text-emerald-600">badge</span>
+              <span>Staff Login</span>
+            </button>
+            <button
+              className="h-10 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-secondary-fixed font-label-md text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] border border-surface-container-high"
+              onClick={() => setAuthView('admin_login')}
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[16px] text-primary">shield</span>
+              <span>Admin Login</span>
+            </button>
+          </div>
         </div>
 
         {/* Partner Support Box */}
@@ -509,15 +519,25 @@ export default function DealerLogin() {
                 </span>
               </div>
 
-              {/* Switch to Super Admin Login */}
-              <button
-                className="w-full h-10 bg-surface-container-lowest hover:bg-surface-container-low text-on-surface font-label-xs sm:font-label-sm font-medium rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-2 border border-surface-container-high"
-                onClick={() => setAuthView('admin_login')}
-                type="button"
-              >
-                <span className="material-symbols-outlined text-primary text-base">shield</span>
-                <span>Super Admin &amp; Headquarters Login</span>
-              </button>
+              {/* Portal Switchers */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="h-10 bg-surface-container-lowest hover:bg-surface-container-low text-on-surface font-label-xs sm:font-label-sm font-medium rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 border border-surface-container-high cursor-pointer"
+                  onClick={() => setAuthView('staff_login')}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-emerald-600 text-base">badge</span>
+                  <span>Staff Workspace</span>
+                </button>
+                <button
+                  className="h-10 bg-surface-container-lowest hover:bg-surface-container-low text-on-surface font-label-xs sm:font-label-sm font-medium rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 border border-surface-container-high cursor-pointer"
+                  onClick={() => setAuthView('admin_login')}
+                  type="button"
+                >
+                  <span className="material-symbols-outlined text-primary text-base">shield</span>
+                  <span>Admin HQ Login</span>
+                </button>
+              </div>
 
               {/* Quick Help & Partner Metrics */}
               <div className="mt-4 p-2.5 rounded-lg bg-surface-container-low flex items-center justify-between">

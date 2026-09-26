@@ -16,6 +16,10 @@ import {
   DEFAULT_CAPACITY_BOM,
   resolveCapacityBom
 } from '../data/standardBomData';
+import {
+  DEFAULT_STAFF,
+  DEFAULT_CUSTOMER_FILES
+} from '../data/staffData';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
@@ -49,7 +53,11 @@ const TAB_TO_PATH = {
   pricing_master: '/admin/pricing',
   hardware_master: '/admin/hardware',
   all_quotes: '/admin/quotations',
-  admin_settings: '/admin/settings'
+  admin_settings: '/admin/settings',
+  staff_dashboard: '/staff',
+  staff_files: '/staff/files',
+  staff_new_lead: '/staff/new-lead',
+  staff_map: '/staff/map'
 };
 
 const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
@@ -57,7 +65,8 @@ const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   return acc;
 }, {
   '/profile': 'dealer_settings',
-  '/admin/new-quotation': 'create_quote'
+  '/admin/new-quotation': 'create_quote',
+  '/staff': 'staff_dashboard'
 });
 
 const getInitialTabFromUrl = () => {
@@ -283,6 +292,21 @@ const safeSetItem = (key, value) => {
     setActiveDraftQuote(null);
   };
 
+  // Current Logged-in Staff Member
+  const [currentStaff, setCurrentStaff] = useState(() => {
+    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]);
+  });
+
+  // Sales Staff Directory (Managed by Admin, logged in by Staff)
+  const [staffList, setStaffList] = useState(() => {
+    return safeJsonParse('sunvine_staff_list', DEFAULT_STAFF);
+  });
+
+  // Customer Files Pipeline (Synchronized between Admin and Sales Staff)
+  const [customerFiles, setCustomerFiles] = useState(() => {
+    return safeJsonParse('sunvine_customer_files', DEFAULT_CUSTOMER_FILES);
+  });
+
   // System & Compliance Notifications
   const [notifications, setNotifications] = useState(() => {
     if (!isDbUpToDate) return DEFAULT_NOTIFICATIONS;
@@ -330,6 +354,12 @@ const safeSetItem = (key, value) => {
             break;
           case 'sunvine_seen_catalog_items':
             setSeenCatalogItemIds(parsed);
+            break;
+          case 'sunvine_staff_list':
+            setStaffList(parsed);
+            break;
+          case 'sunvine_customer_files':
+            setCustomerFiles(parsed);
             break;
           default:
             break;
@@ -409,6 +439,18 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
   }, [seenCatalogItemIds]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_current_staff', currentStaff);
+  }, [currentStaff]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_staff_list', staffList);
+  }, [staffList]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_customer_files', customerFiles);
+  }, [customerFiles]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -526,6 +568,9 @@ const safeSetItem = (key, value) => {
     setRole(userRole);
     if (userRole === 'admin') {
       setActiveTab('admin_dashboard');
+    } else if (userRole === 'staff') {
+      setActiveTab('staff_dashboard');
+      if (userProfile) setCurrentStaff(userProfile);
     } else {
       setActiveTab('dashboard');
       if (userProfile) setCurrentDealer(userProfile);
@@ -536,6 +581,46 @@ const safeSetItem = (key, value) => {
     setIsAuthenticated(false);
     setAuthView('dealer_login');
     localStorage.removeItem('sunvine_auth');
+    localStorage.removeItem('sunvine_current_staff');
+  };
+
+  // Staff and Customer File Actions
+  const addStaff = (newStaff) => {
+    setStaffList(prev => [newStaff, ...prev]);
+  };
+
+  const updateStaff = (staffId, updatedFields) => {
+    setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, ...updatedFields } : s));
+    if (currentStaff?.id === staffId) {
+      setCurrentStaff(prev => ({ ...prev, ...updatedFields }));
+    }
+  };
+
+  const updateStaffPassword = (staffId, newPassword) => {
+    setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, password: newPassword } : s));
+  };
+
+  const addCustomerFile = (newFile) => {
+    setCustomerFiles(prev => [newFile, ...prev]);
+    // Also update staff totalFiles and pipelineKw
+    if (newFile.staffId) {
+      setStaffList(prev => prev.map(s => s.id === newFile.staffId ? {
+        ...s,
+        totalFiles: (s.totalFiles || 0) + 1,
+        pipelineKw: Number(((s.pipelineKw || 0) + (newFile.solarSystemKw || 0)).toFixed(1))
+      } : s));
+    }
+  };
+
+  const updateCustomerFile = (fileId, updatedFields) => {
+    setCustomerFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updatedFields } : f));
+  };
+
+  const updateFileStatus = (fileId, nextStatus) => {
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      return { ...f, status: nextStatus };
+    }));
   };
 
   const updateDealerProfile = (updatedFields) => {
@@ -874,6 +959,18 @@ const safeSetItem = (key, value) => {
         currentDealer,
         setCurrentDealer,
         updateDealerProfile,
+        currentStaff,
+        setCurrentStaff,
+        staffList,
+        setStaffList,
+        customerFiles,
+        setCustomerFiles,
+        addStaff,
+        updateStaff,
+        updateStaffPassword,
+        addCustomerFile,
+        updateCustomerFile,
+        updateFileStatus,
         pricingMaster,
         updatePricingMaster,
         pricingPresets,

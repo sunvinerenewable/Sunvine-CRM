@@ -8,6 +8,7 @@ export default function Navigation() {
     activeTab,
     setActiveTab,
     currentDealer,
+    currentStaff,
     logout,
     unreadNotificationsCount,
     clearEditingQuotation,
@@ -63,7 +64,14 @@ export default function Navigation() {
     { id: 'admin_settings', label: 'Master Governance', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
-  const menuItems = role === 'admin' ? adminMenu : dealerMenu;
+  const staffMenu = [
+    { id: 'staff_dashboard', label: 'My Dashboard', mobileLabel: 'Dashboard', icon: 'dashboard' },
+    { id: 'staff_files', label: 'Customer Files', mobileLabel: 'My Files', icon: 'folder' },
+    { id: 'staff_new_lead', label: 'New Customer Lead', mobileLabel: 'New Lead', icon: 'person_add' },
+    { id: 'staff_map', label: 'Nearby Radar (AI)', mobileLabel: 'Radar Map', icon: 'radar' },
+  ];
+
+  const menuItems = role === 'admin' ? adminMenu : role === 'staff' ? staffMenu : dealerMenu;
 
   return (
     <>
@@ -76,11 +84,11 @@ export default function Navigation() {
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain cursor-pointer"
               src="/sunvine_logo_white.png"
-              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : 'dashboard')}
+              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? 'staff_dashboard' : 'dashboard')}
             />
             <div className="flex flex-col">
               <span className="font-label-xs text-label-xs text-secondary-fixed-dim tracking-wider uppercase font-semibold">
-                {role === 'admin' ? 'Portal' : 'Dealer Portal'}
+                {role === 'admin' ? 'Portal' : role === 'staff' ? 'Staff Portal' : 'Dealer Portal'}
               </span>
             </div>
           </div>
@@ -169,10 +177,18 @@ export default function Navigation() {
               />
               <div className="hidden sm:flex flex-col text-left max-w-[90px] md:max-w-[120px] lg:max-w-[180px] truncate">
                 <span className="font-label-md text-label-md text-on-surface leading-tight truncate">
-                  {role === 'admin' ? 'Admin Desk' : currentDealer?.firmName || 'Rajesh Solar Solutions'}
+                  {role === 'admin'
+                    ? 'Admin Desk'
+                    : role === 'staff'
+                    ? currentStaff?.name || 'Field Solar Executive'
+                    : currentDealer?.firmName || 'Rajesh Solar Solutions'}
                 </span>
                 <span className="font-label-xs text-label-xs text-secondary leading-tight truncate">
-                  {role === 'admin' ? 'System Administrator' : 'Authorized Dealer'}
+                  {role === 'admin'
+                    ? 'System Administrator'
+                    : role === 'staff'
+                    ? currentStaff?.role || 'Sales Representative'
+                    : 'Authorized Dealer'}
                 </span>
               </div>
               <span

@@ -275,14 +275,24 @@ export default function AdminLogin() {
 
             {/* Back to Dealer Portal */}
             <div className="mt-4 text-center">
-              <button
-                type="button"
-                onClick={() => setAuthView('dealer_login')}
-                className="text-xs font-semibold text-secondary hover:text-primary transition-colors inline-flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-sm">arrow_back</span>
-                <span>Return to Dealer Network Login</span>
-              </button>
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAuthView('dealer_login')}
+                  className="text-xs font-semibold text-secondary hover:text-primary transition-colors inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">arrow_back</span>
+                  <span>Dealer Network Login</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthView('staff_login')}
+                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">badge</span>
+                  <span>Staff Workspace Login</span>
+                </button>
+              </div>
             </div>
 
             {/* Divider: EMERGENCY PROTOCOL */}

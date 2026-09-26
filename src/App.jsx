@@ -11,6 +11,7 @@ import NetworkStatusBanner from './components/Shared/NetworkStatusBanner';
 // Authentication Views
 import DealerLogin from './components/Auth/DealerLogin';
 import AdminLogin from './components/Auth/AdminLogin';
+import StaffLogin from './components/Auth/StaffLogin';
 
 // Dealer Portal Views
 import DealerDashboard from './components/DealerPortal/DealerDashboard';
@@ -19,6 +20,12 @@ import QuotationPreview from './components/DealerPortal/QuotationPreview';
 import MyQuotations from './components/DealerPortal/MyQuotations';
 import DealerProfile from './components/DealerPortal/DealerProfile';
 import DealerSettings from './components/DealerPortal/DealerSettings';
+
+// Staff Portal Views
+import StaffDashboard from './components/StaffPortal/StaffDashboard';
+import StaffFiles from './components/StaffPortal/StaffFiles';
+import StaffNewLead from './components/StaffPortal/StaffNewLead';
+import StaffRadarMap from './components/StaffPortal/StaffRadarMap';
 
 // Admin Portal Views
 import AdminDashboard from './components/AdminPortal/AdminDashboard';
@@ -59,7 +66,13 @@ function MainApp() {
   if (!isAuthenticated) {
     return (
       <>
-        {authView === 'admin_login' ? <AdminLogin /> : <DealerLogin />}
+        {authView === 'admin_login' ? (
+          <AdminLogin />
+        ) : authView === 'staff_login' ? (
+          <StaffLogin />
+        ) : (
+          <DealerLogin />
+        )}
         {!splashFinished && <SplashScreen onFinish={handleSplashFinish} />}
       </>
     );
@@ -93,6 +106,21 @@ function MainApp() {
           return <AdminSettings />;
         default:
           return <AdminDashboard />;
+      }
+    }
+
+    if (role === 'staff') {
+      switch (activeTab) {
+        case 'staff_dashboard':
+          return <StaffDashboard />;
+        case 'staff_files':
+          return <StaffFiles />;
+        case 'staff_new_lead':
+          return <StaffNewLead />;
+        case 'staff_map':
+          return <StaffRadarMap />;
+        default:
+          return <StaffDashboard />;
       }
     }
 
