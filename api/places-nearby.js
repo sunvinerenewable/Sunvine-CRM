@@ -739,12 +739,13 @@ export default async function handler(req, res) {
     const geoapifyKey =
       (body.geoapifyKey || '').trim() ||
       process.env.GEOAPIFY_API_KEY ||
-      process.env.VITE_GEOAPIFY_API_KEY;
+      process.env.VITE_GEOAPIFY_API_KEY ||
+      '0de20dc14650471aa570d7463841f36d';
 
-    if (finalLeads.length === 0 && geoapifyKey && geoapifyKey.length > 5) {
-      diagnostics.googleApiType = 'Geoapify Places API (Free Tier)';
+    if (geoapifyKey && geoapifyKey.length > 5) {
+      diagnostics.googleApiType = 'Geoapify Places API + Solar Intelligence';
       try {
-        const geoapifyUrl = `https://api.geoapify.com/v2/places?categories=commercial.energy,service.solar,commercial.electronics,production.factory&filter=circle:${longitude},${latitude},${radiusMeters}&bias=proximity:${longitude},${latitude}&limit=30&apiKey=${geoapifyKey}`;
+        const geoapifyUrl = `https://api.geoapify.com/v2/places?categories=commercial,production,power,office&filter=circle:${longitude},${latitude},${radiusMeters}&bias=proximity:${longitude},${latitude}&limit=30&apiKey=${geoapifyKey}`;
         const gRes = await fetch(geoapifyUrl, { signal: AbortSignal.timeout(5000) });
         if (gRes.ok) {
           const gData = await gRes.json();
@@ -753,14 +754,15 @@ export default async function handler(req, res) {
               const props = f.properties || {};
               const pLat = props.lat;
               const pLon = props.lon;
-              if (pLat && pLon && props.name) {
+              const placeName = props.name || props.formatted || '';
+              if (pLat && pLon && placeName && !placeName.toLowerCase().includes('substation')) {
                 const dist = calculateHaversineDistanceMeters(latitude, longitude, pLat, pLon);
                 if (dist <= radiusMeters) {
                   finalLeads.push({
                     id: props.place_id || `geoapify-${Math.random()}`,
                     google_place_id: props.place_id || 'N/A',
-                    name: props.name,
-                    category: props.categories?.includes('commercial.energy') ? 'Solar Energy Company' : 'Solar Equipment & Services',
+                    name: placeName,
+                    category: 'Industrial & Energy Facility',
                     type: 'epc',
                     address: props.formatted || `${props.street || ''}, ${props.city || ''}`,
                     city: props.city || props.county || 'Local Area',
@@ -770,14 +772,14 @@ export default async function handler(req, res) {
                     distanceKm: Number((dist / 1000).toFixed(2)),
                     phone: props.contact?.phone || '',
                     website: props.website || null,
-                    googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(props.name + ' ' + (props.formatted || ''))}`,
+                    googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName + ' ' + (props.formatted || ''))}`,
                     rating: 4.8,
                     reviewsCount: 15,
                     businessStatus: 'OPERATIONAL',
                     isOpen: true,
-                    relevanceScore: 90,
-                    relevanceTier: 'HIGH RELEVANCE',
-                    source: 'Geoapify Places API (Free Tier)',
+                    relevanceScore: 78,
+                    relevanceTier: 'MEDIUM RELEVANCE',
+                    source: 'Geoapify Places API',
                     verified: true
                   });
                 }
@@ -790,11 +792,15 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. Fallback: If no leads yet, execute Autonomous Free Discovery Engine (Option 3)
-    if (finalLeads.length === 0) {
-      diagnostics.googleApiType = 'Autonomous Free Solar Discovery Engine (Option 3 - No Credit Card)';
-      const autoLeads = await discoverAutonomousLeads(latitude, longitude, radiusMeters, diagnostics);
-      finalLeads = autoLeads;
+    // 3. Merge with High-Precision Regional Solar Directory (ensures verified solar EPCs & shops are present)
+    const autoLeads = await discoverAutonomousLeads(latitude, longitude, radiusMeters, diagnostics);
+    // Combine and deduplicate by name
+    const existingNames = new Set(finalLeads.map(l => l.name.toLowerCase().trim()));
+    for (const al of autoLeads) {
+      if (!existingNames.has(al.name.toLowerCase().trim())) {
+        finalLeads.push(al);
+        existingNames.add(al.name.toLowerCase().trim());
+      }
     }
 
     // STRICT PROXIMITY SORTING: Nearest business is #1 at top!
