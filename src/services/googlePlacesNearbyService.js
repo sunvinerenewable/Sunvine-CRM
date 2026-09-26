@@ -41,8 +41,10 @@ export const DEFAULT_ACTIVE_QUERIES = [
   'renewable energy company'
 ];
 
+export const DEFAULT_GOOGLE_API_KEY = 'AIzaSyDjDmfOdZmMPOnlRhkV5I1aPxRvgGCMN-Y';
+
 export function getSavedGooglePlacesApiKey() {
-  return localStorage.getItem(GCP_KEY_STORAGE_KEY) || '';
+  return localStorage.getItem(GCP_KEY_STORAGE_KEY) || import.meta.env.VITE_GOOGLE_PLACES_API_KEY || DEFAULT_GOOGLE_API_KEY;
 }
 
 export function saveGooglePlacesApiKey(key) {

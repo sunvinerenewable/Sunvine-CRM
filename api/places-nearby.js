@@ -574,12 +574,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // Google API Key precedence: Server env -> Client override
+    // Google API Key precedence: Server env -> Client override -> User default key
     const apiKey =
       process.env.GOOGLE_PLACES_API_KEY ||
       process.env.VITE_GOOGLE_PLACES_API_KEY ||
       process.env.GOOGLE_MAPS_API_KEY ||
-      clientKey;
+      clientKey ||
+      'AIzaSyDjDmfOdZmMPOnlRhkV5I1aPxRvgGCMN-Y';
 
     const keywords = Array.isArray(body.keywords) && body.keywords.length > 0
       ? body.keywords
