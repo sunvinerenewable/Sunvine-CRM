@@ -473,6 +473,7 @@ export default function RooftopDesigner({
       customVertices: tracedData.customVertices,
       walls: wallsWithPoints,
       corners: tracedData.corners,
+      obstacles: tracedData.obstacles || config.obstacles || [],
       safeSolarZone: safeZone,
       isPendingUpload: false
     };

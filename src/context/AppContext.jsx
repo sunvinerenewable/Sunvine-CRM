@@ -45,6 +45,7 @@ const TAB_TO_PATH = {
   dealer_settings: '/settings',
   admin_dashboard: '/admin',
   dealers_mgmt: '/admin/dealers',
+  staff_mgmt: '/admin/staff',
   pricing_master: '/admin/pricing',
   hardware_master: '/admin/hardware',
   all_quotes: '/admin/quotations',

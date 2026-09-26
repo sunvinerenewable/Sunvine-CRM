@@ -18,13 +18,30 @@ export default function PanelLayoutVisualizer({
   selectedLayoutId = null,
   onSelectLayout = null,
   isModal = false,
-  onClose = null
+  onClose = null,
+  initialRoofConfig = null,
+  onRoofConfigChange = null
 }) {
   const [panelCount, setPanelCount] = useState(initialPanelCount || 6);
   const [activeCategory, setActiveCategory] = useState('all');
   const [selectedId, setSelectedId] = useState(selectedLayoutId || 'portrait_2x3');
   const [activeViewTab, setActiveViewTab] = useState('roof'); // Step 1: Rooftop Setup first
-  const [roofConfig, setRoofConfig] = useState(DEFAULT_ROOF_CONFIG);
+  const [roofConfig, setRoofConfigState] = useState(() => {
+    if (initialRoofConfig) return initialRoofConfig;
+    try {
+      const saved = localStorage.getItem('sunvine_saved_roof_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return DEFAULT_ROOF_CONFIG;
+  });
+
+  const setRoofConfig = newCfg => {
+    setRoofConfigState(newCfg);
+    if (onRoofConfigChange) onRoofConfigChange(newCfg);
+    try {
+      localStorage.setItem('sunvine_saved_roof_config', JSON.stringify(newCfg));
+    } catch (e) {}
+  };
   const [frontLegHeightFt, setFrontLegHeightFt] = useState(2.5);
   const [tiltDegrees, setTiltDegrees] = useState(18);
 

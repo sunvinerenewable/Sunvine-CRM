@@ -91,6 +91,7 @@ export default function SolarStructure3DViewer({
 
   const controlsRef = useRef(null);
   const cameraRef = useRef(null);
+  const savedCameraStateRef = useRef(null);
 
   const activeRoof = useMemo(() => {
     return roofConfig || DEFAULT_ROOF_CONFIG;
@@ -125,41 +126,116 @@ export default function SolarStructure3DViewer({
     };
   }, [activeRoof, polyBounds]);
 
-  // Clamped structure center in feet (PHYSICALLY PREVENTS OVERHANGING WALLS!)
+  // Helper: test if point (px, pz) is inside polygon verts [{x, z}]
+  const isPointInPoly = (px, pz, verts) => {
+    let inside = false;
+    const n = verts.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = verts[i].x, zi = verts[i].z;
+      const xj = verts[j].x, zj = verts[j].z;
+      const intersect = ((zi > pz) !== (zj > pz)) &&
+        (px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  // Helper: minimum distance from (px, pz) to any polygon segment
+  const minDistanceToPolyWalls = (px, pz, verts) => {
+    let minDist = Infinity;
+    const n = verts.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const x1 = verts[j].x, z1 = verts[j].z;
+      const x2 = verts[i].x, z2 = verts[i].z;
+      const l2 = (x2 - x1) ** 2 + (z2 - z1) ** 2;
+      let d;
+      if (l2 === 0) {
+        d = Math.hypot(px - x1, pz - z1);
+      } else {
+        let t = ((px - x1) * (x2 - x1) + (pz - z1) * (z2 - z1)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        d = Math.hypot(px - (x1 + t * (x2 - x1)), pz - (z1 + t * (z2 - z1)));
+      }
+      if (d < minDist) minDist = d;
+    }
+    return minDist;
+  };
+
+  // Helper: check if structure placed at (cx, cz) stays strictly inside polygon
+  const doesStructureFitAt = (cx, cz, verts, wFt, dFt, margin = 0.8) => {
+    const halfW = wFt / 2;
+    const halfD = dFt / 2;
+    const testPoints = [
+      { x: cx - halfW, z: cz - halfD },
+      { x: cx + halfW, z: cz - halfD },
+      { x: cx - halfW, z: cz + halfD },
+      { x: cx + halfW, z: cz + halfD },
+      { x: cx, z: cz - halfD },
+      { x: cx, z: cz + halfD },
+      { x: cx - halfW, z: cz },
+      { x: cx + halfW, z: cz },
+      { x: cx, z: cz }
+    ];
+
+    for (let p of testPoints) {
+      if (!isPointInPoly(p.x, p.z, verts)) return false;
+      if (minDistanceToPolyWalls(p.x, p.z, verts) < margin) return false;
+    }
+    return true;
+  };
+
+  // Clamped structure center in feet (STRICT POLYGON-AWARE COLLISION & WALL CLAMPING!)
   const clampedMountCenter = useMemo(() => {
-    const rawX = baseCenter.x + nudgeXFt;
-    const rawZ = baseCenter.z + nudgeZFt;
+    let startX = baseCenter.x;
+    let startZ = baseCenter.z;
 
-    // Minimum safety wall clearance of 2.0 ft
-    const margin = 2.0;
-    const minAllowedX = polyBounds.minX + (arrayWFt / 2) + margin;
-    const maxAllowedX = polyBounds.maxX - (arrayWFt / 2) - margin;
-    const minAllowedZ = polyBounds.minZ + (arrayDFt / 2) + margin;
-    const maxAllowedZ = polyBounds.maxZ - (arrayDFt / 2) - margin;
+    // Check if start fits; if not, fallback to centroid
+    if (!doesStructureFitAt(startX, startZ, polyVerts, arrayWFt, arrayDFt, 0.2)) {
+      let cx = 0, cz = 0;
+      polyVerts.forEach(v => { cx += v.x; cz += v.z; });
+      startX = cx / (polyVerts.length || 1);
+      startZ = cz / (polyVerts.length || 1);
+    }
 
-    const clampedX = minAllowedX <= maxAllowedX 
-      ? Math.max(minAllowedX, Math.min(maxAllowedX, rawX))
-      : (polyBounds.minX + polyBounds.maxX) / 2;
+    // Try shifting along X by nudgeXFt safely
+    let currentX = startX;
+    const stepX = nudgeXFt >= 0 ? 0.25 : -0.25;
+    const targetX = startX + nudgeXFt;
+    for (let tx = startX; nudgeXFt >= 0 ? tx <= targetX : tx >= targetX; tx += stepX) {
+      if (doesStructureFitAt(tx, startZ, polyVerts, arrayWFt, arrayDFt, 0.6)) {
+        currentX = tx;
+      } else {
+        break; // Stop smoothly before touching wall!
+      }
+    }
 
-    const clampedZ = minAllowedZ <= maxAllowedZ
-      ? Math.max(minAllowedZ, Math.min(maxAllowedZ, rawZ))
-      : (polyBounds.minZ + polyBounds.maxZ) / 2;
+    // Try shifting along Z by nudgeZFt safely
+    let currentZ = startZ;
+    const stepZ = nudgeZFt >= 0 ? 0.25 : -0.25;
+    const targetZ = startZ + nudgeZFt;
+    for (let tz = startZ; nudgeZFt >= 0 ? tz <= targetZ : tz >= targetZ; tz += stepZ) {
+      if (doesStructureFitAt(currentX, tz, polyVerts, arrayWFt, arrayDFt, 0.6)) {
+        currentZ = tz;
+      } else {
+        break; // Stop smoothly before touching wall!
+      }
+    }
 
-    // South is -Z (top wall), North is +Z (bottom wall)
-    const southClearance = Number((clampedZ - (arrayDFt / 2) - polyBounds.minZ).toFixed(1));
-    const northClearance = Number((polyBounds.maxZ - (clampedZ + (arrayDFt / 2))).toFixed(1));
-    const westClearance = Number((clampedX - (arrayWFt / 2) - polyBounds.minX).toFixed(1));
-    const eastClearance = Number((polyBounds.maxX - (clampedX + (arrayWFt / 2))).toFixed(1));
+    // Measure actual distance from structure edges to nearest wall in each cardinal direction
+    const southClearance = Number(minDistanceToPolyWalls(currentX, currentZ - arrayDFt / 2, polyVerts).toFixed(1));
+    const northClearance = Number(minDistanceToPolyWalls(currentX, currentZ + arrayDFt / 2, polyVerts).toFixed(1));
+    const westClearance = Number(minDistanceToPolyWalls(currentX - arrayWFt / 2, currentZ, polyVerts).toFixed(1));
+    const eastClearance = Number(minDistanceToPolyWalls(currentX + arrayWFt / 2, currentZ, polyVerts).toFixed(1));
 
     return {
-      x: clampedX,
-      z: clampedZ,
+      x: Number(currentX.toFixed(2)),
+      z: Number(currentZ.toFixed(2)),
       southClearance,
       northClearance,
       westClearance,
       eastClearance
     };
-  }, [baseCenter, nudgeXFt, nudgeZFt, polyBounds, arrayWFt, arrayDFt]);
+  }, [baseCenter, nudgeXFt, nudgeZFt, polyVerts, arrayWFt, arrayDFt]);
 
   // Check whether active layout physically fits on this rooftop
   const roofFit = useMemo(() => {
@@ -334,7 +410,11 @@ export default function SolarStructure3DViewer({
     scene.background = new THREE.Color(0xF0F4F8); // Bright outdoor sky
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 150);
-    camera.position.set(12, 10, 16);
+    if (savedCameraStateRef.current) {
+      camera.position.copy(savedCameraStateRef.current.position);
+    } else {
+      camera.position.set(12, 10, 16);
+    }
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -352,8 +432,20 @@ export default function SolarStructure3DViewer({
     controls.maxPolarAngle = Math.PI / 2 + 0.08;
     controls.minDistance = 3;
     controls.maxDistance = 55;
-    controls.target.set(0, 0, 0);
+    if (savedCameraStateRef.current) {
+      controls.target.copy(savedCameraStateRef.current.target);
+    } else {
+      controls.target.set(0, 0, 0);
+    }
     controlsRef.current = controls;
+
+    const handleControlsChange = () => {
+      savedCameraStateRef.current = {
+        position: camera.position.clone(),
+        target: controls.target.clone()
+      };
+    };
+    controls.addEventListener('change', handleControlsChange);
 
     // 3. Lighting (Sun in South = -Z direction, dynamic with sunHour)
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
@@ -549,20 +641,64 @@ export default function SolarStructure3DViewer({
         const midX = (x1 + x2) / 2;
         const midZ = (z1 + z2) / 2;
 
-        const wallGeo = new THREE.BoxGeometry(segLen, parapetHeightM, parapetThicknessM);
-        const wallMesh = new THREE.Mesh(wallGeo, parapetMat);
-        wallMesh.position.set(midX, parapetHeightM / 2, midZ);
-        wallMesh.rotation.y = -segAngle;
-        wallMesh.castShadow = true;
-        wallMesh.receiveShadow = true;
-        scene.add(wallMesh);
+        if (w?.hasOpening && (w?.openingWidthFt || 3.5) > 0) {
+          const openW = Math.min(segLen * 0.8, (w.openingWidthFt || 3.5) * 0.3048);
+          const remaining = (segLen - openW) / 2;
+          if (remaining > 0.15) {
+            // Segment A
+            const segAOffset = -segLen / 2 + remaining / 2;
+            const midAX = midX + Math.cos(segAngle) * segAOffset;
+            const midAZ = midZ + Math.sin(segAngle) * segAOffset;
+            const wallGeoA = new THREE.BoxGeometry(remaining, parapetHeightM, parapetThicknessM);
+            const wallMeshA = new THREE.Mesh(wallGeoA, parapetMat);
+            wallMeshA.position.set(midAX, parapetHeightM / 2, midAZ);
+            wallMeshA.rotation.y = -segAngle;
+            wallMeshA.castShadow = true;
+            wallMeshA.receiveShadow = true;
+            scene.add(wallMeshA);
 
-        const copingGeo = new THREE.BoxGeometry(segLen, 0.04, parapetThicknessM + 0.04);
-        const copingMesh = new THREE.Mesh(copingGeo, copingMat);
-        copingMesh.position.set(midX, parapetHeightM + 0.02, midZ);
-        copingMesh.rotation.y = -segAngle;
-        copingMesh.castShadow = true;
-        scene.add(copingMesh);
+            const copingGeoA = new THREE.BoxGeometry(remaining, 0.04, parapetThicknessM + 0.04);
+            const copingMeshA = new THREE.Mesh(copingGeoA, copingMat);
+            copingMeshA.position.set(midAX, parapetHeightM + 0.02, midAZ);
+            copingMeshA.rotation.y = -segAngle;
+            copingMeshA.castShadow = true;
+            scene.add(copingMeshA);
+
+            // Segment B
+            const segBOffset = segLen / 2 - remaining / 2;
+            const midBX = midX + Math.cos(segAngle) * segBOffset;
+            const midBZ = midZ + Math.sin(segAngle) * segBOffset;
+            const wallGeoB = new THREE.BoxGeometry(remaining, parapetHeightM, parapetThicknessM);
+            const wallMeshB = new THREE.Mesh(wallGeoB, parapetMat);
+            wallMeshB.position.set(midBX, parapetHeightM / 2, midBZ);
+            wallMeshB.rotation.y = -segAngle;
+            wallMeshB.castShadow = true;
+            wallMeshB.receiveShadow = true;
+            scene.add(wallMeshB);
+
+            const copingGeoB = new THREE.BoxGeometry(remaining, 0.04, parapetThicknessM + 0.04);
+            const copingMeshB = new THREE.Mesh(copingGeoB, copingMat);
+            copingMeshB.position.set(midBX, parapetHeightM + 0.02, midBZ);
+            copingMeshB.rotation.y = -segAngle;
+            copingMeshB.castShadow = true;
+            scene.add(copingMeshB);
+          }
+        } else {
+          const wallGeo = new THREE.BoxGeometry(segLen, parapetHeightM, parapetThicknessM);
+          const wallMesh = new THREE.Mesh(wallGeo, parapetMat);
+          wallMesh.position.set(midX, parapetHeightM / 2, midZ);
+          wallMesh.rotation.y = -segAngle;
+          wallMesh.castShadow = true;
+          wallMesh.receiveShadow = true;
+          scene.add(wallMesh);
+
+          const copingGeo = new THREE.BoxGeometry(segLen, 0.04, parapetThicknessM + 0.04);
+          const copingMesh = new THREE.Mesh(copingGeo, copingMat);
+          copingMesh.position.set(midX, parapetHeightM + 0.02, midZ);
+          copingMesh.rotation.y = -segAngle;
+          copingMesh.castShadow = true;
+          scene.add(copingMesh);
+        }
       });
     }
 
@@ -570,6 +706,7 @@ export default function SolarStructure3DViewer({
     (activeRoof.obstacles || []).forEach(obs => {
       const ox = (obs.xRelFt || 0) * 0.3048;
       const oz = (obs.zRelFt || 0) * 0.3048;
+      const elevationM = (obs.elevationFt || 0) * 0.3048;
 
       if (obs.type === 'box') {
         const bw = (obs.widthFt || 3) * 0.3048;
@@ -577,7 +714,7 @@ export default function SolarStructure3DViewer({
         const bh = (obs.heightFt || 7) * 0.3048;
 
         const mumtyGroup = new THREE.Group();
-        mumtyGroup.position.set(ox, 0, oz);
+        mumtyGroup.position.set(ox, elevationM, oz);
 
         const roomGeo = new THREE.BoxGeometry(bw, bh, bd);
         const roomMesh = new THREE.Mesh(roomGeo, parapetMat);
@@ -590,6 +727,7 @@ export default function SolarStructure3DViewer({
         const mumtyRoof = new THREE.Mesh(mumtyRoofGeo, copingMat);
         mumtyRoof.position.y = bh + 0.04;
         mumtyRoof.castShadow = true;
+        mumtyRoof.receiveShadow = true;
         mumtyGroup.add(mumtyRoof);
 
         // Door
@@ -607,15 +745,32 @@ export default function SolarStructure3DViewer({
         const h = (obs.heightFt || 3) * 0.3048;
 
         const tankGroup = new THREE.Group();
-        tankGroup.position.set(ox, 0, oz);
+        tankGroup.position.set(ox, elevationM, oz);
+
+        // Stand / staging for tank if elevated
+        if (elevationM > 0.05) {
+          const standMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.4 });
+          const standGeo = new THREE.CylinderGeometry(r * 1.05, r * 1.05, 0.08, 16);
+          const standMesh = new THREE.Mesh(standGeo, standMat);
+          standMesh.position.y = 0.04;
+          standMesh.castShadow = true;
+          tankGroup.add(standMesh);
+        }
 
         const tankMat = new THREE.MeshStandardMaterial({ color: 0x0284C7, roughness: 0.3, metalness: 0.2 });
         const tankGeo = new THREE.CylinderGeometry(r, r, h, 24);
         const tankMesh = new THREE.Mesh(tankGeo, tankMat);
-        tankMesh.position.y = h / 2;
+        tankMesh.position.y = (elevationM > 0.05 ? 0.08 : 0) + h / 2;
         tankMesh.castShadow = true;
         tankMesh.receiveShadow = true;
         tankGroup.add(tankMesh);
+
+        // Tank lid
+        const lidGeo = new THREE.CylinderGeometry(r * 0.65, r * 0.65, 0.06, 16);
+        const lidMesh = new THREE.Mesh(lidGeo, tankMat);
+        lidMesh.position.y = (elevationM > 0.05 ? 0.08 : 0) + h + 0.03;
+        lidMesh.castShadow = true;
+        tankGroup.add(lidMesh);
 
         scene.add(tankGroup);
       }
@@ -881,34 +1036,71 @@ export default function SolarStructure3DViewer({
     if (showOverlays) {
       const overlayGroup = new THREE.Group();
 
-      // 100% Shadow-Free Optimal Solar Zone on Roof Floor
-      const sz = activeRoof.safeSolarZone;
-      const szW = (sz?.availableWidthFt || polyBounds.spanX * 0.75) * 0.3048;
-      const szD = (sz?.availableDepthFt || polyBounds.spanZ * 0.5) * 0.3048;
-      const szCX = (sz?.centerXFt !== undefined ? sz.centerXFt : (polyBounds.minX + polyBounds.maxX) / 2) * 0.3048;
-      const szCZ = (sz?.centerZFt !== undefined ? sz.centerZFt : (polyBounds.minZ + polyBounds.maxZ) / 2) * 0.3048;
+      // 100% Polygon-Accurate Safe Solar Zone on Roof Floor
+      // Dynamic setback based on parapet vs leg height:
+      // If front leg is high (>= parapet), parapet cannot cast shadow on panels!
+      const parapetFt = activeRoof.parapetHeightFt !== undefined ? activeRoof.parapetHeightFt : 3.0;
+      const effectiveParapetOverhang = Math.max(0, parapetFt - frontLegFt);
+      // Base setback is 1.0 ft for walking / maintenance clearance plus shadow extension
+      const safeSetbackFt = Math.max(1.0, 1.0 + effectiveParapetOverhang * 0.5);
+      const safeSetbackM = safeSetbackFt * 0.3048;
 
-      const szGeo = new THREE.PlaneGeometry(szW, szD);
-      const szMat = new THREE.MeshBasicMaterial({
-        color: 0x10B981,
-        transparent: true,
-        opacity: 0.12,
-        side: THREE.DoubleSide
+      // Calculate centroid of polyVerts
+      let centroidX = 0, centroidZ = 0;
+      const nVerts = polyVerts.length || 1;
+      polyVerts.forEach(v => {
+        centroidX += (v.x ?? 0) * 0.3048;
+        centroidZ += (v.z ?? 0) * 0.3048;
       });
-      const szMesh = new THREE.Mesh(szGeo, szMat);
-      szMesh.rotation.x = -Math.PI / 2;
-      szMesh.position.set(szCX, 0.015, szCZ);
-      overlayGroup.add(szMesh);
+      centroidX /= nVerts;
+      centroidZ /= nVerts;
 
-      // Border outline for safe zone
-      const szEdges = new THREE.EdgesGeometry(szGeo);
-      const szLineMat = new THREE.LineBasicMaterial({ color: 0x10B981, linewidth: 2 });
-      const szOutline = new THREE.LineSegments(szEdges, szLineMat);
-      szOutline.rotation.x = -Math.PI / 2;
-      szOutline.position.set(szCX, 0.02, szCZ);
-      overlayGroup.add(szOutline);
+      // Inset each vertex inward toward the centroid (100% inside polygon!)
+      const safeVerts = polyVerts.map(v => {
+        const vx = (v.x ?? 0) * 0.3048;
+        const vz = (v.z ?? 0) * 0.3048;
+        const dx = centroidX - vx;
+        const dz = centroidZ - vz;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 1e-4) return { x: vx, z: vz };
+        const factor = Math.max(0.05, (dist - safeSetbackM) / dist);
+        return {
+          x: vx + dx * (1 - factor),
+          z: vz + dz * (1 - factor)
+        };
+      });
 
-      // Dimension Clearance Lines from structure array to 4 walls
+      // Construct 2D Shape on Roof Floor (rotated to Y=0)
+      if (safeVerts.length >= 3) {
+        const safeShape = new THREE.Shape();
+        safeVerts.forEach((pt, idx) => {
+          if (idx === 0) safeShape.moveTo(pt.x, pt.z);
+          else safeShape.lineTo(pt.x, pt.z);
+        });
+        safeShape.closePath();
+
+        const safeGeo = new THREE.ShapeGeometry(safeShape);
+        const szMat = new THREE.MeshBasicMaterial({
+          color: 0x10B981,
+          transparent: true,
+          opacity: 0.12,
+          side: THREE.DoubleSide
+        });
+        const safeMesh = new THREE.Mesh(safeGeo, szMat);
+        safeMesh.rotation.x = Math.PI / 2;
+        safeMesh.position.y = 0.015;
+        overlayGroup.add(safeMesh);
+
+        // Border line outline
+        const szLineMat = new THREE.LineBasicMaterial({ color: 0x10B981, linewidth: 2.5 });
+        const outlinePoints = safeVerts.map(pt => new THREE.Vector3(pt.x, 0.02, pt.z));
+        outlinePoints.push(new THREE.Vector3(safeVerts[0].x, 0.02, safeVerts[0].z));
+        const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints);
+        const szOutline = new THREE.Line(outlineGeo, szLineMat);
+        overlayGroup.add(szOutline);
+      }
+
+      // Dimension Clearance Lines: raycast to actual polyWalls
       const lineMat = new THREE.LineDashedMaterial({
         color: 0x0284C7,
         dashSize: 0.25,
@@ -916,45 +1108,67 @@ export default function SolarStructure3DViewer({
         linewidth: 2
       });
 
+      const findRayWallHit = (ox, oz, dx, dz) => {
+        let bestDist = 15;
+        for (let w of polyWalls) {
+          const p1 = w?.p1 || { x: 0, z: 0 };
+          const p2 = w?.p2 || { x: 0, z: 0 };
+          const x1 = (p1.x ?? 0) * 0.3048, z1 = (p1.z ?? 0) * 0.3048;
+          const x2 = (p2.x ?? 0) * 0.3048, z2 = (p2.z ?? 0) * 0.3048;
+          const wx = x2 - x1, wz = z2 - z1;
+          const denom = dx * wz - dz * wx;
+          if (Math.abs(denom) < 1e-5) continue;
+          const t = ((x1 - ox) * wz - (z1 - oz) * wx) / denom;
+          const u = ((x1 - ox) * dz - (z1 - oz) * dx) / denom;
+          if (t > 0 && u >= 0 && u <= 1 && t < bestDist) {
+            bestDist = t;
+          }
+        }
+        return {
+          x: ox + dx * bestDist,
+          z: oz + dz * bestDist
+        };
+      };
+
       // Line to South wall (-Z)
-      const southZWall = polyBounds.minZ * 0.3048;
       const southArrayZ = mountOffsetZ + frontZ;
+      const southHit = findRayWallHit(mountOffsetX, southArrayZ, 0, -1);
       const sGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(mountOffsetX, 0.03, southArrayZ),
-        new THREE.Vector3(mountOffsetX, 0.03, southZWall)
+        new THREE.Vector3(mountOffsetX, 0.03, southHit.z)
       ]);
       const sLine = new THREE.Line(sGeo, lineMat);
       sLine.computeLineDistances();
       overlayGroup.add(sLine);
 
       // Line to North wall (+Z)
-      const northZWall = polyBounds.maxZ * 0.3048;
       const northArrayZ = mountOffsetZ + rearZ;
+      const northHit = findRayWallHit(mountOffsetX, northArrayZ, 0, 1);
       const nGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(mountOffsetX, 0.03, northArrayZ),
-        new THREE.Vector3(mountOffsetX, 0.03, northZWall)
+        new THREE.Vector3(mountOffsetX, 0.03, northHit.z)
       ]);
       const nLine = new THREE.Line(nGeo, lineMat);
       nLine.computeLineDistances();
       overlayGroup.add(nLine);
 
       // Line to West wall (-X)
-      const westXWall = polyBounds.minX * 0.3048;
       const westArrayX = mountOffsetX - arrayWM / 2;
+      const westHit = findRayWallHit(westArrayX, mountOffsetZ, -1, 0);
       const wGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(westArrayX, 0.03, mountOffsetZ),
-        new THREE.Vector3(westXWall, 0.03, mountOffsetZ)
+        new THREE.Vector3(westHit.x, 0.03, mountOffsetZ)
       ]);
       const wLine = new THREE.Line(wGeo, lineMat);
       wLine.computeLineDistances();
       overlayGroup.add(wLine);
 
       // Line to East wall (+X)
-      const eastXWall = polyBounds.maxX * 0.3048;
       const eastArrayX = mountOffsetX + arrayWM / 2;
+      const eastHit = findRayWallHit(eastArrayX, mountOffsetZ, 1, 0);
       const eGeo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(eastArrayX, 0.03, mountOffsetZ),
-        new THREE.Vector3(eastXWall, 0.03, mountOffsetZ)
+        new THREE.Vector3(eastHit.x, 0.03, mountOffsetZ)
       ]);
       const eLine = new THREE.Line(eGeo, lineMat);
       eLine.computeLineDistances();
@@ -994,6 +1208,7 @@ export default function SolarStructure3DViewer({
     return () => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
+      controls.removeEventListener('change', handleControlsChange);
       renderer.dispose();
       controls.dispose();
       if (container.contains(renderer.domElement)) {
@@ -1026,6 +1241,10 @@ export default function SolarStructure3DViewer({
       controls.target.set(0, 0, 0);
     }
     controls.update();
+    savedCameraStateRef.current = {
+      position: camera.position.clone(),
+      target: controls.target.clone()
+    };
   };
 
   return (

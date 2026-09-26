@@ -27,6 +27,7 @@ import PricingMaster from './components/AdminPortal/PricingMaster';
 import HardwareMaster from './components/AdminPortal/HardwareMaster';
 import AllQuotations from './components/AdminPortal/AllQuotations';
 import AdminSettings from './components/AdminPortal/AdminSettings';
+import StaffManagement from './components/AdminPortal/StaffManagement';
 
 function MainApp() {
   const { isAuthenticated, authView, role, activeTab } = useApp();
@@ -80,6 +81,8 @@ function MainApp() {
           return <CreateQuotation />;
         case 'dealers_mgmt':
           return <DealerManagement />;
+        case 'staff_mgmt':
+          return <StaffManagement />;
         case 'pricing_master':
           return <PricingMaster />;
         case 'hardware_master':

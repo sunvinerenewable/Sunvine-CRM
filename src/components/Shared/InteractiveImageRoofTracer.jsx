@@ -64,6 +64,13 @@ export default function InteractiveImageRoofTracer({
         lengthFt: initialWalls[i]?.lengthFt || initialWalls[i]?.length_ft || 10
       }));
     }
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.pins && parsed.pins.length >= 3) return parsed.pins;
+      }
+    } catch (e) {}
     return [];
   });
 
@@ -77,11 +84,50 @@ export default function InteractiveImageRoofTracer({
         direction: w.direction || 'E'
       }));
     }
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.sides && parsed.sides.length >= 3) return parsed.sides;
+      }
+    } catch (e) {}
     return [];
   });
 
   // Parapet Wall Height in feet
-  const [parapetHeightFt, setParapetHeightFt] = useState(initialParapetHeight || 3.0);
+  const [parapetHeightFt, setParapetHeightFt] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.parapetHeightFt) return parsed.parapetHeightFt;
+      }
+    } catch (e) {}
+    return initialParapetHeight || 3.0;
+  });
+
+  // Obstacles & Cutout States (Mumty, Water Tank, Stair opening)
+  const [hasMumty, setHasMumty] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) return !!JSON.parse(saved).hasMumty;
+    } catch (e) {}
+    return false;
+  });
+  const [mumtyW, setMumtyW] = useState(8);
+  const [mumtyD, setMumtyD] = useState(10);
+  const [mumtyH, setMumtyH] = useState(8);
+
+  const [hasWaterTank, setHasWaterTank] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) return !!JSON.parse(saved).hasWaterTank;
+    } catch (e) {}
+    return false;
+  });
+  const [tankOnMumty, setTankOnMumty] = useState(true);
+  const [tankCapacity, setTankCapacity] = useState('1000');
+  const [parapetOpeningSide, setParapetOpeningSide] = useState(0);
 
   // Active / Hovered Side for visual glow highlighting
   const [highlightedSideIndex, setHighlightedSideIndex] = useState(null);
@@ -96,14 +142,57 @@ export default function InteractiveImageRoofTracer({
 
   // Zoom
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [isLoopClosed, setIsLoopClosed] = useState(() => initialCorners && initialCorners.length >= 3);
+  const [isLoopClosed, setIsLoopClosed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.pins && parsed.pins.length >= 3) return true;
+      }
+    } catch (e) {}
+    return initialCorners && initialCorners.length >= 3;
+  });
 
   // SketchUp Dynamic Inline Dimensioning State
   const [isSketchUpMeasureMode, setIsSketchUpMeasureMode] = useState(true);
   const [pendingSegment, setPendingSegment] = useState(null);
   const [segmentLengthInput, setSegmentLengthInput] = useState('');
-  const [scalePctPerFt, setScalePctPerFt] = useState(0);
+  const [scalePctPerFt, setScalePctPerFt] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_tracer_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.scalePctPerFt) return parsed.scalePctPerFt;
+      }
+    } catch (e) {}
+    return 0;
+  });
   const lengthInputRef = useRef(null);
+
+  // Auto-save tracer state when drawing has valid closed boundary
+  useEffect(() => {
+    if (pins.length >= 3 && sides.length >= 3) {
+      try {
+        localStorage.setItem(
+          'sunvine_saved_tracer_state',
+          JSON.stringify({
+            pins,
+            sides,
+            scalePctPerFt,
+            parapetHeightFt,
+            hasMumty,
+            mumtyW,
+            mumtyD,
+            mumtyH,
+            hasWaterTank,
+            tankOnMumty,
+            tankCapacity,
+            parapetOpeningSide
+          })
+        );
+      } catch (e) {}
+    }
+  }, [pins, sides, scalePctPerFt, parapetHeightFt, hasMumty, mumtyW, mumtyD, mumtyH, hasWaterTank, tankOnMumty, tankCapacity, parapetOpeningSide]);
 
   // Auto-focus and select measurement input when pending segment activates
   useEffect(() => {
@@ -533,6 +622,9 @@ export default function InteractiveImageRoofTracer({
     setScalePctPerFt(0);
     setIsLoopClosed(false);
     setActiveStep('draw');
+    try {
+      localStorage.removeItem('sunvine_saved_tracer_state');
+    } catch (e) {}
   };
 
   // Update a single side measurement in Stage 2 (DOES NOT CHANGE DRAWING LENGTH ON PHOTO!)
@@ -642,9 +734,55 @@ export default function InteractiveImageRoofTracer({
       p2: customVertices[(idx + 1) % customVertices.length] || { x: 0, z: 0 }
     }));
 
+    // Obstacles Generation (Mumty Room & Water Tank)
+    const obstacles = [];
+    if (hasMumty) {
+      obstacles.push({
+        id: 'mumty',
+        type: 'box',
+        label: 'Mumty Room (सीढ़ी कमरा)',
+        widthFt: mumtyW,
+        depthFt: mumtyD,
+        heightFt: mumtyH,
+        xRelFt: Number((minX + (maxX - minX) * 0.25 - midX).toFixed(1)),
+        zRelFt: Number((minZ + (maxZ - minZ) * 0.25 - midZ).toFixed(1)),
+        location: 'north_west'
+      });
+    }
+
+    if (hasWaterTank) {
+      const tankH = tankCapacity === '500' ? 4 : tankCapacity === '2000' ? 6 : 5;
+      const tankR = tankCapacity === '500' ? 1.5 : tankCapacity === '2000' ? 2.5 : 2.0;
+      const tankElevation = tankOnMumty && hasMumty ? mumtyH : 0;
+      const tankXRel = hasMumty && tankOnMumty
+        ? Number((minX + (maxX - minX) * 0.25 - midX).toFixed(1))
+        : Number((minX + (maxX - minX) * 0.35 - midX).toFixed(1));
+      const tankZRel = hasMumty && tankOnMumty
+        ? Number((minZ + (maxZ - minZ) * 0.25 - midZ).toFixed(1))
+        : Number((minZ + (maxZ - minZ) * 0.35 - midZ).toFixed(1));
+
+      obstacles.push({
+        id: 'water_tank',
+        type: 'cylinder',
+        label: `Sintex ${tankCapacity}L Tank`,
+        radiusFt: tankR,
+        heightFt: tankH,
+        elevationFt: tankElevation,
+        xRelFt: tankXRel,
+        zRelFt: tankZRel,
+        location: tankOnMumty ? 'on_mumty' : 'roof_slab'
+      });
+    }
+
+    const wallsWithOpening = enrichedWalls.map(w => ({
+      ...w,
+      hasOpening: w.side === parapetOpeningSide,
+      openingWidthFt: w.side === parapetOpeningSide ? 3.5 : 0
+    }));
+
     onApplyGeometry({
       customVertices,
-      walls: enrichedWalls,
+      walls: wallsWithOpening,
       corners: pins.slice(0, n).map((p, i) => ({
         corner_number: i + 1,
         x_pct: p.xPct,
@@ -652,6 +790,8 @@ export default function InteractiveImageRoofTracer({
         label: p.label
       })),
       parapetHeightFt: parseFloat(parapetHeightFt) || 3.0,
+      obstacles,
+      parapetOpeningSide,
       widthFt,
       depthFt
     });
@@ -1341,6 +1481,136 @@ export default function InteractiveImageRoofTracer({
                 </div>
               );
             })}
+          </div>
+
+          {/* Obstacles & Cutouts Section (Mumty Room, Water Tank, Stair Openings) */}
+          <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex flex-col gap-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-400 text-[18px]">domain_add</span>
+                <span className="text-xs font-bold text-white">छत पर रुकावटें व कटआउट (Mumty, Water Tank &amp; Stair Opening):</span>
+              </div>
+              <span className="text-[11px] text-slate-400">
+                कमरा या टंकी जोड़ने से 3D में वास्तविक परछाई (Shadow) और फिटिंग देखी जा सकती है।
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* 1. Mumty Room Toggle & Specs */}
+              <div className={`p-2.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                hasMumty ? 'bg-amber-950/20 border-amber-500/50' : 'bg-slate-900/60 border-slate-800'
+              }`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasMumty}
+                    onChange={e => setHasMumty(e.target.checked)}
+                    className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-white">🏠 सीढ़ी कमरा (Mumty Room)</span>
+                </label>
+
+                {hasMumty && (
+                  <div className="grid grid-cols-3 gap-1.5 pt-1 text-[11px]">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">चौड़ाई (W):</span>
+                      <input
+                        type="number"
+                        value={mumtyW}
+                        onChange={e => setMumtyW(parseFloat(e.target.value) || 8)}
+                        className="w-full h-7 px-1.5 bg-slate-950 text-white rounded border border-slate-700 text-center font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">लम्बाई (D):</span>
+                      <input
+                        type="number"
+                        value={mumtyD}
+                        onChange={e => setMumtyD(parseFloat(e.target.value) || 10)}
+                        className="w-full h-7 px-1.5 bg-slate-950 text-white rounded border border-slate-700 text-center font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">ऊंचाई (H):</span>
+                      <input
+                        type="number"
+                        value={mumtyH}
+                        onChange={e => setMumtyH(parseFloat(e.target.value) || 8)}
+                        className="w-full h-7 px-1.5 bg-slate-950 text-white rounded border border-slate-700 text-center font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Water Tank Toggle & Specs */}
+              <div className={`p-2.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                hasWaterTank ? 'bg-sky-950/20 border-sky-500/50' : 'bg-slate-900/60 border-slate-800'
+              }`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasWaterTank}
+                    onChange={e => setHasWaterTank(e.target.checked)}
+                    className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-white">🚰 पानी की टंकी (Water Tank)</span>
+                </label>
+
+                {hasWaterTank && (
+                  <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">स्थान (Location):</span>
+                      <select
+                        value={tankOnMumty ? 'mumty' : 'slab'}
+                        onChange={e => setTankOnMumty(e.target.value === 'mumty')}
+                        className="w-full h-7 px-1 bg-slate-950 text-white rounded border border-slate-700 text-xs"
+                      >
+                        <option value="mumty">कमरे की छत पर</option>
+                        <option value="slab">खुली छत पर</option>
+                      </select>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">टंकी क्षमता:</span>
+                      <select
+                        value={tankCapacity}
+                        onChange={e => setTankCapacity(e.target.value)}
+                        className="w-full h-7 px-1 bg-slate-950 text-white rounded border border-slate-700 text-xs"
+                      >
+                        <option value="500">500 L (4ft H)</option>
+                        <option value="1000">1000 L (5ft H)</option>
+                        <option value="2000">2000 L (6ft H)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Parapet Opening / Stair Access */}
+              <div className={`p-2.5 rounded-xl border transition-all flex flex-col gap-2 ${
+                parapetOpeningSide > 0 ? 'bg-emerald-950/20 border-emerald-500/50' : 'bg-slate-900/60 border-slate-800'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-400 text-[18px]">meeting_room</span>
+                  <span className="text-xs font-bold text-white">मुंडेर में खुला रास्ता (Stair Cutout):</span>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 text-[11px]">
+                  <select
+                    value={parapetOpeningSide}
+                    onChange={e => setParapetOpeningSide(parseInt(e.target.value) || 0)}
+                    className="w-full h-7 px-2 bg-slate-950 text-white rounded border border-slate-700 text-xs"
+                  >
+                    <option value="0">कोई खुला रास्ता नहीं (पूरी मुंडेर बंद)</option>
+                    {sides.map((s, idx) => (
+                      <option key={`op_${idx}`} value={s.side}>
+                        Side {s.side} पर 3.5ft खुला दरवाजा / कट
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Stage 2 Bottom Confirmation Bar */}

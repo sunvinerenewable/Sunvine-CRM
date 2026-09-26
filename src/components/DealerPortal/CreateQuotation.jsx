@@ -93,6 +93,22 @@ export default function CreateQuotation() {
     return initialSource?.structureLayout || null;
   });
 
+  const [quotationRoofConfig, setQuotationRoofConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sunvine_saved_roof_config');
+      return saved ? JSON.parse(saved) : (initialSource?.roofConfig || null);
+    } catch (e) {
+      return initialSource?.roofConfig || null;
+    }
+  });
+
+  const handleUpdateRoofConfig = newCfg => {
+    setQuotationRoofConfig(newCfg);
+    try {
+      localStorage.setItem('sunvine_saved_roof_config', JSON.stringify(newCfg));
+    } catch (e) {}
+  };
+
   // Multi-Panel Quotation Toggle
   const [multiBrandComparison, setMultiBrandComparison] = useState(initialSource?.multiBrandComparison || false);
 
@@ -522,8 +538,6 @@ export default function CreateQuotation() {
                 type="button"
                 onClick={() => {
                   setQuoteChannel('direct');
-                  setDealerMarginFixed(0);
-                  setDealerMarginRate(0);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   quoteChannel === 'direct'
@@ -532,7 +546,7 @@ export default function CreateQuotation() {
                 }`}
               >
                 <span className="material-symbols-outlined text-[16px]">apartment</span>
-                <span>Sunvine Direct (₹0 Margin)</span>
+                <span>Sunvine Direct (Company Margin)</span>
               </button>
               <button
                 type="button"
@@ -941,6 +955,8 @@ export default function CreateQuotation() {
                       initialPanelCount={moduleCount}
                       moduleSpecs={(modulesList || []).find(m => `${m.brand} ${m.model}` === panelBrand)}
                       selectedLayoutId={selectedStructureLayout?.id}
+                      initialRoofConfig={quotationRoofConfig}
+                      onRoofConfigChange={handleUpdateRoofConfig}
                       onSelectLayout={(layout) => {
                         setSelectedStructureLayout(layout);
                         if (addToast) {
@@ -959,14 +975,16 @@ export default function CreateQuotation() {
             </div>
           </section>
 
-          {/* Full 2D Layout Studio Modal */}
+          {/* Full 2D Layout Studio Modal - Full Window Workspace */}
           {showLayoutStudio && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-xs animate-in fade-in duration-150">
-              <div className="relative w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl shadow-2xl">
+            <div className="fixed inset-0 z-50 w-screen h-screen bg-[#070D18] flex flex-col overflow-hidden animate-in fade-in duration-150">
+              <div className="relative w-full h-full flex flex-col overflow-y-auto">
                 <PanelLayoutVisualizer
                   initialPanelCount={moduleCount}
                   moduleSpecs={(modulesList || []).find(m => `${m.brand} ${m.model}` === panelBrand)}
                   selectedLayoutId={selectedStructureLayout?.id}
+                  initialRoofConfig={quotationRoofConfig}
+                  onRoofConfigChange={handleUpdateRoofConfig}
                   onSelectLayout={(layout) => {
                     setSelectedStructureLayout(layout);
                     if (addToast) {
@@ -1161,69 +1179,70 @@ export default function CreateQuotation() {
               </div>
             </div>
 
-            {/* Interactive Commercials Card */}
-            {isDirectCompanyQuote ? (
-              <div className="p-4 bg-emerald-500/10 rounded-xl border border-emerald-500/30 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
-                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">verified</span>
-                    <span>Direct Company Quotation (Zero Dealer Margin)</span>
-                  </div>
-                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full border border-emerald-300">
-                    ₹0 Dealer Markup
+            {/* Interactive Commercials Card (Dealer Margin OR Admin Company Margin) */}
+            <div className="p-3.5 sm:p-4 bg-surface rounded-xl border border-surface-container-high flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="material-symbols-outlined text-primary text-[18px] sm:text-[20px] shrink-0">
+                    {isDirectCompanyQuote ? 'corporate_fare' : 'account_balance_wallet'}
                   </span>
+                  <span className="text-xs sm:text-sm text-on-surface font-bold">
+                    {isDirectCompanyQuote ? 'Company Margin (कंपनी मार्जिन)' : 'Custom Dealer Margin'}
+                  </span>
+                  {isDirectCompanyQuote && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#6CBF3D]/20 text-[#6CBF3D] border border-[#6CBF3D]/30">
+                      Sunvine HO
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-emerald-800/90 leading-relaxed">
-                  Issued directly by <strong>Sunvine Renewable Energy (Head Office)</strong>. No dealer commission is charged, ensuring the lowest possible turnkey pricing and highest ROI payback for the customer.
-                </p>
-                <div className="flex items-center gap-3 pt-2 border-t border-emerald-500/20 text-xs text-emerald-900 font-medium">
-                  <span>🏢 Channel: Sunvine Direct (HO)</span>
-                  <span>•</span>
-                  <span>GST &amp; DBT Subsidy: Fully Eligible</span>
-                </div>
+                <span className="text-sm sm:text-base text-primary font-bold whitespace-nowrap shrink-0" id="dealerMarginDisplay">
+                  {formatINR(dealerMarginINR)}
+                </span>
               </div>
-            ) : (
-              <div className="p-3.5 sm:p-4 bg-surface rounded-xl border border-surface-container-high flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="material-symbols-outlined text-primary text-[18px] sm:text-[20px] shrink-0">account_balance_wallet</span>
-                    <span className="text-xs sm:text-sm text-on-surface font-bold">Custom Dealer Margin</span>
-                  </div>
-                  <span className="text-sm sm:text-base text-primary font-bold whitespace-nowrap shrink-0" id="dealerMarginDisplay">
-                    {formatINR(dealerMarginINR)}
-                  </span>
-                </div>
 
-                {/* Mode Toggle: % vs ₹ */}
-                <div className="flex items-center p-1 bg-surface-container-low rounded-lg border border-surface-container-high self-start">
-                  <button
-                    type="button"
-                    onClick={() => setMarginMode('percent')}
-                    className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                      marginMode === 'percent'
-                        ? 'bg-primary-container text-on-primary shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
-                  >
-                    <span>% Percentage</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMarginMode('amount')}
-                    className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                      marginMode === 'amount'
-                        ? 'bg-primary-container text-on-primary shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
-                  >
-                    <span>₹ Fixed Amount</span>
-                  </button>
-                </div>
+              {/* Mode Toggle: % vs ₹ */}
+              <div className="flex items-center p-1 bg-surface-container-low rounded-lg border border-surface-container-high self-start">
+                <button
+                  type="button"
+                  onClick={() => setMarginMode('percent')}
+                  className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    marginMode === 'percent'
+                      ? 'bg-primary-container text-on-primary shadow-xs'
+                      : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  <span>% Percentage</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMarginMode('amount')}
+                  className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                    marginMode === 'amount'
+                      ? 'bg-primary-container text-on-primary shadow-xs'
+                      : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  <span>₹ Fixed Amount</span>
+                </button>
+              </div>
 
                 {/* Preset Chips & Custom Input */}
                 {marginMode === 'percent' ? (
                   <div className="flex flex-col gap-2">
                     <div className="flex flex-wrap gap-1.5">
+                      {isDirectCompanyQuote && (
+                        <button
+                          type="button"
+                          onClick={() => setDealerMarginRate(0)}
+                          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            dealerMarginRate === 0
+                              ? 'bg-[#6CBF3D] text-[#0F1B2E] font-bold shadow-xs'
+                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface'
+                          }`}
+                        >
+                          0%
+                        </button>
+                      )}
                       {[5, 8, 10, 12, 15].map((pct) => (
                         <button
                           key={pct}
@@ -1259,6 +1278,19 @@ export default function CreateQuotation() {
                 ) : (
                   <div className="flex flex-col gap-2">
                     <div className="flex flex-wrap gap-1.5">
+                      {isDirectCompanyQuote && (
+                        <button
+                          type="button"
+                          onClick={() => setDealerMarginFixed(0)}
+                          className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                            dealerMarginFixed === 0
+                              ? 'bg-[#6CBF3D] text-[#0F1B2E] font-bold shadow-xs'
+                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface'
+                          }`}
+                        >
+                          ₹0
+                        </button>
+                      )}
                       {[10000, 20000, 30000, 50000].map((amt) => (
                         <button
                           key={amt}
@@ -1338,8 +1370,7 @@ export default function CreateQuotation() {
                   </div>
                 )}
               </div>
-            )}
-          </section>
+            </section>
 
           {/* Action Submission Card (In-flow Form Card for Mobile & Desktop) */}
           <div className="bg-surface-container-lowest rounded-xl p-4 sm:p-5 shadow-sm border border-surface-container-high flex flex-col gap-4 mt-2">
