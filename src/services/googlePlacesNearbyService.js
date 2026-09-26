@@ -70,7 +70,7 @@ function getCacheKey(lat, lon, radius, keywords) {
 export async function fetchGooglePlacesNearby({
   latitude,
   longitude,
-  radiusMeters = 3000,
+  radiusMeters = 5000,
   keywords = DEFAULT_ACTIVE_QUERIES,
   accuracy = 10,
   forceRefresh = false,

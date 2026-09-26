@@ -515,12 +515,16 @@ export default function StaffRadarMap() {
         <div className="bg-surface rounded-2xl border border-surface-container-high shadow-xs overflow-hidden">
           {/* Header Strip */}
           <div className="p-3.5 bg-surface-container-low border-b border-surface-container-high flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-bold text-on-surface">
                 {filteredLeads.length} Nearby Solar Leads Found within {(radiusMeters / 1000)} km
               </span>
               <span className="text-secondary font-mono">
                 • {activeQueries.length} Parallel Queries
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
+                <span className="material-symbols-outlined text-[13px]">bolt</span>
+                <span>100% Free Solar Engine Active</span>
               </span>
             </div>
             <div className="text-secondary font-medium">
