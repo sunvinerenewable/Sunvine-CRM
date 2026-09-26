@@ -1,308 +1,191 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import { useHighAccuracyLocation } from '../../hooks/useHighAccuracyLocation';
 import {
-  GUJARAT_CITIES_COORDS,
-  NEARBY_SOLAR_LEADS,
-  calculateDistanceKm
-} from '../../data/staffData';
+  fetchGooglePlacesNearby,
+  getSavedGooglePlacesApiKey,
+  saveGooglePlacesApiKey,
+  DEFAULT_SOLAR_KEYWORDS
+} from '../../services/googlePlacesNearbyService';
 import {
-  queryN8nSolarRadar,
-  REAL_GUJARAT_SOLAR_VENDORS,
-  N8N_WORKFLOW_TEMPLATE,
-  saveCustomSolarVendor,
-  getCustomSolarVendors,
-  reverseGeocodeCoordinates,
   geocodeAreaOrLandmark,
-  scrapeLiveSolarLeads
+  saveCustomSolarVendor,
+  getCustomSolarVendors
 } from '../../services/n8nSolarRadarService';
+import { GUJARAT_CITIES_COORDS } from '../../data/staffData';
 
 export default function StaffRadarMap() {
   const { currentStaff, addCustomerFile } = useApp();
   const { addToast } = useToast();
 
-  // Location State
-  const [selectedCity, setSelectedCity] = useState(currentStaff?.city || 'Ahmedabad');
-  const [coords, setCoords] = useState(() => {
-    return GUJARAT_CITIES_COORDS[currentStaff?.city || 'Ahmedabad'] || { lat: 23.0225, lon: 72.5714 };
-  });
-  const [detectedAddress, setDetectedAddress] = useState('Ahmedabad, Gujarat');
-  const [isGpsLive, setIsGpsLive] = useState(false);
-  const [gpsLoading, setGpsLoading] = useState(false);
+  // 1. Device-Level High-Accuracy Geolocation Hook
+  const initialCenter = GUJARAT_CITIES_COORDS[currentStaff?.city || 'Ahmedabad'] || { lat: 23.0225, lon: 72.5714 };
+  const {
+    coords,
+    accuracy,
+    streetAddress,
+    city: detectedCity,
+    loading: gpsLoading,
+    error: gpsError,
+    isGpsActive,
+    source: locationSource,
+    acquireLocation,
+    setManualLocation
+  } = useHighAccuracyLocation(initialCenter);
 
-  // Radar Filters
-  const [radiusKm, setRadiusKm] = useState(25);
-  const [activeCategory, setActiveCategory] = useState('all'); // 'all', 'epc', 'shop', 'dealer', 'lead', 'custom'
+  // 2. Strict Circular Radius & Filter State
+  const [radiusMeters, setRadiusMeters] = useState(3000); // Default: 3 km
+  const [selectedCategory, setSelectedCategory] = useState('all'); // 'all', 'dealer', 'epc', 'installer', 'shop'
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Scanning State
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
+  // 3. Leads & Generation State
+  const [leads, setLeads] = useState([]);
+  const [isFetchingLeads, setIsFetchingLeads] = useState(false);
+  const [activeProvider, setActiveProvider] = useState('');
   const [selectedEntity, setSelectedEntity] = useState(null);
 
-  // n8n Webhook Settings Modal
-  const [showN8nSettings, setShowN8nSettings] = useState(false);
-  const [n8nUrl, setN8nUrl] = useState(() => {
-    return localStorage.getItem('sunvine_n8n_webhook_url') || 'https://n8n.sunvine.in/webhook/solar-radar-scanner';
-  });
-  const [copiedWorkflow, setCopiedWorkflow] = useState(false);
-
-  // View Mode: 'table' (default) | 'radar' | 'cards'
+  // 4. View Mode: 'table' (default) | 'radar' | 'cards'
   const [viewMode, setViewMode] = useState('table');
 
-  // Register Current Company Modal
-  const [showRegisterModal, setShowRegisterModal] = useState(false);
-  const [newCompanyForm, setNewCompanyForm] = useState({
+  // 5. Manual Location Adjust Modal
+  const [showManualLocModal, setShowManualLocModal] = useState(false);
+  const [manualInputQuery, setManualInputQuery] = useState('');
+  const [isGeocodingManual, setIsGeocodingManual] = useState(false);
+
+  // 6. GCP Places API Key Settings Modal
+  const [showGcpSettings, setShowGcpSettings] = useState(false);
+  const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
+
+  // 7. Manual Add / Check-In Modal
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [checkInForm, setCheckInForm] = useState({
     name: '',
     category: 'Solar EPC Contractor & Installer',
     type: 'epc',
     phone: '',
     email: '',
-    contactPerson: '',
     address: '',
-    city: currentStaff?.city || 'Ahmedabad',
-    speciality: 'Rooftop Solar EPC & PM Surya Ghar Partner'
+    speciality: 'Rooftop Solar EPC'
   });
 
-  // Exact Area Search / Pinning State
-  const [areaSearchInput, setAreaSearchInput] = useState('');
-  const [isPinningArea, setIsPinningArea] = useState(false);
-
-  // Live AI Scraper State
-  const [selectedKeyword, setSelectedKeyword] = useState('Solar EPC Companies');
-  const [customKeyword, setCustomKeyword] = useState('');
-  const [isScrapingLive, setIsScrapingLive] = useState(false);
-  const [lastScrapedCount, setLastScrapedCount] = useState(0);
-
-  // Handle Pin Area by Name or Landmark
-  const handlePinExactArea = async (e) => {
-    if (e) e.preventDefault();
-    const query = areaSearchInput.trim();
-    if (!query) {
-      addToast('Please enter an area, street, or landmark name', 'error');
-      return;
-    }
-    setIsPinningArea(true);
-    const result = await geocodeAreaOrLandmark(query);
-    setIsPinningArea(false);
-
-    if (result.success) {
-      const newCoords = { lat: result.lat, lon: result.lon };
-      setCoords(newCoords);
-      setDetectedAddress(result.displayName);
-      if (result.city && GUJARAT_CITIES_COORDS[result.city]) {
-        setSelectedCity(result.city);
-      }
-      setIsGpsLive(true);
-      addToast(`📍 Location Pinned: ${result.displayName} (${result.lat}, ${result.lon})`, 'success');
-      runRadarScan(newCoords.lat, newCoords.lon, result.city || selectedCity);
-    } else {
-      addToast(`Could not pinpoint "${query}". Try adding city name, e.g. "${query}, Ahmedabad"`, 'error');
-    }
-  };
-
-  // Handle Run Live AI Scraper
-  const handleRunLiveScraper = async (keywordOverride) => {
-    const kw = keywordOverride || customKeyword.trim() || selectedKeyword;
-    setIsScrapingLive(true);
-    addToast(`🔍 Live AI Crawling for "${kw}" in ${detectedAddress}...`, 'info');
-
+  // Fetch Leads function with strict distance sorting
+  const fetchNearbySolarLeads = useCallback(async (targetLat = coords.lat, targetLon = coords.lon, targetRadius = radiusMeters) => {
+    setIsFetchingLeads(true);
     try {
-      const res = await scrapeLiveSolarLeads({
-        location: detectedAddress || selectedCity,
-        keyword: kw,
-        lat: coords.lat,
-        lon: coords.lon
+      const res = await fetchGooglePlacesNearby({
+        latitude: targetLat,
+        longitude: targetLon,
+        radiusMeters: targetRadius,
+        keywords: DEFAULT_SOLAR_KEYWORDS
       });
 
-      setIsScrapingLive(false);
+      // Merge any user registered custom check-ins
+      const customVendors = getCustomSolarVendors();
+      const customWithDist = customVendors.map(c => {
+        const R = 6371000;
+        const dLat = ((c.lat - targetLat) * Math.PI) / 180;
+        const dLon = ((c.lon - targetLon) * Math.PI) / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos((targetLat * Math.PI) / 180) * Math.cos((c.lat * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const distM = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return {
+          ...c,
+          distanceMeters: Math.round(distM),
+          distanceKm: Number((distM / 1000).toFixed(2))
+        };
+      }).filter(c => c.distanceMeters <= targetRadius);
 
-      if (res.success && res.leads?.length > 0) {
-        setLastScrapedCount(res.leads.length);
-        addToast(`✅ Found ${res.leads.length} live solar companies for "${kw}"! Added to table.`, 'success');
-        runRadarScan(coords.lat, coords.lon, selectedCity);
+      const allMerged = [...customWithDist, ...(res.leads || [])];
+
+      // Deduplicate by place ID / name
+      const uniqueMap = new Map();
+      for (const item of allMerged) {
+        const key = item.id || item.name.toLowerCase();
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, item);
+        }
+      }
+
+      const deduplicated = Array.from(uniqueMap.values());
+
+      // STRICT SORTING BY DISTANCE: Nearest first (#1 is right next to the user)
+      deduplicated.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+      setLeads(deduplicated);
+      setActiveProvider(res.provider || 'Live Intelligence Network');
+      setIsFetchingLeads(false);
+
+      if (deduplicated.length > 0) {
+        addToast(`Discovered ${deduplicated.length} solar businesses within ${(targetRadius / 1000)} km!`, 'success');
       } else {
-        addToast(`No new live companies scraped for "${kw}". Check connection or try another keyword.`, 'info');
+        addToast(`No solar entities found within ${(targetRadius / 1000)} km. Try expanding radius.`, 'info');
       }
     } catch (err) {
-      setIsScrapingLive(false);
-      addToast('Scraping error occurred', 'error');
+      setIsFetchingLeads(false);
+      addToast('Error fetching solar leads', 'error');
     }
-  };
+  }, [coords.lat, coords.lon, radiusMeters, addToast]);
 
-  // Fetch Reverse Geocoded Address
-  const updateAddressForCoords = async (lat, lon) => {
-    const geo = await reverseGeocodeCoordinates(lat, lon);
-    if (geo.success) {
-      setDetectedAddress(geo.displayName);
-      if (geo.city && GUJARAT_CITIES_COORDS[geo.city]) {
-        setSelectedCity(geo.city);
-      }
-    }
-  };
-
-  // Trigger GPS Geolocation
-  const handleDetectGps = () => {
-    if (!navigator.geolocation) {
-      addToast('Geolocation is not supported by your browser', 'error');
-      return;
-    }
-    setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        setGpsLoading(false);
-        setIsGpsLive(true);
-        const newCoords = {
-          lat: Number(pos.coords.latitude.toFixed(4)),
-          lon: Number(pos.coords.longitude.toFixed(4))
-        };
-        setCoords(newCoords);
-        addToast(`GPS Locked: ${newCoords.lat}, ${newCoords.lon}`, 'success');
-        
-        await updateAddressForCoords(newCoords.lat, newCoords.lon);
-        runRadarScan(newCoords.lat, newCoords.lon, selectedCity);
-      },
-      (err) => {
-        setGpsLoading(false);
-        setIsGpsLive(false);
-        addToast('GPS Access Denied. Using City coordinates instead.', 'info');
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  };
-
-  // Run AI Agent Radar Scan
-  const runRadarScan = async (lat = coords.lat, lon = coords.lon, city = selectedCity) => {
-    setIsScanning(true);
-    try {
-      const res = await queryN8nSolarRadar({
-        latitude: lat,
-        longitude: lon,
-        city: city,
-        radiusKm: radiusKm,
-        webhookUrl: n8nUrl
-      });
-
-      // Enrich customer solar leads with exact distance
-      const enrichedLeads = NEARBY_SOLAR_LEADS.map((lead) => ({
-        ...lead,
-        type: 'lead',
-        category: 'Customer Solar Lead (ग्राहक)',
-        distanceKm: Number(calculateDistanceKm(lat, lon, lead.lat, lead.lon).toFixed(1))
-      })).filter((l) => (radiusKm ? l.distanceKm <= radiusKm || (l.city && l.city.toLowerCase() === city.toLowerCase()) : true));
-
-      const combined = [...res.vendors, ...enrichedLeads].sort(
-        (a, b) => a.distanceKm - b.distanceKm
-      );
-
-      setScanResult({
-        provider: res.provider,
-        entities: combined,
-        scannedAt: new Date().toLocaleTimeString()
-      });
-      setIsScanning(false);
-      addToast(`Solar Directory: ${combined.length} solar companies & leads located!`, 'success');
-    } catch (e) {
-      setIsScanning(false);
-      addToast('Error running solar radar scanner', 'error');
-    }
-  };
-
-  // Initial Scan on load
+  // Initial fetch on mount & coordinates change
   useEffect(() => {
-    runRadarScan(coords.lat, coords.lon, selectedCity);
-  }, [selectedCity, radiusKm]);
+    fetchNearbySolarLeads(coords.lat, coords.lon, radiusMeters);
+  }, [coords.lat, coords.lon, radiusMeters]);
 
-  // Handle City Change
-  const handleCityChange = (cityName) => {
-    setSelectedCity(cityName);
-    setIsGpsLive(false);
-    const c = GUJARAT_CITIES_COORDS[cityName] || { lat: 23.0225, lon: 72.5714 };
-    setCoords(c);
-    setDetectedAddress(`${cityName}, Gujarat`);
-  };
+  // Initial GPS detection on load
+  useEffect(() => {
+    acquireLocation();
+  }, [acquireLocation]);
 
-  // Save n8n URL
-  const handleSaveN8nUrl = () => {
-    localStorage.setItem('sunvine_n8n_webhook_url', n8nUrl.trim());
-    setShowN8nSettings(false);
-    addToast('n8n Webhook Endpoint Saved!', 'success');
-    runRadarScan();
-  };
+  // Handle Manual Pin / Spot Selection
+  const handleApplyManualSpot = async (e) => {
+    if (e) e.preventDefault();
+    if (!manualInputQuery.trim()) return;
 
-  const handleCopyWorkflowJson = () => {
-    navigator.clipboard.writeText(JSON.stringify(N8N_WORKFLOW_TEMPLATE, null, 2));
-    setCopiedWorkflow(true);
-    setTimeout(() => setCopiedWorkflow(false), 2500);
-    addToast('n8n Workflow JSON copied to clipboard!', 'success');
-  };
+    setIsGeocodingManual(true);
+    const geo = await geocodeAreaOrLandmark(manualInputQuery.trim());
+    setIsGeocodingManual(false);
 
-  // Handle Register Current Solar Company
-  const handleOpenRegisterModal = () => {
-    setNewCompanyForm({
-      name: '',
-      category: 'Solar EPC Contractor & Installer',
-      type: 'epc',
-      phone: '',
-      email: '',
-      contactPerson: '',
-      address: detectedAddress || `${coords.lat}, ${coords.lon}`,
-      city: selectedCity,
-      speciality: 'Rooftop Solar EPC & PM Surya Ghar Partner'
-    });
-    setShowRegisterModal(true);
-  };
-
-  const handleSaveCompany = (e) => {
-    e.preventDefault();
-    if (!newCompanyForm.name.trim()) {
-      addToast('Please enter company name', 'error');
-      return;
-    }
-    const newVendor = saveCustomSolarVendor({
-      name: newCompanyForm.name.trim(),
-      category: newCompanyForm.category,
-      type: newCompanyForm.type,
-      phone: newCompanyForm.phone || '+91 98000 00000',
-      email: newCompanyForm.email || 'info@solarcompany.in',
-      contactPerson: newCompanyForm.contactPerson,
-      address: newCompanyForm.address || detectedAddress,
-      city: newCompanyForm.city || selectedCity,
-      lat: coords.lat,
-      lon: coords.lon,
-      distanceKm: 0.0,
-      speciality: newCompanyForm.speciality,
-      registeredByStaff: currentStaff?.name || 'Sales Rep',
-      rating: 5.0,
-      reviewsCount: 1
-    });
-
-    if (newVendor) {
-      setShowRegisterModal(false);
-      addToast(`Company "${newVendor.name}" successfully registered at your location!`, 'success');
-      runRadarScan(coords.lat, coords.lon, selectedCity);
+    if (geo.success) {
+      setManualLocation({
+        lat: geo.lat,
+        lon: geo.lon,
+        customAddress: geo.displayName,
+        customCity: geo.city
+      });
+      setShowManualLocModal(false);
+      addToast(`Spot Locked: ${geo.displayName}`, 'success');
+    } else {
+      addToast(`Could not locate "${manualInputQuery}". Please enter city or landmark name.`, 'error');
     }
   };
 
-  // Convert Nearby Lead to Customer File
+  // Save GCP Places API Key
+  const handleSaveGcpKey = () => {
+    saveGooglePlacesApiKey(gcpKeyInput);
+    setShowGcpSettings(false);
+    addToast('Google Places API (New) Key saved!', 'success');
+    fetchNearbySolarLeads();
+  };
+
+  // Convert Lead to Customer File
   const handleClaimLeadAsFile = (lead) => {
     const newFile = {
       id: `FIL-2026-${Math.floor(100 + Math.random() * 900)}`,
       customerName: lead.name,
-      phone: lead.phone,
-      address: lead.address,
-      city: lead.city,
-      discom: lead.discom || 'UGVCL',
+      phone: lead.phone || '',
+      address: lead.address || '',
+      city: lead.city || detectedCity,
+      discom: 'UGVCL',
       consumerNo: '',
-      sanctionedLoadKw: lead.requiredKw || 5.0,
-      solarSystemKw: lead.requiredKw || 3.3,
-      roofType: lead.type || 'RCC Flat Roof',
+      sanctionedLoadKw: 5.0,
+      solarSystemKw: 3.3,
+      roofType: 'RCC Flat Roof',
       staffId: currentStaff?.id || 'STF-001',
-      staffName: currentStaff?.name || 'Jayesh Patel',
+      staffName: currentStaff?.name || 'Solar Executive',
       createdDate: new Date().toISOString().split('T')[0],
       status: 'Sourced',
       applicationNo: 'Draft Pending',
-      notes: `Claimed via AI Radar (${lead.distanceKm} km from rep). Urgency: ${lead.urgency || 'Normal'}`,
+      notes: `Generated via Google Places Nearby Radar (${lead.distanceKm} km away). Website: ${lead.website || 'N/A'}`,
       documents: {
         aadhaar: { uploaded: false, filename: null, date: null },
         lightBill: { uploaded: false, filename: null, date: null },
@@ -312,617 +195,561 @@ export default function StaffRadarMap() {
       }
     };
     addCustomerFile(newFile);
-    addToast(`Lead "${lead.name}" added to your customer files!`, 'success');
+    addToast(`Lead "${lead.name}" added to Customer Files!`, 'success');
   };
 
-  // Export Table Data to CSV
-  const handleExportCSV = () => {
-    if (!filteredEntities || filteredEntities.length === 0) {
-      addToast('No data available to export', 'info');
-      return;
-    }
-    const headers = ['Name', 'Category', 'Distance (km)', 'City', 'Phone', 'Email', 'Address', 'Speciality', 'Latitude', 'Longitude'];
-    const rows = filteredEntities.map(item => [
-      `"${(item.name || '').replace(/"/g, '""')}"`,
-      `"${(item.category || '').replace(/"/g, '""')}"`,
-      item.distanceKm || 0,
-      `"${(item.city || '').replace(/"/g, '""')}"`,
-      `"${(item.phone || '').replace(/"/g, '""')}"`,
-      `"${(item.email || '').replace(/"/g, '""')}"`,
-      `"${(item.address || '').replace(/"/g, '""')}"`,
-      `"${(item.speciality || '').replace(/"/g, '""')}"`,
-      item.lat || coords.lat,
-      item.lon || coords.lon
-    ]);
+  // Save Manual Check-In
+  const handleSaveCheckIn = (e) => {
+    e.preventDefault();
+    if (!checkInForm.name.trim()) return;
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `sunvine_solar_radar_${selectedCity}_${Date.now()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    addToast('Solar Data Table downloaded as CSV!', 'success');
+    saveCustomSolarVendor({
+      name: checkInForm.name.trim(),
+      category: checkInForm.category,
+      type: checkInForm.type,
+      phone: checkInForm.phone || '+91 98000 00000',
+      email: checkInForm.email,
+      address: checkInForm.address || streetAddress,
+      city: detectedCity,
+      lat: coords.lat,
+      lon: coords.lon,
+      distanceMeters: 0,
+      distanceKm: 0.0,
+      speciality: checkInForm.speciality,
+      rating: 5.0,
+      reviewsCount: 1,
+      isCustom: true
+    });
+
+    setShowCheckInModal(false);
+    addToast(`Company "${checkInForm.name}" registered right at your spot!`, 'success');
+    fetchNearbySolarLeads();
   };
 
-  // Filter entities
-  const allEntities = scanResult?.entities || [];
-  const filteredEntities = allEntities.filter((item) => {
+  // Filter leads by search term & category
+  const filteredLeads = leads.filter((item) => {
     const matchCat =
-      activeCategory === 'all'
+      selectedCategory === 'all'
         ? true
-        : activeCategory === 'lead'
-        ? item.type === 'lead'
-        : activeCategory === 'epc'
-        ? item.type === 'epc'
-        : activeCategory === 'shop'
-        ? item.type === 'shop' || item.type === 'hardware'
-        : activeCategory === 'dealer'
+        : selectedCategory === 'dealer'
         ? item.type === 'dealer'
-        : activeCategory === 'custom'
-        ? item.isCustom
-        : item.type === activeCategory;
+        : selectedCategory === 'epc'
+        ? item.type === 'epc'
+        : selectedCategory === 'shop'
+        ? item.type === 'shop'
+        : selectedCategory === 'installer'
+        ? item.type === 'epc' || item.category.toLowerCase().includes('installer')
+        : true;
 
     const term = searchTerm.toLowerCase().trim();
     const matchTerm =
       !term ||
       item.name.toLowerCase().includes(term) ||
       (item.address || '').toLowerCase().includes(term) ||
-      (item.city || '').toLowerCase().includes(term) ||
-      (item.phone || '').toLowerCase().includes(term) ||
       (item.category || '').toLowerCase().includes(term) ||
-      (item.speciality || '').toLowerCase().includes(term);
+      (item.phone || '').includes(term);
 
     return matchCat && matchTerm;
   });
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-sans text-on-surface">
-      {/* Top Banner & Location Controls */}
+      {/* ========================================================
+          1. TOP RADAR HEADER & DEVICE GPS VERIFICATION
+          ======================================================== */}
       <div className="relative overflow-hidden rounded-2xl bg-[#0D1527] border border-white/15 p-5 sm:p-7 text-white shadow-xl">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <span className="material-symbols-outlined text-[22px]">radar</span>
+                <span className="material-symbols-outlined text-[22px]">near_me</span>
               </span>
               <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
-                AI Solar Radar &amp; Nearby Directory (n8n + AI Agent Pipeline)
+                Nearby Solar Leads (Google Places API New Engine)
               </h1>
             </div>
             <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Real-time intelligence discovering Solar EPC contractors, inverter equipment shops, DCR module dealers, and rooftop leads around your exact live location.
+              Real-time circular search strictly centered on your live coordinates. Discovers solar EPC contractors, dealers, and equipment suppliers with meters-level proximity.
             </p>
           </div>
 
           {/* Action Hub */}
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Register Current Company Button */}
+            {/* Primary Refresh Button */}
             <button
-              onClick={handleOpenRegisterModal}
-              className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
-              title="Add the solar company or shop where you are currently standing"
+              onClick={() => fetchNearbySolarLeads()}
+              disabled={isFetchingLeads}
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
             >
-              <span className="material-symbols-outlined text-[18px]">add_location_alt</span>
-              <span>Add Current Company (यहाँ कंपनी जोड़ें)</span>
-            </button>
-
-            {/* Refresh / Scan */}
-            <button
-              onClick={() => runRadarScan()}
-              disabled={isScanning}
-              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold rounded-xl flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
-            >
-              <span className={`material-symbols-outlined text-[18px] ${isScanning ? 'animate-spin' : ''}`}>
-                {isScanning ? 'refresh' : 'satellite_alt'}
+              <span className={`material-symbols-outlined text-[18px] ${isFetchingLeads ? 'animate-spin' : ''}`}>
+                {isFetchingLeads ? 'sync' : 'refresh'}
               </span>
-              <span>{isScanning ? 'Scanning...' : 'Scan Radius'}</span>
+              <span>{isFetchingLeads ? 'Locating Nearby Solar...' : 'Refresh Leads from Current Location'}</span>
             </button>
 
-            {/* n8n Settings */}
+            {/* Check-In / Register Spot */}
             <button
-              onClick={() => setShowN8nSettings(true)}
-              className="p-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Configure n8n Webhook & AI Pipeline"
+              onClick={() => {
+                setCheckInForm({
+                  name: '',
+                  category: 'Solar EPC Contractor & Installer',
+                  type: 'epc',
+                  phone: '',
+                  email: '',
+                  address: streetAddress,
+                  speciality: 'Rooftop Solar EPC'
+                });
+                setShowCheckInModal(true);
+              }}
+              className="px-3.5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px] text-amber-400">tune</span>
-              <span>n8n</span>
+              <span className="material-symbols-outlined text-[17px] text-emerald-400">add_location_alt</span>
+              <span>Check-In Spot</span>
+            </button>
+
+            {/* GCP API Key Config */}
+            <button
+              onClick={() => setShowGcpSettings(true)}
+              className="p-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Google Places API Key Settings"
+            >
+              <span className="material-symbols-outlined text-[18px] text-amber-400">key</span>
+              <span>GCP Key</span>
             </button>
           </div>
         </div>
 
-        {/* Location & GPS Ribbon */}
-        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col gap-3 text-xs">
-          {/* Row 1: GPS, City, and Live Address */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Live GPS Button */}
-              <button
-                onClick={handleDetectGps}
-                disabled={gpsLoading}
-                className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                  isGpsLive
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                    : 'bg-white/5 border-white/15 text-slate-300 hover:bg-white/10'
-                }`}
-              >
-                <span className={`material-symbols-outlined text-[16px] text-emerald-400 ${gpsLoading ? 'animate-spin' : ''}`}>
-                  {gpsLoading ? 'sync' : isGpsLive ? 'my_location' : 'location_searching'}
-                </span>
-                <span>{gpsLoading ? 'Acquiring GPS...' : isGpsLive ? 'GPS Locked (Live)' : 'Detect GPS'}</span>
-              </button>
+        {/* Device GPS Live Verification Bar */}
+        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* GPS Signal Status Badge */}
+            <button
+              onClick={acquireLocation}
+              disabled={gpsLoading}
+              className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
+                isGpsActive
+                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                  : 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+              }`}
+            >
+              <span className={`material-symbols-outlined text-[16px] ${gpsLoading ? 'animate-spin' : isGpsActive ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {gpsLoading ? 'sync' : isGpsActive ? 'my_location' : 'location_disabled'}
+              </span>
+              <span>
+                {gpsLoading
+                  ? 'Acquiring High-Accuracy GPS...'
+                  : isGpsActive
+                  ? `Live GPS Locked (${locationSource === 'manual_pin' ? 'Manual Pin' : `±${accuracy || 5}m accuracy`})`
+                  : 'Acquire Live GPS'}
+              </span>
+            </button>
 
-              {/* City Selector */}
-              <div className="flex items-center gap-1.5 bg-white/5 border border-white/15 rounded-lg px-2.5 py-1">
-                <span className="text-slate-400 font-medium">City:</span>
-                <select
-                  value={selectedCity}
-                  onChange={(e) => handleCityChange(e.target.value)}
-                  className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs"
-                >
-                  {Object.keys(GUJARAT_CITIES_COORDS).map((c) => (
-                    <option key={c} value={c} className="bg-slate-900 text-white">
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Live Address Display */}
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-lg border border-white/10 text-slate-300">
-                <span className="material-symbols-outlined text-[15px] text-emerald-400">pin_drop</span>
-                <span className="font-medium truncate max-w-[280px] sm:max-w-md" title={detectedAddress}>
-                  {detectedAddress}
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  ({coords.lat}, {coords.lon})
-                </span>
-              </div>
+            {/* Exact Lat / Lon Coordinate Display */}
+            <div className="px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 font-mono text-[11px] text-slate-300 flex items-center gap-1.5">
+              <span className="text-slate-400 font-sans">Spot:</span>
+              <span className="font-bold text-emerald-300">{coords.lat.toFixed(6)}° N, {coords.lon.toFixed(6)}° E</span>
             </div>
 
-            {/* Direct Google Maps Live Search Link */}
+            {/* Detected Street Address */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 text-slate-300 max-w-md truncate" title={streetAddress}>
+              <span className="material-symbols-outlined text-[15px] text-emerald-400 shrink-0">pin_drop</span>
+              <span className="font-medium truncate">{streetAddress}</span>
+            </div>
+          </div>
+
+          {/* Adjust / Manual Spot Button */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setManualInputQuery(streetAddress || detectedCity);
+                setShowManualLocModal(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px] text-amber-400">tune</span>
+              <span>Adjust / Pick Manual Spot</span>
+            </button>
+
+            {/* Direct Google Maps View */}
             <a
               href={`https://www.google.com/maps/search/solar+companies/@${coords.lat},${coords.lon},14z`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-300 font-semibold transition-colors"
+              className="p-1.5 px-2.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-300 font-semibold flex items-center gap-1 transition-colors"
+              title="Verify Coordinates on Google Maps"
             >
-              <span className="material-symbols-outlined text-[15px] text-blue-400">travel_explore</span>
-              <span>Search Live on Google Maps</span>
+              <span className="material-symbols-outlined text-[15px]">travel_explore</span>
             </a>
           </div>
-
-          {/* Row 2: Search Exact Area / Landmark Form (Solves Desktop ISP location issues) */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-            <form onSubmit={handlePinExactArea} className="flex-1 flex items-center gap-2">
-              <div className="relative flex-1">
-                <span className="material-symbols-outlined text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2 text-[16px]">
-                  search
-                </span>
-                <input
-                  type="text"
-                  value={areaSearchInput}
-                  onChange={(e) => setAreaSearchInput(e.target.value)}
-                  placeholder="Type your exact Area, Street, Colony or Landmark (e.g. Prahlad Nagar, SG Highway, Katargam, GIDC, Makarpura)..."
-                  className="w-full h-9 pl-9 pr-3 rounded-xl bg-white/10 border border-white/20 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isPinningArea}
-                className="h-9 px-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                <span className={`material-symbols-outlined text-[16px] ${isPinningArea ? 'animate-spin' : ''}`}>
-                  {isPinningArea ? 'sync' : 'pin_drop'}
-                </span>
-                <span>{isPinningArea ? 'Pinning...' : 'Pin Location (सटीक स्थान)'}</span>
-              </button>
-            </form>
-          </div>
-
-          {/* Row 3: Auto-Keyword Live AI Crawler Toolbar */}
-          <div className="mt-1 bg-white/5 rounded-xl p-3 border border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
-                <span className="material-symbols-outlined text-[18px] text-emerald-400 animate-pulse">auto_awesome</span>
-                <span>Live AI Crawler: Auto-Search Real Solar Companies in {detectedAddress.split(',')[0]}</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Auto-search keywords to extract live companies, websites, phones &amp; rooftop leads into your portal database.
-              </p>
-            </div>
-
-            {/* Keyword Chips & Trigger */}
-            <div className="flex flex-wrap items-center gap-2">
-              {['Solar EPC Companies', 'Solar Inverter Shops', 'Solar Panel Dealers', 'Rooftop Solar Installers'].map((kw) => (
-                <button
-                  key={kw}
-                  type="button"
-                  onClick={() => {
-                    setSelectedKeyword(kw);
-                    handleRunLiveScraper(kw);
-                  }}
-                  disabled={isScrapingLive}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                    selectedKeyword === kw
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
-                      : 'bg-white/10 text-slate-200 border-white/15 hover:bg-white/20'
-                  }`}
-                >
-                  {kw}
-                </button>
-              ))}
-
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="text"
-                  value={customKeyword}
-                  onChange={(e) => setCustomKeyword(e.target.value)}
-                  placeholder="Or enter company / keyword..."
-                  className="h-8 px-2.5 bg-black/40 border border-white/20 rounded-lg text-xs text-white placeholder:text-slate-400 outline-none w-44"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleRunLiveScraper()}
-                  disabled={isScrapingLive}
-                  className="h-8 px-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
-                >
-                  <span className={`material-symbols-outlined text-[15px] ${isScrapingLive ? 'animate-spin' : ''}`}>
-                    {isScrapingLive ? 'refresh' : 'travel_explore'}
-                  </span>
-                  <span>{isScrapingLive ? 'Scraping Live...' : 'Auto-Scrape'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
+
+        {/* GPS Error Prompt */}
+        {gpsError && (
+          <div className="mt-3 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-amber-400">warning</span>
+              <span>{gpsError.message}</span>
+            </div>
+            <button
+              onClick={() => setShowManualLocModal(true)}
+              className="px-2.5 py-1 bg-amber-500 text-slate-950 font-bold rounded-md text-[11px] cursor-pointer"
+            >
+              Pick Exact Spot
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Filter Toolbar & View Selector */}
+      {/* ========================================================
+          2. FILTER CHIPS & RADIUS BAR (STRICT RADIUS CONTROLS)
+          ======================================================== */}
       <div className="bg-surface rounded-2xl p-4 border border-surface-container-high shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Category Pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        {/* Radius Filter Chips */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px]">Radius:</span>
           {[
-            { id: 'all', label: 'All Companies & Leads', icon: 'grid_view' },
-            { id: 'epc', label: 'Solar EPCs', icon: 'engineering' },
-            { id: 'shop', label: 'Equipment & Inverters', icon: 'store' },
-            { id: 'dealer', label: 'Panel Dealers', icon: 'solar_power' },
-            { id: 'lead', label: 'Customer Leads', icon: 'person' },
-            { id: 'custom', label: '📍 Registered by Staff', icon: 'add_location' }
-          ].map((cat) => {
-            const count = allEntities.filter(e => {
-              if (cat.id === 'all') return true;
-              if (cat.id === 'lead') return e.type === 'lead';
-              if (cat.id === 'epc') return e.type === 'epc';
-              if (cat.id === 'shop') return e.type === 'shop' || e.type === 'hardware';
-              if (cat.id === 'dealer') return e.type === 'dealer';
-              if (cat.id === 'custom') return e.isCustom;
-              return false;
-            }).length;
-
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                  activeCategory === cat.id
-                    ? 'bg-primary text-on-primary shadow-xs'
-                    : 'bg-surface-container-low text-secondary hover:text-on-surface hover:bg-surface-container'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[15px]">{cat.icon}</span>
-                <span>{cat.label}</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${activeCategory === cat.id ? 'bg-white/25 text-white' : 'bg-surface-container-high text-secondary'}`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
+            { label: '1 km', value: 1000 },
+            { label: '3 km (Default)', value: 3000 },
+            { label: '5 km', value: 5000 },
+            { label: 'All (15 km)', value: 15000 }
+          ].map((r) => (
+            <button
+              key={r.value}
+              onClick={() => setRadiusMeters(r.value)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                radiusMeters === r.value
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'bg-surface-container-low text-secondary hover:text-on-surface hover:bg-surface-container'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
 
-        {/* View Switcher & Radius */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Radius selector */}
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-secondary font-semibold">Radius:</span>
-            <select
-              value={radiusKm}
-              onChange={(e) => setRadiusKm(Number(e.target.value))}
-              className="bg-surface-container-low border border-surface-container-high text-on-surface rounded-lg px-2 py-1 font-bold outline-none cursor-pointer"
+        {/* Category Filter Chips */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-bold text-secondary uppercase tracking-wider text-[11px] mr-1">Type:</span>
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'epc', label: 'EPCs' },
+            { id: 'dealer', label: 'Dealers' },
+            { id: 'installer', label: 'Installers' },
+            { id: 'shop', label: 'Shops' }
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                selectedCategory === cat.id
+                  ? 'bg-surface-container-lowest text-primary border border-primary shadow-xs'
+                  : 'bg-surface-container-low text-secondary hover:text-on-surface'
+              }`}
             >
-              <option value="5">5 km</option>
-              <option value="15">15 km</option>
-              <option value="25">25 km</option>
-              <option value="50">50 km</option>
-              <option value="100">100 km</option>
-              <option value="0">All Distances</option>
-            </select>
-          </div>
+              {cat.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Search Box */}
+        {/* Search & View Mode Switcher */}
+        <div className="flex items-center gap-2.5">
           <div className="relative">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary material-symbols-outlined text-[16px]">
+            <span className="material-symbols-outlined text-[16px] text-secondary absolute left-2.5 top-1/2 -translate-y-1/2">
               search
             </span>
             <input
               type="text"
-              placeholder="Search by name, address, phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-8 pr-3 py-1 bg-surface-container-low border border-surface-container-high rounded-xl text-xs text-on-surface placeholder:text-secondary outline-none focus:ring-1 focus:ring-primary w-48 sm:w-60"
+              placeholder="Search in results..."
+              className="h-8 pl-8 pr-3 rounded-lg bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none w-40 sm:w-48"
             />
           </div>
 
-          {/* Export to CSV */}
-          <button
-            onClick={handleExportCSV}
-            className="p-1.5 px-2.5 rounded-lg bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-xs font-semibold text-secondary hover:text-on-surface flex items-center gap-1 cursor-pointer transition-colors"
-            title="Download table data as CSV"
-          >
-            <span className="material-symbols-outlined text-[16px] text-emerald-600">download</span>
-            <span className="hidden sm:inline">Export CSV</span>
-          </button>
-
-          {/* Mode Switcher Buttons */}
-          <div className="flex items-center p-1 bg-surface-container-low rounded-xl border border-surface-container-high">
+          <div className="flex items-center p-0.5 bg-surface-container-low rounded-xl border border-surface-container-high">
             <button
               onClick={() => setViewMode('table')}
-              className={`py-1 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`p-1.5 px-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'table' ? 'bg-primary text-on-primary shadow-xs' : 'text-secondary hover:text-on-surface'
               }`}
-              title="Full Data Table View"
+              title="Table View"
             >
-              <span className="material-symbols-outlined text-[16px]">table_chart</span>
-              <span>Table</span>
+              <span className="material-symbols-outlined text-[15px]">table_chart</span>
+              <span className="hidden sm:inline">Table</span>
             </button>
             <button
               onClick={() => setViewMode('radar')}
-              className={`py-1 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`p-1.5 px-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'radar' ? 'bg-primary text-on-primary shadow-xs' : 'text-secondary hover:text-on-surface'
               }`}
-              title="Radar Visualizer View"
+              title="Radar Visualizer"
             >
-              <span className="material-symbols-outlined text-[16px]">radar</span>
-              <span>Radar</span>
+              <span className="material-symbols-outlined text-[15px]">radar</span>
+              <span className="hidden sm:inline">Radar</span>
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className={`py-1 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+              className={`p-1.5 px-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                 viewMode === 'cards' ? 'bg-primary text-on-primary shadow-xs' : 'text-secondary hover:text-on-surface'
               }`}
-              title="Card Grid View"
+              title="Cards Directory"
             >
-              <span className="material-symbols-outlined text-[16px]">view_agenda</span>
-              <span>Cards</span>
+              <span className="material-symbols-outlined text-[15px]">view_agenda</span>
+              <span className="hidden sm:inline">Cards</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* ========================================================
-          VIEW 1: COMPLETE DATA TABLE (PRIMARY STRUCTURED VIEW)
+          3. PRIMARY DATA TABLE (SORTED STRICTLY BY DISTANCE #1 NEAREST)
           ======================================================== */}
       {viewMode === 'table' && (
         <div className="bg-surface rounded-2xl border border-surface-container-high shadow-xs overflow-hidden">
-          {/* Table Header Bar */}
-          <div className="p-4 bg-surface-container-low border-b border-surface-container-high flex flex-wrap items-center justify-between gap-3">
+          {/* Table Header Strip */}
+          <div className="p-3.5 bg-surface-container-low border-b border-surface-container-high flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-on-surface">
-                Solar Network &amp; Leads Directory ({filteredEntities.length} Results)
+              <span className="font-bold text-on-surface">
+                {filteredLeads.length} Solar Businesses within {(radiusMeters / 1000)} km
               </span>
-              <span className="text-xs text-secondary">
-                • Sorted nearest to you first
+              <span className="text-secondary font-mono">
+                • {activeProvider}
               </span>
             </div>
-            <div className="text-xs text-secondary flex items-center gap-2">
-              <span>Center: <strong>{detectedAddress}</strong></span>
+            <div className="text-secondary font-medium">
+              Sorted strictly by proximity: <strong>Closest to you (#1) at top</strong>
             </div>
           </div>
 
-          {/* Table Body */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-on-surface">
               <thead className="bg-surface-container-lowest border-b border-surface-container-high text-secondary uppercase font-semibold text-[11px]">
                 <tr>
-                  <th className="py-3 px-4 w-12 text-center">#</th>
-                  <th className="py-3 px-4 min-w-[200px]">Company / Customer</th>
-                  <th className="py-3 px-4 min-w-[150px]">Category &amp; Speciality</th>
-                  <th className="py-3 px-4 min-w-[100px] text-center">Distance</th>
-                  <th className="py-3 px-4 min-w-[220px]">Address &amp; City</th>
-                  <th className="py-3 px-4 min-w-[140px]">Contact Info</th>
-                  <th className="py-3 px-4 min-w-[200px] text-right">Direct Actions</th>
+                  <th className="py-3 px-3 text-center w-10">#</th>
+                  <th className="py-3 px-4 min-w-[200px]">Business Name</th>
+                  <th className="py-3 px-3 min-w-[130px]">Category</th>
+                  <th className="py-3 px-3 text-center min-w-[110px]">Proximity</th>
+                  <th className="py-3 px-4 min-w-[220px]">Address</th>
+                  <th className="py-3 px-3 min-w-[140px]">Phone &amp; Website</th>
+                  <th className="py-3 px-4 text-right min-w-[190px]">Direct Action Links</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container-high">
-                {filteredEntities.length === 0 ? (
+                {filteredLeads.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="py-12 text-center text-secondary">
-                      <div className="space-y-2">
-                        <span className="material-symbols-outlined text-4xl text-secondary/40">search_off</span>
-                        <p className="text-sm font-semibold text-on-surface">No solar entities found in this range.</p>
-                        <p className="text-xs">Try increasing the radius to 50 km or click "Add Current Company" to register your current location.</p>
-                        <button
-                          onClick={handleOpenRegisterModal}
-                          className="mt-2 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[15px]">add_location_alt</span>
-                          <span>Add My Current Solar Company</span>
-                        </button>
+                      <div className="space-y-2 max-w-md mx-auto">
+                        <span className="material-symbols-outlined text-4xl text-secondary/40">location_off</span>
+                        <h4 className="font-bold text-sm text-on-surface">No Solar Businesses Detected in this Circle</h4>
+                        <p className="text-xs">
+                          Try increasing the search radius to 5 km or click "Check-In Spot" to register the solar company where you are currently standing.
+                        </p>
+                        <div className="pt-2 flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => setRadiusMeters(5000)}
+                            className="px-3 py-1.5 bg-primary text-on-primary font-bold rounded-lg text-xs cursor-pointer shadow-xs"
+                          >
+                            Expand to 5 km
+                          </button>
+                          <button
+                            onClick={() => setShowCheckInModal(true)}
+                            className="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold rounded-lg text-xs cursor-pointer"
+                          >
+                            Add This Company
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  filteredEntities.map((ent, idx) => {
+                  filteredLeads.map((item, idx) => {
                     const badgeClass =
-                      ent.isCustom
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                        : ent.type === 'epc'
+                      item.isCustom
+                        ? 'bg-rose-100 text-rose-800 border-rose-300'
+                        : item.type === 'epc'
                         ? 'bg-blue-100 text-blue-800 border-blue-200'
-                        : ent.type === 'shop' || ent.type === 'hardware'
+                        : item.type === 'shop'
                         ? 'bg-teal-100 text-teal-800 border-teal-200'
-                        : ent.type === 'dealer'
+                        : item.type === 'dealer'
                         ? 'bg-purple-100 text-purple-800 border-purple-200'
-                        : 'bg-amber-100 text-amber-800 border-amber-200';
+                        : 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
-                    const cleanPhone = (ent.phone || '').replace(/\D/g, '');
+                    const cleanPhone = (item.phone || '').replace(/\D/g, '');
 
                     return (
                       <tr
-                        key={ent.id || idx}
+                        key={item.id || idx}
                         className={`hover:bg-surface-container-low transition-colors ${
-                          ent.isCustom ? 'bg-emerald-500/5' : ''
+                          idx === 0 ? 'bg-emerald-500/5 font-semibold' : ''
                         }`}
                       >
-                        {/* Index */}
-                        <td className="py-3 px-4 text-center font-mono text-secondary text-[11px]">
-                          {idx + 1}
-                        </td>
-
-                        {/* Name & Badge */}
-                        <td className="py-3 px-4">
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-on-surface text-[13px]">
-                                {ent.name}
-                              </span>
-                              {ent.verified && (
-                                <span className="material-symbols-outlined text-[15px] text-primary" title="Verified Solar Partner">
-                                  verified
-                                </span>
-                              )}
-                              {ent.isCustom && (
-                                <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9px] font-bold">
-                                  Staff Check-In 📍
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 text-[11px] text-secondary">
-                              {ent.rating && (
-                                <span className="flex items-center text-amber-600 font-bold">
-                                  ★ {ent.rating}
-                                </span>
-                              )}
-                              {ent.contactPerson && (
-                                <span>• Contact: {ent.contactPerson}</span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Category & Speciality */}
-                        <td className="py-3 px-4">
-                          <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass} mb-1`}>
-                            {ent.category}
-                          </span>
-                          <p className="text-[11px] text-secondary line-clamp-1" title={ent.speciality}>
-                            {ent.speciality || 'Solar Solutions'}
-                          </p>
-                        </td>
-
-                        {/* Distance */}
-                        <td className="py-3 px-4 text-center">
+                        {/* 1. Proximity Rank */}
+                        <td className="py-3 px-3 text-center">
                           <span
-                            className={`inline-block px-2.5 py-1 rounded-lg font-mono font-bold text-xs ${
-                              ent.distanceKm <= 5
-                                ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                                : ent.distanceKm <= 20
-                                ? 'bg-teal-50 text-teal-800'
+                            className={`w-6 h-6 rounded-full inline-flex items-center justify-center text-xs font-mono font-bold ${
+                              idx === 0
+                                ? 'bg-emerald-600 text-white shadow-xs'
                                 : 'bg-surface-container text-secondary'
                             }`}
                           >
-                            {ent.distanceKm === 0 ? '0.0 km (Here)' : `${ent.distanceKm} km`}
+                            {idx + 1}
                           </span>
                         </td>
 
-                        {/* Address & City */}
+                        {/* 2. Business Name & Rating */}
                         <td className="py-3 px-4">
                           <div className="flex flex-col">
-                            <span className="text-on-surface font-medium line-clamp-2" title={ent.address}>
-                              {ent.address}
-                            </span>
-                            <span className="text-secondary text-[11px] font-semibold mt-0.5">
-                              {ent.city}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-on-surface text-[13px]">
+                                {item.name}
+                              </span>
+                              {item.verified && (
+                                <span className="material-symbols-outlined text-[15px] text-primary" title="Verified Solar Business">
+                                  verified
+                                </span>
+                              )}
+                              {item.isCustom && (
+                                <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-bold">
+                                  Check-In 📍
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[11px] text-secondary mt-0.5">
+                              {item.rating && (
+                                <span className="flex items-center text-amber-600 font-bold">
+                                  ★ {item.rating}
+                                </span>
+                              )}
+                              {item.reviewsCount > 0 && (
+                                <span>({item.reviewsCount} reviews)</span>
+                              )}
+                              {item.isOpen !== undefined && (
+                                <span className={item.isOpen ? 'text-emerald-700 font-semibold' : 'text-slate-400'}>
+                                  • {item.isOpen ? 'Open Now' : 'Closed'}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </td>
 
-                        {/* Contact Info */}
-                        <td className="py-3 px-4">
-                          <div className="flex flex-col gap-0.5">
-                            <a
-                              href={`tel:${ent.phone}`}
-                              className="text-primary font-bold hover:underline flex items-center gap-1"
+                        {/* 3. Category */}
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${badgeClass}`}>
+                            {item.category}
+                          </span>
+                        </td>
+
+                        {/* 4. Distance / Proximity */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex flex-col items-center">
+                            <span
+                              className={`px-2.5 py-1 rounded-lg font-mono font-bold text-xs ${
+                                item.distanceMeters <= 500
+                                  ? 'bg-emerald-600 text-white font-extrabold shadow-xs'
+                                  : item.distanceMeters <= 1500
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-surface-container text-secondary'
+                              }`}
                             >
-                              <span className="material-symbols-outlined text-[13px]">phone</span>
-                              <span>{ent.phone}</span>
-                            </a>
-                            {ent.email && (
-                              <span className="text-secondary text-[11px] truncate max-w-[140px]" title={ent.email}>
-                                {ent.email}
+                              {item.distanceMeters < 1000
+                                ? `${item.distanceMeters} m away`
+                                : `${item.distanceKm} km away`}
+                            </span>
+                            {idx === 0 && item.distanceMeters <= 300 && (
+                              <span className="text-[10px] font-bold text-emerald-700 mt-0.5">
+                                Right Next to You 📍
                               </span>
                             )}
                           </div>
                         </td>
 
-                        {/* Direct Actions */}
+                        {/* 5. Address */}
+                        <td className="py-3 px-4">
+                          <span className="text-on-surface line-clamp-2" title={item.address}>
+                            {item.address}
+                          </span>
+                        </td>
+
+                        {/* 6. Phone & Website */}
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-0.5">
+                            {item.phone ? (
+                              <a
+                                href={`tel:${item.phone}`}
+                                className="text-primary font-bold hover:underline flex items-center gap-1"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">phone</span>
+                                <span>{item.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="text-secondary text-[11px]">Phone not listed</span>
+                            )}
+                            {item.website && (
+                              <a
+                                href={item.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-secondary hover:text-primary flex items-center gap-1 text-[11px] truncate max-w-[130px]"
+                                title={item.website}
+                              >
+                                <span className="material-symbols-outlined text-[12px]">link</span>
+                                <span className="truncate">{item.website.replace(/^https?:\/\/(www\.)?/, '')}</span>
+                              </a>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 7. Direct Action Links for Reps on the Ground */}
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Call */}
+                            {/* Call Now */}
+                            {item.phone && (
+                              <a
+                                href={`tel:${item.phone}`}
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                                title="Call Business"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">call</span>
+                                <span>Call</span>
+                              </a>
+                            )}
+
+                            {/* Navigate */}
                             <a
-                              href={`tel:${ent.phone}`}
-                              className="p-1.5 bg-surface-container-low hover:bg-surface-container rounded-lg text-on-surface border border-surface-container-high transition-colors"
-                              title="Call Now"
+                              href={
+                                item.googleMapsUri ||
+                                `https://www.google.com/maps/dir/?api=1&destination=${item.lat || coords.lat},${item.lon || coords.lon}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                              title="Turn-by-Turn GPS Navigation"
                             >
-                              <span className="material-symbols-outlined text-[16px] text-primary">call</span>
+                              <span className="material-symbols-outlined text-[15px]">directions</span>
+                              <span>Navigate</span>
                             </a>
 
                             {/* WhatsApp */}
                             {cleanPhone && (
                               <a
-                                href={`https://wa.me/${cleanPhone}?text=Hello%20${encodeURIComponent(ent.name)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Sales Rep')}%20from%20Sunvine%20Renewable%20regarding%20solar%20collaboration.`}
+                                href={`https://wa.me/${cleanPhone}?text=Hello%20${encodeURIComponent(item.name)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Representative')}%20from%20Sunvine%20Renewable%20regarding%20solar%20collaboration.`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg text-emerald-700 border border-emerald-500/30 transition-colors"
+                                className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 border border-emerald-500/30 rounded-lg transition-colors"
                                 title="Chat on WhatsApp"
                               >
-                                <span className="material-symbols-outlined text-[16px] text-emerald-600">chat</span>
+                                <span className="material-symbols-outlined text-[16px]">chat</span>
                               </a>
                             )}
 
-                            {/* Google Maps Turn-by-Turn */}
-                            <a
-                              href={`https://www.google.com/maps/dir/?api=1&destination=${ent.lat || coords.lat},${ent.lon || coords.lon}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-lg text-blue-700 border border-blue-500/30 transition-colors"
-                              title="Google Maps Navigation Directions"
+                            {/* Claim / Convert to Customer Lead File */}
+                            <button
+                              onClick={() => handleClaimLeadAsFile(item)}
+                              className="p-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high rounded-lg text-on-surface transition-colors cursor-pointer"
+                              title="Create Customer File from Lead"
                             >
-                              <span className="material-symbols-outlined text-[16px] text-blue-600">directions</span>
-                            </a>
-
-                            {/* Search Business on Google */}
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${ent.name} ${ent.city} solar`)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 bg-surface-container-low hover:bg-surface-container rounded-lg text-secondary border border-surface-container-high transition-colors"
-                              title="Search on Google Maps"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">travel_explore</span>
-                            </a>
-
-                            {/* Claim Lead Button */}
-                            {ent.type === 'lead' && (
-                              <button
-                                onClick={() => handleClaimLeadAsFile(ent)}
-                                className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1"
-                                title="Add to My Customer Files"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">person_add</span>
-                                <span>Create File</span>
-                              </button>
-                            )}
+                              <span className="material-symbols-outlined text-[16px] text-primary">person_add</span>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -936,226 +763,121 @@ export default function StaffRadarMap() {
       )}
 
       {/* ========================================================
-          VIEW 2: CIRCULAR RADAR MAP VISUALIZER
+          4. VIEW: RADAR CONCENTRIC CIRCULAR VIEW
           ======================================================== */}
       {viewMode === 'radar' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Circular Interactive Radar Screen */}
           <div className="lg:col-span-2 relative bg-[#070D18] border border-white/15 rounded-2xl p-6 flex flex-col items-center justify-center min-h-[460px] overflow-hidden shadow-2xl">
-            {/* Radar Circular Grid */}
             <div className="relative w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] flex items-center justify-center">
-              {/* Concentric rings */}
               <div className="absolute inset-0 rounded-full border border-emerald-500/20"></div>
-              <div className="absolute inset-8 sm:inset-10 rounded-full border border-emerald-500/20"></div>
-              <div className="absolute inset-20 sm:inset-24 rounded-full border border-emerald-500/25"></div>
-              <div className="absolute inset-32 sm:inset-38 rounded-full border border-emerald-500/30"></div>
-
-              {/* Crosshairs */}
+              <div className="absolute inset-10 rounded-full border border-emerald-500/20"></div>
+              <div className="absolute inset-24 rounded-full border border-emerald-500/25"></div>
+              <div className="absolute inset-36 rounded-full border border-emerald-500/30"></div>
               <div className="absolute inset-x-0 top-1/2 h-px bg-emerald-500/20"></div>
               <div className="absolute inset-y-0 left-1/2 w-px bg-emerald-500/20"></div>
-
-              {/* Animated Sweep */}
               <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-emerald-500/10 via-transparent to-transparent animate-spin duration-7000 pointer-events-none origin-center"></div>
 
-              {/* CENTER: Salesperson Location */}
+              {/* Center User Pin */}
               <div className="absolute z-20 flex flex-col items-center justify-center pointer-events-none">
-                <div className="relative">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 text-[10px] font-bold shadow-lg shadow-emerald-400/50">
-                    <span className="material-symbols-outlined text-[14px]">person_pin_circle</span>
-                  </span>
-                  <span className="absolute -inset-1 rounded-full bg-emerald-400/40 animate-ping"></span>
-                </div>
-                <span className="text-[10px] font-bold text-emerald-300 mt-1 bg-black/70 px-1.5 py-0.5 rounded">
-                  You ({selectedCity})
+                <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 text-[10px] font-bold shadow-lg shadow-emerald-400/50">
+                  <span className="material-symbols-outlined text-[14px]">person_pin_circle</span>
+                </span>
+                <span className="text-[10px] font-bold text-emerald-300 mt-1 bg-black/80 px-1.5 py-0.5 rounded">
+                  You Are Here
                 </span>
               </div>
 
-              {/* Mapped Entity Dots */}
-              {filteredEntities.map((ent, idx) => {
-                const maxR = radiusKm || 25;
-                const distRatio = Math.min(0.95, (ent.distanceKm || 2) / maxR);
-                const dLat = (ent.lat - coords.lat) * 111;
-                const dLon = (ent.lon - coords.lon) * 102;
-                const angle = Math.atan2(dLat, dLon);
-
-                const centerOffset = (360 / 2) * distRatio;
-                const posX = Math.cos(angle) * centerOffset;
-                const posY = -Math.sin(angle) * centerOffset;
-
-                const colorClass =
-                  ent.isCustom
-                    ? 'bg-rose-500 border-rose-300 text-white'
-                    : ent.type === 'epc'
-                    ? 'bg-blue-500 border-blue-300 text-white'
-                    : ent.type === 'shop' || ent.type === 'hardware'
-                    ? 'bg-emerald-500 border-emerald-300 text-white'
-                    : ent.type === 'dealer'
-                    ? 'bg-purple-500 border-purple-300 text-white'
-                    : 'bg-amber-500 border-amber-300 text-slate-950';
-
-                const isSelected = selectedEntity?.id === ent.id;
+              {/* Mapped Dots */}
+              {filteredLeads.map((ent, idx) => {
+                const maxMeters = radiusMeters;
+                const ratio = Math.min(0.95, (ent.distanceMeters || 100) / maxMeters);
+                const angle = (idx * (360 / Math.max(1, filteredLeads.length))) * (Math.PI / 180);
+                const posX = Math.cos(angle) * (180 * ratio);
+                const posY = Math.sin(angle) * (180 * ratio);
 
                 return (
                   <button
                     key={ent.id || idx}
-                    type="button"
                     onClick={() => setSelectedEntity(ent)}
-                    style={{
-                      transform: `translate(${posX}px, ${posY}px)`
-                    }}
-                    className={`absolute z-30 p-1.5 rounded-full border shadow-lg transition-transform hover:scale-125 cursor-pointer ${colorClass} ${
-                      isSelected ? 'ring-4 ring-white scale-125' : ''
-                    }`}
-                    title={`${ent.name} (${ent.distanceKm} km)`}
-                  >
-                    <span className="material-symbols-outlined text-[14px] block">
-                      {ent.isCustom
-                        ? 'add_location'
+                    style={{ transform: `translate(${posX}px, ${posY}px)` }}
+                    className={`absolute z-30 p-1.5 rounded-full shadow-lg transition-transform hover:scale-125 cursor-pointer ${
+                      idx === 0
+                        ? 'bg-rose-500 text-white ring-2 ring-white scale-110'
                         : ent.type === 'epc'
-                        ? 'engineering'
-                        : ent.type === 'shop' || ent.type === 'hardware'
-                        ? 'store'
-                        : ent.type === 'dealer'
-                        ? 'solar_power'
-                        : 'person'}
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-emerald-500 text-white'
+                    }`}
+                    title={`${ent.name} (${ent.distanceMeters} m)`}
+                  >
+                    <span className="material-symbols-outlined text-[13px] block">
+                      {ent.type === 'epc' ? 'engineering' : 'store'}
                     </span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Radar Legend */}
-            <div className="w-full mt-4 pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                  <span>Solar EPC</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                  <span>Equipment / Inverter Shop</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-                  <span>Panel Distributor</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-                  <span>Customer Lead</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                  <span>My Check-In</span>
-                </span>
-              </div>
-              <span className="text-emerald-400 font-mono">
-                {scanResult?.provider || 'AI Radar Active'}
-              </span>
+            <div className="w-full mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400">
+              <span>Center: {streetAddress}</span>
+              <span className="text-emerald-400 font-mono">{activeProvider}</span>
             </div>
           </div>
 
-          {/* Inspector Panel for Selected Entity */}
+          {/* Selected Entity Inspector */}
           <div className="bg-surface rounded-2xl p-5 border border-surface-container-high shadow-xs flex flex-col justify-between">
             {selectedEntity ? (
               <div className="space-y-4">
-                <div className="flex items-start justify-between gap-2">
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
-                      selectedEntity.type === 'epc'
-                        ? 'bg-blue-100 text-blue-800 border-blue-200'
-                        : selectedEntity.type === 'shop' || selectedEntity.type === 'hardware'
-                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                        : selectedEntity.type === 'dealer'
-                        ? 'bg-purple-100 text-purple-800 border-purple-200'
-                        : 'bg-amber-100 text-amber-800 border-amber-200'
-                    }`}
-                  >
+                <div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border font-bold bg-blue-100 text-blue-800 border-blue-200">
                     {selectedEntity.category}
                   </span>
-                  <span className="text-xs font-bold text-emerald-700 font-mono">
-                    {selectedEntity.distanceKm} km away
-                  </span>
+                  <h3 className="text-base font-bold text-on-surface mt-2">{selectedEntity.name}</h3>
+                  <p className="text-xs text-emerald-700 font-mono font-bold mt-0.5">
+                    {selectedEntity.distanceMeters} meters away
+                  </p>
                 </div>
 
-                <div>
-                  <h3 className="text-lg font-bold text-on-surface">{selectedEntity.name}</h3>
-                  {selectedEntity.speciality && (
-                    <p className="text-xs text-secondary mt-0.5">{selectedEntity.speciality}</p>
-                  )}
-                </div>
-
-                <div className="space-y-2 text-xs text-secondary pt-2 border-t border-surface-container-high">
-                  <div className="flex items-start gap-2">
-                    <span className="material-symbols-outlined text-[16px] text-primary shrink-0 mt-0.5">location_on</span>
+                <div className="space-y-2 text-xs text-secondary border-t border-surface-container-high pt-3">
+                  <div className="flex items-start gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">location_on</span>
                     <span className="text-on-surface">{selectedEntity.address}</span>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[16px] text-primary shrink-0">call</span>
-                    <a href={`tel:${selectedEntity.phone}`} className="text-on-surface font-semibold hover:underline">
-                      {selectedEntity.phone}
-                    </a>
-                  </div>
-
-                  {selectedEntity.email && (
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[16px] text-primary shrink-0">mail</span>
-                      <a href={`mailto:${selectedEntity.email}`} className="text-secondary hover:underline">
-                        {selectedEntity.email}
+                  {selectedEntity.phone && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">call</span>
+                      <a href={`tel:${selectedEntity.phone}`} className="text-primary font-bold hover:underline">
+                        {selectedEntity.phone}
                       </a>
                     </div>
                   )}
                 </div>
 
-                <div className="pt-4 border-t border-surface-container-high space-y-2">
+                <div className="pt-3 border-t border-surface-container-high space-y-2">
                   <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedEntity.lat || coords.lat},${selectedEntity.lon || coords.lon}`}
+                    href={selectedEntity.googleMapsUri || `https://www.google.com/maps/dir/?api=1&destination=${selectedEntity.lat || coords.lat},${selectedEntity.lon || coords.lon}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm hover:from-blue-700 hover:to-indigo-700 transition-all"
+                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                   >
-                    <span className="material-symbols-outlined text-[17px]">directions</span>
-                    <span>Start Google Maps Navigation</span>
+                    <span className="material-symbols-outlined text-[16px]">directions</span>
+                    <span>Navigate (Directions)</span>
                   </a>
-
-                  <div className="grid grid-cols-2 gap-2">
+                  {selectedEntity.phone && (
                     <a
                       href={`tel:${selectedEntity.phone}`}
-                      className="py-2 px-3 bg-surface-container-low hover:bg-surface-container text-on-surface rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                      className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
                     >
-                      <span className="material-symbols-outlined text-[16px] text-primary">call</span>
+                      <span className="material-symbols-outlined text-[16px]">call</span>
                       <span>Call Now</span>
                     </a>
-
-                    <a
-                      href={`https://wa.me/${selectedEntity.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(selectedEntity.name)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Representative')}%20from%20Sunvine%20Renewable%20regarding%20solar%20collaboration.`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-2 px-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-emerald-600">chat</span>
-                      <span>WhatsApp</span>
-                    </a>
-                  </div>
-
-                  {selectedEntity.type === 'lead' && (
-                    <button
-                      onClick={() => handleClaimLeadAsFile(selectedEntity)}
-                      className="w-full py-2.5 px-3 bg-primary text-on-primary rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer mt-1"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">person_add</span>
-                      <span>Add to My Customer Files (फाइल बनाएं)</span>
-                    </button>
                   )}
                 </div>
               </div>
             ) : (
               <div className="p-8 text-center text-secondary space-y-2 my-auto">
-                <span className="material-symbols-outlined text-4xl text-secondary/40">touch_app</span>
-                <h4 className="text-sm font-bold text-on-surface">Click on Any Radar Dot</h4>
-                <p className="text-xs">
-                  Select any vendor, EPC contractor, or customer lead on the radar to inspect full contact info, address, and Google Maps directions.
-                </p>
+                <span className="material-symbols-outlined text-4xl text-secondary/40">near_me</span>
+                <h4 className="text-sm font-bold text-on-surface">Select Any Radar Entity</h4>
+                <p className="text-xs">Click on any dot to inspect contact details and turn-by-turn navigation.</p>
               </div>
             )}
           </div>
@@ -1163,257 +885,126 @@ export default function StaffRadarMap() {
       )}
 
       {/* ========================================================
-          VIEW 3: CARDS DIRECTORY VIEW
+          5. VIEW: CARDS DIRECTORY VIEW
           ======================================================== */}
       {viewMode === 'cards' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredEntities.map((ent, idx) => {
-            const badgeColor =
-              ent.isCustom
-                ? 'bg-rose-100 text-rose-800 border-rose-200'
-                : ent.type === 'epc'
-                ? 'bg-blue-100 text-blue-800 border-blue-200'
-                : ent.type === 'shop' || ent.type === 'hardware'
-                ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                : ent.type === 'dealer'
-                ? 'bg-purple-100 text-purple-800 border-purple-200'
-                : 'bg-amber-100 text-amber-800 border-amber-200';
-
-            return (
-              <div
-                key={ent.id || idx}
-                className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${badgeColor}`}>
-                      {ent.category}
-                    </span>
-                    <span className="text-xs font-bold text-emerald-700 font-mono">
-                      {ent.distanceKm} km away
-                    </span>
-                  </div>
-
-                  <h3 className="text-base font-bold text-on-surface mt-2 flex items-center gap-1.5">
-                    <span>{ent.name}</span>
-                    {ent.isCustom && (
-                      <span className="px-1.5 py-0.2 rounded bg-rose-500 text-white text-[9px] font-bold">
-                        Staff 📍
-                      </span>
-                    )}
-                  </h3>
-
-                  <div className="mt-3 space-y-1.5 text-xs text-secondary">
-                    <div className="flex items-start gap-1.5">
-                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">location_on</span>
-                      <span className="text-on-surface line-clamp-2">{ent.address}</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">call</span>
-                      <a href={`tel:${ent.phone}`} className="text-on-surface font-semibold hover:underline">
-                        {ent.phone}
-                      </a>
-                    </div>
-
-                    {ent.speciality && (
-                      <div className="p-2 rounded-lg bg-surface-container-low text-[11px] text-secondary mt-2">
-                        {ent.speciality}
-                      </div>
-                    )}
-                  </div>
+          {filteredLeads.map((item, idx) => (
+            <div
+              key={item.id || idx}
+              className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full border font-bold bg-blue-100 text-blue-800 border-blue-200">
+                    {item.category}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-emerald-700">
+                    {item.distanceMeters < 1000 ? `${item.distanceMeters} m` : `${item.distanceKm} km`}
+                  </span>
                 </div>
 
-                <div className="pt-4 mt-4 border-t border-surface-container-high flex flex-col gap-2">
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <a
-                      href={`tel:${ent.phone}`}
-                      className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container rounded-lg text-xs font-bold text-center text-on-surface border border-surface-container-high"
-                    >
-                      Call
-                    </a>
-                    <a
-                      href={`https://wa.me/${ent.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(ent.name)},%20I%20am%20from%20Sunvine%20Renewable.`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-1.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 rounded-lg text-xs font-bold text-center border border-emerald-500/30"
-                    >
-                      WhatsApp
-                    </a>
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${ent.lat || coords.lat},${ent.lon || coords.lon}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 rounded-lg text-xs font-bold text-center border border-blue-500/30"
-                    >
-                      Map
-                    </a>
-                  </div>
+                <h3 className="text-base font-bold text-on-surface mt-2 flex items-center gap-1.5">
+                  <span>{item.name}</span>
+                  {idx === 0 && (
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9px] font-bold">
+                      #1 Nearest
+                    </span>
+                  )}
+                </h3>
 
-                  {ent.type === 'lead' && (
-                    <button
-                      onClick={() => handleClaimLeadAsFile(ent)}
-                      className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold shadow-xs cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">person_add</span>
-                      <span>Convert to Customer File</span>
-                    </button>
+                <div className="mt-3 space-y-1.5 text-xs text-secondary">
+                  <div className="flex items-start gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">location_on</span>
+                    <span className="text-on-surface line-clamp-2">{item.address}</span>
+                  </div>
+                  {item.phone && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] text-primary shrink-0">call</span>
+                      <a href={`tel:${item.phone}`} className="text-primary font-bold hover:underline">
+                        {item.phone}
+                      </a>
+                    </div>
                   )}
                 </div>
               </div>
-            );
-          })}
+
+              <div className="pt-4 mt-4 border-t border-surface-container-high grid grid-cols-2 gap-2">
+                {item.phone ? (
+                  <a
+                    href={`tel:${item.phone}`}
+                    className="py-1.5 px-2 bg-emerald-600 text-white rounded-lg text-xs font-bold text-center flex items-center justify-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">call</span>
+                    <span>Call</span>
+                  </a>
+                ) : (
+                  <div></div>
+                )}
+                <a
+                  href={item.googleMapsUri || `https://www.google.com/maps/dir/?api=1&destination=${item.lat || coords.lat},${item.lon || coords.lon}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-1.5 px-2 bg-blue-600 text-white rounded-lg text-xs font-bold text-center flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[14px]">directions</span>
+                  <span>Navigate</span>
+                </a>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* ========================================================
-          MODAL: REGISTER CURRENT SOLAR COMPANY (STAFF CHECK-IN)
+          MODAL: MANUAL PIN / ADJUST SPOT
           ======================================================== */}
-      {showRegisterModal && (
+      {showManualLocModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-lg w-full p-6 border border-surface-container-high shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+          <div className="bg-surface rounded-2xl max-w-md w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-emerald-500/15 text-emerald-700">
-                  <span className="material-symbols-outlined text-[20px]">add_location_alt</span>
-                </span>
-                <div>
-                  <h3 className="font-bold text-base text-on-surface">Add Current Solar Company</h3>
-                  <p className="text-xs text-secondary">
-                    Register the company/shop you are currently visiting at your live GPS pin
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowRegisterModal(false)}
-                className="p-1 rounded-lg text-secondary hover:text-on-surface cursor-pointer"
-              >
+              <h3 className="font-bold text-base text-on-surface">Pick Exact Spot / Area</h3>
+              <button onClick={() => setShowManualLocModal(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveCompany} className="space-y-3">
+            <p className="text-xs text-secondary leading-relaxed">
+              If your desktop browser IP location was inaccurate, enter your exact area, road, or landmark name to lock 100% accurate coordinates.
+            </p>
+
+            <form onSubmit={handleApplyManualSpot} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Company / Shop Name *
+                  Area / Street / Colony / Landmark
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Green Solar Energy Solutions"
-                  value={newCompanyForm.name}
-                  onChange={(e) => setNewCompanyForm({ ...newCompanyForm, name: e.target.value })}
-                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={newCompanyForm.category}
-                    onChange={(e) => {
-                      const cat = e.target.value;
-                      let type = 'epc';
-                      if (cat.includes('Shop') || cat.includes('Hardware')) type = 'shop';
-                      if (cat.includes('Distributor') || cat.includes('Dealer')) type = 'dealer';
-                      setNewCompanyForm({ ...newCompanyForm, category: cat, type });
-                    }}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none cursor-pointer"
-                  >
-                    <option value="Solar EPC Contractor & Installer">Solar EPC Contractor</option>
-                    <option value="Solar Inverter & Battery Shop">Inverter & Battery Shop</option>
-                    <option value="Authorized Solar Module Distributor">Module Distributor</option>
-                    <option value="Mounting Structure & GI Hardware">Mounting Structure & Hardware</option>
-                    <option value="Electrical Contractor & Equipment">Electrical Contractor</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    value={newCompanyForm.city}
-                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, city: e.target.value })}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">
-                    Phone / Mobile
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="+91 98765 43210"
-                    value={newCompanyForm.phone}
-                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, phone: e.target.value })}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-on-surface mb-1">
-                    Contact Person Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Owner / Manager Name"
-                    value={newCompanyForm.contactPerson}
-                    onChange={(e) => setNewCompanyForm({ ...newCompanyForm, contactPerson: e.target.value })}
-                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Address (Auto-populated with your live GPS location)
-                </label>
-                <textarea
-                  rows="2"
-                  value={newCompanyForm.address}
-                  onChange={(e) => setNewCompanyForm({ ...newCompanyForm, address: e.target.value })}
-                  className="w-full p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
-                />
-                <span className="text-[10px] text-secondary">
-                  Coordinates: {coords.lat}, {coords.lon} (Distance: 0.0 km)
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Speciality / Products Handled
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 3kW-10kW Residential, Waaree Modules, Polycab Inverters"
-                  value={newCompanyForm.speciality}
-                  onChange={(e) => setNewCompanyForm({ ...newCompanyForm, speciality: e.target.value })}
-                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
+                  placeholder="e.g. Prahlad Nagar, SG Highway, Katargam, GIDC Makarpura"
+                  value={manualInputQuery}
+                  onChange={(e) => setManualInputQuery(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowRegisterModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
+                  onClick={() => setShowManualLocModal(false)}
+                  className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md flex items-center gap-1.5 cursor-pointer"
+                  disabled={isGeocodingManual}
+                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[16px]">save</span>
-                  <span>Save Company at this Location</span>
+                  <span className={`material-symbols-outlined text-[15px] ${isGeocodingManual ? 'animate-spin' : ''}`}>
+                    {isGeocodingManual ? 'sync' : 'pin_drop'}
+                  </span>
+                  <span>{isGeocodingManual ? 'Locking Spot...' : 'Lock Exact Spot'}</span>
                 </button>
               </div>
             </form>
@@ -1422,25 +1013,22 @@ export default function StaffRadarMap() {
       )}
 
       {/* ========================================================
-          MODAL: n8n WEBHOOK & AI PIPELINE SETTINGS
+          MODAL: GCP PLACES API (NEW) KEY CONFIGURATION
           ======================================================== */}
-      {showN8nSettings && (
+      {showGcpSettings && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-xl w-full p-6 border border-surface-container-high shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+          <div className="bg-surface rounded-2xl max-w-lg w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="p-2 rounded-xl bg-amber-500/15 text-amber-600">
-                  <span className="material-symbols-outlined text-[22px]">hub</span>
+                  <span className="material-symbols-outlined text-[20px]">key</span>
                 </span>
                 <div>
-                  <h3 className="font-bold text-base text-on-surface">n8n Solar Radar Pipeline</h3>
-                  <p className="text-xs text-secondary">Configure n8n Webhook Endpoint &amp; AI Agent Orchestration</p>
+                  <h3 className="font-bold text-base text-on-surface">Google Places API (New) Setup</h3>
+                  <p className="text-xs text-secondary">Configure Google Cloud Places API Key for live enterprise queries</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowN8nSettings(false)}
-                className="p-1 rounded-lg text-secondary hover:text-on-surface cursor-pointer"
-              >
+              <button onClick={() => setShowGcpSettings(false)} className="text-secondary hover:text-on-surface cursor-pointer">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
@@ -1448,60 +1036,131 @@ export default function StaffRadarMap() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-on-surface mb-1">
-                  Active n8n Webhook URL (Production / Local Test):
+                  Google Maps / Places API Key (Server or Client Override):
                 </label>
                 <input
-                  type="url"
-                  value={n8nUrl}
-                  onChange={(e) => setN8nUrl(e.target.value)}
-                  placeholder="https://your-n8n-instance.com/webhook/solar-radar-scanner"
+                  type="password"
+                  value={gcpKeyInput}
+                  onChange={(e) => setGcpKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
                   className="w-full h-10 px-3 bg-surface-container-low border border-surface-container-high rounded-xl text-xs font-mono text-on-surface outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2 text-xs text-secondary">
+              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high space-y-1.5 text-xs text-secondary">
                 <div className="font-bold text-on-surface flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-emerald-600 text-[16px]">psychology</span>
-                  <span>How the n8n + AI Agent Pipeline Works:</span>
+                  <span className="material-symbols-outlined text-[16px] text-emerald-600">verified</span>
+                  <span>Google Cloud Platform (GCP) Configuration Checklist:</span>
                 </div>
-                <ol className="list-decimal pl-4 space-y-1">
-                  <li>Portal sends staff GPS coordinates, city, and radius via HTTP POST.</li>
-                  <li>n8n executes OpenStreetMap Overpass &amp; Google Places queries for registered solar nodes.</li>
-                  <li>AI Agent (Gemini / OpenAI) formats and enriches company names, contacts &amp; services.</li>
-                  <li>Portal displays the live response directly in the structured Table &amp; Radar Map.</li>
-                </ol>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px]">
+                  <li>Enable <strong>Places API (New)</strong> in your GCP Console.</li>
+                  <li>Enable <strong>Geocoding API</strong> for high-accuracy street lookups.</li>
+                  <li>Set environment variable: <code>GOOGLE_PLACES_API_KEY=AIzaSy...</code> in Vercel.</li>
+                  <li>Or enter the key above to test instantly in your browser!</li>
+                </ul>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={handleCopyWorkflowJson}
-                  className="px-3 py-2 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-xs font-bold text-on-surface rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                  onClick={() => setShowGcpSettings(false)}
+                  className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[16px] text-amber-500">
-                    {copiedWorkflow ? 'check' : 'content_copy'}
-                  </span>
-                  <span>{copiedWorkflow ? 'Workflow JSON Copied!' : 'Copy Ready n8n Template JSON'}</span>
+                  Cancel
                 </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowN8nSettings(false)}
-                    className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveN8nUrl}
-                    className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs shadow-xs cursor-pointer"
-                  >
-                    Save &amp; Scan Now
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveGcpKey}
+                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs shadow-xs cursor-pointer"
+                >
+                  Save &amp; Scan Now
+                </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: CHECK-IN SPOT / ADD CURRENT COMPANY
+          ======================================================== */}
+      {showCheckInModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl max-w-lg w-full p-6 border border-surface-container-high shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-base text-on-surface">Register Company at Live Spot</h3>
+              <button onClick={() => setShowCheckInModal(false)} className="text-secondary hover:text-on-surface cursor-pointer">
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCheckIn} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1">Company Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Tata Power Solar Partner"
+                  value={checkInForm.name}
+                  onChange={(e) => setCheckInForm({ ...checkInForm, name: e.target.value })}
+                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface mb-1">Category</label>
+                  <select
+                    value={checkInForm.category}
+                    onChange={(e) => setCheckInForm({ ...checkInForm, category: e.target.value })}
+                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
+                  >
+                    <option value="Solar EPC Contractor & Installer">Solar EPC Contractor</option>
+                    <option value="Solar Inverter & Equipment Shop">Inverter Shop</option>
+                    <option value="Authorized Solar Module Distributor">Module Dealer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    placeholder="+91 98765 43210"
+                    value={checkInForm.phone}
+                    onChange={(e) => setCheckInForm({ ...checkInForm, phone: e.target.value })}
+                    className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1">Address</label>
+                <input
+                  type="text"
+                  value={checkInForm.address}
+                  onChange={(e) => setCheckInForm({ ...checkInForm, address: e.target.value })}
+                  className="w-full h-10 px-3 rounded-xl bg-surface-container-low border border-surface-container-high text-xs text-on-surface outline-none"
+                />
+                <span className="text-[10px] text-secondary">
+                  Locked Coordinates: {coords.lat.toFixed(6)}, {coords.lon.toFixed(6)} (0.0 km)
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCheckInModal(false)}
+                  className="px-3 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary text-on-primary font-bold rounded-xl text-xs shadow-xs cursor-pointer"
+                >
+                  Save at this Spot
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
