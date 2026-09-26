@@ -109,6 +109,33 @@ export default function DealerLogin() {
 
         {/* Login Form Card */}
         <div className="bg-surface-container-lowest rounded-xl shadow-md p-5 flex flex-col">
+          {/* Top Role Switcher Tabs */}
+          <div className="flex items-center gap-1 p-1 bg-surface-container-low rounded-xl mb-3 border border-surface-container-high">
+            <button
+              type="button"
+              className="flex-1 py-1 px-2 rounded-lg bg-surface-container-lowest text-primary font-bold text-xs shadow-xs flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[15px]">store</span>
+              <span>Dealer</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthView('staff_login')}
+              className="flex-1 py-1 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
+              <span>Staff (स्टाफ)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthView('admin_login')}
+              className="flex-1 py-1 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px] text-primary">shield</span>
+              <span>Admin</span>
+            </button>
+          </div>
+
           <div className="flex items-center justify-between mb-2">
             <span className="font-label-xs text-[11px] uppercase tracking-widest text-primary font-semibold px-2 py-0.5 rounded bg-primary-fixed/30">
               Channel Console
@@ -392,6 +419,33 @@ export default function DealerLogin() {
             <div className="w-full max-w-[430px] bg-surface-container-lowest rounded-2xl p-6 sm:p-8 shadow-lg shadow-on-secondary-fixed/5 my-auto">
               {/* Header Badge & Heading */}
               <div className="mb-5">
+                {/* Prominent Top Role Switcher Tabs */}
+                <div className="flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl mb-4 border border-surface-container-high">
+                  <button
+                    type="button"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-lowest text-primary font-bold text-xs shadow-xs flex items-center justify-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">store</span>
+                    <span>Dealer Login</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthView('staff_login')}
+                    className="flex-1 py-1.5 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
+                    <span>Staff Login (स्टाफ)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthView('admin_login')}
+                    className="flex-1 py-1.5 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-primary">shield</span>
+                    <span>Admin</span>
+                  </button>
+                </div>
+
                 <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-fixed-variant mb-2.5">
                   <span className="w-2 h-2 rounded-full bg-primary"></span>
                   <span className="font-label-xs font-semibold uppercase tracking-wider">Channel Console</span>
