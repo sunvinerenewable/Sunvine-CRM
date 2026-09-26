@@ -674,3 +674,83 @@ export const N8N_WORKFLOW_TEMPLATE = {
     }
   ]
 };
+
+// Geocode any typed area, colony, landmark, or city name
+export async function geocodeAreaOrLandmark(text) {
+  if (!text || text.trim().length === 0) return { success: false };
+  try {
+    const cleanText = text.trim();
+    const query = cleanText.toLowerCase().includes('gujarat') || cleanText.toLowerCase().includes('india')
+      ? cleanText
+      : `${cleanText}, Gujarat, India`;
+
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=5`, {
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const top = data[0];
+        const addr = top.address || {};
+        const road = addr.road || addr.suburb || addr.neighbourhood || addr.industrial || addr.commercial || '';
+        const city = addr.city || addr.town || addr.village || addr.county || addr.state_district || 'Gujarat';
+        const displayName = [road, city].filter(Boolean).join(', ') || top.display_name.split(',').slice(0, 3).join(',');
+
+        return {
+          success: true,
+          lat: Number(Number(top.lat).toFixed(4)),
+          lon: Number(Number(top.lon).toFixed(4)),
+          displayName: displayName,
+          city: city,
+          fullAddress: top.display_name
+        };
+      }
+    }
+  } catch (err) {
+    console.error('Geocode Area Error:', err);
+  }
+  return { success: false };
+}
+
+// Scrape live solar companies & leads by calling /api/scrape-solar-leads
+export async function scrapeLiveSolarLeads({ location, keyword, lat, lon }) {
+  try {
+    const res = await fetch('/api/scrape-solar-leads', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ location, keyword, lat, lon })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.leads) && data.leads.length > 0) {
+        // Save these discovered leads to local storage
+        const currentCustom = getCustomSolarVendors();
+        const existingNames = new Set(currentCustom.map(c => (c.name || '').toLowerCase()));
+        const newVendors = data.leads.filter(l => !existingNames.has((l.name || '').toLowerCase()));
+
+        if (newVendors.length > 0) {
+          const merged = [...newVendors, ...currentCustom];
+          localStorage.setItem(CUSTOM_VENDORS_STORAGE_KEY, JSON.stringify(merged));
+        }
+
+        return {
+          success: true,
+          count: data.leads.length,
+          leads: data.leads
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('API scrape-solar-leads error:', err);
+  }
+
+  return { success: false, leads: [] };
+}
+

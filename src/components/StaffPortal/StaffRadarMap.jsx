@@ -12,7 +12,9 @@ import {
   N8N_WORKFLOW_TEMPLATE,
   saveCustomSolarVendor,
   getCustomSolarVendors,
-  reverseGeocodeCoordinates
+  reverseGeocodeCoordinates,
+  geocodeAreaOrLandmark,
+  scrapeLiveSolarLeads
 } from '../../services/n8nSolarRadarService';
 
 export default function StaffRadarMap() {
@@ -61,6 +63,72 @@ export default function StaffRadarMap() {
     city: currentStaff?.city || 'Ahmedabad',
     speciality: 'Rooftop Solar EPC & PM Surya Ghar Partner'
   });
+
+  // Exact Area Search / Pinning State
+  const [areaSearchInput, setAreaSearchInput] = useState('');
+  const [isPinningArea, setIsPinningArea] = useState(false);
+
+  // Live AI Scraper State
+  const [selectedKeyword, setSelectedKeyword] = useState('Solar EPC Companies');
+  const [customKeyword, setCustomKeyword] = useState('');
+  const [isScrapingLive, setIsScrapingLive] = useState(false);
+  const [lastScrapedCount, setLastScrapedCount] = useState(0);
+
+  // Handle Pin Area by Name or Landmark
+  const handlePinExactArea = async (e) => {
+    if (e) e.preventDefault();
+    const query = areaSearchInput.trim();
+    if (!query) {
+      addToast('Please enter an area, street, or landmark name', 'error');
+      return;
+    }
+    setIsPinningArea(true);
+    const result = await geocodeAreaOrLandmark(query);
+    setIsPinningArea(false);
+
+    if (result.success) {
+      const newCoords = { lat: result.lat, lon: result.lon };
+      setCoords(newCoords);
+      setDetectedAddress(result.displayName);
+      if (result.city && GUJARAT_CITIES_COORDS[result.city]) {
+        setSelectedCity(result.city);
+      }
+      setIsGpsLive(true);
+      addToast(`📍 Location Pinned: ${result.displayName} (${result.lat}, ${result.lon})`, 'success');
+      runRadarScan(newCoords.lat, newCoords.lon, result.city || selectedCity);
+    } else {
+      addToast(`Could not pinpoint "${query}". Try adding city name, e.g. "${query}, Ahmedabad"`, 'error');
+    }
+  };
+
+  // Handle Run Live AI Scraper
+  const handleRunLiveScraper = async (keywordOverride) => {
+    const kw = keywordOverride || customKeyword.trim() || selectedKeyword;
+    setIsScrapingLive(true);
+    addToast(`🔍 Live AI Crawling for "${kw}" in ${detectedAddress}...`, 'info');
+
+    try {
+      const res = await scrapeLiveSolarLeads({
+        location: detectedAddress || selectedCity,
+        keyword: kw,
+        lat: coords.lat,
+        lon: coords.lon
+      });
+
+      setIsScrapingLive(false);
+
+      if (res.success && res.leads?.length > 0) {
+        setLastScrapedCount(res.leads.length);
+        addToast(`✅ Found ${res.leads.length} live solar companies for "${kw}"! Added to table.`, 'success');
+        runRadarScan(coords.lat, coords.lon, selectedCity);
+      } else {
+        addToast(`No new live companies scraped for "${kw}". Check connection or try another keyword.`, 'info');
+      }
+    } catch (err) {
+      setIsScrapingLive(false);
+      addToast('Scraping error occurred', 'error');
+    }
+  };
 
   // Fetch Reverse Geocoded Address
   const updateAddressForCoords = async (lat, lon) => {
@@ -365,62 +433,149 @@ export default function StaffRadarMap() {
         </div>
 
         {/* Location & GPS Ribbon */}
-        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Live GPS Button */}
-            <button
-              onClick={handleDetectGps}
-              disabled={gpsLoading}
-              className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
-                isGpsLive
-                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                  : 'bg-white/5 border-white/15 text-slate-300 hover:bg-white/10'
-              }`}
-            >
-              <span className={`material-symbols-outlined text-[16px] text-emerald-400 ${gpsLoading ? 'animate-spin' : ''}`}>
-                {gpsLoading ? 'sync' : isGpsLive ? 'my_location' : 'location_searching'}
-              </span>
-              <span>{gpsLoading ? 'Acquiring GPS...' : isGpsLive ? 'GPS Locked (Live)' : 'Detect My Live Location'}</span>
-            </button>
-
-            {/* City Selector */}
-            <div className="flex items-center gap-1.5 bg-white/5 border border-white/15 rounded-lg px-2.5 py-1">
-              <span className="text-slate-400 font-medium">City:</span>
-              <select
-                value={selectedCity}
-                onChange={(e) => handleCityChange(e.target.value)}
-                className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs"
+        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col gap-3 text-xs">
+          {/* Row 1: GPS, City, and Live Address */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Live GPS Button */}
+              <button
+                onClick={handleDetectGps}
+                disabled={gpsLoading}
+                className={`px-3 py-1.5 rounded-lg border flex items-center gap-1.5 font-bold transition-all cursor-pointer ${
+                  isGpsLive
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                    : 'bg-white/5 border-white/15 text-slate-300 hover:bg-white/10'
+                }`}
               >
-                {Object.keys(GUJARAT_CITIES_COORDS).map((c) => (
-                  <option key={c} value={c} className="bg-slate-900 text-white">
-                    {c}
-                  </option>
-                ))}
-              </select>
+                <span className={`material-symbols-outlined text-[16px] text-emerald-400 ${gpsLoading ? 'animate-spin' : ''}`}>
+                  {gpsLoading ? 'sync' : isGpsLive ? 'my_location' : 'location_searching'}
+                </span>
+                <span>{gpsLoading ? 'Acquiring GPS...' : isGpsLive ? 'GPS Locked (Live)' : 'Detect GPS'}</span>
+              </button>
+
+              {/* City Selector */}
+              <div className="flex items-center gap-1.5 bg-white/5 border border-white/15 rounded-lg px-2.5 py-1">
+                <span className="text-slate-400 font-medium">City:</span>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => handleCityChange(e.target.value)}
+                  className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs"
+                >
+                  {Object.keys(GUJARAT_CITIES_COORDS).map((c) => (
+                    <option key={c} value={c} className="bg-slate-900 text-white">
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Live Address Display */}
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-lg border border-white/10 text-slate-300">
+                <span className="material-symbols-outlined text-[15px] text-emerald-400">pin_drop</span>
+                <span className="font-medium truncate max-w-[280px] sm:max-w-md" title={detectedAddress}>
+                  {detectedAddress}
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  ({coords.lat}, {coords.lon})
+                </span>
+              </div>
             </div>
 
-            {/* Live Address Display */}
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-lg border border-white/10 text-slate-300">
-              <span className="material-symbols-outlined text-[15px] text-emerald-400">pin_drop</span>
-              <span className="font-medium truncate max-w-[280px] sm:max-w-md" title={detectedAddress}>
-                {detectedAddress}
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">
-                ({coords.lat}, {coords.lon})
-              </span>
-            </div>
+            {/* Direct Google Maps Live Search Link */}
+            <a
+              href={`https://www.google.com/maps/search/solar+companies/@${coords.lat},${coords.lon},14z`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-300 font-semibold transition-colors"
+            >
+              <span className="material-symbols-outlined text-[15px] text-blue-400">travel_explore</span>
+              <span>Search Live on Google Maps</span>
+            </a>
           </div>
 
-          {/* Direct Google Maps Live Search Link */}
-          <a
-            href={`https://www.google.com/maps/search/solar+companies/@${coords.lat},${coords.lon},14z`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/40 text-blue-300 font-semibold transition-colors"
-          >
-            <span className="material-symbols-outlined text-[15px] text-blue-400">travel_explore</span>
-            <span>Search Live on Google Maps</span>
-          </a>
+          {/* Row 2: Search Exact Area / Landmark Form (Solves Desktop ISP location issues) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+            <form onSubmit={handlePinExactArea} className="flex-1 flex items-center gap-2">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined text-emerald-400 absolute left-3 top-1/2 -translate-y-1/2 text-[16px]">
+                  search
+                </span>
+                <input
+                  type="text"
+                  value={areaSearchInput}
+                  onChange={(e) => setAreaSearchInput(e.target.value)}
+                  placeholder="Type your exact Area, Street, Colony or Landmark (e.g. Prahlad Nagar, SG Highway, Katargam, GIDC, Makarpura)..."
+                  className="w-full h-9 pl-9 pr-3 rounded-xl bg-white/10 border border-white/20 text-xs text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isPinningArea}
+                className="h-9 px-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                <span className={`material-symbols-outlined text-[16px] ${isPinningArea ? 'animate-spin' : ''}`}>
+                  {isPinningArea ? 'sync' : 'pin_drop'}
+                </span>
+                <span>{isPinningArea ? 'Pinning...' : 'Pin Location (सटीक स्थान)'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Row 3: Auto-Keyword Live AI Crawler Toolbar */}
+          <div className="mt-1 bg-white/5 rounded-xl p-3 border border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-300">
+                <span className="material-symbols-outlined text-[18px] text-emerald-400 animate-pulse">auto_awesome</span>
+                <span>Live AI Crawler: Auto-Search Real Solar Companies in {detectedAddress.split(',')[0]}</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Auto-search keywords to extract live companies, websites, phones &amp; rooftop leads into your portal database.
+              </p>
+            </div>
+
+            {/* Keyword Chips & Trigger */}
+            <div className="flex flex-wrap items-center gap-2">
+              {['Solar EPC Companies', 'Solar Inverter Shops', 'Solar Panel Dealers', 'Rooftop Solar Installers'].map((kw) => (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => {
+                    setSelectedKeyword(kw);
+                    handleRunLiveScraper(kw);
+                  }}
+                  disabled={isScrapingLive}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                    selectedKeyword === kw
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-xs'
+                      : 'bg-white/10 text-slate-200 border-white/15 hover:bg-white/20'
+                  }`}
+                >
+                  {kw}
+                </button>
+              ))}
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={customKeyword}
+                  onChange={(e) => setCustomKeyword(e.target.value)}
+                  placeholder="Or enter company / keyword..."
+                  className="h-8 px-2.5 bg-black/40 border border-white/20 rounded-lg text-xs text-white placeholder:text-slate-400 outline-none w-44"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRunLiveScraper()}
+                  disabled={isScrapingLive}
+                  className="h-8 px-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs rounded-lg flex items-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                >
+                  <span className={`material-symbols-outlined text-[15px] ${isScrapingLive ? 'animate-spin' : ''}`}>
+                    {isScrapingLive ? 'refresh' : 'travel_explore'}
+                  </span>
+                  <span>{isScrapingLive ? 'Scraping Live...' : 'Auto-Scrape'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
