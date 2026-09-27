@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
+import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 export default function StaffNewLead() {
   const { currentStaff, addCustomerFile, setActiveTab, dealers } = useApp();
@@ -23,8 +25,9 @@ export default function StaffNewLead() {
 
   // Payment / Financing Mode: Cash vs Solar Bank Loan
   const [financeType, setFinanceType] = useState('CASH'); // 'CASH' or 'LOAN'
-  const [loanBank, setLoanBank] = useState('State Bank of India');
+  const [loanBank, setLoanBank] = useState('State Bank of India (PM Surya Ghar Scheme)');
   const [loanRefNo, setLoanRefNo] = useState('');
+  const [showBankModal, setShowBankModal] = useState(false);
 
   // Sourced Dealers associated with this staff
   const staffDealers = useMemo(() => {
@@ -295,20 +298,42 @@ export default function StaffNewLead() {
               {financeType === 'LOAN' && (
                 <>
                   <div>
-                    <label className="block text-xs font-bold text-on-surface mb-1">Partner Financing Bank *</label>
-                    <select
-                      value={loanBank}
-                      onChange={(e) => setLoanBank(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:border-primary outline-none cursor-pointer"
-                    >
-                      <option value="State Bank of India">State Bank of India (SBI Surya Ghar)</option>
-                      <option value="Bank of Baroda">Bank of Baroda (BoB Rooftop)</option>
-                      <option value="HDFC Bank">HDFC Bank Solar Loan</option>
-                      <option value="Canara Bank">Canara Bank Green Energy</option>
-                      <option value="Union Bank of India">Union Bank of India</option>
-                      <option value="Axis Bank">Axis Bank Solar Scheme</option>
-                      <option value="Other Bank">Other Cooperative / Private Bank</option>
-                    </select>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-on-surface">Partner Financing Bank / NBFC *</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowBankModal(true)}
+                        className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                        <span>Browse 40+ Banks &amp; Rates</span>
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value={loanBank}
+                        onChange={(e) => setLoanBank(e.target.value)}
+                        className="flex-1 px-3 py-2.5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:border-primary outline-none cursor-pointer"
+                      >
+                        {GROUPED_SOLAR_BANKS.map((group) => (
+                          <optgroup key={group.category} label={group.label}>
+                            {group.banks.map((b) => (
+                              <option key={b.id} value={b.name}>
+                                {b.name} ({b.interestRate.split(' ')[0]})
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowBankModal(true)}
+                        className="px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer shadow-xs"
+                        title="Browse All 40+ Banks, Rates & Tenures"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">search</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -465,6 +490,14 @@ export default function StaffNewLead() {
           </div>
         </form>
       </div>
+
+      {/* MODAL: BROWSE ALL 40+ OFFICIAL SOLAR LOAN BANKS & FINTECHS */}
+      <SolarBankSelectorModal
+        isOpen={showBankModal}
+        onClose={() => setShowBankModal(false)}
+        selectedBankName={loanBank}
+        onSelectBank={(selectedName) => setLoanBank(selectedName)}
+      />
     </div>
   );
 }

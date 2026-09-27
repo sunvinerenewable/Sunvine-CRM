@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { quotationService } from '../../services/quotationService';
-import { useToast } from '../Shared/Toast';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
+import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
+import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -88,6 +89,7 @@ export default function CreateQuotation() {
     return 'Residential';
   });
   const [showInverterModal, setShowInverterModal] = useState(false);
+  const [showBankModal, setShowBankModal] = useState(false);
 
   // 2D Solar Panel Structure & Mounting Layout Studio
   const [showLayoutStudio, setShowLayoutStudio] = useState(false);
@@ -730,22 +732,44 @@ export default function CreateQuotation() {
 
                 {financeType === 'LOAN' && (
                   <div className="flex flex-col gap-1.5 animate-in fade-in duration-200">
-                    <label className="font-label-sm text-label-sm text-amber-900 font-semibold">
-                      Preferred Financing Bank
-                    </label>
-                    <select
-                      value={loanBank}
-                      onChange={(e) => setLoanBank(e.target.value)}
-                      className="w-full h-10 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer text-xs"
-                    >
-                      <option value="State Bank of India (Surya Ghar Loan)">State Bank of India (SBI)</option>
-                      <option value="Bank of Baroda (Baroda Solar)">Bank of Baroda (BOB)</option>
-                      <option value="Canara Bank Solar Scheme">Canara Bank</option>
-                      <option value="Punjab National Bank (PNB)">Punjab National Bank (PNB)</option>
-                      <option value="HDFC Bank Green Loan">HDFC Bank</option>
-                      <option value="ICICI Bank Eco Loan">ICICI Bank</option>
-                      <option value="Other Bank / NBFC">Other Bank / NBFC</option>
-                    </select>
+                    <div className="flex items-center justify-between">
+                      <label className="font-label-sm text-label-sm text-amber-900 font-semibold">
+                        Financing Bank / Provider
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setShowBankModal(true)}
+                        className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                        <span>Browse 40+ Official Banks &amp; Rates</span>
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value={loanBank}
+                        onChange={(e) => setLoanBank(e.target.value)}
+                        className="flex-1 h-10 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer text-xs"
+                      >
+                        {GROUPED_SOLAR_BANKS.map((group) => (
+                          <optgroup key={group.category} label={group.label}>
+                            {group.banks.map((b) => (
+                              <option key={b.id} value={b.name}>
+                                {b.name} ({b.interestRate.split(' ')[0]})
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowBankModal(true)}
+                        className="h-10 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer shadow-xs"
+                        title="Browse All 40+ Banks, Rates & Tenures"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">search</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1544,6 +1568,14 @@ export default function CreateQuotation() {
           </div>
         </div>
       )}
+
+      {/* MODAL: BROWSE ALL 40+ OFFICIAL SOLAR LOAN BANKS & FINTECHS */}
+      <SolarBankSelectorModal
+        isOpen={showBankModal}
+        onClose={() => setShowBankModal(false)}
+        selectedBankName={loanBank}
+        onSelectBank={(selectedName) => setLoanBank(selectedName)}
+      />
     </div>
   );
 }
