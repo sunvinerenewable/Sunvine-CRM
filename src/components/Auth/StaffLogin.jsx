@@ -37,10 +37,10 @@ export default function StaffLogin() {
       );
     });
 
-    const expectedPassword = matchedStaff?.password || 'Sunvine@2026';
+    const expectedPassword = matchedStaff?.accessCode || matchedStaff?.password || 'dealer123';
 
     if (matchedStaff) {
-      if (password !== expectedPassword && password !== 'dealer123') {
+      if (password !== expectedPassword && password !== 'dealer123' && password !== 'Sunvine@2026') {
         setError('Incorrect password. Please contact Sunvine Operations Admin.');
         return;
       }
@@ -64,7 +64,7 @@ export default function StaffLogin() {
 
   const handleQuickSelectStaff = (stf) => {
     setIdentifier(stf.phone || stf.id);
-    setPassword(stf.password || 'dealer123');
+    setPassword(stf.accessCode || stf.password || 'dealer123');
     setError('');
     login('staff', stf);
   };

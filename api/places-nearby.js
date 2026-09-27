@@ -574,13 +574,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // Google API Key precedence: Server env -> Client override -> User default key
+    // Google API Key precedence: Server env -> Client override
     const apiKey =
       process.env.GOOGLE_PLACES_API_KEY ||
       process.env.VITE_GOOGLE_PLACES_API_KEY ||
       process.env.GOOGLE_MAPS_API_KEY ||
       clientKey ||
-      'AIzaSyDjDmfOdZmMPOnlRhkV5I1aPxRvgGCMN-Y';
+      '';
 
     const keywords = Array.isArray(body.keywords) && body.keywords.length > 0
       ? body.keywords
@@ -740,7 +740,7 @@ export default async function handler(req, res) {
       (body.geoapifyKey || '').trim() ||
       process.env.GEOAPIFY_API_KEY ||
       process.env.VITE_GEOAPIFY_API_KEY ||
-      '0de20dc14650471aa570d7463841f36d';
+      '';
 
     if (geoapifyKey && geoapifyKey.length > 5) {
       diagnostics.googleApiType = 'Geoapify Places API + Solar Intelligence';

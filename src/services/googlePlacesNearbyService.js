@@ -4,10 +4,10 @@
 const GCP_KEY_STORAGE_KEY = 'sunvine_gcp_places_api_key';
 const GEOAPIFY_KEY_STORAGE_KEY = 'sunvine_geoapify_api_key';
 
-export const DEFAULT_GEOAPIFY_KEY = '0de20dc14650471aa570d7463841f36d';
+export const DEFAULT_GEOAPIFY_KEY = '';
 
 export function getSavedGeoapifyApiKey() {
-  return localStorage.getItem(GEOAPIFY_KEY_STORAGE_KEY) || import.meta.env.VITE_GEOAPIFY_API_KEY || DEFAULT_GEOAPIFY_KEY;
+  return localStorage.getItem(GEOAPIFY_KEY_STORAGE_KEY) || import.meta.env.VITE_GEOAPIFY_API_KEY || '';
 }
 
 export function saveGeoapifyApiKey(key) {
@@ -56,10 +56,10 @@ export const DEFAULT_ACTIVE_QUERIES = [
   'renewable energy company'
 ];
 
-export const DEFAULT_GOOGLE_API_KEY = 'AIzaSyDjDmfOdZmMPOnlRhkV5I1aPxRvgGCMN-Y';
+export const DEFAULT_GOOGLE_API_KEY = '';
 
 export function getSavedGooglePlacesApiKey() {
-  return localStorage.getItem(GCP_KEY_STORAGE_KEY) || import.meta.env.VITE_GOOGLE_PLACES_API_KEY || DEFAULT_GOOGLE_API_KEY;
+  return localStorage.getItem(GCP_KEY_STORAGE_KEY) || import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '';
 }
 
 export function saveGooglePlacesApiKey(key) {
