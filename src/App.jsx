@@ -45,7 +45,12 @@ import LeadGenerationComingSoon from './components/Shared/LeadGenerationComingSo
 import DocumentationHub from './components/Shared/DocumentationHub';
 
 function MainApp() {
-  const { isAuthenticated, authView, role, activeTab } = useApp();
+  const { isAuthenticated, authView, role, activeTab, currentStaff } = useApp();
+  const isVerificationStaff = Boolean(
+    currentStaff?.role?.toLowerCase().includes('verification') ||
+    currentStaff?.department === 'verification' ||
+    currentStaff?.id === 'STF-003'
+  );
   const [splashFinished, setSplashFinished] = useState(() => {
     return sessionStorage.getItem('sunvine_splash_shown') === 'true';
   });
@@ -106,8 +111,6 @@ function MainApp() {
           return <DealerManagement />;
         case 'staff_mgmt':
           return <StaffManagement />;
-        case 'admin_verification':
-          return <VerificationDesk />;
         case 'admin_reports':
           return <ReportsAnalytics />;
         case 'admin_audit':
@@ -131,12 +134,13 @@ function MainApp() {
 
     if (role === 'staff') {
       switch (activeTab) {
+        case 'verification_desk':
+        case 'staff_verification':
+          return <VerificationDesk />;
         case 'staff_dashboard':
           return <StaffDashboard />;
         case 'staff_files':
           return <StaffFiles />;
-        case 'staff_verification':
-          return <VerificationDesk />;
         case 'staff_performance':
           return <BusinessPerformance />;
         case 'staff_new_lead':
@@ -148,7 +152,7 @@ function MainApp() {
         case 'docs':
           return <DocumentationHub />;
         default:
-          return <StaffDashboard />;
+          return isVerificationStaff ? <VerificationDesk /> : <StaffDashboard />;
       }
     }
 

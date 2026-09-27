@@ -30,10 +30,18 @@ export default function StaffFiles() {
   const [newCustLoanBank, setNewCustLoanBank] = useState('State Bank of India (Surya Ghar Loan)');
   const [newCustLoanRef, setNewCustLoanRef] = useState('');
 
-  // Filter strictly for THIS logged-in staff member
-  const myFiles = (customerFiles || []).filter(
-    (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
+  const isVerificationStaff = Boolean(
+    currentStaff?.role?.toLowerCase().includes('verification') ||
+    currentStaff?.department === 'verification' ||
+    currentStaff?.id === 'STF-003'
   );
+
+  // If verification staff, oversee all office files; if salesperson, strictly their assigned files
+  const myFiles = isVerificationStaff
+    ? (customerFiles || [])
+    : (customerFiles || []).filter(
+        (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
+      );
 
   const filteredFiles = myFiles.filter((f) => {
     const term = searchTerm.toLowerCase().trim();

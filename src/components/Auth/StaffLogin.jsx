@@ -166,20 +166,44 @@ export default function StaffLogin() {
           {/* Quick 1-Click Demo Staff Chips */}
           <div className="mb-4 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
             <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-              Quick Demo Login:
+              Quick Select Staff Role:
             </span>
-            <div className="flex flex-wrap gap-1.5">
-              {(staffList || []).slice(0, 4).map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => handleQuickSelectStaff(s)}
-                  className="px-2 py-1 rounded bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-emerald-700 flex items-center gap-1 cursor-pointer transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[13px] text-emerald-600">person</span>
-                  <span>{s.name.split(' ')[0]} ({s.city})</span>
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-1.5">
+              {(() => {
+                const salesStaff = (staffList || []).find(s => !s.role?.toLowerCase().includes('verification')) || staffList?.[0];
+                const verifyStaff = (staffList || []).find(s => s.role?.toLowerCase().includes('verification') || s.id === 'STF-003') || staffList?.[2];
+
+                return (
+                  <>
+                    {salesStaff && (
+                      <button
+                        type="button"
+                        onClick={() => handleQuickSelectStaff(salesStaff)}
+                        className="p-2 rounded bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-semibold text-on-surface hover:text-emerald-700 flex flex-col items-start cursor-pointer transition-colors text-left"
+                      >
+                        <span className="flex items-center gap-1 text-emerald-700 font-bold">
+                          <span className="material-symbols-outlined text-[14px]">badge</span>
+                          <span>Salesperson</span>
+                        </span>
+                        <span className="text-[10px] text-secondary truncate mt-0.5">{salesStaff.name} ({salesStaff.city})</span>
+                      </button>
+                    )}
+                    {verifyStaff && (
+                      <button
+                        type="button"
+                        onClick={() => handleQuickSelectStaff(verifyStaff)}
+                        className="p-2 rounded bg-surface-container-lowest hover:bg-blue-50 border border-surface-container-high text-[11px] font-semibold text-on-surface hover:text-blue-700 flex flex-col items-start cursor-pointer transition-colors text-left"
+                      >
+                        <span className="flex items-center gap-1 text-blue-700 font-bold">
+                          <span className="material-symbols-outlined text-[14px]">verified_user</span>
+                          <span>Verification Desk</span>
+                        </span>
+                        <span className="text-[10px] text-secondary truncate mt-0.5">{verifyStaff.name} (Desk)</span>
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -447,23 +471,49 @@ export default function StaffLogin() {
                 </p>
               </div>
 
-              {/* 1-Click Demo Staff Chips */}
+              {/* 1-Click Quick Staff Role Selection */}
               <div className="mb-4 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high">
                 <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-                  Quick Demo Login:
+                  Quick Select Staff Role:
                 </span>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(staffList || []).slice(0, 4).map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => handleQuickSelectStaff(s)}
-                      className="px-2 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-primary-container/10 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-primary flex items-center gap-1 cursor-pointer transition-colors text-left"
-                    >
-                      <span className="material-symbols-outlined text-[14px] text-primary shrink-0">person</span>
-                      <span className="truncate">{s.name.split(' ')[0]} ({s.city})</span>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-2">
+                  {(() => {
+                    const salesStaff = (staffList || []).find(s => !s.role?.toLowerCase().includes('verification')) || staffList?.[0];
+                    const verifyStaff = (staffList || []).find(s => s.role?.toLowerCase().includes('verification') || s.id === 'STF-003') || staffList?.[2];
+
+                    return (
+                      <>
+                        {salesStaff && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickSelectStaff(salesStaff)}
+                            className="p-2.5 rounded-lg bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-emerald-700 flex flex-col items-start cursor-pointer transition-colors text-left"
+                          >
+                            <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
+                              <span className="material-symbols-outlined text-[15px]">badge</span>
+                              <span>Salesperson</span>
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-800 mt-1 truncate">{salesStaff.name}</span>
+                            <span className="text-[10px] text-secondary truncate">{salesStaff.zone?.split(' ')[0]} &bull; ID: {salesStaff.id}</span>
+                          </button>
+                        )}
+                        {verifyStaff && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickSelectStaff(verifyStaff)}
+                            className="p-2.5 rounded-lg bg-surface-container-lowest hover:bg-blue-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-blue-700 flex flex-col items-start cursor-pointer transition-colors text-left"
+                          >
+                            <span className="flex items-center gap-1.5 text-blue-700 font-bold">
+                              <span className="material-symbols-outlined text-[15px]">verified_user</span>
+                              <span>Verification Desk</span>
+                            </span>
+                            <span className="text-[11px] font-semibold text-slate-800 mt-1 truncate">{verifyStaff.name}</span>
+                            <span className="text-[10px] text-secondary truncate">Office Scrutiny &bull; ID: {verifyStaff.id}</span>
+                          </button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

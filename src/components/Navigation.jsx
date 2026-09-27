@@ -61,7 +61,6 @@ export default function Navigation() {
     { id: 'admin_performance', label: 'Business Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'dealers_mgmt', label: 'Dealer Partners', mobileLabel: 'Dealers', icon: 'group' },
     { id: 'staff_mgmt', label: 'Sales Team & Files', mobileLabel: 'Sales Team', icon: 'badge' },
-    { id: 'admin_verification', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
     { id: 'admin_reports', label: 'Reports & Export', mobileLabel: 'Reports', icon: 'download' },
     { id: 'admin_audit', label: 'Audit Logs Trail', mobileLabel: 'Audit', icon: 'receipt_long' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
@@ -73,16 +72,29 @@ export default function Navigation() {
     { id: 'admin_settings', label: 'Master Governance', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
-  const staffMenu = [
+  const isVerificationStaff = Boolean(
+    currentStaff?.role?.toLowerCase().includes('verification') ||
+    currentStaff?.department === 'verification' ||
+    currentStaff?.id === 'STF-003'
+  );
+
+  const verificationStaffMenu = [
+    { id: 'verification_desk', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
+    { id: 'staff_files', label: 'Customer Files', mobileLabel: 'Files', icon: 'folder' },
+    { id: 'docs', label: 'Policies & Docs', mobileLabel: 'Docs', icon: 'description' },
+  ];
+
+  const salesStaffMenu = [
     { id: 'staff_dashboard', label: 'My Dashboard', mobileLabel: 'Dashboard', icon: 'dashboard' },
-    { id: 'staff_files', label: 'Customer Files', mobileLabel: 'My Files', icon: 'folder' },
-    { id: 'staff_verification', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
+    { id: 'staff_files', label: 'My Customer Files', mobileLabel: 'My Files', icon: 'folder' },
     { id: 'staff_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'staff_new_lead', label: 'New Customer Lead', mobileLabel: 'New Lead', icon: 'person_add' },
     { id: 'staff_map', label: 'Nearby Radar (AI)', mobileLabel: 'Radar Map', icon: 'radar' },
     { id: 'lead_generation', label: 'Lead Engine', mobileLabel: 'Leads', icon: 'hub' },
     { id: 'docs', label: 'Policies & Docs', mobileLabel: 'Docs', icon: 'description' },
   ];
+
+  const staffMenu = isVerificationStaff ? verificationStaffMenu : salesStaffMenu;
 
   const menuItems = role === 'admin' ? adminMenu : role === 'staff' ? staffMenu : dealerMenu;
 
@@ -97,11 +109,11 @@ export default function Navigation() {
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain cursor-pointer"
               src="/sunvine_logo_white.png"
-              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? 'staff_dashboard' : 'dashboard')}
+              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard')}
             />
             <div className="flex flex-col">
               <span className="font-label-xs text-label-xs text-secondary-fixed-dim tracking-wider uppercase font-semibold">
-                {role === 'admin' ? 'Portal' : role === 'staff' ? 'Staff Portal' : 'Dealer Portal'}
+                {role === 'admin' ? 'Portal' : role === 'staff' ? (isVerificationStaff ? 'Verification Desk' : 'Staff Portal') : 'Dealer Portal'}
               </span>
             </div>
           </div>

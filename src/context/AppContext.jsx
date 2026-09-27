@@ -657,7 +657,12 @@ const safeSetItem = (key, value) => {
     if (userRole === 'admin') {
       setActiveTab('admin_dashboard');
     } else if (userRole === 'staff') {
-      setActiveTab('staff_dashboard');
+      const isVerification = Boolean(
+        userProfile?.role?.toLowerCase().includes('verification') ||
+        userProfile?.department === 'verification' ||
+        userProfile?.id === 'STF-003'
+      );
+      setActiveTab(isVerification ? 'verification_desk' : 'staff_dashboard');
       if (userProfile) setCurrentStaff(userProfile);
     } else {
       setActiveTab('dashboard');
