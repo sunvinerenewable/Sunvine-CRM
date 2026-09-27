@@ -19,34 +19,38 @@ export default function BusinessPerformance() {
 
   // Calculate dynamic metrics
   const staffMetrics = useMemo(() => {
-    return calculateStaffPerformance(staffList, customerFiles, quotations, dealers);
+    const res = calculateStaffPerformance(staffList, customerFiles, quotations, dealers);
+    return Array.isArray(res) ? res : [];
   }, [staffList, customerFiles, quotations, dealers]);
 
   const dealerMetrics = useMemo(() => {
-    return calculateDealerPerformance(dealers, customerFiles, quotations);
+    const res = calculateDealerPerformance(dealers, customerFiles, quotations);
+    return Array.isArray(res) ? res : [];
   }, [dealers, customerFiles, quotations]);
 
   const overallMetrics = useMemo(() => {
-    return calculateOverallBusinessMetrics(quotations, customerFiles, dealers, staffList);
+    return calculateOverallBusinessMetrics(quotations, customerFiles, dealers, staffList) || {};
   }, [quotations, customerFiles, dealers, staffList]);
 
   // Filtered lists
   const filteredStaff = useMemo(() => {
-    if (!staffSearch.trim()) return staffMetrics;
+    const list = Array.isArray(staffMetrics) ? staffMetrics : [];
+    if (!staffSearch.trim()) return list;
     const term = staffSearch.toLowerCase();
-    return staffMetrics.filter(s =>
-      s.name.toLowerCase().includes(term) ||
-      s.role.toLowerCase().includes(term) ||
-      s.zone.toLowerCase().includes(term)
+    return list.filter(s =>
+      (s.name || '').toLowerCase().includes(term) ||
+      (s.role || '').toLowerCase().includes(term) ||
+      (s.zone || '').toLowerCase().includes(term)
     );
   }, [staffMetrics, staffSearch]);
 
   const filteredDealers = useMemo(() => {
-    if (!dealerSearch.trim()) return dealerMetrics.slice(0, 50); // limit for performant render
+    const list = Array.isArray(dealerMetrics) ? dealerMetrics : [];
+    if (!dealerSearch.trim()) return list.slice(0, 50); // limit for performant render
     const term = dealerSearch.toLowerCase();
-    return dealerMetrics.filter(d =>
-      d.firmName.toLowerCase().includes(term) ||
-      d.city.toLowerCase().includes(term) ||
+    return list.filter(d =>
+      (d.firmName || '').toLowerCase().includes(term) ||
+      (d.city || '').toLowerCase().includes(term) ||
       (d.assignedStaffName && d.assignedStaffName.toLowerCase().includes(term))
     ).slice(0, 50);
   }, [dealerMetrics, dealerSearch]);
@@ -99,50 +103,50 @@ export default function BusinessPerformance() {
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Total Quotations</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
-            {overallMetrics.totalQuotations}
+            {overallMetrics?.totalQuotations ?? 0}
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics.totalQuotesCapacityKw.toFixed(1)} kW Proposed
+            {(Number(overallMetrics?.totalQuotesCapacityKw) || 0).toFixed(1)} kW Proposed
           </span>
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Overall Conversion</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-primary mt-1 block">
-            {overallMetrics.overallConversionRate}%
+            {overallMetrics?.overallConversionRate ?? 0}%
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics.totalFiles} Customer Files Onboarded
+            {overallMetrics?.totalFiles ?? 0} Customer Files Onboarded
           </span>
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Pipeline Capacity</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
-            {overallMetrics.totalFilesCapacityKw.toFixed(1)} kW
+            {(Number(overallMetrics?.totalFilesCapacityKw) || 0).toFixed(1)} kW
           </span>
           <span className="text-[10px] text-emerald-600 font-semibold font-mono">
-            {overallMetrics.completedFiles} Connected to Grid
+            {overallMetrics?.completedFiles ?? 0} Connected to Grid
           </span>
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Contract Value</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
-            ₹ {(overallMetrics.totalContractValue / 100000).toFixed(1)}L
+            ₹ {((Number(overallMetrics?.totalContractValue) || 0) / 100000).toFixed(1)}L
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            ₹ {(overallMetrics.totalSubsidyValue / 100000).toFixed(1)}L MNRE Subsidy
+            ₹ {((Number(overallMetrics?.totalSubsidyValue) || 0) / 100000).toFixed(1)}L MNRE Subsidy
           </span>
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs col-span-2 lg:col-span-1">
           <span className="text-[11px] font-medium text-secondary block">Cash vs Loan Ratio</span>
           <span className="font-mono text-lg sm:text-xl font-bold text-on-surface mt-1 block">
-            {overallMetrics.cashPercentage}% / {overallMetrics.loanPercentage}%
+            {overallMetrics?.cashPercentage ?? 0}% / {overallMetrics?.loanPercentage ?? 0}%
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics.cashFilesCount} Cash &bull; {overallMetrics.loanFilesCount} Bank Loans
+            {overallMetrics?.cashFilesCount ?? 0} Cash &bull; {overallMetrics?.loanFilesCount ?? 0} Bank Loans
           </span>
         </div>
       </div>
@@ -196,7 +200,7 @@ export default function BusinessPerformance() {
                       <td className="py-3 px-3 text-center font-mono font-bold">{s.dealersCount}</td>
                       <td className="py-3 px-3 text-center font-mono font-bold text-primary">{s.directFilesCount}</td>
                       <td className="py-3 px-3 text-center font-mono font-bold">{s.dealerFilesCount}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold">{s.pipelineKw.toFixed(1)} kW</td>
+                      <td className="py-3 px-3 text-center font-mono font-bold">{(Number(s?.pipelineKw) || 0).toFixed(1)} kW</td>
                       <td className="py-3 px-3 text-right font-mono font-bold text-primary">{s.conversionRate}%</td>
                     </tr>
                   ))}
@@ -320,7 +324,7 @@ export default function BusinessPerformance() {
                       <span className="text-secondary mx-0.5">/</span>
                       <span className="text-blue-700 font-bold">{s.loanFilesCount}</span>
                     </td>
-                    <td className="py-3.5 px-3 text-center font-mono font-bold">{s.pipelineKw.toFixed(1)} kW</td>
+                    <td className="py-3.5 px-3 text-center font-mono font-bold">{(Number(s?.pipelineKw) || 0).toFixed(1)} kW</td>
                     <td className="py-3.5 px-3 text-right font-mono font-bold text-primary">{s.conversionRate}%</td>
                     <td className="py-3.5 px-3 text-right">
                       <button
@@ -405,7 +409,7 @@ export default function BusinessPerformance() {
                       <span className="text-secondary mx-0.5">/</span>
                       <span className="text-blue-700 font-bold">{d.loanCount}</span>
                     </td>
-                    <td className="py-3.5 px-3 text-center font-mono font-bold">{d.totalCapacityKw.toFixed(1)} kW</td>
+                    <td className="py-3.5 px-3 text-center font-mono font-bold">{(Number(d?.totalCapacityKw) || 0).toFixed(1)} kW</td>
                     <td className="py-3.5 px-3 text-right font-mono font-bold text-primary">{d.conversionRate}%</td>
                     <td className="py-3.5 px-3 text-right">
                       <button
@@ -504,11 +508,11 @@ export default function BusinessPerformance() {
 
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
             {[
-              { step: '1. Quotations', count: overallMetrics.funnelStages.quotations, sub: 'Generated by Dealers & Staff' },
-              { step: '2. Accepted Files', count: overallMetrics.funnelStages.filesAccepted, sub: 'Customer Onboarded' },
-              { step: '3. DISCOM Registered', count: overallMetrics.funnelStages.discomRegistered, sub: 'Net-Meter Submitted' },
-              { step: '4. Plant Commissioned', count: overallMetrics.funnelStages.installed, sub: 'Hardware Setup Done' },
-              { step: '5. Subsidy Disbursed', count: overallMetrics.funnelStages.subsidized, sub: 'PM Surya Ghar DBT Released' }
+              { step: '1. Quotations', count: overallMetrics?.funnelStages?.quotations ?? 0, sub: 'Generated by Dealers & Staff' },
+              { step: '2. Accepted Files', count: overallMetrics?.funnelStages?.filesAccepted ?? 0, sub: 'Customer Onboarded' },
+              { step: '3. DISCOM Registered', count: overallMetrics?.funnelStages?.discomRegistered ?? 0, sub: 'Net-Meter Submitted' },
+              { step: '4. Plant Commissioned', count: overallMetrics?.funnelStages?.installed ?? 0, sub: 'Hardware Setup Done' },
+              { step: '5. Subsidy Disbursed', count: overallMetrics?.funnelStages?.subsidized ?? 0, sub: 'PM Surya Ghar DBT Released' }
             ].map((f, idx) => (
               <div
                 key={idx}

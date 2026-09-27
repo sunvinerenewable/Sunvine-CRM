@@ -37,12 +37,14 @@ export default function ReportsAnalytics() {
 
   // Staff Performance Data
   const staffData = useMemo(() => {
-    return calculateStaffPerformance(staffList, customerFiles, quotations, dealers);
+    const res = calculateStaffPerformance(staffList, customerFiles, quotations, dealers);
+    return Array.isArray(res) ? res : [];
   }, [staffList, customerFiles, quotations, dealers]);
 
   // Dealer Performance Data
   const dealerData = useMemo(() => {
-    return calculateDealerPerformance(dealers, customerFiles, quotations);
+    const res = calculateDealerPerformance(dealers, customerFiles, quotations);
+    return Array.isArray(res) ? res : [];
   }, [dealers, customerFiles, quotations]);
 
   // CSV Generation Function
@@ -464,7 +466,7 @@ export default function ReportsAnalytics() {
                     <td className="py-3 px-3 font-mono font-semibold">{d.tier}</td>
                     <td className="py-3 px-3 text-center font-mono font-bold">{d.quotationsCount}</td>
                     <td className="py-3 px-3 text-center font-mono font-bold text-primary">{d.customerFilesCount}</td>
-                    <td className="py-3 px-3 text-center font-mono font-bold">{d.totalCapacityKw.toFixed(1)} kW</td>
+                    <td className="py-3 px-3 text-center font-mono font-bold">{(Number(d?.totalCapacityKw) || 0).toFixed(1)} kW</td>
                     <td className="py-3 px-3 text-right font-mono font-bold text-primary">{d.conversionRate}%</td>
                   </tr>
                 ))}

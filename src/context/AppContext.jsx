@@ -252,12 +252,13 @@ const safeSetItem = (key, value) => {
 
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
+      if (!d) return d;
       if (d.assignedStaffId && d.assignedStaffName) return d;
       const assigned = getAssignedStaffForDealer(d);
       return {
         ...d,
-        assignedStaffId: d.assignedStaffId || assigned.staffId,
-        assignedStaffName: d.assignedStaffName || assigned.staffName,
+        assignedStaffId: d.assignedStaffId || assigned?.assignedStaffId || assigned?.staffId || 'STF-001',
+        assignedStaffName: d.assignedStaffName || assigned?.assignedStaffName || assigned?.staffName || 'Jayesh Patel',
         onboardedDate: d.onboardedDate || '2025-06-15'
       };
     });
