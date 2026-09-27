@@ -1,0 +1,12 @@
+# Antigravity & AI Agent Mandatory Rules for Sunvine Dealer Portal
+
+You must strictly adhere to the project standards defined in `PROJECT_RULEBOOK.md` and `RESPONSIVE_UI_RULES.md`:
+
+1. ZERO EXPOSED SECRETS: Never hardcode API keys, tokens, or credentials in git-tracked files. Use .env and localStorage. Never use "password" with real corporate email domains in mock data (use accessCode / authPin).
+2. PRESERVE UI & MECHANISMS: Never redesign, alter, or break existing working layouts, workflows, or mechanisms (Quotation engine, 3D CAD, customer files vault, multi-role auth).
+3. BRAND FIDELITY: Never arbitrarily change primary colors (emerald/teal gradients, #0D1527 card background, #070D18 page background) or typography (Inter, Space Grotesk, Roboto Mono).
+4. DYNAMIC OVER HARDCODED: Make features configurable via settings, objects, and dynamic user controls. Keep code DRY.
+5. NO FAKED DATA: Never fabricate fake telephone numbers or coordinates. Explicitly label unlisted details.
+6. OPTIONAL DOCUMENTS: Customer lead creation and files must NEVER require mandatory document uploads.
+7. ACCURATE GEOLOCATION: Use enableHighAccuracy: true, 35m movement threshold, and race-condition guards.
+8. CLEAN CODE & PRE-COMMIT: Always run `npm run build` and ensure 0 errors before committing.

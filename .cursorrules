@@ -1,0 +1,12 @@
+# Cursor / IDE Rules for Sunvine Dealer Portal
+
+Refer to `PROJECT_RULEBOOK.md` for complete architecture and coding standards.
+
+Core Directives:
+1. Security: Zero secrets in Git. Use .env and localStorage. In mock data, use accessCode/authPin, not password:.
+2. UI Continuity: Preserve all existing UI layouts, workflows, 3D CAD designer, quotation calculations, and portal switching.
+3. Brand Identity: Keep primary colors (emerald-500, teal-500, #0D1527, #070D18) and fonts (Inter, Space Grotesk, Roboto Mono).
+4. Dynamic Settings: Avoid hardcoded constants; provide UI controls, settings, and dynamic matrices.
+5. Real Data Only: Authentic verified leads with genuine Google Maps links; no fake phone numbers.
+6. Optional Uploads: Lead creation must never be blocked by mandatory document uploads.
+7. Verification: Always run `npm run build` with 0 errors before committing.
