@@ -16,6 +16,7 @@ export default function CreateQuotation() {
     dealers,
     addQuotation, 
     updateQuotation, 
+    saveDesignRecord,
     editingQuotation, 
     clearEditingQuotation, 
     activeDraftQuote,
@@ -351,7 +352,8 @@ export default function CreateQuotation() {
       statusClass: isEdit ? (editingQuotation.statusClass || 'bg-secondary/15 text-secondary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
       dealerCode: resolvedDealerCode,
       dealerId: resolvedDealerCode,
-      dealerName: resolvedDealerName
+      dealerName: resolvedDealerName,
+      roofConfig: quotationRoofConfig
     };
 
     setIsSubmitting(true);
@@ -361,6 +363,17 @@ export default function CreateQuotation() {
         updateQuotation(quotePayload);
       } else if (addQuotation) {
         addQuotation(quotePayload);
+      }
+      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+        saveDesignRecord({
+          quotationId: quotePayload.id,
+          customerName: custName,
+          capacityKw: kw,
+          type: '2D_ROOF_CAD',
+          roofConfig: quotationRoofConfig,
+          structureLayout: selectedStructureLayout,
+          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+        });
       }
       await quotationService.saveQuotation(quotePayload);
       setSaveStatus(isEdit ? 'Quotation updated successfully!' : 'Draft saved successfully to cloud!');
@@ -441,13 +454,25 @@ export default function CreateQuotation() {
       statusClass: isEdit ? (editingQuotation.statusClass || 'bg-primary/15 text-primary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
       dealerId: resolvedDealerCode,
       dealerCode: resolvedDealerCode,
-      dealerName: resolvedDealerName
+      dealerName: resolvedDealerName,
+      roofConfig: quotationRoofConfig
     };
 
     if (isEdit && updateQuotation) {
       updateQuotation(quotePayload);
     } else if (addQuotation) {
       addQuotation(quotePayload);
+    }
+    if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+      saveDesignRecord({
+        quotationId: quotePayload.id,
+        customerName: custName,
+        capacityKw: kw,
+        type: '2D_ROOF_CAD',
+        roofConfig: quotationRoofConfig,
+        structureLayout: selectedStructureLayout,
+        specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+      });
     }
     if (setPreviewQuotation) setPreviewQuotation(quotePayload);
     if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);

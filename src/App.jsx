@@ -35,6 +35,13 @@ import HardwareMaster from './components/AdminPortal/HardwareMaster';
 import AllQuotations from './components/AdminPortal/AllQuotations';
 import AdminSettings from './components/AdminPortal/AdminSettings';
 import StaffManagement from './components/AdminPortal/StaffManagement';
+import BusinessPerformance from './components/AdminPortal/BusinessPerformance';
+import ReportsAnalytics from './components/AdminPortal/ReportsAnalytics';
+import AuditLogViewer from './components/AdminPortal/AuditLogViewer';
+
+// Shared Expanded Views
+import LeadGenerationComingSoon from './components/Shared/LeadGenerationComingSoon';
+import DocumentationHub from './components/Shared/DocumentationHub';
 
 function MainApp() {
   const { isAuthenticated, authView, role, activeTab } = useApp();
@@ -89,6 +96,8 @@ function MainApp() {
       switch (activeTab) {
         case 'admin_dashboard':
           return <AdminDashboard />;
+        case 'admin_performance':
+          return <BusinessPerformance />;
         case 'create_quote':
         case 'admin_create_quote':
           return <CreateQuotation />;
@@ -96,12 +105,20 @@ function MainApp() {
           return <DealerManagement />;
         case 'staff_mgmt':
           return <StaffManagement />;
+        case 'admin_reports':
+          return <ReportsAnalytics />;
+        case 'admin_audit':
+          return <AuditLogViewer />;
+        case 'lead_generation':
+          return <LeadGenerationComingSoon />;
         case 'pricing_master':
           return <PricingMaster />;
         case 'hardware_master':
           return <HardwareMaster />;
         case 'all_quotes':
           return <AllQuotations />;
+        case 'admin_docs':
+          return <DocumentationHub />;
         case 'admin_settings':
           return <AdminSettings />;
         default:
@@ -115,10 +132,16 @@ function MainApp() {
           return <StaffDashboard />;
         case 'staff_files':
           return <StaffFiles />;
+        case 'staff_performance':
+          return <BusinessPerformance />;
         case 'staff_new_lead':
           return <StaffNewLead />;
         case 'staff_map':
           return <StaffRadarMap />;
+        case 'lead_generation':
+          return <LeadGenerationComingSoon />;
+        case 'docs':
+          return <DocumentationHub />;
         default:
           return <StaffDashboard />;
       }
@@ -132,6 +155,12 @@ function MainApp() {
         return <CreateQuotation />;
       case 'my_quotes':
         return <MyQuotations />;
+      case 'dealer_performance':
+        return <BusinessPerformance />;
+      case 'lead_generation':
+        return <LeadGenerationComingSoon />;
+      case 'docs':
+        return <DocumentationHub />;
       case 'profile':
       case 'dealer_settings':
         return <DealerSettings />;

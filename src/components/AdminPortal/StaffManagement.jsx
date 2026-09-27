@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 
 export default function StaffManagement() {
   const {
@@ -28,6 +29,7 @@ export default function StaffManagement() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
+  const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
 
   // Staff Credentials Modal
@@ -440,7 +442,17 @@ export default function StaffManagement() {
                     </div>
 
                     {/* Action Footer */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileForTimeline(file)}
+                        className="py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                        title="View Timeline & Advance Stage"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">timeline</span>
+                        <span>Timeline</span>
+                      </button>
+
                       <button
                         onClick={() => setSelectedFileForDocs(file)}
                         className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
@@ -1001,6 +1013,14 @@ export default function StaffManagement() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* CUSTOMER FILE TIMELINE MODAL */}
+      {selectedFileForTimeline && (
+        <CustomerFileDetailModal
+          file={selectedFileForTimeline}
+          onClose={() => setSelectedFileForTimeline(null)}
+        />
       )}
     </div>
   );

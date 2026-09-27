@@ -50,25 +50,36 @@ export default function Navigation() {
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Dashboard', icon: 'home' },
     { id: 'create_quote', label: 'New Quotation', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'my_quotes', label: 'My Quotations', mobileLabel: 'My Quotes', icon: 'folder_open' },
+    { id: 'dealer_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
+    { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
+    { id: 'docs', label: 'Agreements & Docs', mobileLabel: 'Docs', icon: 'description' },
     { id: 'dealer_settings', label: 'Settings', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
   const adminMenu = [
     { id: 'admin_dashboard', label: 'Executive Overview', mobileLabel: 'Overview', icon: 'dashboard' },
-    { id: 'create_quote', label: 'New Direct Quote', mobileLabel: 'New Quote', icon: 'note_add' },
+    { id: 'admin_performance', label: 'Business Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'dealers_mgmt', label: 'Dealer Partners', mobileLabel: 'Dealers', icon: 'group' },
     { id: 'staff_mgmt', label: 'Sales Team & Files', mobileLabel: 'Sales Team', icon: 'badge' },
+    { id: 'admin_reports', label: 'Reports & Export', mobileLabel: 'Reports', icon: 'download' },
+    { id: 'admin_audit', label: 'Audit Logs Trail', mobileLabel: 'Audit', icon: 'receipt_long' },
+    { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
+    { id: 'create_quote', label: 'New Direct Quote', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'pricing_master', label: 'Pricing & Presets', mobileLabel: 'Pricing', icon: 'tune' },
     { id: 'hardware_master', label: 'Hardware Catalog', mobileLabel: 'Hardware', icon: 'memory' },
-    { id: 'all_quotes', label: 'All Quotations Audit', mobileLabel: 'All Quotes', icon: 'inventory_2' },
+    { id: 'all_quotes', label: 'All Quotations', mobileLabel: 'All Quotes', icon: 'inventory_2' },
+    { id: 'admin_docs', label: 'Documentation Hub', mobileLabel: 'Docs', icon: 'description' },
     { id: 'admin_settings', label: 'Master Governance', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
   const staffMenu = [
     { id: 'staff_dashboard', label: 'My Dashboard', mobileLabel: 'Dashboard', icon: 'dashboard' },
     { id: 'staff_files', label: 'Customer Files', mobileLabel: 'My Files', icon: 'folder' },
+    { id: 'staff_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'staff_new_lead', label: 'New Customer Lead', mobileLabel: 'New Lead', icon: 'person_add' },
     { id: 'staff_map', label: 'Nearby Radar (AI)', mobileLabel: 'Radar Map', icon: 'radar' },
+    { id: 'lead_generation', label: 'Lead Engine', mobileLabel: 'Leads', icon: 'hub' },
+    { id: 'docs', label: 'Policies & Docs', mobileLabel: 'Docs', icon: 'description' },
   ];
 
   const menuItems = role === 'admin' ? adminMenu : role === 'staff' ? staffMenu : dealerMenu;
@@ -77,9 +88,9 @@ export default function Navigation() {
     <>
       {/* Desktop Sidebar (Exact Stitch Design) */}
       <aside className="no-print hidden md:flex fixed left-0 top-0 h-screen w-64 bg-on-secondary-fixed z-50 flex-col justify-between select-none">
-        <div className="flex flex-col">
+        <div className="flex flex-col flex-1 overflow-hidden">
           {/* Brand Header */}
-          <div className="h-16 px-space-lg flex items-center gap-space-sm border-b border-white/10">
+          <div className="h-16 px-space-lg flex items-center gap-space-sm border-b border-white/10 shrink-0">
             <img
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain cursor-pointer"
@@ -94,20 +105,20 @@ export default function Navigation() {
           </div>
 
           {/* Navigation Links */}
-          <nav className="flex flex-col mt-space-md">
+          <nav className="flex flex-col mt-space-sm flex-1 overflow-y-auto scrollbar-hide py-1">
             {menuItems.map((item) => {
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => handleMenuClick(item.id)}
-                  className={`flex items-center gap-space-sm px-space-lg py-space-sm transition-colors text-left ${isActive
+                  className={`flex items-center gap-space-sm px-space-lg py-2.5 transition-colors text-left cursor-pointer ${isActive
                     ? 'border-l-4 border-primary-container bg-white/10 text-on-secondary font-label-md'
                     : 'text-secondary-fixed-dim hover:bg-white/5 hover:text-on-secondary font-body-md'
                     }`}
                 >
                   <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                  <span>{item.label}</span>
+                  <span className="text-xs truncate">{item.label}</span>
                 </button>
               );
             })}

@@ -18,8 +18,18 @@ import {
 } from '../data/standardBomData';
 import {
   DEFAULT_STAFF,
-  DEFAULT_CUSTOMER_FILES
+  DEFAULT_CUSTOMER_FILES,
+  getAssignedStaffForDealer
 } from '../data/staffData';
+import {
+  DEFAULT_SYSTEM_SETTINGS,
+  INITIAL_AUDIT_LOGS
+} from '../data/systemSettingsDefaults';
+import {
+  calculateStaffPerformance,
+  calculateDealerPerformance,
+  calculateOverallBusinessMetrics
+} from '../utils/performanceAnalytics';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
@@ -54,10 +64,18 @@ const TAB_TO_PATH = {
   hardware_master: '/admin/hardware',
   all_quotes: '/admin/quotations',
   admin_settings: '/admin/settings',
+  admin_performance: '/admin/performance',
+  admin_reports: '/admin/reports',
+  admin_audit: '/admin/audit-logs',
+  admin_docs: '/admin/documentation',
   staff_dashboard: '/staff',
   staff_files: '/staff/files',
+  staff_performance: '/staff/performance',
   staff_new_lead: '/staff/new-lead',
-  staff_map: '/staff/map'
+  staff_map: '/staff/map',
+  dealer_performance: '/dealer/performance',
+  lead_generation: '/leads',
+  docs: '/documentation'
 };
 
 const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
@@ -232,11 +250,24 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_inverters', DEFAULT_INVERTERS);
   });
 
+  const ensureDealerAttribution = (list) => {
+    return (list || []).map(d => {
+      if (d.assignedStaffId && d.assignedStaffName) return d;
+      const assigned = getAssignedStaffForDealer(d);
+      return {
+        ...d,
+        assignedStaffId: d.assignedStaffId || assigned.staffId,
+        assignedStaffName: d.assignedStaffName || assigned.staffName,
+        onboardedDate: d.onboardedDate || '2025-06-15'
+      };
+    });
+  };
+
   // Dealers Directory (550 Gujarat Dealers Only)
   const [dealers, setDealers] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_DEALERS;
-    const parsed = safeJsonParse('sunvine_dealers', INITIAL_DEALERS);
-    return (Array.isArray(parsed) && parsed.length >= 500) ? parsed : INITIAL_DEALERS;
+    const raw = isDbUpToDate ? safeJsonParse('sunvine_dealers', INITIAL_DEALERS) : INITIAL_DEALERS;
+    const base = (Array.isArray(raw) && raw.length >= 500) ? raw : INITIAL_DEALERS;
+    return ensureDealerAttribution(base);
   });
 
   // Real PDF BOS Reference Data
@@ -307,6 +338,21 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_customer_files', DEFAULT_CUSTOMER_FILES);
   });
 
+  // Master Dynamic System Settings
+  const [systemSettings, setSystemSettings] = useState(() => {
+    return safeJsonParse('sunvine_system_settings', DEFAULT_SYSTEM_SETTINGS);
+  });
+
+  // Immutable Audit Activity Ledger
+  const [auditLogs, setAuditLogs] = useState(() => {
+    return safeJsonParse('sunvine_audit_logs', INITIAL_AUDIT_LOGS);
+  });
+
+  // 2D and 3D Solar CAD Design Records
+  const [designRecords, setDesignRecords] = useState(() => {
+    return safeJsonParse('sunvine_design_records', []);
+  });
+
   // System & Compliance Notifications
   const [notifications, setNotifications] = useState(() => {
     if (!isDbUpToDate) return DEFAULT_NOTIFICATIONS;
@@ -360,6 +406,15 @@ const safeSetItem = (key, value) => {
             break;
           case 'sunvine_customer_files':
             setCustomerFiles(parsed);
+            break;
+          case 'sunvine_system_settings':
+            setSystemSettings(parsed);
+            break;
+          case 'sunvine_audit_logs':
+            setAuditLogs(parsed);
+            break;
+          case 'sunvine_design_records':
+            setDesignRecords(parsed);
             break;
           default:
             break;
@@ -451,6 +506,18 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     safeSetItem('sunvine_customer_files', customerFiles);
   }, [customerFiles]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_system_settings', systemSettings);
+  }, [systemSettings]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_audit_logs', auditLogs);
+  }, [auditLogs]);
+
+  useEffect(() => {
+    safeSetItem('sunvine_design_records', designRecords);
+  }, [designRecords]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -612,15 +679,163 @@ const safeSetItem = (key, value) => {
     }
   };
 
-  const updateCustomerFile = (fileId, updatedFields) => {
-    setCustomerFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updatedFields } : f));
+  const logActivity = (logEntry) => {
+    const newLog = {
+      id: logEntry.id || `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      action: logEntry.action || 'SYSTEM_ACTION',
+      module: logEntry.module || 'SYSTEM',
+      recordId: logEntry.recordId || '-',
+      userId: logEntry.userId || (role === 'admin' ? 'ADM-001' : role === 'staff' ? currentStaff?.id : currentDealer?.id),
+      userName: logEntry.userName || (role === 'admin' ? 'Super Admin Desk' : role === 'staff' ? currentStaff?.name : currentDealer?.contactPerson),
+      role: logEntry.role || (role === 'admin' ? 'System Administrator' : role === 'staff' ? 'Staff Executive' : 'Authorized Dealer'),
+      details: logEntry.details || '',
+      oldValue: logEntry.oldValue !== undefined ? logEntry.oldValue : null,
+      newValue: logEntry.newValue !== undefined ? logEntry.newValue : null,
+      ipAddress: '192.168.1.104',
+      status: 'VERIFIED'
+    };
+    setAuditLogs(prev => [newLog, ...(prev || [])]);
   };
 
-  const updateFileStatus = (fileId, nextStatus) => {
+  const updateSystemSettings = (section, updates) => {
+    setSystemSettings(prev => {
+      const currentSection = prev?.[section] || {};
+      const updatedSection = { ...currentSection, ...updates };
+      const updated = {
+        ...prev,
+        [section]: updatedSection
+      };
+      safeSetItem('sunvine_system_settings', updated);
+      return updated;
+    });
+
+    logActivity({
+      action: 'UPDATE_SYSTEM_SETTINGS',
+      module: 'SETTINGS',
+      recordId: section,
+      details: `Updated settings configuration for section: ${section}`,
+      newValue: updates
+    });
+
+    addNotification({
+      type: 'info',
+      icon: 'tune',
+      title: 'System Settings Updated',
+      description: `Configuration changes saved for ${section}.`,
+      audience: 'admin'
+    });
+  };
+
+  const saveDesignRecord = (designData) => {
+    const recordId = designData.id || `DSGN-${Date.now()}`;
+    const newRecord = {
+      ...designData,
+      id: recordId,
+      version: designData.version || 1,
+      createdAt: designData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setDesignRecords(prev => {
+      const existingIdx = (prev || []).findIndex(d => d.id === recordId || (d.quotationId && d.quotationId === designData.quotationId));
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...copy[existingIdx], ...newRecord, version: (copy[existingIdx].version || 1) + 1 };
+        return copy;
+      }
+      return [newRecord, ...(prev || [])];
+    });
+
+    logActivity({
+      action: 'SAVE_SOLAR_DESIGN',
+      module: 'DESIGN_CAD',
+      recordId,
+      details: `Solar ${designData.type || '2D'} CAD design layout saved for quotation ${designData.quotationId || 'Unlinked'}`
+    });
+
+    return newRecord;
+  };
+
+  const addCustomerFileTimelineEvent = (fileId, event) => {
+    const timestamp = new Date().toISOString();
+    const newMilestone = {
+      id: event.id || `TL-${Date.now()}`,
+      timestamp,
+      date: timestamp.split('T')[0],
+      stage: event.stage || 'STAGE_UPDATE',
+      title: event.title || event.stage || 'Milestone Reached',
+      status: event.status || 'In Progress',
+      action: event.action || 'STAGE_PROGRESSION',
+      actor: event.actor || (role === 'admin' ? 'Admin Ops' : currentStaff?.name || 'Staff Representative'),
+      notes: event.notes || ''
+    };
+
     setCustomerFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
-      return { ...f, status: nextStatus };
+      const updatedTimeline = [...(f.timeline || []), newMilestone];
+      return {
+        ...f,
+        currentStage: event.stage || f.currentStage,
+        status: event.status || f.status,
+        isCompleted: event.isCompleted !== undefined ? event.isCompleted : f.isCompleted,
+        isFailed: event.isFailed !== undefined ? event.isFailed : f.isFailed,
+        failureReason: event.failureReason || f.failureReason,
+        timeline: updatedTimeline
+      };
     }));
+
+    logActivity({
+      action: 'ADD_FILE_TIMELINE_EVENT',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Added timeline milestone [${newMilestone.title}]: ${newMilestone.notes || 'Status updated'}`,
+      newValue: event.status || event.stage
+    });
+  };
+
+  const updateCustomerFile = (fileId, updatedFields) => {
+    setCustomerFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updatedFields } : f));
+    logActivity({
+      action: 'UPDATE_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Updated customer file attributes`,
+      newValue: Object.keys(updatedFields).join(', ')
+    });
+  };
+
+  const updateFileStatus = (fileId, nextStatus, notes = '') => {
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const updatedTimeline = [
+        ...(f.timeline || []),
+        {
+          id: `TL-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          date: new Date().toISOString().split('T')[0],
+          stage: f.currentStage,
+          title: `Status changed to ${nextStatus}`,
+          status: nextStatus,
+          action: 'STATUS_CHANGE',
+          actor: role === 'admin' ? 'Admin Desk' : currentStaff?.name || 'Staff Representative',
+          notes: notes || `Status changed from ${f.status} to ${nextStatus}`
+        }
+      ];
+      return {
+        ...f,
+        status: nextStatus,
+        isCompleted: nextStatus === 'Subsidized' || nextStatus === 'Completed',
+        timeline: updatedTimeline
+      };
+    }));
+
+    logActivity({
+      action: 'UPDATE_FILE_STATUS',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Status updated to ${nextStatus}`,
+      newValue: nextStatus
+    });
   };
 
   const updateDealerProfile = (updatedFields) => {
@@ -1035,7 +1250,18 @@ const safeSetItem = (key, value) => {
         addNewInverter,
         seenCatalogItemIds,
         markCatalogItemSeen,
-        isCatalogItemNew
+        isCatalogItemNew,
+        // Master System Settings & Policies
+        systemSettings,
+        updateSystemSettings,
+        // Immutable Audit Activity Ledger
+        auditLogs,
+        logActivity,
+        // Solar CAD Designs
+        designRecords,
+        saveDesignRecord,
+        // Customer File Timeline Progression
+        addCustomerFileTimelineEvent
       }}
     >
       {children}

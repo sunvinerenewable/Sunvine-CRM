@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 
 export default function StaffFiles() {
   const { currentStaff, customerFiles, updateFileStatus, updateCustomerFile } = useApp();
@@ -9,6 +10,7 @@ export default function StaffFiles() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
+  const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
 
   // Filter strictly for THIS logged-in staff member
@@ -204,10 +206,20 @@ export default function StaffFiles() {
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2">
+              <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setSelectedFileForTimeline(file)}
+                  className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  title="View Timeline & Advance Stage"
+                >
+                  <span className="material-symbols-outlined text-[15px]">timeline</span>
+                  <span>Timeline</span>
+                </button>
+
                 <button
                   onClick={() => setSelectedFileForDocs(file)}
-                  className="flex-1 py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
                   <span>Docs (Optional)</span>
@@ -360,12 +372,20 @@ export default function StaffFiles() {
             </div>
             <button
               onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold"
+              className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold cursor-pointer"
             >
               Close
             </button>
           </div>
         </div>
+      )}
+
+      {/* TIMELINE & ATTRIBUTION MODAL */}
+      {selectedFileForTimeline && (
+        <CustomerFileDetailModal
+          file={selectedFileForTimeline}
+          onClose={() => setSelectedFileForTimeline(null)}
+        />
       )}
     </div>
   );
