@@ -171,7 +171,7 @@ export default function PanelLayoutVisualizer({
             </span>
           </div>
           <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-            सभी डिज़ाइन्स साइड-बाय-साइड देखें। प्रत्येक कार्ड में सटीक J-Bolt संख्या दी गई है। अपनी पसंद का लेआउट चुनें।
+            Compare side-by-side layouts with fastener counts and roof boundary clearance. Select preferred layout.
           </p>
         </div>
 
@@ -344,9 +344,9 @@ export default function PanelLayoutVisualizer({
               { id: 'all', label: `All Layouts (${allLayouts.length})`, icon: 'apps' },
               { id: 'roof_safe', label: `✓ Roof-Safe (${roofSafeCount})`, icon: 'verified' },
               { id: 'recommended', label: 'Recommended / Excel Presets', icon: 'star' },
-              { id: 'portrait', label: 'Pure Portrait (खड़ी)', icon: 'crop_portrait' },
-              { id: 'landscape', label: 'Pure Landscape (आड़ी)', icon: 'crop_landscape' },
-              { id: 'hybrid', label: 'Hybrid (खड़ी + आड़ी)', icon: 'auto_awesome' },
+              { id: 'portrait', label: 'Pure Portrait', icon: 'crop_portrait' },
+              { id: 'landscape', label: 'Pure Landscape', icon: 'crop_landscape' },
+              { id: 'hybrid', label: 'Hybrid', icon: 'auto_awesome' },
               { id: 'split', label: 'Dual Split Tables', icon: 'splitscreen' }
             ].map(tab => (
               <button
@@ -487,14 +487,14 @@ export default function PanelLayoutVisualizer({
                     <div className="w-full bg-rose-50 border border-rose-200 text-rose-800 p-2 rounded-lg text-[11px] mb-2 font-semibold flex items-center gap-1.5 shadow-2xs">
                       <span className="material-symbols-outlined text-rose-600 text-[16px] shrink-0">cancel</span>
                       <span className="truncate">
-                        <b>छत पर फिट नहीं:</b> {fit.reason}
+                        <b>Boundary Exceeded:</b> {fit.reason}
                       </span>
                     </div>
                   ) : (
                     <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 p-1.5 rounded-lg text-[11px] mb-2 font-semibold flex items-center gap-1.5 shadow-2xs">
                       <span className="material-symbols-outlined text-emerald-600 text-[16px] shrink-0">check_circle</span>
                       <span className="truncate">
-                        <b>100% छत पर सुरक्षित:</b> {fit.widthClearanceFt}ft W, {fit.depthClearanceFt}ft D क्लीयरेंस
+                        <b>100% Roof Safe:</b> {fit.widthClearanceFt}ft W, {fit.depthClearanceFt}ft D clearance
                       </span>
                     </div>
                   )}
@@ -627,7 +627,7 @@ export default function PanelLayoutVisualizer({
         {showManualInputs && (
           <div className="p-4 rounded-xl bg-white border border-surface-container-highest shadow-xs grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 animate-in fade-in duration-150">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-secondary">Front Legs (आगे के पैर)</label>
+              <label className="text-[11px] font-bold text-secondary">Front Legs</label>
               <input
                 type="number"
                 min="1"
@@ -640,7 +640,7 @@ export default function PanelLayoutVisualizer({
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-secondary">Rear Legs (पीछे के पैर)</label>
+              <label className="text-[11px] font-bold text-secondary">Rear Legs</label>
               <input
                 type="number"
                 min="1"
@@ -673,7 +673,7 @@ export default function PanelLayoutVisualizer({
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-secondary">Mid Clamps (बीच के)</label>
+              <label className="text-[11px] font-bold text-secondary">Mid Clamps</label>
               <input
                 type="number"
                 min="0"
@@ -686,7 +686,7 @@ export default function PanelLayoutVisualizer({
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-bold text-secondary">End Clamps (कोने के)</label>
+              <label className="text-[11px] font-bold text-secondary">End Clamps</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -1047,7 +1047,7 @@ function GiPipeCuttingSchedule({ layout, frontLegFt = 2.5, tiltDegrees = 18, onU
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            20 फीट के स्टैंडर्ड GI पाइप से 60x40 (कॉलम/पैर) और 40x40 (राफ्टर एवं पर्लिन) के सटीक कट पीस एवं वेस्टेज की गणना।
+            Cutting schedule and scrap minimization for standard 20ft GI sections (60x40 columns &amp; 40x40 purlins/rafters).
           </p>
         </div>
 
@@ -1068,7 +1068,7 @@ function GiPipeCuttingSchedule({ layout, frontLegFt = 2.5, tiltDegrees = 18, onU
       {/* Elevation & Slope Geometry Card */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-900/90 p-4 rounded-xl border border-slate-800">
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400 font-semibold">Front Leg Height (आगे का पैर)</span>
+          <span className="text-[11px] text-slate-400 font-semibold">Front Leg Height</span>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -1085,7 +1085,7 @@ function GiPipeCuttingSchedule({ layout, frontLegFt = 2.5, tiltDegrees = 18, onU
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400 font-semibold">Rear Leg Height (पीछे का पैर)</span>
+          <span className="text-[11px] text-slate-400 font-semibold">Rear Leg Height</span>
           <span className="text-sm font-black text-amber-400 leading-8">
             {elevation.rearLegHeightFt} ft
           </span>
@@ -1093,7 +1093,7 @@ function GiPipeCuttingSchedule({ layout, frontLegFt = 2.5, tiltDegrees = 18, onU
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400 font-semibold">Rafter Slope Length (ढलान)</span>
+          <span className="text-[11px] text-slate-400 font-semibold">Rafter Slope Length</span>
           <span className="text-sm font-black text-white leading-8">
             {elevation.slopeLengthFt} ft
           </span>
@@ -1101,7 +1101,7 @@ function GiPipeCuttingSchedule({ layout, frontLegFt = 2.5, tiltDegrees = 18, onU
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-slate-400 font-semibold">Array Table Width (चौड़ाई)</span>
+          <span className="text-[11px] text-slate-400 font-semibold">Array Table Width</span>
           <span className="text-sm font-black text-white leading-8">
             {mmToFeet(layout.widthMm)} ft
           </span>

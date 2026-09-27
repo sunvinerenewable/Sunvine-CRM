@@ -241,7 +241,7 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
   const layouts = [];
 
   // ==========================================
-  // 1. PURE PORTRAIT COMBINATIONS (खड़ी)
+  // 1. PURE PORTRAIT COMBINATIONS
   // ==========================================
   for (let r = 1; r <= n; r++) {
     if (n % r === 0) {
@@ -292,9 +292,9 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
       const layout = {
         id: `portrait_${r}x${c}`,
         type: 'portrait',
-        category: 'Pure Portrait (खड़ी)',
+        category: 'Pure Portrait',
         name: r === 1 ? `1 Row × ${c} Panels (Single Line)` : `${r} Rows × ${c} Panels (${r}×${c} Grid)`,
-        shortCode: `${r}R × ${c}C Khadi`,
+        shortCode: `${r}R × ${c}C Portrait`,
         rowsCount: r,
         colsCount: c,
         totalPanels: n,
@@ -311,7 +311,7 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
   }
 
   // ==========================================
-  // 2. PURE LANDSCAPE COMBINATIONS (आड़ी)
+  // 2. PURE LANDSCAPE COMBINATIONS
   // ==========================================
   for (let r = 1; r <= n; r++) {
     if (n % r === 0) {
@@ -346,9 +346,9 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
       const layout = {
         id: `landscape_${r}x${c}`,
         type: 'landscape',
-        category: 'Pure Landscape (आड़ी)',
-        name: r === 1 ? `1 Row × ${c} Panels Landscape (एक आड़ी पंक्ति)` : `${r} Rows × ${c} Panels Landscape (${r}×${c} आड़ी ग्रिड)`,
-        shortCode: `${r}R × ${c}C Aadi`,
+        category: 'Pure Landscape',
+        name: r === 1 ? `1 Row × ${c} Panels Landscape` : `${r} Rows × ${c} Panels Landscape (${r}×${c} Grid)`,
+        shortCode: `${r}R × ${c}C Landscape`,
         rowsCount: r,
         colsCount: c,
         totalPanels: n,
@@ -364,7 +364,7 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
   }
 
   // ==========================================
-  // 3. HYBRID COMBINATIONS (खड़ी + आड़ी / 2:1 Symmetry)
+  // 3. HYBRID COMBINATIONS (2:1 Symmetry)
   // 2 Portrait panels = 1 Landscape panel in width (2 x 1134mm = 2268mm ~= 2278mm)
   // ==========================================
   for (let k = 1; k < n; k++) {
@@ -395,9 +395,9 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
         const hybrid1 = {
           id: `hybrid_${p}P_${k}L_top`,
           type: 'hybrid',
-          category: 'Hybrid (खड़ी + आड़ी)',
-          name: `Hybrid: ${p} Khadi (Top) + ${k} Aadi (Bottom)`,
-          shortCode: `${p} Khadi + ${k} Aadi`,
+          category: 'Hybrid',
+          name: `Hybrid: ${p} Portrait (Top) + ${k} Landscape (Bottom)`,
+          shortCode: `${p} Portrait + ${k} Landscape`,
           totalPanels: n,
           widthMm: calcWidthMm,
           depthMm: calcDepthMm,
@@ -425,9 +425,9 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
         const hybrid2 = {
           id: `hybrid_${k}L_${p}P_bottom`,
           type: 'hybrid',
-          category: 'Hybrid (खड़ी + आड़ी)',
-          name: `Hybrid: ${k} Aadi (Top) + ${p} Khadi (Bottom)`,
-          shortCode: `${k} Aadi + ${p} Khadi`,
+          category: 'Hybrid',
+          name: `Hybrid: ${k} Landscape (Top) + ${p} Portrait (Bottom)`,
+          shortCode: `${k} Landscape + ${p} Portrait`,
           totalPanels: n,
           widthMm: calcWidthMm,
           depthMm: calcDepthMm,
@@ -465,9 +465,9 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
         const hybridMulti = {
           id: `hybrid_2x${halfP}P_${k}L`,
           type: 'hybrid',
-          category: 'Hybrid (खड़ी + आड़ी)',
-          name: `Hybrid: 2 Rows of ${halfP} Khadi + 1 Row of ${k} Aadi`,
-          shortCode: `2x${halfP} Khadi + ${k} Aadi`,
+          category: 'Hybrid',
+          name: `Hybrid: 2 Rows of ${halfP} Portrait + 1 Row of ${k} Landscape`,
+          shortCode: `2x${halfP} Portrait + ${k} Landscape`,
           totalPanels: n,
           widthMm: calcWidthMm,
           depthMm: calcDepthMm,
@@ -506,7 +506,7 @@ export function generateDynamicLayouts(panelCount, customDims = DEFAULT_MODULE_D
     const splitLayout = {
       id: `split_2tables_${half}`,
       type: 'split',
-      category: 'Dual Table (2 अलग टेबल)',
+      category: 'Dual Table',
       name: `Dual Split Tables: 2 Separate Tables of ${half} Panels Each`,
       shortCode: `2 Tables × ${half} Panels`,
       totalPanels: n,
@@ -563,7 +563,7 @@ export function checkRoofFit(layout, roofConfig) {
   if (fits) {
     reason = `Fits safely with ${widthClearanceFt}ft width & ${depthClearanceFt}ft depth safety clearance`;
   } else if (!widthFits && !depthFits) {
-    reason = `Exceeds roof by ${Math.abs(widthClearanceFt)}ft width & ${Math.abs(depthClearanceFt)}ft depth (छत से बाहर जा रहा है)`;
+    reason = `Exceeds roof by ${Math.abs(widthClearanceFt)}ft width & ${Math.abs(depthClearanceFt)}ft depth`;
   } else if (!widthFits) {
     reason = `Width exceeds available terrace by ${Math.abs(widthClearanceFt)}ft (Req: ${arrayWidthFt}ft vs Avail: ${availWidthFt}ft)`;
   } else {

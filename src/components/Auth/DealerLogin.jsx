@@ -124,7 +124,7 @@ export default function DealerLogin() {
               className="flex-1 py-1 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
-              <span>Staff (स्टाफ)</span>
+              <span>Staff</span>
             </button>
             <button
               type="button"
@@ -434,7 +434,7 @@ export default function DealerLogin() {
                     className="flex-1 py-1.5 px-2 rounded-lg text-secondary hover:text-on-surface font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
                   >
                     <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
-                    <span>Staff Login (स्टाफ)</span>
+                    <span>Staff Login</span>
                   </button>
                   <button
                     type="button"

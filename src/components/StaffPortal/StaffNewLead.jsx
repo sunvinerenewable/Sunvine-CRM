@@ -14,7 +14,7 @@ export default function StaffNewLead() {
   const [consumerNo, setConsumerNo] = useState('');
   const [sanctionedLoadKw, setSanctionedLoadKw] = useState('5.0');
   const [solarSystemKw, setSolarSystemKw] = useState('4.4');
-  const [roofType, setRoofType] = useState('RCC Flat Roof (आरसीसी छत)');
+  const [roofType, setRoofType] = useState('RCC Flat Roof');
   const [notes, setNotes] = useState('');
 
   const handleSubmit = (e) => {
@@ -62,7 +62,7 @@ export default function StaffNewLead() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-on-surface flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[24px]">person_add</span>
-            <span>New Customer Solar Lead (नई ग्राहक लीड)</span>
+            <span>New Customer Solar Lead</span>
           </h1>
           <p className="text-xs text-secondary mt-1">
             Fill in the customer basic details. <strong className="text-primary">Document uploads are NOT mandatory</strong> - you can enter documents later anytime!
@@ -84,7 +84,7 @@ export default function StaffNewLead() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-on-surface mb-1">
-                Customer Full Name (ग्राहक का पूरा नाम) *
+                Customer Full Name *
               </label>
               <input
                 type="text"
@@ -98,7 +98,7 @@ export default function StaffNewLead() {
 
             <div>
               <label className="block text-xs font-bold text-on-surface mb-1">
-                Mobile Number (मोबाइल नंबर) *
+                Mobile Number *
               </label>
               <input
                 type="tel"
@@ -113,7 +113,7 @@ export default function StaffNewLead() {
 
           <div>
             <label className="block text-xs font-bold text-on-surface mb-1">
-              Installation Address / Landmark (साइट का पता)
+              Installation Address / Landmark
             </label>
             <input
               type="text"
@@ -126,7 +126,7 @@ export default function StaffNewLead() {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-bold text-on-surface mb-1">City / District (शहर)</label>
+              <label className="block text-xs font-bold text-on-surface mb-1">City / District</label>
               <select
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
@@ -145,7 +145,7 @@ export default function StaffNewLead() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-on-surface mb-1">DISCOM (बिजली वितरण)</label>
+              <label className="block text-xs font-bold text-on-surface mb-1">DISCOM</label>
               <select
                 value={discom}
                 onChange={(e) => setDiscom(e.target.value)}
@@ -161,7 +161,7 @@ export default function StaffNewLead() {
 
             <div>
               <label className="block text-xs font-bold text-on-surface mb-1">
-                Consumer No (ग्राहक क्रमांक) <span className="text-secondary font-normal">(Optional)</span>
+                Consumer No <span className="text-secondary font-normal">(Optional)</span>
               </label>
               <input
                 type="text"
@@ -198,15 +198,15 @@ export default function StaffNewLead() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-on-surface mb-1">Rooftop Type (छत का प्रकार)</label>
+              <label className="block text-xs font-bold text-on-surface mb-1">Rooftop Type</label>
               <select
                 value={roofType}
                 onChange={(e) => setRoofType(e.target.value)}
                 className="w-full px-3 py-2.5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:border-primary outline-none cursor-pointer"
               >
-                <option value="RCC Flat Roof (आरसीसी छत)">RCC Flat Roof (आरसीसी छत)</option>
-                <option value="Industrial Tin Shed (टिन शेड)">Industrial Tin Shed (टिन शेड)</option>
-                <option value="Elevated Gazebo Roof">Elevated Gazebo Roof (ऊंचा स्ट्रक्चर)</option>
+                <option value="RCC Flat Roof">RCC Flat Roof</option>
+                <option value="Industrial Tin Shed">Industrial Tin Shed</option>
+                <option value="Elevated Gazebo Roof">Elevated Gazebo Roof</option>
                 <option value="Pitched / Tiled Roof">Pitched / Tiled Roof</option>
               </select>
             </div>
@@ -214,7 +214,7 @@ export default function StaffNewLead() {
 
           <div>
             <label className="block text-xs font-bold text-on-surface mb-1">
-              Field Survey Notes &amp; Observations (टिप्पणी / आवश्यकताएं)
+              Field Survey Notes &amp; Observations
             </label>
             <textarea
               rows="3"

@@ -19,19 +19,19 @@ export default function StaffDashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto font-sans">
-      {/* Welcome Hero Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#070D18] via-[#0D1527] to-[#121E36] border border-white/10 p-6 md:p-8 text-white shadow-xl">
+      {/* Welcome Hero Banner (Light Enterprise Theme) */}
+      <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-6 md:p-8 text-slate-900 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Field Executive Workspace (स्टाफ स्पेस)</span>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
+              <span>Field Executive Workspace</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">
               Welcome back, {currentStaff?.name || 'Sales Officer'}!
             </h1>
-            <p className="text-xs md:text-sm text-slate-400 max-w-xl">
-              Territory: <strong className="text-slate-200">{currentStaff?.zone || 'Gujarat Region'}</strong> | Staff ID: <strong className="text-emerald-400 font-mono">{currentStaff?.id || 'STF-001'}</strong>
+            <p className="text-xs md:text-sm text-slate-500 max-w-xl">
+              Territory: <strong className="text-slate-800">{currentStaff?.zone || 'Gujarat Region'}</strong> | Staff ID: <strong className="text-emerald-700 font-mono font-bold">{currentStaff?.id || 'STF-001'}</strong>
             </p>
           </div>
 
@@ -39,30 +39,27 @@ export default function StaffDashboard() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => setActiveTab('staff_map')}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-blue-900/30 transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-bold shadow-xs transition-all cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px]">radar</span>
+              <span className="material-symbols-outlined text-[18px] text-primary">radar</span>
               <span>AI Radar (Nearby EPC &amp; Shops)</span>
             </button>
             <button
               onClick={() => setActiveTab('staff_new_lead')}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-xl text-xs sm:text-sm font-bold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white rounded-xl text-xs sm:text-sm font-bold shadow-sm transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>New Customer Lead (नई लीड)</span>
+              <span>New Customer Lead</span>
             </button>
           </div>
         </div>
-
-        {/* Ambient background glow */}
-        <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none"></div>
       </div>
 
       {/* KPI Performance Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
         <div className="bg-surface rounded-xl p-4 md:p-5 border border-surface-container-high shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-secondary">
-            <span className="text-xs font-semibold uppercase tracking-wider">Total Files (कुल फाइलें)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Total Files</span>
             <span className="material-symbols-outlined text-primary text-[20px]">folder_open</span>
           </div>
           <div className="mt-3">
@@ -95,7 +92,7 @@ export default function StaffDashboard() {
 
         <div className="bg-surface rounded-xl p-4 md:p-5 border border-surface-container-high shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-secondary">
-            <span className="text-xs font-semibold uppercase tracking-wider">Successful (सब्सिडी)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Successful</span>
             <span className="material-symbols-outlined text-emerald-500 text-[20px]">verified</span>
           </div>
           <div className="mt-3">
@@ -125,7 +122,7 @@ export default function StaffDashboard() {
           <div>
             <h2 className="font-bold text-base text-on-surface flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">folder</span>
-              <span>My Active Customer Files (मेरी ग्राहक फाइलें)</span>
+              <span>My Active Customer Files</span>
             </h2>
             <p className="text-xs text-secondary mt-0.5">
               Only your assigned solar files appear here. No interference with other staff.
@@ -181,10 +178,10 @@ export default function StaffDashboard() {
                       onChange={(e) => updateFileStatus(file.id, e.target.value)}
                       className="px-3 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
                     >
-                      <option value="Sourced">1. Sourced (लीड)</option>
-                      <option value="Verification">2. Verification (सत्यापन)</option>
-                      <option value="DISCOM Registered">3. DISCOM Registered (पोर्टल पर दर्ज)</option>
-                      <option value="Subsidized">4. Subsidized (सब्सिडी स्वीकृत)</option>
+                      <option value="Sourced">1. Sourced</option>
+                      <option value="Verification">2. Verification</option>
+                      <option value="DISCOM Registered">3. DISCOM Registered</option>
+                      <option value="Subsidized">4. Subsidized</option>
                     </select>
 
                     <a

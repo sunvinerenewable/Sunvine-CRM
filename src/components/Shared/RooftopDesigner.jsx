@@ -255,7 +255,7 @@ export default function RooftopDesigner({
 
       obsList.push({
         id: 'mumty',
-        name: 'Staircase Mumty (सीढ़ी)',
+        name: 'Staircase Mumty',
         type: 'box',
         location: newLoc,
         widthFt: mumtyW,
@@ -333,7 +333,7 @@ export default function RooftopDesigner({
           }
           newObstacles.push({
             id: 'mumty',
-            name: d.mumty?.name || 'Staircase Mumty (सीढ़ी)',
+            name: d.mumty?.name || 'Staircase Mumty',
             type: 'box',
             location: mLoc,
             widthFt: mW,
@@ -348,7 +348,7 @@ export default function RooftopDesigner({
         if (d.waterTank?.detected) {
           newObstacles.push({
             id: 'tanki',
-            name: 'Water Tank (पानी की टंकी)',
+            name: 'Water Tank',
             type: 'cylinder',
             radiusFt: d.waterTank.radiusFt || 1.8,
             heightFt: d.waterTank.heightFt || 3,
@@ -575,7 +575,7 @@ export default function RooftopDesigner({
             </span>
           </div>
           <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-            हाथ से बनी किसी भी ड्रॉइंग या ब्लू-प्रिंट की फ़ोटो अपलोड करें। Google Gemini Vision AI असली दीवारों के माप निकाल कर 2D ब्लूप्रिंट व 3D मॉडल तैयार करता है।
+            Upload hand-drawn roof sketch or blueprint photo. Gemini Vision AI extracts wall dimensions to generate 2D blueprints and 3D models.
           </p>
         </div>
 
@@ -794,7 +794,7 @@ export default function RooftopDesigner({
                     <span className="material-symbols-outlined text-[18px] text-cyan-400 group-hover:scale-110 transition-transform">
                       grid_4x4
                     </span>
-                    <span>Draw on Blank CAD Grid (बिना फ़ोटो डायरेक्ट नाप खींचें)</span>
+                    <span>Draw on Blank CAD Grid</span>
                   </button>
                 </>
               )}
@@ -884,7 +884,7 @@ export default function RooftopDesigner({
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <div>
                   <span className="text-xs font-bold text-white block">
-                    All Detected Walls ({walls.length} दीवारें):
+                    All Detected Walls ({walls.length}):
                   </span>
                   <span className="text-[10px] text-slate-400">
                     Click any side to highlight or adjust length in feet
@@ -931,7 +931,7 @@ export default function RooftopDesigner({
           {activeTab === 'analysis' && (
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-3.5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-white">Obstacles Setup (सीढ़ी व टंकी):</span>
+                <span className="text-xs font-bold text-white">Obstacles Setup:</span>
                 <span className="text-[10px] text-slate-400">Shadow casts towards North</span>
               </div>
 
@@ -940,7 +940,7 @@ export default function RooftopDesigner({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-amber-400 flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">stairs</span>
-                    Staircase Mumty (सीढ़ी का कमरा)
+                    Staircase Mumty
                   </span>
                 </div>
 
@@ -952,11 +952,11 @@ export default function RooftopDesigner({
                       onChange={e => handleMumtyLocationChange(e.target.value)}
                       className="w-full h-8 px-2 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none"
                     >
-                      <option value="none">❌ No Mumty (कोई सीढ़ी नहीं)</option>
-                      <option value="bottom-left">📍 Bottom-Left (नीचे बायाँ)</option>
-                      <option value="top-left">📍 Top-Left (ऊपर बायाँ)</option>
-                      <option value="top-right">📍 Top-Right (ऊपर दायाँ)</option>
-                      <option value="bottom-right">📍 Bottom-Right (नीचे दायाँ)</option>
+                      <option value="none">No Mumty</option>
+                      <option value="bottom-left">Bottom-Left</option>
+                      <option value="top-left">Top-Left</option>
+                      <option value="top-right">Top-Right</option>
+                      <option value="bottom-right">Bottom-Right</option>
                     </select>
                   </div>
 
@@ -996,7 +996,7 @@ export default function RooftopDesigner({
               <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-xs font-bold text-sky-400 flex items-center gap-1">
                   <span className="material-symbols-outlined text-[16px]">water_drop</span>
-                  Water Tank (पानी की टंकी)
+                  Water Tank
                 </span>
                 <button
                   type="button"
@@ -1096,11 +1096,11 @@ export default function RooftopDesigner({
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm bg-[#334155] border border-[#F59E0B]"></span>
-                <span>Mumty Room (सीढ़ी)</span>
+                <span>Mumty Room</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm bg-[#6CBF3D]/25 border border-[#6CBF3D]"></span>
-                <span>Safe Solar Zone (धूप)</span>
+                <span>Safe Solar Zone</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm bg-[#1E3E62] border border-blue-400"></span>

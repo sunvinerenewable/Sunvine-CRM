@@ -740,7 +740,7 @@ export default function InteractiveImageRoofTracer({
       obstacles.push({
         id: 'mumty',
         type: 'box',
-        label: 'Mumty Room (सीढ़ी कमरा)',
+        label: 'Mumty Room (Staircase)',
         widthFt: mumtyW,
         depthFt: mumtyD,
         heightFt: mumtyH,
@@ -844,7 +844,7 @@ export default function InteractiveImageRoofTracer({
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">edit</span>
-              <span>1. बाउंड्री बनाएं (Draw Boundary)</span>
+              <span>1. Draw Boundary</span>
               {pins.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-900 text-[#6CBF3D]">
                   {pins.length}
@@ -858,7 +858,7 @@ export default function InteractiveImageRoofTracer({
                 if (pins.length >= 3) {
                   finalizeSidesFromPins(pins);
                 } else {
-                  alert('कम से कम 3 कोने (corners) बनाएं ताकि छत बंद हो सके।');
+                  alert('Place at least 3 corners to close the roof boundary.');
                 }
               }}
               className={`px-3.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -868,7 +868,7 @@ export default function InteractiveImageRoofTracer({
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">straighten</span>
-              <span>2. साइड्स व मुंडेर ऊंचाई (Sides &amp; Parapet)</span>
+              <span>2. Sides &amp; Parapet</span>
               {sides.length > 0 && (
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-900 text-[#6CBF3D]">
                   {sides.length} Sides
@@ -974,7 +974,7 @@ export default function InteractiveImageRoofTracer({
                   if (pins.length >= 3) {
                     finalizeSidesFromPins(pins);
                   } else {
-                    alert('कम से कम 3 कोने (corners) बनाएं ताकि छत बंद हो सके।');
+                    alert('Place at least 3 corners to close the roof boundary.');
                   }
                 }}
                 disabled={pins.length < 3}
@@ -1271,7 +1271,7 @@ export default function InteractiveImageRoofTracer({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
                 <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
-                  दीवार {pendingSegment.wallIndex} का माप ({pendingSegment.compass?.label || pendingSegment.compass?.code})
+                  Wall {pendingSegment.wallIndex} ({pendingSegment.compass?.label || pendingSegment.compass?.code})
                 </span>
               </div>
               <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full">
@@ -1362,19 +1362,19 @@ export default function InteractiveImageRoofTracer({
             <span className="text-slate-400">
               {pendingSegment ? (
                 <span className="text-emerald-400 font-semibold">
-                  👉 Side {pendingSegment.wallIndex} की लम्बाई (feet) भरें और <b>Enter</b> दबाएं—लाइन सही अनुपात (scale) में बनेगी।
+                  👉 Enter Side {pendingSegment.wallIndex} length (feet) and press <b>Enter</b> to lock scale.
                 </span>
               ) : pins.length === 0 ? (
                 <>
-                  👉 नक़्शे के पहले कोने (Corner 1) पर <b>क्लिक</b> करें। <b>(Point-to-Point सीधी लाइन चालू है—कोई भी तिरछा या 90° कोना बना सकते हैं)</b>
+                  👉 Click on the first roof corner (Corner 1) to begin tracing. <b>Point-to-point drawing enabled for any angle or 90° corner.</b>
                 </>
               ) : pins.length < 3 ? (
                 <>
-                  👉 अगले कोने पर क्लिक करते जाएं—SketchUp की तरह तुरंत फीट (feet) माप भरें।
+                  👉 Continue clicking next corners and enter dimensions in feet.
                 </>
               ) : (
                 <>
-                  👉 कोने क्लिक करके <b>P1 पर क्लिक करें</b> (या &quot;Finish Boundary&quot; बटन दबाएं)।
+                  👉 Click <b>P1 to close boundary</b> (or click &quot;Finish Boundary&quot;).
                 </>
               )}
             </span>
@@ -1386,7 +1386,7 @@ export default function InteractiveImageRoofTracer({
               if (pins.length >= 3) {
                 finalizeSidesFromPins(pins);
               } else {
-                alert('कम से कम 3 कोने (corners) बनाएं ताकि छत बंद हो सके।');
+                alert('Place at least 3 corners to close the roof boundary.');
               }
             }}
             disabled={pins.length < 3}
@@ -1405,10 +1405,10 @@ export default function InteractiveImageRoofTracer({
             <div>
               <h5 className="text-sm font-bold text-white flex items-center gap-2">
                 <span className="material-symbols-outlined text-amber-400 text-[20px]">straighten</span>
-                <span>हर साइड का वास्तविक माप (Feet) व मुंडेर ऊंचाई</span>
+                <span>Wall Lengths &amp; Parapet Height</span>
               </h5>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                कागज पर लिखा सही माप (feet) भरें—<b>इससे फ़ोटो की खींची हुई लाइन नहीं बदलेगी</b>, बल्कि असली 2D CAD व 3D मॉडल बिल्कुल सही स्केल पर बनेगा।
+                Enter actual wall lengths in feet. Measurements will scale 2D CAD and 3D models accurately without modifying the blueprint image.
               </p>
             </div>
 
@@ -1416,7 +1416,7 @@ export default function InteractiveImageRoofTracer({
             <div className="flex items-center gap-3 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
               <div className="flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-blue-400 text-[18px]">fence</span>
-                <span className="text-xs font-bold text-white">मुंडेर ऊंचाई (Parapet Height):</span>
+                <span className="text-xs font-bold text-white">Parapet Height:</span>
               </div>
               <div className="flex items-center gap-1">
                 {[2.5, 3.0, 3.5, 4.0].map(h => (
@@ -1488,10 +1488,10 @@ export default function InteractiveImageRoofTracer({
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-amber-400 text-[18px]">domain_add</span>
-                <span className="text-xs font-bold text-white">छत पर रुकावटें व कटआउट (Mumty, Water Tank &amp; Stair Opening):</span>
+                <span className="text-xs font-bold text-white">Rooftop Obstacles &amp; Cutouts (Mumty, Water Tank &amp; Stair Opening):</span>
               </div>
               <span className="text-[11px] text-slate-400">
-                कमरा या टंकी जोड़ने से 3D में वास्तविक परछाई (Shadow) और फिटिंग देखी जा सकती है।
+                Adding obstacles calculates real 3D shadow zones and clearance.
               </span>
             </div>
 
@@ -1507,13 +1507,13 @@ export default function InteractiveImageRoofTracer({
                     onChange={e => setHasMumty(e.target.checked)}
                     className="w-4 h-4 accent-amber-400 rounded cursor-pointer"
                   />
-                  <span className="text-xs font-bold text-white">🏠 सीढ़ी कमरा (Mumty Room)</span>
+                  <span className="text-xs font-bold text-white">🏠 Staircase Mumty</span>
                 </label>
 
                 {hasMumty && (
                   <div className="grid grid-cols-3 gap-1.5 pt-1 text-[11px]">
                     <div>
-                      <span className="text-[10px] text-slate-400 block">चौड़ाई (W):</span>
+                      <span className="text-[10px] text-slate-400 block">Width (W):</span>
                       <input
                         type="number"
                         value={mumtyW}
@@ -1522,7 +1522,7 @@ export default function InteractiveImageRoofTracer({
                       />
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block">लम्बाई (D):</span>
+                      <span className="text-[10px] text-slate-400 block">Depth (D):</span>
                       <input
                         type="number"
                         value={mumtyD}
@@ -1531,7 +1531,7 @@ export default function InteractiveImageRoofTracer({
                       />
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block">ऊंचाई (H):</span>
+                      <span className="text-[10px] text-slate-400 block">Height (H):</span>
                       <input
                         type="number"
                         value={mumtyH}
@@ -1554,24 +1554,24 @@ export default function InteractiveImageRoofTracer({
                     onChange={e => setHasWaterTank(e.target.checked)}
                     className="w-4 h-4 accent-sky-400 rounded cursor-pointer"
                   />
-                  <span className="text-xs font-bold text-white">🚰 पानी की टंकी (Water Tank)</span>
+                  <span className="text-xs font-bold text-white">🚰 Water Tank</span>
                 </label>
 
                 {hasWaterTank && (
                   <div className="grid grid-cols-2 gap-1.5 pt-1 text-[11px]">
                     <div>
-                      <span className="text-[10px] text-slate-400 block">स्थान (Location):</span>
+                      <span className="text-[10px] text-slate-400 block">Location:</span>
                       <select
                         value={tankOnMumty ? 'mumty' : 'slab'}
                         onChange={e => setTankOnMumty(e.target.value === 'mumty')}
                         className="w-full h-7 px-1 bg-slate-950 text-white rounded border border-slate-700 text-xs"
                       >
-                        <option value="mumty">कमरे की छत पर</option>
-                        <option value="slab">खुली छत पर</option>
+                        <option value="mumty">On Mumty Roof</option>
+                        <option value="slab">On Main Slab</option>
                       </select>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-400 block">टंकी क्षमता:</span>
+                      <span className="text-[10px] text-slate-400 block">Tank Capacity:</span>
                       <select
                         value={tankCapacity}
                         onChange={e => setTankCapacity(e.target.value)}
@@ -1592,7 +1592,7 @@ export default function InteractiveImageRoofTracer({
               }`}>
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-emerald-400 text-[18px]">meeting_room</span>
-                  <span className="text-xs font-bold text-white">मुंडेर में खुला रास्ता (Stair Cutout):</span>
+                  <span className="text-xs font-bold text-white">Parapet Cutout / Stair Access:</span>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1 text-[11px]">
@@ -1601,10 +1601,10 @@ export default function InteractiveImageRoofTracer({
                     onChange={e => setParapetOpeningSide(parseInt(e.target.value) || 0)}
                     className="w-full h-7 px-2 bg-slate-950 text-white rounded border border-slate-700 text-xs"
                   >
-                    <option value="0">कोई खुला रास्ता नहीं (पूरी मुंडेर बंद)</option>
+                    <option value="0">None (Full Continuous Parapet)</option>
                     {sides.map((s, idx) => (
                       <option key={`op_${idx}`} value={s.side}>
-                        Side {s.side} पर 3.5ft खुला दरवाजा / कट
+                        Side {s.side} (3.5ft Stair Opening)
                       </option>
                     ))}
                   </select>
@@ -1616,7 +1616,7 @@ export default function InteractiveImageRoofTracer({
           {/* Stage 2 Bottom Confirmation Bar */}
           <div className="flex items-center justify-between pt-2 border-t border-slate-800 flex-wrap gap-2">
             <span className="text-xs text-slate-400">
-              ✓ सभी साइड्स ({sides.length} walls) और मुंडेर ({parapetHeightFt} ft) तैयार हैं। 2D CAD नक्शा और 3D मॉडल बनाएं:
+              ✓ {sides.length} walls configured with {parapetHeightFt}ft parapet. Ready for 2D CAD and 3D modeling.
             </span>
 
             <button

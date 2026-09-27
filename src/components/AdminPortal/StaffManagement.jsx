@@ -192,97 +192,103 @@ export default function StaffManagement() {
   const totalKwSum = (customerFiles || []).reduce((acc, f) => acc + (f.solarSystemKw || 0), 0).toFixed(1);
 
   return (
-    <div className="min-h-screen bg-[#070D18] text-white p-4 md:p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-6">
+    <div className="flex flex-col w-full pb-16 font-sans text-slate-800">
+      <div className="max-w-[1520px] mx-auto w-full space-y-6">
+        {/* Top Header matching DealerManagement */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-[#E4E7EB] pb-5">
           <div>
-            <div className="flex items-center gap-3">
-              <span className="material-symbols-outlined text-3xl text-primary-container">badge</span>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
-                Sales Team &amp; Customer Files (सेल्स टीम और फाइल प्रबंधन)
-              </h1>
-            </div>
-            <p className="text-sm text-slate-400 mt-1">
-              Live salesperson performance tracking, ID-Password credentials, customer pipeline, and optional document vault.
+            <nav className="flex items-center gap-1.5 text-xs text-secondary mb-1">
+              <span>Admin Console</span>
+              <span className="material-symbols-outlined text-xs">chevron_right</span>
+              <span>Partner Directory</span>
+              <span className="material-symbols-outlined text-xs">chevron_right</span>
+              <span className="text-on-surface font-semibold">Sales Team &amp; Customer Files</span>
+            </nav>
+            <h1 className="font-poppins font-bold text-headline-xl text-[#0F1B2E] tracking-tight">
+              Sales Team &amp; Customer Files
+            </h1>
+            <p className="text-body-md text-secondary mt-1">
+              Live salesperson performance tracking, portal credentials, customer pipeline, and optional document vault.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
             <button
               onClick={() => setShowAddStaffModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/20 rounded-lg text-sm font-medium transition-all cursor-pointer"
+              className="h-10 px-3.5 sm:px-4 bg-white border border-[#E4E7EB] hover:border-primary text-on-surface font-label-md rounded-lg hover:bg-surface-container-low transition-all duration-150 flex items-center gap-2 shadow-xs cursor-pointer text-xs sm:text-sm"
+              type="button"
             >
-              <span className="material-symbols-outlined text-[18px]">person_add</span>
-              <span>Register New Staff (स्टाफ जोड़ें)</span>
+              <span className="material-symbols-outlined text-[18px] text-primary">person_add</span>
+              <span>Register New Staff</span>
             </button>
             <button
               onClick={() => setShowAddFileModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-lg text-sm font-semibold shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              className="h-10 px-3.5 sm:px-4 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-label-md font-semibold rounded-lg transition-all duration-150 flex items-center gap-2 shadow-sm text-xs sm:text-sm cursor-pointer"
+              type="button"
             >
               <span className="material-symbols-outlined text-[18px]">note_add</span>
-              <span>New Customer File (नई फाइल)</span>
+              <span>+ New Customer File</span>
             </button>
           </div>
         </div>
 
         {/* Executive Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <div className="bg-[#0D1527] border border-white/10 rounded-xl p-4">
-            <div className="text-xs text-slate-400">Total Staff (टीम)</div>
-            <div className="text-2xl font-bold text-white mt-1">{(staffList || []).length}</div>
-            <div className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+          <div className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs flex flex-col justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Staff</div>
+            <div className="text-2xl md:text-3xl font-black text-slate-900 mt-1 font-mono">{(staffList || []).length}</div>
+            <div className="text-[11px] text-emerald-700 mt-1 flex items-center gap-1 font-semibold">
               <span className="material-symbols-outlined text-[14px]">groups</span>
-              All Active Login Accounts
+              Active Accounts
             </div>
           </div>
-          <div className="bg-[#0D1527] border border-white/10 rounded-xl p-4">
-            <div className="text-xs text-slate-400">Total Files Brought (कुल फाइलें)</div>
-            <div className="text-2xl font-bold text-white mt-1">{totalFilesCount}</div>
-            <div className="text-[11px] text-slate-400 mt-1">{totalKwSum} kW Pipeline</div>
+          <div className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs flex flex-col justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Files</div>
+            <div className="text-2xl md:text-3xl font-black text-slate-900 mt-1 font-mono">{totalFilesCount}</div>
+            <div className="text-[11px] text-slate-500 mt-1 font-semibold">{totalKwSum} kW Pipeline</div>
           </div>
-          <div className="bg-[#0D1527] border border-amber-500/20 rounded-xl p-4 bg-amber-500/5">
-            <div className="text-xs text-amber-300">Sourced / Leads (लीड)</div>
-            <div className="text-2xl font-bold text-amber-400 mt-1">{sourcedCount}</div>
-            <div className="text-[11px] text-slate-400 mt-1">Initial Contact</div>
+          <div className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs flex flex-col justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Sourced / Leads</div>
+            <div className="text-2xl md:text-3xl font-black text-amber-600 mt-1 font-mono">{sourcedCount}</div>
+            <div className="text-[11px] text-slate-500 mt-1 font-semibold">Initial Contact</div>
           </div>
-          <div className="bg-[#0D1527] border border-blue-500/20 rounded-xl p-4 bg-blue-500/5">
-            <div className="text-xs text-blue-300">In Progress (प्रगति पर)</div>
-            <div className="text-2xl font-bold text-blue-400 mt-1">{inProgressTotal}</div>
-            <div className="text-[11px] text-blue-300 mt-1">Verification / DISCOM</div>
+          <div className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs flex flex-col justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">In Progress</div>
+            <div className="text-2xl md:text-3xl font-black text-blue-600 mt-1 font-mono">{inProgressTotal}</div>
+            <div className="text-[11px] text-blue-600 mt-1 font-semibold">Verification / DISCOM</div>
           </div>
-          <div className="bg-[#0D1527] border border-emerald-500/20 rounded-xl p-4 bg-emerald-500/5">
-            <div className="text-xs text-emerald-300">Successful (सब्सिडी स्वीकृत)</div>
-            <div className="text-2xl font-bold text-emerald-400 mt-1">{subsidizedCount}</div>
-            <div className="text-[11px] text-emerald-400 mt-1">DBT Approved &amp; Paid</div>
+          <div className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs flex flex-col justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Successful</div>
+            <div className="text-2xl md:text-3xl font-black text-emerald-600 mt-1 font-mono">{subsidizedCount}</div>
+            <div className="text-[11px] text-emerald-700 mt-1 font-semibold">DBT Approved &amp; Paid</div>
           </div>
         </div>
 
         {/* View Switcher: Files vs Staff Directory */}
-        <div className="flex border-b border-white/10 gap-8">
+        <div className="flex border-b border-[#E4E7EB] gap-6">
           <button
             onClick={() => setActiveView('files')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'files'
-                ? 'border-emerald-400 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-white'
+                ? 'border-emerald-600 text-emerald-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">folder</span>
-            <span>Customer Files &amp; Subsidies (ग्राहक फाइलें)</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-slate-300">{(customerFiles || []).length}</span>
+            <span>Customer Files &amp; Subsidies</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{(customerFiles || []).length}</span>
           </button>
           <button
             onClick={() => setActiveView('staff')}
-            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'staff'
-                ? 'border-emerald-400 text-emerald-400'
-                : 'border-transparent text-slate-400 hover:text-white'
+                ? 'border-emerald-600 text-emerald-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">groups</span>
-            <span>Sales Team Directory &amp; Logins (सेल्स टीम डायरेक्टरी)</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-slate-300">{(staffList || []).length}</span>
+            <span>Sales Team Directory &amp; Logins</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{(staffList || []).length}</span>
           </button>
         </div>
 
@@ -290,23 +296,23 @@ export default function StaffManagement() {
         {activeView === 'files' && (
           <div className="space-y-4">
             {/* Filter & Search Bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#0D1527] p-4 rounded-xl border border-white/10">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-3.5 sm:p-4 rounded-xl border border-[#E4E7EB] shadow-xs">
               {/* Pipeline Tabs */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 md:pb-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
                 {[
                   { key: 'all', label: 'All Files' },
-                  { key: 'Sourced', label: 'Sourced (लीड)' },
-                  { key: 'Verification', label: 'Verification (सत्यापन)' },
-                  { key: 'DISCOM Registered', label: 'DISCOM Reg. (पंजीकृत)' },
-                  { key: 'Subsidized', label: 'Subsidized (स्वीकृत)' }
+                  { key: 'Sourced', label: 'Sourced' },
+                  { key: 'Verification', label: 'Verification' },
+                  { key: 'DISCOM Registered', label: 'DISCOM Reg.' },
+                  { key: 'Subsidized', label: 'Subsidized' }
                 ].map(t => (
                   <button
                     key={t.key}
                     onClick={() => setStatusFilter(t.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                       statusFilter === t.key
-                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                        : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                        ? 'bg-[#0F1B2E] text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
                     {t.label}
@@ -315,13 +321,13 @@ export default function StaffManagement() {
               </div>
 
               {/* Staff and Search filters */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <select
                   value={staffFilter}
                   onChange={e => setStaffFilter(e.target.value)}
-                  className="bg-[#070D18] border border-white/15 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                  className="bg-white border border-[#E4E7EB] rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
-                  <option value="all">All Sales Staff (सभी स्टाफ)</option>
+                  <option value="all">All Sales Staff</option>
                   {(staffList || []).map(s => (
                     <option key={s.id} value={s.id}>{s.name} ({s.zone?.split(' ')[0]})</option>
                   ))}
@@ -334,7 +340,7 @@ export default function StaffManagement() {
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     placeholder="Search name, consumer no, mobile..."
-                    className="bg-[#070D18] border border-white/15 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-400 w-48 md:w-60"
+                    className="bg-white border border-[#E4E7EB] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
                   />
                 </div>
               </div>
@@ -345,66 +351,66 @@ export default function StaffManagement() {
               {filteredFiles.map(file => {
                 const docsCount = Object.values(file.documents || {}).filter(d => d.uploaded).length;
                 const statusColors = {
-                  'Sourced': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-                  'Verification': 'bg-blue-500/10 text-blue-300 border-blue-500/30',
-                  'DISCOM Registered': 'bg-purple-500/10 text-purple-300 border-purple-500/30',
-                  'Subsidized': 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                  'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
+                  'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
+                  'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
+                  'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
                 };
 
                 return (
                   <div
                     key={file.id}
-                    className="bg-[#0D1527] border border-white/10 hover:border-white/20 rounded-xl p-5 flex flex-col justify-between transition-all"
+                    className="bg-white border border-[#E4E7EB] hover:border-slate-300 rounded-xl p-5 flex flex-col justify-between shadow-xs transition-all"
                   >
                     <div>
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="text-[11px] font-mono text-slate-400 uppercase tracking-wider">{file.id}</span>
-                          <h3 className="text-base font-bold text-white hover:text-emerald-400 transition-colors">
+                          <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
+                          <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors">
                             {file.customerName}
                           </h3>
                         </div>
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold ${statusColors[file.status] || 'bg-slate-800 text-slate-300'}`}>
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                           {file.status}
                         </span>
                       </div>
 
                       {/* Info Pills */}
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-[#070D18] p-2 rounded-lg border border-white/5">
-                          <span className="text-slate-400 block text-[10px]">DISCOM / Consumer No</span>
-                          <span className="font-semibold text-slate-200">{file.discom}</span>
-                          <span className="text-[11px] text-slate-400 block truncate">{file.consumerNo || 'Pending'}</span>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                          <span className="text-slate-500 block text-[10px] font-medium">DISCOM / Consumer No</span>
+                          <span className="font-bold text-slate-800">{file.discom}</span>
+                          <span className="text-[11px] text-slate-500 block truncate">{file.consumerNo || 'Pending'}</span>
                         </div>
-                        <div className="bg-[#070D18] p-2 rounded-lg border border-white/5">
-                          <span className="text-slate-400 block text-[10px]">System &amp; Load</span>
-                          <span className="font-bold text-emerald-400">{file.solarSystemKw} kW Solar</span>
-                          <span className="text-[11px] text-slate-400 block">{file.sanctionedLoadKw} kW Load</span>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                          <span className="text-slate-500 block text-[10px] font-medium">System &amp; Load</span>
+                          <span className="font-bold text-emerald-700">{file.solarSystemKw} kW Solar</span>
+                          <span className="text-[11px] text-slate-500 block">{file.sanctionedLoadKw} kW Load</span>
                         </div>
                       </div>
 
                       {/* Contact & Sales Executive */}
-                      <div className="mt-3 space-y-1 text-xs text-slate-300">
-                        <div className="flex items-center gap-1.5 text-slate-400">
-                          <span className="material-symbols-outlined text-[14px]">call</span>
-                          <a href={`tel:${file.phone}`} className="hover:underline text-slate-200 font-semibold">{file.phone}</a>
+                      <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
+                          <a href={`tel:${file.phone}`} className="hover:underline text-slate-800 font-semibold">{file.phone}</a>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-400">
-                          <span className="material-symbols-outlined text-[14px]">person</span>
-                          <span>Assigned: <strong className="text-slate-200">{file.staffName}</strong></span>
+                        <div className="flex items-center gap-1.5 text-slate-500">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400">person</span>
+                          <span>Assigned: <strong className="text-slate-800">{file.staffName}</strong></span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-400 truncate">
-                          <span className="material-symbols-outlined text-[14px]">location_on</span>
+                        <div className="flex items-center gap-1.5 text-slate-500 truncate">
+                          <span className="material-symbols-outlined text-[15px] text-slate-400">location_on</span>
                           <span className="truncate">{file.address}</span>
                         </div>
                       </div>
 
                       {/* Document Badges (Clearly Optional) */}
-                      <div className="mt-4 pt-3 border-t border-white/10">
+                      <div className="mt-4 pt-3 border-t border-slate-100">
                         <div className="flex items-center justify-between text-xs mb-2">
-                          <span className="text-slate-400">Documents (Optional)</span>
-                          <span className="font-semibold text-emerald-400">{docsCount} / 5 Attached</span>
+                          <span className="text-slate-500 font-medium">Documents (Optional)</span>
+                          <span className="font-bold text-emerald-700">{docsCount} / 5 Attached</span>
                         </div>
                         <div className="grid grid-cols-5 gap-1.5 text-center">
                           {[
@@ -421,8 +427,8 @@ export default function StaffManagement() {
                                 title={`${doc.label}: ${isUp ? 'Uploaded' : 'Optional'}`}
                                 className={`py-1 rounded flex flex-col items-center justify-center text-[10px] border transition-all ${
                                   isUp
-                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                                    : 'bg-white/5 border-white/10 text-slate-500'
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold'
+                                    : 'bg-slate-50 border-slate-200 text-slate-400'
                                 }`}
                               >
                                 <span>{doc.label}</span>
@@ -434,12 +440,12 @@ export default function StaffManagement() {
                     </div>
 
                     {/* Action Footer */}
-                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                       <button
                         onClick={() => setSelectedFileForDocs(file)}
-                        className="flex-1 py-1.5 px-3 bg-white/10 hover:bg-white/15 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                       >
-                        <span className="material-symbols-outlined text-[15px] text-emerald-400">upload_file</span>
+                        <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
                         <span>Docs (Optional)</span>
                       </button>
 
@@ -450,7 +456,7 @@ export default function StaffManagement() {
                           updateFileStatus(file.id, e.target.value);
                           addToast(`Updated status to "${e.target.value}"`, 'success');
                         }}
-                        className="bg-[#070D18] border border-white/15 rounded-lg px-2 py-1.5 text-[11px] text-slate-300 focus:outline-none focus:border-emerald-400 cursor-pointer"
+                        className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
                       >
                         <option value="Sourced">Sourced</option>
                         <option value="Verification">Verification</option>
@@ -464,8 +470,8 @@ export default function StaffManagement() {
             </div>
 
             {filteredFiles.length === 0 && (
-              <div className="bg-[#0D1527] border border-white/10 rounded-xl p-12 text-center text-slate-400">
-                <span className="material-symbols-outlined text-4xl text-slate-600 mb-2">folder_off</span>
+              <div className="bg-white border border-[#E4E7EB] rounded-xl p-12 text-center text-slate-500 shadow-xs">
+                <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">folder_off</span>
                 <p>No customer files match your search criteria.</p>
               </div>
             )}
@@ -487,17 +493,17 @@ export default function StaffManagement() {
                 return (
                   <div
                     key={member.id}
-                    className="bg-[#0D1527] border border-white/10 rounded-xl p-5 flex flex-col justify-between"
+                    className="bg-white border border-[#E4E7EB] rounded-xl p-5 flex flex-col justify-between shadow-xs"
                   >
                     <div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-bold flex items-center justify-center text-base">
+                          <div className="w-11 h-11 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold flex items-center justify-center text-base">
                             {member.name.split(' ').map(n => n[0]).join('')}
                           </div>
                           <div>
-                            <h3 className="font-bold text-white text-base">{member.name}</h3>
-                            <p className="text-[11px] text-slate-400 font-mono">{member.id}</p>
+                            <h3 className="font-bold text-slate-900 text-base">{member.name}</h3>
+                            <p className="text-[11px] text-slate-500 font-mono font-semibold">{member.id}</p>
                           </div>
                         </div>
 
@@ -506,56 +512,53 @@ export default function StaffManagement() {
                             setSelectedStaffForCreds(member);
                             setEditStaffPassword(member.password || 'Sunvine@2026');
                           }}
-                          className="p-1.5 bg-white/10 hover:bg-white/15 text-slate-300 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
+                          className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
                           title="Manage Password & Credentials"
                         >
-                          <span className="material-symbols-outlined text-[16px] text-amber-400">key</span>
+                          <span className="material-symbols-outlined text-[16px] text-amber-500">key</span>
                         </button>
                       </div>
 
-                      <div className="mt-3 space-y-1.5 text-xs text-slate-300">
-                        <div className="text-[11px] text-emerald-300 font-medium">{member.role}</div>
-                        <div className="flex items-center gap-1.5 text-slate-400">
+                      <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                        <div className="text-[11px] text-emerald-700 font-semibold">{member.role}</div>
+                        <div className="flex items-center gap-1.5 text-slate-500">
                           <span className="material-symbols-outlined text-[14px]">call</span>
-                          <a href={`tel:${member.phone}`} className="hover:underline text-slate-200">{member.phone}</a>
+                          <a href={`tel:${member.phone}`} className="hover:underline text-slate-800">{member.phone}</a>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-400 truncate">
+                        <div className="flex items-center gap-1.5 text-slate-500 truncate">
                           <span className="material-symbols-outlined text-[14px]">location_on</span>
                           <span className="truncate">{member.zone}</span>
                         </div>
                       </div>
 
                       {/* Live 3-Column Salesperson Metrics */}
-                      <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-3 gap-1.5 text-center text-xs">
-                        <div className="bg-[#070D18] p-2 rounded-lg border border-white/5">
-                          <div className="text-slate-400 text-[10px]">Total Files</div>
-                          <div className="font-bold text-white text-sm mt-0.5">{totalBrought}</div>
-                          <div className="text-[9px] text-slate-500">लाईं गईं</div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-center text-xs">
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                          <div className="text-slate-500 text-[10px] font-medium">Total Files</div>
+                          <div className="font-bold text-slate-900 text-sm mt-0.5">{totalBrought}</div>
                         </div>
-                        <div className="bg-[#070D18] p-2 rounded-lg border border-white/5">
-                          <div className="text-blue-300 text-[10px]">In Progress</div>
-                          <div className="font-bold text-blue-400 text-sm mt-0.5">{inProg}</div>
-                          <div className="text-[9px] text-slate-500">प्रगति पर</div>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                          <div className="text-blue-600 text-[10px] font-medium">In Progress</div>
+                          <div className="font-bold text-blue-700 text-sm mt-0.5">{inProg}</div>
                         </div>
-                        <div className="bg-[#070D18] p-2 rounded-lg border border-white/5">
-                          <div className="text-emerald-300 text-[10px]">Success</div>
-                          <div className="font-bold text-emerald-400 text-sm mt-0.5">{successDone}</div>
-                          <div className="text-[9px] text-emerald-400/70">स्वीकृत</div>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                          <div className="text-emerald-700 text-[10px] font-medium">Success</div>
+                          <div className="font-bold text-emerald-700 text-sm mt-0.5">{successDone}</div>
                         </div>
                       </div>
 
-                      <div className="mt-2 text-center text-[11px] text-slate-400">
-                        Pipeline Capacity: <strong className="text-white">{sKw} kW</strong>
+                      <div className="mt-2 text-center text-[11px] text-slate-500">
+                        Pipeline Capacity: <strong className="text-slate-900">{sKw} kW</strong>
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between gap-2 text-xs">
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
                       <button
                         onClick={() => handleCopyCredentials(member)}
-                        className="py-1 px-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-[11px] font-semibold rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
+                        className="py-1 px-2.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-[11px] font-semibold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
                         title="Copy WhatsApp Login Message"
                       >
-                        <span className="material-symbols-outlined text-[14px] text-emerald-400">share</span>
+                        <span className="material-symbols-outlined text-[14px] text-emerald-600">share</span>
                         <span>Credentials</span>
                       </button>
 
@@ -564,7 +567,7 @@ export default function StaffManagement() {
                           setStaffFilter(member.id);
                           setActiveView('files');
                         }}
-                        className="text-primary-container hover:underline text-xs flex items-center gap-0.5 cursor-pointer"
+                        className="text-emerald-600 hover:underline text-xs flex items-center gap-0.5 font-semibold cursor-pointer"
                       >
                         <span>View Files</span>
                         <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
@@ -580,74 +583,74 @@ export default function StaffManagement() {
 
       {/* MODAL 1: ADD NEW STAFF MEMBER */}
       {showAddStaffModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0D1527] border border-white/20 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary-container">person_add</span>
-                <span>Register Sales Executive (नया स्टाफ आईडी)</span>
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900">
+            <div className="flex items-center justify-between border-b border-[#E4E7EB] pb-3">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">person_add</span>
+                <span>Register Sales Executive</span>
               </h2>
-              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
             <form onSubmit={handleCreateStaff} className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Full Name (पूरा नाम) *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
                 <input
                   type="text"
                   required
                   value={newStaffName}
                   onChange={e => setNewStaffName(e.target.value)}
                   placeholder="e.g. Suresh V. Solanki"
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Mobile Number (लॉगिन मोबाइल) *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number *</label>
                 <input
                   type="tel"
                   required
                   value={newStaffPhone}
                   onChange={e => setNewStaffPhone(e.target.value)}
                   placeholder="9825012345"
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Password (पासवर्ड सेट करें) *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Password *</label>
                 <input
                   type="text"
                   required
                   value={newStaffPassword}
                   onChange={e => setNewStaffPassword(e.target.value)}
                   placeholder="Sunvine@2026"
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400 font-mono"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Designation / Role</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
                 <select
                   value={newStaffRole}
                   onChange={e => setNewStaffRole(e.target.value)}
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="Field Sales Executive">Field Sales Executive (फील्ड सेल्स)</option>
-                  <option value="Area Sales Manager">Area Sales Manager (एरिया मैनेजर)</option>
-                  <option value="Verification Officer">Verification Officer (सत्यापन अधिकारी)</option>
+                  <option value="Field Sales Executive">Field Sales Executive</option>
+                  <option value="Area Sales Manager">Area Sales Manager</option>
+                  <option value="Verification Officer">Verification Officer</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Assigned Zone / Territory</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Zone / Territory</label>
                 <select
                   value={newStaffZone}
                   onChange={e => setNewStaffZone(e.target.value)}
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 >
                   <option value="Ahmedabad & Gandhinagar (UGVCL)">Ahmedabad &amp; Gandhinagar (UGVCL)</option>
                   <option value="Rajkot & Saurashtra (PGVCL)">Rajkot &amp; Saurashtra (PGVCL)</option>
@@ -656,17 +659,17 @@ export default function StaffManagement() {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+              <div className="flex justify-end gap-3 pt-3 border-t border-[#E4E7EB]">
                 <button
                   type="button"
                   onClick={() => setShowAddStaffModal(false)}
-                  className="px-4 py-2 bg-white/10 hover:bg-white/15 text-slate-300 text-xs font-semibold rounded-lg cursor-pointer"
+                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg shadow-lg cursor-pointer"
+                  className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer"
                 >
                   Create Staff Account
                 </button>
@@ -678,37 +681,37 @@ export default function StaffManagement() {
 
       {/* MODAL 2: STAFF CREDENTIALS & PASSWORD MANAGEMENT */}
       {selectedStaffForCreds && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0D1527] border border-white/20 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-400">key</span>
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900">
+            <div className="flex items-center justify-between border-b border-[#E4E7EB] pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-500">key</span>
                 <span>Manage Staff Credentials - {selectedStaffForCreds.name}</span>
               </h3>
-              <button onClick={() => setSelectedStaffForCreds(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setSelectedStaffForCreds(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="bg-[#070D18] p-3 rounded-xl border border-white/10 space-y-1">
-                <div className="text-slate-400">Staff ID: <strong className="text-white font-mono">{selectedStaffForCreds.id}</strong></div>
-                <div className="text-slate-400">Login Mobile: <strong className="text-emerald-400">{selectedStaffForCreds.phone}</strong></div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
+                <div className="text-slate-500">Staff ID: <strong className="text-slate-900 font-mono">{selectedStaffForCreds.id}</strong></div>
+                <div className="text-slate-500">Login Mobile: <strong className="text-emerald-700 font-bold">{selectedStaffForCreds.phone}</strong></div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Change Account Password</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Change Account Password</label>
                 <div className="relative">
                   <input
                     type={showStaffPassword ? 'text' : 'password'}
                     value={editStaffPassword}
                     onChange={e => setEditStaffPassword(e.target.value)}
-                    className="w-full bg-[#070D18] border border-white/20 rounded-lg px-3 py-2 pr-10 text-white font-mono text-sm"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 pr-10 text-slate-900 font-mono text-sm focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     type="button"
                     onClick={() => setShowStaffPassword(!showStaffPassword)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700"
                   >
                     <span className="material-symbols-outlined text-[16px]">
                       {showStaffPassword ? 'visibility_off' : 'visibility'}
@@ -721,14 +724,14 @@ export default function StaffManagement() {
                 <button
                   type="button"
                   onClick={() => setEditStaffPassword('Sunvine@2026')}
-                  className="px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-[11px] text-slate-300"
+                  className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 rounded border border-slate-200 text-[11px] text-slate-700 font-medium"
                 >
                   Reset to Sunvine@2026
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCopyCredentials(selectedStaffForCreds)}
-                  className="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto"
+                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto"
                 >
                   <span className="material-symbols-outlined text-[14px]">share</span>
                   <span>Share on WhatsApp</span>
@@ -736,18 +739,18 @@ export default function StaffManagement() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
+            <div className="flex justify-end gap-2 pt-3 border-t border-[#E4E7EB]">
               <button
                 type="button"
                 onClick={() => setSelectedStaffForCreds(null)}
-                className="px-4 py-2 bg-white/10 text-slate-300 text-xs font-semibold rounded-lg cursor-pointer"
+                className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={handleSaveStaffPassword}
-                className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer"
+                className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg cursor-pointer shadow-sm"
               >
                 Save New Password
               </button>
@@ -758,14 +761,14 @@ export default function StaffManagement() {
 
       {/* MODAL 3: ADD NEW CUSTOMER FILE */}
       {showAddFileModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0D1527] border border-white/20 rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary-container">note_add</span>
-                <span>Create Customer Solar File (नई फाइल)</span>
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto text-slate-900">
+            <div className="flex items-center justify-between border-b border-[#E4E7EB] pb-3">
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">note_add</span>
+                <span>Create Customer Solar File</span>
               </h2>
-              <button onClick={() => setShowAddFileModal(false)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setShowAddFileModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
@@ -773,47 +776,47 @@ export default function StaffManagement() {
             <form onSubmit={handleCreateFile} className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Customer Name *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Name *</label>
                   <input
                     type="text"
                     required
                     value={newCustName}
                     onChange={e => setNewCustName(e.target.value)}
                     placeholder="e.g. Bharatbhai M. Patel"
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Mobile *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile *</label>
                   <input
                     type="tel"
                     required
                     value={newCustPhone}
                     onChange={e => setNewCustPhone(e.target.value)}
                     placeholder="+91 98250 99881"
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Site Address</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Site Address</label>
                 <input
                   type="text"
                   value={newCustAddress}
                   onChange={e => setNewCustAddress(e.target.value)}
                   placeholder="Plot 10, Suryam Residency, Near Ring Road, Ahmedabad"
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">DISCOM</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">DISCOM</label>
                   <select
                     value={newCustDiscom}
                     onChange={e => setNewCustDiscom(e.target.value)}
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
                     <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
@@ -823,46 +826,46 @@ export default function StaffManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Consumer No (Optional)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Consumer No (Optional)</label>
                   <input
                     type="text"
                     value={newCustConsumerNo}
                     onChange={e => setNewCustConsumerNo(e.target.value)}
                     placeholder="e.g. 03901/12345/6"
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Sanctioned Load (kW)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sanctioned Load (kW)</label>
                   <input
                     type="number"
                     step="0.5"
                     value={newCustLoad}
                     onChange={e => setNewCustLoad(e.target.value)}
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">Proposed Solar (kW)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Proposed Solar (kW)</label>
                   <input
                     type="number"
                     step="0.1"
                     value={newCustSolarKw}
                     onChange={e => setNewCustSolarKw(e.target.value)}
-                    className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">Assign Sales Staff</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Sales Staff</label>
                 <select
                   value={newCustStaffId}
                   onChange={e => setNewCustStaffId(e.target.value)}
-                  className="w-full bg-[#070D18] border border-white/15 rounded-lg px-3 py-2 text-sm text-white"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                 >
                   {(staffList || []).map(s => (
                     <option key={s.id} value={s.id}>{s.name} - {s.zone}</option>
@@ -870,17 +873,17 @@ export default function StaffManagement() {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+              <div className="flex justify-end gap-3 pt-3 border-t border-[#E4E7EB]">
                 <button
                   type="button"
                   onClick={() => setShowAddFileModal(false)}
-                  className="px-4 py-2 bg-white/10 text-slate-300 text-xs font-semibold rounded-lg cursor-pointer"
+                  className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg cursor-pointer"
+                  className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer"
                 >
                   Create Customer File
                 </button>
@@ -892,30 +895,30 @@ export default function StaffManagement() {
 
       {/* MODAL 4: OPTIONAL DOCUMENT VAULT */}
       {selectedFileForDocs && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0D1527] border border-white/20 rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto text-slate-900">
+            <div className="flex items-start justify-between border-b border-[#E4E7EB] pb-4">
               <div>
-                <span className="text-xs font-mono text-emerald-400 uppercase font-semibold">{selectedFileForDocs.id}</span>
-                <h2 className="text-xl font-bold text-white mt-1">
+                <span className="text-xs font-mono text-emerald-700 uppercase font-semibold">{selectedFileForDocs.id}</span>
+                <h2 className="text-xl font-bold text-slate-900 mt-1">
                   {selectedFileForDocs.customerName} - Document Vault (Optional)
                 </h2>
-                <p className="text-xs text-slate-400">
-                  Consumer No: <strong className="text-slate-200">{selectedFileForDocs.consumerNo}</strong> | System: <strong className="text-emerald-400">{selectedFileForDocs.solarSystemKw} kW</strong>
+                <p className="text-xs text-slate-500">
+                  Consumer No: <strong className="text-slate-800">{selectedFileForDocs.consumerNo}</strong> | System: <strong className="text-emerald-700 font-bold">{selectedFileForDocs.solarSystemKw} kW</strong>
                 </p>
               </div>
-              <button onClick={() => setSelectedFileForDocs(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button onClick={() => setSelectedFileForDocs(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
-                { key: 'aadhaar', title: 'Aadhaar Card (आधार कार्ड)' },
-                { key: 'lightBill', title: 'Electricity / Light Bill (बिजली बिल)' },
-                { key: 'meterPhoto', title: 'Electricity Meter Photo (मीटर फोटो)' },
-                { key: 'sitePhoto', title: 'Rooftop / Site Photo (छत की फोटो)' },
-                { key: 'bankPassbook', title: 'Bank Passbook / Cheque (पासबुक)' }
+                { key: 'aadhaar', title: 'Aadhaar Card' },
+                { key: 'lightBill', title: 'Electricity / Light Bill' },
+                { key: 'meterPhoto', title: 'Electricity Meter Photo' },
+                { key: 'sitePhoto', title: 'Rooftop / Site Photo' },
+                { key: 'bankPassbook', title: 'Bank Passbook / Cheque' }
               ].map(item => {
                 const doc = selectedFileForDocs.documents?.[item.key];
                 const isUploaded = doc?.uploaded;
@@ -924,33 +927,33 @@ export default function StaffManagement() {
                   <div
                     key={item.key}
                     className={`p-4 rounded-xl border flex flex-col justify-between ${
-                      isUploaded ? 'bg-[#070D18] border-emerald-500/30' : 'bg-[#070D18]/50 border-white/10 border-dashed'
+                      isUploaded ? 'bg-emerald-50/40 border-emerald-300' : 'bg-slate-50 border-slate-200 border-dashed'
                     }`}
                   >
                     <div>
                       <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-white text-sm">{item.title}</h4>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                          isUploaded ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-400'
+                        <h4 className="font-semibold text-slate-900 text-sm">{item.title}</h4>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                          isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/80 text-slate-600'
                         }`}>
                           {isUploaded ? 'Uploaded' : 'Optional'}
                         </span>
                       </div>
                       {isUploaded && (
-                        <p className="text-xs text-slate-300 mt-2 truncate">{doc.filename}</p>
+                        <p className="text-xs text-slate-600 mt-2 truncate font-medium">{doc.filename}</p>
                       )}
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
                       {isUploaded ? (
                         <button
                           onClick={() => setPreviewDoc({ ...item, ...doc })}
-                          className="text-xs text-emerald-400 hover:underline cursor-pointer"
+                          className="text-xs text-emerald-700 font-semibold hover:underline cursor-pointer"
                         >
                           View Preview
                         </button>
                       ) : (
-                        <label className="text-xs text-emerald-400 hover:underline cursor-pointer flex items-center gap-1">
+                        <label className="text-xs text-emerald-700 font-semibold hover:underline cursor-pointer flex items-center gap-1">
                           <span className="material-symbols-outlined text-[15px]">upload</span>
                           <span>Upload (Optional)</span>
                           <input
@@ -969,10 +972,10 @@ export default function StaffManagement() {
               })}
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-white/10">
+            <div className="flex justify-end pt-3 border-t border-[#E4E7EB]">
               <button
                 onClick={() => setSelectedFileForDocs(null)}
-                className="px-4 py-2 bg-white/10 text-white text-xs font-semibold rounded-lg cursor-pointer"
+                className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
               >
                 Close
               </button>
@@ -983,16 +986,16 @@ export default function StaffManagement() {
 
       {/* PREVIEW MODAL */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0D1527] border border-white/20 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-center">
-            <h3 className="font-bold text-white text-base">{previewDoc.title}</h3>
-            <div className="p-6 bg-[#070D18] rounded-xl">
-              <span className="material-symbols-outlined text-4xl text-emerald-400">verified</span>
-              <p className="text-white text-sm font-semibold mt-2">{previewDoc.filename}</p>
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-center text-slate-900">
+            <h3 className="font-bold text-slate-900 text-base">{previewDoc.title}</h3>
+            <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl">
+              <span className="material-symbols-outlined text-4xl text-emerald-600">verified</span>
+              <p className="text-slate-900 text-sm font-semibold mt-2">{previewDoc.filename}</p>
             </div>
             <button
               onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-emerald-500 text-slate-950 font-bold text-xs rounded-lg cursor-pointer"
+              className="w-full py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg cursor-pointer"
             >
               Close
             </button>

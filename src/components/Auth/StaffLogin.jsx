@@ -135,7 +135,7 @@ export default function StaffLogin() {
               className="flex-1 py-1 px-2 rounded-lg bg-surface-container-lowest text-emerald-700 font-bold text-xs shadow-xs flex items-center justify-center gap-1"
             >
               <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
-              <span>Staff (स्टाफ)</span>
+              <span>Staff</span>
             </button>
             <button
               type="button"
@@ -160,13 +160,13 @@ export default function StaffLogin() {
             Staff Login
           </h1>
           <p className="font-body-sm text-xs text-secondary mb-4 mt-0.5">
-            लॉगिन करें और अपनी फाइल्स, नए लीड्स व नजदीकी सोलर रडार देखें
+            Sign in to access your customer files, new leads, and nearby solar radar.
           </p>
 
           {/* Quick 1-Click Demo Staff Chips */}
           <div className="mb-4 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
             <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-              1-Click Demo Login (डेमो स्टाफ चुनें):
+              Quick Demo Login:
             </span>
             <div className="flex flex-wrap gap-1.5">
               {(staffList || []).slice(0, 4).map((s) => (
@@ -425,7 +425,7 @@ export default function StaffLogin() {
                     className="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-lowest text-emerald-700 font-bold text-xs shadow-xs flex items-center justify-center gap-1"
                   >
                     <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
-                    <span>Staff Login (स्टाफ)</span>
+                    <span>Staff Login</span>
                   </button>
                   <button
                     type="button"
@@ -450,7 +450,7 @@ export default function StaffLogin() {
               {/* 1-Click Demo Staff Chips */}
               <div className="mb-4 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high">
                 <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-                  Quick Demo Login (1-क्लिक स्टाफ चुनें):
+                  Quick Demo Login:
                 </span>
                 <div className="grid grid-cols-2 gap-1.5">
                   {(staffList || []).slice(0, 4).map((s) => (

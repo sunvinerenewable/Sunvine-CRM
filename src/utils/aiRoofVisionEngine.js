@@ -152,10 +152,10 @@ INSTRUCTIONS:
    - "corners": array of objects [{ "corner_number": 1, "x_pct": number, "y_pct": number, "label": string }]
      where x_pct is 0 (left) to 100 (right), y_pct is 0 (top) to 100 (bottom) of the image!
 6. Obstacles:
-   - Staircase Mumty (सीढ़ी का कमरा / Mumty room): detected (true/false), location ('top-left', 'top-right', 'bottom-left', 'bottom-right', 'none'), widthFt, depthFt, heightFt (default 7ft).
-   - Water Tank (पानी की टंकी): detected (true/false), count, radiusFt, heightFt.
-7. Parapet wall height (मुंडेर): default 3.0 ft unless written differently.
-8. Provide a clear, honest explanation in English and Hindi describing what was detected in this specific image.
+   - Staircase Mumty / Mumty room: detected (true/false), location ('top-left', 'top-right', 'bottom-left', 'bottom-right', 'none'), widthFt, depthFt, heightFt (default 7ft).
+   - Water Tank: detected (true/false), count, radiusFt, heightFt.
+7. Parapet wall height: default 3.0 ft unless written differently.
+8. Provide a clear, honest explanation in English describing what was detected in this specific image.
 
 Respond ONLY with a valid JSON object matching this structure:
 {

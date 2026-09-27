@@ -256,18 +256,18 @@ export default function StaffRadarMap() {
       {/* ========================================================
           1. LIVE GPS STATUS & ACTION HEADER (Phase 2 & 15 UX)
           ======================================================== */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#0D1527] border border-white/15 p-5 sm:p-7 text-white shadow-xl">
+      <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-5 sm:p-7 text-slate-900 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
                 <span className="material-symbols-outlined text-[22px]">radar</span>
               </span>
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">
                 Live Location Solar Lead Discovery
               </h1>
             </div>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
               Continuously searches Google Maps and Places around your exact GPS coordinates. Detects solar EPCs, dealers, shops, and rooftop installers in real-time.
             </p>
           </div>
@@ -278,7 +278,7 @@ export default function StaffRadarMap() {
             <button
               onClick={() => executeLeadSearch(coords.lat, coords.lon, radiusMeters, true)}
               disabled={isSearching}
-              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-emerald-950/40 flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
+              className="px-4 py-2.5 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm flex items-center gap-2 cursor-pointer transition-all active:scale-[0.99] disabled:opacity-50"
             >
               <span className={`material-symbols-outlined text-[18px] ${isSearching ? 'animate-spin' : ''}`}>
                 {isSearching ? 'sync' : 'refresh'}
@@ -289,26 +289,26 @@ export default function StaffRadarMap() {
             {/* Developer Diagnostics Button (Phase 7 & 24) */}
             <button
               onClick={() => setShowDiagnostics(true)}
-              className="px-3 py-2.5 bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
               title="Open Lead Discovery Diagnostics"
             >
-              <span className="material-symbols-outlined text-[18px] text-amber-400">bug_report</span>
+              <span className="material-symbols-outlined text-[18px] text-amber-500">bug_report</span>
               <span>Diagnostics</span>
             </button>
           </div>
         </div>
 
         {/* Live Location Telemetry Bar (Phase 2 & 15) */}
-        <div className="relative z-10 mt-5 pt-4 border-t border-white/10 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+        <div className="relative z-10 mt-5 pt-4 border-t border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Live GPS State Indicator */}
             <div
               className={`px-3 py-1.5 rounded-lg border flex items-center gap-2 font-bold ${
                 isGpsActive && !isLowAccuracy
-                  ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                   : isLowAccuracy
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                  : 'bg-red-500/20 border-red-500/40 text-red-300'
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-red-50 border-red-200 text-red-800'
               }`}
             >
               <span className="relative flex h-2 w-2">
@@ -333,17 +333,17 @@ export default function StaffRadarMap() {
             </div>
 
             {/* Coordinates */}
-            <div className="px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 font-mono text-[11px] text-slate-300 flex items-center gap-1.5">
-              <span className="text-slate-400 font-sans">Coordinates:</span>
-              <span className="font-bold text-emerald-300">{coords.lat.toFixed(6)}° N, {coords.lon.toFixed(6)}° E</span>
+            <div className="px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-700 flex items-center gap-1.5">
+              <span className="text-slate-500 font-sans">Coordinates:</span>
+              <span className="font-bold text-emerald-700">{coords.lat.toFixed(6)}° N, {coords.lon.toFixed(6)}° E</span>
             </div>
 
             {/* Street Address */}
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-lg border border-white/10 text-slate-300 max-w-sm truncate"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-700 max-w-sm truncate"
               title={streetAddress}
             >
-              <span className="material-symbols-outlined text-[15px] text-emerald-400 shrink-0">pin_drop</span>
+              <span className="material-symbols-outlined text-[15px] text-emerald-600 shrink-0">pin_drop</span>
               <span className="font-medium truncate">{streetAddress}</span>
             </div>
           </div>
@@ -359,9 +359,9 @@ export default function StaffRadarMap() {
                 setManualQueryInput(streetAddress || detectedCity);
                 setShowManualSpotModal(true);
               }}
-              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 border border-white/20 text-slate-200 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
             >
-              <span className="material-symbols-outlined text-[14px] text-amber-400">edit_location</span>
+              <span className="material-symbols-outlined text-[14px] text-amber-500">edit_location</span>
               <span>Pick Manual Spot</span>
             </button>
           </div>

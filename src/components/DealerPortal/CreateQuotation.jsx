@@ -1187,7 +1187,7 @@ export default function CreateQuotation() {
                     {isDirectCompanyQuote ? 'corporate_fare' : 'account_balance_wallet'}
                   </span>
                   <span className="text-xs sm:text-sm text-on-surface font-bold">
-                    {isDirectCompanyQuote ? 'Company Margin (कंपनी मार्जिन)' : 'Custom Dealer Margin'}
+                    {isDirectCompanyQuote ? 'Company Margin' : 'Custom Dealer Margin'}
                   </span>
                   {isDirectCompanyQuote && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#6CBF3D]/20 text-[#6CBF3D] border border-[#6CBF3D]/30">

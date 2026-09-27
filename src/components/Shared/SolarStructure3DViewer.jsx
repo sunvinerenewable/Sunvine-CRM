@@ -283,13 +283,13 @@ export default function SolarStructure3DViewer({
     const wallMountSpec = {
       basePlate: '100mm × 100mm × 8mm HDG L-Cleat Angle',
       fasteners: '2× M12 × 150mm High-Tensile Studs + Chemical Capsule (HIT-RE 500) + Spring Washers & Lock Nuts',
-      mountType: 'Parapet Wall Anchored (दीवार में केमिकल स्टड)'
+      mountType: 'Parapet Wall Anchored (Chemical Studs)'
     };
 
     const floorMountSpec = {
       basePlate: '150mm × 150mm × 6mm MS Plate',
       fasteners: '4× M10 × 100mm Anchor Fasteners + Rubber Damping Pad',
-      mountType: 'Terrace Floor Ballast / Slab Anchor (छत पर एंकर)'
+      mountType: 'Terrace Floor Ballast / Slab Anchor'
     };
 
     if (legPairs === 2) {
@@ -299,8 +299,8 @@ export default function SolarStructure3DViewer({
       rows.push(
         {
           tag: 'FL-1',
-          name: 'Front-Left Column (आगे बायाँ पैर)',
-          pos: 'Front / South (आगे)',
+          name: 'Front-Left Column (FL-1)',
+          pos: 'Front / South',
           heightFt: frontH,
           heightMm: frontHMm,
           heightIn: (frontH * 12).toFixed(1),
@@ -312,8 +312,8 @@ export default function SolarStructure3DViewer({
         },
         {
           tag: 'FR-2',
-          name: 'Front-Right Column (आगे दायाँ पैर)',
-          pos: 'Front / South (आगे)',
+          name: 'Front-Right Column (FR-2)',
+          pos: 'Front / South',
           heightFt: frontH,
           heightMm: frontHMm,
           heightIn: (frontH * 12).toFixed(1),
@@ -325,8 +325,8 @@ export default function SolarStructure3DViewer({
         },
         {
           tag: 'RL-1',
-          name: 'Rear-Left Column (पीछे बायाँ पैर)',
-          pos: 'Rear / North (पीछे)',
+          name: 'Rear-Left Column (RL-1)',
+          pos: 'Rear / North',
           heightFt: rearH,
           heightMm: rearHMm,
           heightIn: (rearH * 12).toFixed(1),
@@ -338,8 +338,8 @@ export default function SolarStructure3DViewer({
         },
         {
           tag: 'RR-2',
-          name: 'Rear-Right Column (पीछे दायाँ पैर)',
-          pos: 'Rear / North (पीछे)',
+          name: 'Rear-Right Column (RR-2)',
+          pos: 'Rear / North',
           heightFt: rearH,
           heightMm: rearHMm,
           heightIn: (rearH * 12).toFixed(1),
@@ -352,12 +352,12 @@ export default function SolarStructure3DViewer({
       );
     } else {
       const legNames = [
-        { tag: 'FL-1', name: 'Front-Left Column (आगे बायाँ पैर)', pos: 'Front / South (आगे)', isFront: true },
-        { tag: 'FC-2', name: 'Front-Center Column (आगे मध्य पैर)', pos: 'Front / South (आगे)', isFront: true },
-        { tag: 'FR-3', name: 'Front-Right Column (आगे दायाँ पैर)', pos: 'Front / South (आगे)', isFront: true },
-        { tag: 'RL-1', name: 'Rear-Left Column (पीछे बायाँ पैर)', pos: 'Rear / North (पीछे)', isFront: false },
-        { tag: 'RC-2', name: 'Rear-Center Column (पीछे मध्य पैर)', pos: 'Rear / North (पीछे)', isFront: false },
-        { tag: 'RR-3', name: 'Rear-Right Column (पीछे दायाँ पैर)', pos: 'Rear / North (पीछे)', isFront: false }
+        { tag: 'FL-1', name: 'Front-Left Column (FL-1)', pos: 'Front / South', isFront: true },
+        { tag: 'FC-2', name: 'Front-Center Column (FC-2)', pos: 'Front / South', isFront: true },
+        { tag: 'FR-3', name: 'Front-Right Column (FR-3)', pos: 'Front / South', isFront: true },
+        { tag: 'RL-1', name: 'Rear-Left Column (RL-1)', pos: 'Rear / North', isFront: false },
+        { tag: 'RC-2', name: 'Rear-Center Column (RC-2)', pos: 'Rear / North', isFront: false },
+        { tag: 'RR-3', name: 'Rear-Right Column (RR-3)', pos: 'Rear / North', isFront: false }
       ];
 
       legNames.forEach((l) => {
@@ -1259,7 +1259,7 @@ export default function SolarStructure3DViewer({
           {roofFit.fits ? (
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
               <span className="material-symbols-outlined text-[13px]">verified</span>
-              <span>100% Roof Safe (छत पर सुरक्षित)</span>
+              <span>100% Roof Safe</span>
             </span>
           ) : (
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center gap-1 animate-pulse">
@@ -1319,7 +1319,7 @@ export default function SolarStructure3DViewer({
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-400 text-[20px]">apartment</span>
             <div>
-              <span className="text-xs font-bold block text-white">Building Height / Floors (मकान की मंज़िल):</span>
+              <span className="text-xs font-bold block text-white">Building Height / Floors:</span>
               <span className="text-[10px] text-slate-400">10 ft per story standard height</span>
             </div>
           </div>
@@ -1351,7 +1351,7 @@ export default function SolarStructure3DViewer({
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[#6CBF3D] text-[20px]">hardware</span>
             <div>
-              <span className="text-xs font-bold block text-white">Leg Count (लेग संख्या):</span>
+              <span className="text-xs font-bold block text-white">Leg Count:</span>
               <span className="text-[10px] text-slate-400">Software recommended vs economy</span>
             </div>
           </div>
@@ -1389,19 +1389,19 @@ export default function SolarStructure3DViewer({
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-400 text-[18px]">foundation</span>
             <div>
-              <span className="font-bold text-white block">Leg Foundation Mode (फाउंडेशन / दीवार):</span>
+              <span className="font-bold text-white block">Leg Foundation Mode:</span>
               <span className="text-[10px] text-slate-400">
                 {wallMountMode === 'all_floor'
-                  ? 'Standard RCC slab fasteners (छत पर एंकर)'
-                  : 'Parapet beam chemical anchor studs (दीवार में केमिकल स्टड)'}
+                  ? 'Standard RCC slab fasteners'
+                  : 'Parapet beam chemical anchor studs'}
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
             {[
-              { id: 'all_floor', label: 'All Floor (छत)', icon: 'crop_square' },
-              { id: 'rear_wall', label: 'Rear Wall (दीवार)', icon: 'vertical_align_top' },
+              { id: 'all_floor', label: 'All Floor', icon: 'crop_square' },
+              { id: 'rear_wall', label: 'Rear Wall', icon: 'vertical_align_top' },
               { id: 'front_wall', label: 'Front Wall', icon: 'vertical_align_bottom' }
             ].map(m => (
               <button
@@ -1426,7 +1426,7 @@ export default function SolarStructure3DViewer({
             <span className="material-symbols-outlined text-[#6CBF3D] text-[18px]">cyclone</span>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-white">Cross-Bracing (150 km/h सपोर्ट):</span>
+                <span className="font-bold text-white">Cross-Bracing (150 km/h Wind Resistance):</span>
                 {frontLegFt >= 6.0 && (
                   <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-400 uppercase">
                     Recommended
@@ -1458,7 +1458,7 @@ export default function SolarStructure3DViewer({
         </div>
       </div>
 
-      {/* 2c. Interactive Structure Positioning Toolbar (छत पर स्ट्रक्चर की सटीक जगह सेट करें) */}
+      {/* 2c. Interactive Structure Positioning Toolbar */}
       <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-white text-xs">
         <div className="flex items-center gap-4 flex-wrap">
           <span className="font-bold text-slate-300 flex items-center gap-1">
@@ -1579,10 +1579,10 @@ export default function SolarStructure3DViewer({
 
           <span className="text-[10px] text-slate-400">
             {sunHour < 11
-              ? '🌅 पूर्व की धूप (सुबह)'
+              ? 'Morning Sun (East Exposure)'
               : sunHour <= 13.5
-              ? '☀️ दोपहर 12 बजे (साउथ सूर्य - न्यूनतम छाया)'
-              : '🌇 शाम का सूर्य (पश्चिम धूप)'}
+              ? 'Solar Noon (South Sun - Minimum Shadow)'
+              : 'Afternoon Sun (West Exposure)'}
           </span>
         </div>
 
@@ -1614,7 +1614,7 @@ export default function SolarStructure3DViewer({
                 ⚠️ Rooftop Boundary Warning:
               </span>
               <p className="text-rose-100">
-                यह डिज़ाइन छत के शैडो-फ्री स्पेस में फिट नहीं बैठता!
+                Array exceeds shadow-free roof boundaries!
               </p>
               <div className="mt-1 bg-black/40 p-2 rounded text-[11px] text-rose-200">
                 <div>• Required: <b>{roofFit.arrayWidthFt} ft × {roofFit.arrayDepthFt} ft</b></div>
@@ -1648,14 +1648,14 @@ export default function SolarStructure3DViewer({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-white">
-                Front Leg / Clear Height (आगे के पैर की ऊंचाई):
+                Front Leg / Clear Height:
               </span>
               <span className="text-[10px] px-1.5 py-0.2 rounded font-extrabold bg-[#6CBF3D]/20 text-[#6CBF3D]">
                 {frontLegFt >= 7 ? '🚶 Walkable / Elevated Structure' : '⚡ Standard Ballast Structure'}
               </span>
             </div>
             <span className="text-[11px] text-slate-400">
-              पीछे के पैर (Rear legs) 18° साउथ टिल्ट के अनुसार अपने-आप सेट होते हैं।
+              Rear legs auto-adjust based on 18° South tilt.
             </span>
           </div>
         </div>
@@ -1716,11 +1716,11 @@ export default function SolarStructure3DViewer({
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[#6CBF3D] text-[22px]">assignment</span>
               <h4 className="text-sm font-bold text-white tracking-wide">
-                Solar Structure Leg Height &amp; Foundation Engineering Report (सटीक लेग ऊंचाई रिपोर्ट)
+                Solar Structure Leg Height &amp; Foundation Engineering Report
               </h4>
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              प्रत्येक लेग की कटिंग ऊंचाई, बेस प्लेट व एंकर फास्टनर विवरण (Site Installation Sheet)
+              Leg cutting heights, base plates, and anchor fastener specifications (Site Installation Sheet)
             </p>
           </div>
 

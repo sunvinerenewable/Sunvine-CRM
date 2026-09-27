@@ -58,7 +58,7 @@ export default function StaffFiles() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-on-surface flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[24px]">folder_shared</span>
-            <span>My Customer Files &amp; Subsidies (मेरी ग्राहक फाइलें)</span>
+            <span>My Customer Files &amp; Subsidies</span>
           </h1>
           <p className="text-xs text-secondary mt-1">
             Track customer stages from lead sourcing to DBT subsidy clearance. Document upload is completely optional!
@@ -273,11 +273,11 @@ export default function StaffFiles() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { key: 'aadhaar', label: 'Aadhaar Card (आधार कार्ड)' },
-                { key: 'lightBill', label: 'Electricity / Light Bill (बिजली बिल)' },
-                { key: 'meterPhoto', label: 'Electricity Meter Photo (मीटर फोटो)' },
-                { key: 'sitePhoto', label: 'Rooftop / Site Photo (छत की फोटो)' },
-                { key: 'bankPassbook', label: 'Bank Passbook / Cheque (बैंक पासबुक)' }
+                { key: 'aadhaar', label: 'Aadhaar Card' },
+                { key: 'lightBill', label: 'Electricity / Light Bill' },
+                { key: 'meterPhoto', label: 'Electricity Meter Photo' },
+                { key: 'sitePhoto', label: 'Rooftop / Site Photo' },
+                { key: 'bankPassbook', label: 'Bank Passbook / Cheque' }
               ].map((doc) => {
                 const isUp = selectedFileForDocs.documents?.[doc.key]?.uploaded;
                 const dData = selectedFileForDocs.documents?.[doc.key];
