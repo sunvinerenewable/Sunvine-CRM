@@ -17,8 +17,13 @@ export function calculateSingleStaffPerformance(staff, customerFiles = [], quota
     f => f && (f.staffId === staffId || f.staffName === staffName)
   );
 
-  const directFiles = myFiles.filter(f => f.sourceType === 'DIRECT_STAFF');
-  const dealerFiles = myFiles.filter(f => f.sourceType === 'DEALER');
+  const directFiles = myFiles.filter(f => {
+    const st = (f.sourceType || f.source || '').toUpperCase();
+    if (st.includes('DIRECT')) return true;
+    if (st === 'DEALER') return false;
+    return !f.dealerId && !f.dealerName;
+  });
+  const dealerFiles = myFiles.filter(f => !directFiles.includes(f));
 
   const cashFiles = myFiles.filter(f => (f.financeType || 'CASH').toUpperCase() === 'CASH');
   const loanFiles = myFiles.filter(f => (f.financeType || '').toUpperCase() === 'LOAN');
@@ -248,8 +253,13 @@ export function calculateOverallBusinessMetrics(arg1 = [], arg2 = [], arg3 = [],
   const totalFiles = customerFiles.length;
   const totalQuotations = quotations.length;
 
-  const directFiles = customerFiles.filter(f => f?.sourceType === 'DIRECT_STAFF');
-  const dealerFiles = customerFiles.filter(f => f?.sourceType === 'DEALER');
+  const directFiles = customerFiles.filter(f => {
+    const st = (f?.sourceType || f?.source || '').toUpperCase();
+    if (st.includes('DIRECT')) return true;
+    if (st === 'DEALER') return false;
+    return !f?.dealerId && !f?.dealerName;
+  });
+  const dealerFiles = customerFiles.filter(f => !directFiles.includes(f));
 
   const cashFiles = customerFiles.filter(f => (f?.financeType || 'CASH').toUpperCase() === 'CASH');
   const loanFiles = customerFiles.filter(f => (f?.financeType || '').toUpperCase() === 'LOAN');

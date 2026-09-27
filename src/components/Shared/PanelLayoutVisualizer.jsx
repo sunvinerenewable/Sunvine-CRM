@@ -159,18 +159,18 @@ export default function PanelLayoutVisualizer({
   return (
     <div className="flex flex-col w-full bg-surface-container-lowest rounded-2xl border border-surface-container-high shadow-xl overflow-hidden">
       {/* 1. Header Bar */}
-      <div className="p-4 sm:p-5 bg-gradient-to-r from-[#0F1B2E] via-[#1E293B] to-[#0F1B2E] text-white flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-surface-container-highest">
+      <div className="p-4 sm:p-5 bg-white text-on-surface flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-surface-container-high">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="material-symbols-outlined text-[#6CBF3D] text-[26px]">grid_view</span>
-            <h3 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            <span className="material-symbols-outlined text-primary text-[26px]">grid_view</span>
+            <h3 className="text-base sm:text-lg font-bold text-on-surface tracking-wide">
               2D Solar Structure &amp; Panel Layout Studio
             </h3>
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-[#6CBF3D]/20 text-[#6CBF3D] border border-[#6CBF3D]/40 uppercase">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-primary-container/20 text-on-primary-fixed-variant border border-primary-container/40 uppercase">
               Side-by-Side 2D Presets
             </span>
           </div>
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-secondary mt-1 max-w-2xl">
             Compare side-by-side layouts with fastener counts and roof boundary clearance. Select preferred layout.
           </p>
         </div>
@@ -179,7 +179,7 @@ export default function PanelLayoutVisualizer({
           <button
             type="button"
             onClick={onClose}
-            className="self-end md:self-auto p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+            className="self-end md:self-auto p-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
             aria-label="Close modal"
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
@@ -188,17 +188,17 @@ export default function PanelLayoutVisualizer({
       </div>
 
       {/* Sub-Header Studio Mode Switcher: 2D | 3D WebGL | 20-ft GI Pipe Cutting */}
-      <div className="px-4 sm:px-5 py-2.5 bg-[#0B1524] border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-white">
+      <div className="px-4 sm:px-5 py-2.5 bg-surface-container-low border-b border-surface-container-high flex flex-wrap items-center justify-between gap-3 text-on-surface">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400">View Mode:</span>
-          <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-700/80">
+          <span className="text-xs font-bold text-secondary">View Mode:</span>
+          <div className="flex items-center gap-1 bg-surface-container p-1 rounded-xl border border-surface-container-high">
             <button
               type="button"
               onClick={() => setActiveViewTab('roof')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeViewTab === 'roof'
-                  ? 'bg-[#6CBF3D] text-slate-950 shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-primary-container text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">roofing</span>
@@ -210,8 +210,8 @@ export default function PanelLayoutVisualizer({
               onClick={() => setActiveViewTab('2d')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeViewTab === '2d'
-                  ? 'bg-[#6CBF3D] text-slate-950 shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-primary-container text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">grid_view</span>
@@ -223,8 +223,8 @@ export default function PanelLayoutVisualizer({
               onClick={() => setActiveViewTab('3d')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeViewTab === '3d'
-                  ? 'bg-[#6CBF3D] text-slate-950 shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-primary-container text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">view_in_ar</span>
@@ -236,8 +236,8 @@ export default function PanelLayoutVisualizer({
               onClick={() => setActiveViewTab('pipes')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 activeViewTab === 'pipes'
-                  ? 'bg-[#6CBF3D] text-slate-950 shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-primary-container text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface hover:bg-surface-container-high'
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">content_cut</span>
@@ -246,12 +246,12 @@ export default function PanelLayoutVisualizer({
           </div>
         </div>
 
-        <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
-          <span>Active: <b className="text-[#6CBF3D]">{activeSelectedLayout?.name}</b></span>
+        <div className="text-xs text-secondary flex items-center gap-2 flex-wrap font-mono">
+          <span>Active: <b className="text-primary font-bold">{activeSelectedLayout?.name}</b></span>
           <span>•</span>
-          <span>J-Bolts: <b className="text-amber-400">{activeSelectedLayout?.bom?.jBoltsCount} Pcs</b></span>
+          <span>J-Bolts: <b className="text-amber-700 font-bold">{activeSelectedLayout?.bom?.jBoltsCount} Pcs</b></span>
           <span>•</span>
-          <span>MC4: <b className="text-blue-400">{activeSelectedLayout?.bom?.mc4ConnectorsCount} Pcs ({activeSelectedLayout?.bom?.mc4Pairs} Pair)</b></span>
+          <span>MC4: <b className="text-blue-700 font-bold">{activeSelectedLayout?.bom?.mc4ConnectorsCount} Pcs ({activeSelectedLayout?.bom?.mc4Pairs} Pair)</b></span>
         </div>
       </div>
 

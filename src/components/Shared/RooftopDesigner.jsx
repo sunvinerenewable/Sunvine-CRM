@@ -561,20 +561,20 @@ export default function RooftopDesigner({
   };
 
   return (
-    <div className="flex flex-col w-full bg-slate-950 text-white rounded-2xl border border-slate-800 shadow-2xl overflow-hidden">
+    <div className="flex flex-col w-full bg-surface-container-lowest text-on-surface rounded-2xl border border-surface-container-high shadow-xl overflow-hidden">
       {/* Top Header Bar */}
-      <div className="p-4 sm:p-5 bg-gradient-to-r from-[#0F1B2E] via-[#1E293B] to-[#0F1B2E] border-b border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 sm:p-5 bg-white border-b border-surface-container-high flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="material-symbols-outlined text-[#6CBF3D] text-[26px]">roofing</span>
-            <h3 className="text-base sm:text-lg font-bold text-white tracking-wide">
+            <span className="material-symbols-outlined text-primary text-[26px]">roofing</span>
+            <h3 className="text-base sm:text-lg font-bold text-on-surface tracking-wide">
               Roof Sketch Analyzer &amp; Obstacles Studio
             </h3>
-            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-[#6CBF3D]/20 text-[#6CBF3D] border border-[#6CBF3D]/40 uppercase">
+            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-primary-container/20 text-on-primary-fixed-variant border border-primary-container/40 uppercase">
               100% Dynamic AI CAD
             </span>
           </div>
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
+          <p className="text-xs text-secondary mt-1 max-w-2xl">
             Upload hand-drawn roof sketch or blueprint photo. Gemini Vision AI extracts wall dimensions to generate 2D blueprints and 3D models.
           </p>
         </div>
@@ -584,7 +584,7 @@ export default function RooftopDesigner({
             <button
               type="button"
               onClick={onOpen3D}
-              className="px-4 py-2 rounded-xl bg-[#6CBF3D] hover:bg-[#5ca633] text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-primary-container hover:bg-primary text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">view_in_ar</span>
               <span>Open in 3D Model</span>
@@ -594,13 +594,13 @@ export default function RooftopDesigner({
       </div>
 
       {/* Mode Navigation Tabs */}
-      <div className="px-4 sm:px-6 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+      <div className="px-4 sm:px-6 py-2.5 bg-surface-container-low border-b border-surface-container-high flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-1.5 bg-surface-container p-1 rounded-xl border border-surface-container-high">
           <button
             type="button"
             onClick={() => setActiveTab('upload')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'upload' ? 'bg-[#6CBF3D] text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              activeTab === 'upload' ? 'bg-primary-container text-white shadow-xs' : 'text-secondary hover:text-on-surface'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">document_scanner</span>
@@ -611,7 +611,7 @@ export default function RooftopDesigner({
             type="button"
             onClick={() => setActiveTab('manual')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'manual' ? 'bg-[#6CBF3D] text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              activeTab === 'manual' ? 'bg-primary-container text-white shadow-xs' : 'text-secondary hover:text-on-surface'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">straighten</span>
@@ -622,7 +622,7 @@ export default function RooftopDesigner({
             type="button"
             onClick={() => setActiveTab('analysis')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'analysis' ? 'bg-[#6CBF3D] text-slate-950 shadow-xs' : 'text-slate-300 hover:text-white'
+              activeTab === 'analysis' ? 'bg-primary-container text-white shadow-xs' : 'text-secondary hover:text-on-surface'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">wb_sunny</span>
@@ -632,12 +632,12 @@ export default function RooftopDesigner({
 
         {/* Live Metrics Badge */}
         <div className="flex items-center gap-3 text-xs">
-          <span className="text-slate-400">
-            Terrace Area: <b className="text-white font-mono">{estimatedAreaSqFt} sq.ft</b>
+          <span className="text-secondary">
+            Terrace Area: <b className="text-on-surface font-mono">{estimatedAreaSqFt} sq.ft</b>
           </span>
-          <span className="text-slate-600">•</span>
-          <span className="text-slate-400">
-            Perimeter: <b className="text-[#6CBF3D] font-mono">{totalPerimeterFt} ft</b>
+          <span className="text-secondary">•</span>
+          <span className="text-secondary">
+            Perimeter: <b className="text-primary font-mono">{totalPerimeterFt} ft</b>
           </span>
         </div>
       </div>
@@ -648,16 +648,16 @@ export default function RooftopDesigner({
         <div className="lg:col-span-5 flex flex-col gap-4">
           
           {/* Active Drawing Card / Actions */}
-          <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-xl bg-white border border-surface-container-high shadow-xs flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="material-symbols-outlined text-[#6CBF3D] text-[20px] shrink-0">
+              <span className="material-symbols-outlined text-primary text-[20px] shrink-0">
                 {uploadPreview ? 'image' : 'pending'}
               </span>
               <div className="min-w-0">
-                <span className="text-xs font-bold text-white block truncate">
+                <span className="text-xs font-bold text-on-surface block truncate">
                   {uploadPreview ? (config.name || 'Uploaded Sketch') : 'No Drawing Uploaded Yet'}
                 </span>
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[10px] text-secondary">
                   {uploadPreview ? `${walls.length} walls detected from drawing` : 'Upload a drawing below to begin'}
                 </span>
               </div>
@@ -667,7 +667,7 @@ export default function RooftopDesigner({
               <button
                 type="button"
                 onClick={handleClearDrawing}
-                className="px-2.5 py-1 text-[11px] font-bold text-rose-400 hover:bg-rose-950/50 rounded-lg border border-rose-500/30 cursor-pointer shrink-0 transition-colors"
+                className="px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 cursor-pointer shrink-0 transition-colors"
               >
                 Clear / New
               </button>
@@ -675,7 +675,7 @@ export default function RooftopDesigner({
               <button
                 type="button"
                 onClick={handleStartBlankGridCanvas}
-                className="px-2.5 py-1 text-[11px] font-bold text-cyan-400 hover:bg-cyan-950/50 rounded-lg border border-cyan-500/30 cursor-pointer shrink-0 transition-colors flex items-center gap-1"
+                className="px-2.5 py-1 text-[11px] font-bold text-teal-700 hover:bg-teal-50 rounded-lg border border-teal-200 cursor-pointer shrink-0 transition-colors flex items-center gap-1"
                 title="Start drawing roof boundaries directly on a blank CAD millimeter grid"
               >
                 <span className="material-symbols-outlined text-[14px]">grid_4x4</span>
@@ -686,14 +686,14 @@ export default function RooftopDesigner({
 
           {/* TAB 1: Upload Sketch Photo with Real AI Vision */}
           {activeTab === 'upload' && (
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-3.5">
+            <div className="p-4 rounded-xl bg-white border border-surface-container-high shadow-xs flex flex-col gap-3.5">
               {/* AI Engine Status & Key Setting */}
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col gap-2">
+              <div className="p-3 rounded-lg bg-surface-container-low border border-surface-container-high flex flex-col gap-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px] text-[#6CBF3D]">neurology</span>
-                    <span className="text-xs font-bold text-white">AI Vision Engine:</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="material-symbols-outlined text-[18px] text-primary">neurology</span>
+                    <span className="text-xs font-bold text-on-surface">AI Vision Engine:</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-primary-container/20 text-on-primary-fixed-variant border border-primary-container/30">
                       ✨ Google Gemini Vision AI Active
                     </span>
                   </div>
@@ -701,7 +701,7 @@ export default function RooftopDesigner({
                   <button
                     type="button"
                     onClick={() => setShowApiKeySetting(!showApiKeySetting)}
-                    className="text-[11px] font-bold text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                    className="text-[11px] font-bold text-secondary hover:text-on-surface flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     <span className="material-symbols-outlined text-[14px]">key</span>
                     <span>{geminiKey ? 'API Key Settings' : '+ Set Key'}</span>
@@ -709,8 +709,8 @@ export default function RooftopDesigner({
                 </div>
 
                 {showApiKeySetting && (
-                  <div className="mt-2 pt-2 border-t border-slate-800/80 flex flex-col gap-2">
-                    <p className="text-[10px] text-slate-400">
+                  <div className="mt-2 pt-2 border-t border-surface-container-high flex flex-col gap-2">
+                    <p className="text-[10px] text-secondary">
                       Google AI Studio Gemini key (100% Free). Custom API Key can be entered below:
                     </p>
                     <div className="flex items-center gap-2">
@@ -719,12 +719,12 @@ export default function RooftopDesigner({
                         placeholder="Paste Google Gemini API Key"
                         value={tempApiKey}
                         onChange={e => setTempApiKey(e.target.value)}
-                        className="flex-1 h-8 px-2.5 rounded bg-slate-900 border border-slate-700 text-xs font-mono text-white outline-none focus:border-[#6CBF3D]"
+                        className="flex-1 h-8 px-2.5 rounded bg-surface-container-lowest border border-surface-container-high text-xs font-mono text-on-surface outline-none focus:border-primary-container"
                       />
                       <button
                         type="button"
                         onClick={handleSaveApiKey}
-                        className="h-8 px-3 rounded bg-[#6CBF3D] hover:bg-[#5ca633] text-slate-950 font-bold text-xs cursor-pointer shadow-xs"
+                        className="h-8 px-3 rounded bg-primary-container hover:bg-primary text-white font-bold text-xs cursor-pointer shadow-xs"
                       >
                         Save
                       </button>
@@ -732,7 +732,7 @@ export default function RooftopDesigner({
                         <button
                           type="button"
                           onClick={handleClearApiKey}
-                          className="h-8 px-2.5 rounded bg-rose-900/50 hover:bg-rose-800 text-rose-300 text-xs cursor-pointer"
+                          className="h-8 px-2.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs cursor-pointer"
                         >
                           Clear
                         </button>
@@ -745,7 +745,7 @@ export default function RooftopDesigner({
               {/* Upload Dropzone */}
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-700 hover:border-[#6CBF3D] rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-slate-950 group"
+                className="border-2 border-dashed border-surface-container-high hover:border-primary-container rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all bg-surface-container-low/40 group"
               >
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                 {isScanning ? (
@@ -880,17 +880,17 @@ export default function RooftopDesigner({
 
           {/* TAB 2: Dynamic Wall Measurements Table */}
           {activeTab === 'manual' && (
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-3.5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="p-4 rounded-xl bg-white border border-surface-container-high shadow-xs flex flex-col gap-3.5">
+              <div className="flex items-center justify-between border-b border-surface-container-high pb-2">
                 <div>
-                  <span className="text-xs font-bold text-white block">
+                  <span className="text-xs font-bold text-on-surface block">
                     All Detected Walls ({walls.length}):
                   </span>
-                  <span className="text-[10px] text-slate-400">
+                  <span className="text-[10px] text-secondary">
                     Click any side to highlight or adjust length in feet
                   </span>
                 </div>
-                <span className="text-[11px] font-bold text-[#6CBF3D]">{walls.length} Segments</span>
+                <span className="text-[11px] font-bold text-primary">{walls.length} Segments</span>
               </div>
 
               <div className="flex flex-col gap-2 max-h-72 overflow-y-auto pr-1">
@@ -899,14 +899,14 @@ export default function RooftopDesigner({
                     key={idx}
                     className={`p-2.5 rounded-lg border transition-all ${
                       selectedWallIndex === idx
-                        ? 'bg-[#6CBF3D]/20 border-[#6CBF3D]'
-                        : 'bg-slate-950 border-slate-800'
+                        ? 'bg-primary-container/20 border-primary-container'
+                        : 'bg-surface-container-low border-surface-container-high'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0" onClick={() => setSelectedWallIndex(selectedWallIndex === idx ? null : idx)}>
-                        <span className="text-xs font-bold text-slate-200 block">Side {w.index}</span>
-                        <span className="text-[9px] text-slate-400 block truncate">{w.name}</span>
+                        <span className="text-xs font-bold text-on-surface block">Side {w.index}</span>
+                        <span className="text-[9px] text-secondary block truncate">{w.name}</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <input
@@ -916,9 +916,9 @@ export default function RooftopDesigner({
                           max="200"
                           value={w.lengthFt}
                           onChange={e => handleUpdateWallLength(idx, e.target.value)}
-                          className="w-16 h-7 text-center font-mono font-bold text-xs text-[#6CBF3D] rounded bg-slate-900 border border-slate-700 outline-none focus:border-[#6CBF3D]"
+                          className="w-16 h-7 text-center font-mono font-bold text-xs text-primary rounded bg-surface-container-lowest border border-surface-container-high outline-none focus:border-primary-container"
                         />
-                        <span className="text-xs text-slate-400 font-bold">ft</span>
+                        <span className="text-xs text-secondary font-bold">ft</span>
                       </div>
                     </div>
                   </div>
@@ -929,16 +929,16 @@ export default function RooftopDesigner({
 
           {/* TAB 3: Obstacles & Shadow Analysis */}
           {activeTab === 'analysis' && (
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-3.5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span className="text-xs font-bold text-white">Obstacles Setup:</span>
-                <span className="text-[10px] text-slate-400">Shadow casts towards North</span>
+            <div className="p-4 rounded-xl bg-white border border-surface-container-high shadow-xs flex flex-col gap-3.5">
+              <div className="flex items-center justify-between border-b border-surface-container-high pb-2">
+                <span className="text-xs font-bold text-on-surface">Obstacles Setup:</span>
+                <span className="text-[10px] text-secondary">Shadow casts towards North</span>
               </div>
 
               {/* Mumty Room */}
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex flex-col gap-2">
+              <div className="p-3 rounded-lg bg-surface-container-low border border-surface-container-high flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-400 flex items-center gap-1">
+                  <span className="text-xs font-bold text-amber-700 flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">stairs</span>
                     Staircase Mumty
                   </span>
@@ -946,11 +946,11 @@ export default function RooftopDesigner({
 
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">Position:</label>
+                    <label className="text-[10px] text-secondary block mb-1">Position:</label>
                     <select
                       value={mumtyLoc}
                       onChange={e => handleMumtyLocationChange(e.target.value)}
-                      className="w-full h-8 px-2 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none"
+                      className="w-full h-8 px-2 rounded bg-surface-container-lowest border border-surface-container-high text-xs font-bold text-on-surface outline-none"
                     >
                       <option value="none">No Mumty</option>
                       <option value="bottom-left">Bottom-Left</option>
@@ -962,30 +962,30 @@ export default function RooftopDesigner({
 
                   <div className="grid grid-cols-3 gap-1">
                     <div>
-                      <label className="text-[9px] text-slate-400 block mb-1">Width</label>
+                      <label className="text-[9px] text-secondary block mb-1">Width</label>
                       <input
                         type="number"
                         value={mumtyW}
                         onChange={e => setMumtyW(parseFloat(e.target.value) || 4)}
-                        className="w-full h-8 text-center px-1 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none"
+                        className="w-full h-8 text-center px-1 rounded bg-surface-container-lowest border border-surface-container-high text-xs font-bold text-on-surface outline-none"
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] text-slate-400 block mb-1">Depth</label>
+                      <label className="text-[9px] text-secondary block mb-1">Depth</label>
                       <input
                         type="number"
                         value={mumtyD}
                         onChange={e => setMumtyD(parseFloat(e.target.value) || 7)}
-                        className="w-full h-8 text-center px-1 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none"
+                        className="w-full h-8 text-center px-1 rounded bg-surface-container-lowest border border-surface-container-high text-xs font-bold text-on-surface outline-none"
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] text-slate-400 block mb-1">Height</label>
+                      <label className="text-[9px] text-secondary block mb-1">Height</label>
                       <input
                         type="number"
                         value={mumtyH}
                         onChange={e => setMumtyH(parseFloat(e.target.value) || 7)}
-                        className="w-full h-8 text-center px-1 rounded bg-slate-900 border border-slate-700 text-xs font-bold text-white outline-none"
+                        className="w-full h-8 text-center px-1 rounded bg-surface-container-lowest border border-surface-container-high text-xs font-bold text-on-surface outline-none"
                       />
                     </div>
                   </div>
@@ -993,8 +993,8 @@ export default function RooftopDesigner({
               </div>
 
               {/* Water Tank */}
-              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between">
-                <span className="text-xs font-bold text-sky-400 flex items-center gap-1">
+              <div className="p-3 rounded-lg bg-surface-container-low border border-surface-container-high flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-700 flex items-center gap-1">
                   <span className="material-symbols-outlined text-[16px]">water_drop</span>
                   Water Tank
                 </span>
@@ -1002,7 +1002,7 @@ export default function RooftopDesigner({
                   type="button"
                   onClick={() => setHasWaterTank(!hasWaterTank)}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    hasWaterTank ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 text-slate-400 border border-slate-700'
+                    hasWaterTank ? 'bg-blue-600 text-white' : 'bg-surface-container-lowest text-secondary border border-surface-container-high'
                   }`}
                 >
                   {hasWaterTank ? '✓ Present' : 'None'}
@@ -1014,20 +1014,20 @@ export default function RooftopDesigner({
         </div>
 
         {/* Right Column (7 Cols): 2D Blueprint SVG */}
-        <div className="lg:col-span-7 flex flex-col bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-800">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3 text-xs flex-wrap gap-2">
+        <div className="lg:col-span-7 flex flex-col bg-white p-4 sm:p-5 rounded-xl border border-surface-container-high shadow-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-surface-container-high mb-3 text-xs flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#6CBF3D] text-[18px]">architecture</span>
-              <span className="font-bold text-white">2D Blueprint: Real Roof Geometry</span>
+              <span className="material-symbols-outlined text-primary text-[18px]">architecture</span>
+              <span className="font-bold text-on-surface">2D Blueprint: Real Roof Geometry</span>
             </div>
 
             {uploadPreview && (
-              <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] gap-1">
+              <div className="flex items-center bg-surface-container-low p-1 rounded-lg border border-surface-container-high text-[11px] gap-1">
                 <button
                   type="button"
                   onClick={() => setBlueprintViewMode('cad')}
                   className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    blueprintViewMode === 'cad' ? 'bg-[#6CBF3D] text-slate-950 shadow-xs' : 'text-slate-400 hover:text-white'
+                    blueprintViewMode === 'cad' ? 'bg-primary-container text-white shadow-xs' : 'text-secondary hover:text-on-surface'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[15px]">architecture</span>
@@ -1037,7 +1037,7 @@ export default function RooftopDesigner({
                   type="button"
                   onClick={() => setBlueprintViewMode('tracer')}
                   className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    blueprintViewMode === 'tracer' ? 'bg-[#6CBF3D] text-slate-950 shadow-xs' : 'text-slate-400 hover:text-white'
+                    blueprintViewMode === 'tracer' ? 'bg-primary-container text-white shadow-xs' : 'text-secondary hover:text-on-surface'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[15px]">gesture</span>
@@ -1062,18 +1062,18 @@ export default function RooftopDesigner({
             ) : config.isPendingUpload && !uploadPreview ? (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-slate-800 rounded-2xl cursor-pointer hover:border-[#6CBF3D]/50 transition-colors"
+                className="flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed border-surface-container-high rounded-2xl cursor-pointer hover:border-primary-container transition-colors bg-surface-container-low/30"
               >
-                <span className="material-symbols-outlined text-5xl text-[#6CBF3D]/60">roofing</span>
+                <span className="material-symbols-outlined text-5xl text-primary/60">roofing</span>
                 <div className="text-center">
-                  <span className="text-sm font-bold text-slate-200 block">No Sketch Uploaded Yet</span>
-                  <span className="text-xs text-slate-400 block mt-1">
+                  <span className="text-sm font-bold text-on-surface block">No Sketch Uploaded Yet</span>
+                  <span className="text-xs text-secondary block mt-1">
                     Click here to upload your hand-drawn notebook drawing or site photo
                   </span>
                 </div>
                 <button
                   type="button"
-                  className="px-4 py-2 rounded-xl bg-[#6CBF3D] text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md"
+                  className="px-4 py-2 rounded-xl bg-primary-container text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
                 >
                   <span className="material-symbols-outlined text-[16px]">upload</span>
                   <span>Upload Roof Drawing</span>
@@ -1092,14 +1092,14 @@ export default function RooftopDesigner({
           </div>
 
           {/* Legend Bar */}
-          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-2">
+          <div className="mt-3 flex items-center justify-between text-[11px] text-secondary flex-wrap gap-2">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-sm bg-[#334155] border border-[#F59E0B]"></span>
                 <span>Mumty Room</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm bg-[#6CBF3D]/25 border border-[#6CBF3D]"></span>
+                <span className="w-3 h-3 rounded-sm bg-primary-container/25 border border-primary-container"></span>
                 <span>Safe Solar Zone</span>
               </span>
               <span className="flex items-center gap-1.5">
@@ -1108,7 +1108,7 @@ export default function RooftopDesigner({
               </span>
             </div>
 
-            <span className="text-[#6CBF3D] font-bold">
+            <span className="text-primary font-bold">
               🧭 True South: Top Wall (180°)
             </span>
           </div>

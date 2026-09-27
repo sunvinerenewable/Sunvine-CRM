@@ -72,6 +72,8 @@ export default function CreateQuotation() {
   const [custName, setCustName] = useState(initialSource?.customerName || '');
   const [custPhone, setCustPhone] = useState(initialSource?.customerPhone || '');
   const [custLocation, setCustLocation] = useState(initialSource?.location || initialSource?.city || '');
+  const [financeType, setFinanceType] = useState(initialSource?.financeType || initialSource?.paymentMode || 'CASH');
+  const [loanBank, setLoanBank] = useState(initialSource?.loanBank || 'State Bank of India (Surya Ghar Loan)');
 
   // Step 1.2 System Details (Standard field presets)
   const [systemCapacity, setSystemCapacity] = useState(() => {
@@ -455,6 +457,9 @@ export default function CreateQuotation() {
       dealerId: resolvedDealerCode,
       dealerCode: resolvedDealerCode,
       dealerName: resolvedDealerName,
+      financeType,
+      paymentMode: financeType,
+      loanBank: financeType === 'LOAN' ? loanBank : null,
       roofConfig: quotationRoofConfig
     };
 
@@ -687,6 +692,62 @@ export default function CreateQuotation() {
                     onChange={(e) => setCustLocation(e.target.value)}
                   />
                 </div>
+              </div>
+
+              {/* Payment Mode: Cash vs Solar Bank Loan */}
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-surface-container-high/60">
+                <div className="flex flex-col gap-1.5">
+                  <label className="font-label-sm text-label-sm text-on-surface font-semibold">
+                    Payment / Finance Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFinanceType('CASH')}
+                      className={`h-10 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        financeType === 'CASH'
+                          ? 'bg-[#6CBF3D] text-white border-[#6CBF3D] shadow-xs'
+                          : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-[#6CBF3D]'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      <span>Cash Case</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFinanceType('LOAN')}
+                      className={`h-10 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        financeType === 'LOAN'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                          : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-amber-500'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">account_balance</span>
+                      <span>Solar Loan (EMI)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {financeType === 'LOAN' && (
+                  <div className="flex flex-col gap-1.5 animate-in fade-in duration-200">
+                    <label className="font-label-sm text-label-sm text-amber-900 font-semibold">
+                      Preferred Financing Bank
+                    </label>
+                    <select
+                      value={loanBank}
+                      onChange={(e) => setLoanBank(e.target.value)}
+                      className="w-full h-10 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer text-xs"
+                    >
+                      <option value="State Bank of India (Surya Ghar Loan)">State Bank of India (SBI)</option>
+                      <option value="Bank of Baroda (Baroda Solar)">Bank of Baroda (BOB)</option>
+                      <option value="Canara Bank Solar Scheme">Canara Bank</option>
+                      <option value="Punjab National Bank (PNB)">Punjab National Bank (PNB)</option>
+                      <option value="HDFC Bank Green Loan">HDFC Bank</option>
+                      <option value="ICICI Bank Eco Loan">ICICI Bank</option>
+                      <option value="Other Bank / NBFC">Other Bank / NBFC</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </section>

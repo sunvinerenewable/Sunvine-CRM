@@ -7,6 +7,7 @@ export default function StaffManagement() {
   const {
     staffList,
     customerFiles,
+    dealers,
     addStaff,
     updateStaff,
     updateStaffPassword,
@@ -54,6 +55,11 @@ export default function StaffManagement() {
   const [newCustLoad, setNewCustLoad] = useState('5.0');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
   const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-001');
+  const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
+  const [newCustDealerId, setNewCustDealerId] = useState('');
+  const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
+  const [newCustLoanBank, setNewCustLoanBank] = useState('State Bank of India (Surya Ghar Loan)');
+  const [newCustLoanRef, setNewCustLoanRef] = useState('');
 
   // Document Upload Handlers (Optional)
   const handleUploadDoc = (fileId, docKey, filename = 'document.pdf') => {
@@ -118,6 +124,7 @@ export default function StaffManagement() {
       return;
     }
     const assignedStaff = staffList.find(s => s.id === newCustStaffId) || staffList[0];
+    const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
     const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
     const newFile = {
       id: newFileId,
@@ -131,8 +138,17 @@ export default function StaffManagement() {
       roofType: 'RCC Terrace',
       staffId: assignedStaff.id,
       staffName: assignedStaff.name,
+      sourceType: newCustSourceType,
+      source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',
+      dealerId: matchedDealer ? matchedDealer.id : null,
+      dealerName: matchedDealer ? (matchedDealer.firmName || matchedDealer.name) : null,
+      financeType: newCustFinanceType,
+      paymentMode: newCustFinanceType,
+      loanBank: newCustFinanceType === 'LOAN' ? newCustLoanBank : null,
+      loanRefNo: newCustFinanceType === 'LOAN' ? newCustLoanRef.trim() : null,
       createdDate: new Date().toISOString().split('T')[0],
       status: 'Sourced',
+      currentStage: 'LEAD_SOURCED',
       applicationNo: 'Draft Pending',
       documents: {
         aadhaar: { uploaded: false, filename: null, date: null },
@@ -149,6 +165,7 @@ export default function StaffManagement() {
     setNewCustPhone('');
     setNewCustAddress('');
     setNewCustConsumerNo('');
+    setNewCustLoanRef('');
     addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
   };
 
@@ -368,12 +385,28 @@ export default function StaffManagement() {
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
+                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                            <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                              file.sourceType === 'DEALER' || file.source === 'DEALER'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                              {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
+                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                              file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            }`}>
+                              {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
+                            </span>
+                          </div>
                           <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors">
                             {file.customerName}
                           </h3>
                         </div>
-                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                           {file.status}
                         </span>
                       </div>
@@ -871,6 +904,78 @@ export default function StaffManagement() {
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">File Source Type</label>
+                  <select
+                    value={newCustSourceType}
+                    onChange={e => setNewCustSourceType(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="DIRECT_STAFF">Direct Sales Staff</option>
+                    <option value="DEALER">Dealer Network Partner</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment / Finance Mode</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={e => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="CASH">100% Cash / Self Payment</option>
+                    <option value="LOAN">Solar Bank Loan / EMI</option>
+                  </select>
+                </div>
+              </div>
+
+              {newCustSourceType === 'DEALER' && (
+                <div>
+                  <label className="block text-xs font-semibold text-purple-800 mb-1">Select Associated Dealer</label>
+                  <select
+                    value={newCustDealerId}
+                    onChange={e => setNewCustDealerId(e.target.value)}
+                    className="w-full bg-purple-50/50 border border-purple-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="">-- Choose Dealer Partner --</option>
+                    {(dealers || []).map(d => (
+                      <option key={d.id} value={d.id}>{d.firmName || d.name} ({d.id})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {newCustFinanceType === 'LOAN' && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-amber-50/60 border border-amber-200 rounded-xl">
+                  <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Partner Bank</label>
+                    <select
+                      value={newCustLoanBank}
+                      onChange={e => setNewCustLoanBank(e.target.value)}
+                      className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="State Bank of India (Surya Ghar Loan)">State Bank of India (SBI)</option>
+                      <option value="Bank of Baroda (Baroda Solar)">Bank of Baroda (BOB)</option>
+                      <option value="Canara Bank Solar Scheme">Canara Bank</option>
+                      <option value="Punjab National Bank (PNB)">Punjab National Bank (PNB)</option>
+                      <option value="HDFC Bank Green Loan">HDFC Bank</option>
+                      <option value="ICICI Bank Eco Loan">ICICI Bank</option>
+                      <option value="Other Bank / NBFC">Other Bank / NBFC</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Loan Ref / App # (Opt)</label>
+                    <input
+                      type="text"
+                      value={newCustLoanRef}
+                      onChange={e => setNewCustLoanRef(e.target.value)}
+                      placeholder="e.g. SBI-2026-9812"
+                      className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Sales Staff</label>

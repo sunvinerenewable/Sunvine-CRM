@@ -61,6 +61,7 @@ export default function Navigation() {
     { id: 'admin_performance', label: 'Business Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'dealers_mgmt', label: 'Dealer Partners', mobileLabel: 'Dealers', icon: 'group' },
     { id: 'staff_mgmt', label: 'Sales Team & Files', mobileLabel: 'Sales Team', icon: 'badge' },
+    { id: 'admin_verification', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
     { id: 'admin_reports', label: 'Reports & Export', mobileLabel: 'Reports', icon: 'download' },
     { id: 'admin_audit', label: 'Audit Logs Trail', mobileLabel: 'Audit', icon: 'receipt_long' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
@@ -75,6 +76,7 @@ export default function Navigation() {
   const staffMenu = [
     { id: 'staff_dashboard', label: 'My Dashboard', mobileLabel: 'Dashboard', icon: 'dashboard' },
     { id: 'staff_files', label: 'Customer Files', mobileLabel: 'My Files', icon: 'folder' },
+    { id: 'staff_verification', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
     { id: 'staff_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'staff_new_lead', label: 'New Customer Lead', mobileLabel: 'New Lead', icon: 'person_add' },
     { id: 'staff_map', label: 'Nearby Radar (AI)', mobileLabel: 'Radar Map', icon: 'radar' },

@@ -334,9 +334,29 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_staff_list', DEFAULT_STAFF);
   });
 
+  const ensureCustomerFileAttribution = (files) => {
+    return (files || []).map((f, idx) => {
+      if (!f) return f;
+      const hasDealer = Boolean(f.dealerId || f.dealerName);
+      const rawSource = (f.sourceType || f.source || '').toUpperCase();
+      const sourceType = rawSource.includes('DIRECT') ? 'DIRECT_STAFF' : (rawSource === 'DEALER' || hasDealer ? 'DEALER' : (idx % 2 === 0 ? 'DIRECT_STAFF' : 'DEALER'));
+      const rawFinance = (f.financeType || '').toUpperCase();
+      const financeType = rawFinance === 'LOAN' || Boolean(f.loanBank) ? 'LOAN' : (rawFinance === 'CASH' ? 'CASH' : (idx % 3 === 0 ? 'LOAN' : 'CASH'));
+      const loanBank = financeType === 'LOAN' ? (f.loanBank || 'State Bank of India') : null;
+      return {
+        ...f,
+        sourceType,
+        financeType,
+        loanBank
+      };
+    });
+  };
+
   // Customer Files Pipeline (Synchronized between Admin and Sales Staff)
   const [customerFiles, setCustomerFiles] = useState(() => {
-    return safeJsonParse('sunvine_customer_files', DEFAULT_CUSTOMER_FILES);
+    const raw = safeJsonParse('sunvine_customer_files', DEFAULT_CUSTOMER_FILES);
+    const base = (Array.isArray(raw) && raw.length > 0) ? raw : DEFAULT_CUSTOMER_FILES;
+    return ensureCustomerFileAttribution(base);
   });
 
   // Master Dynamic System Settings

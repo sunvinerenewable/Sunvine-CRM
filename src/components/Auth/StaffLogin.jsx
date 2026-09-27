@@ -84,9 +84,9 @@ export default function StaffLogin() {
               src="/sunvine_logo_transparent.png"
             />
           </div>
-          <div className="flex items-center gap-1.5 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
-            <span className="font-label-xs text-[11px] text-emerald-800 uppercase tracking-wider font-semibold">
+          <div className="flex items-center gap-1.5 bg-secondary-container/60 px-2.5 py-1 rounded-full">
+            <span className="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span>
+            <span className="font-label-xs text-[11px] text-on-secondary-fixed uppercase tracking-wider font-semibold">
               Field Desk Active
             </span>
           </div>
@@ -95,22 +95,22 @@ export default function StaffLogin() {
         {/* Technical Solar Hero Banner */}
         <section className="relative overflow-hidden rounded-xl bg-on-secondary-fixed text-on-secondary p-5 shadow-md mb-4">
           {/* Grid overlay decor */}
-          <div className="absolute -right-10 -bottom-10 w-44 h-44 rounded-full bg-emerald-500/15 blur-2xl pointer-events-none"></div>
+          <div className="absolute -right-10 -bottom-10 w-44 h-44 rounded-full bg-primary-container/15 blur-2xl pointer-events-none"></div>
           <div className="absolute right-3 top-3 opacity-15 pointer-events-none">
             <svg fill="none" height="90" viewBox="0 0 80 80" width="90">
-              <path d="M40 0L80 40L40 80L0 40Z" stroke="#10b981" strokeDasharray="4 2" strokeWidth="1.5"></path>
-              <path d="M40 16L64 40L40 64L16 40Z" stroke="#10b981" strokeWidth="1"></path>
-              <circle cx="40" cy="40" fill="#10b981" r="6"></circle>
+              <path d="M40 0L80 40L40 80L0 40Z" stroke="#6CBF3D" strokeDasharray="4 2" strokeWidth="1.5"></path>
+              <path d="M40 16L64 40L40 64L16 40Z" stroke="#6CBF3D" strokeWidth="1"></path>
+              <circle cx="40" cy="40" fill="#6CBF3D" r="6"></circle>
             </svg>
           </div>
           <div className="relative z-10 flex flex-col gap-1">
-            <div className="inline-flex items-center gap-1.5 w-fit px-2 py-0.5 rounded-full bg-surface-container-lowest/10 backdrop-blur-sm text-emerald-300 font-label-xs text-[11px] tracking-wider uppercase font-semibold">
+            <div className="inline-flex items-center gap-1.5 w-fit px-2 py-0.5 rounded-full bg-surface-container-lowest/10 backdrop-blur-sm text-primary-fixed font-label-xs text-[11px] tracking-wider uppercase font-semibold">
               <span className="material-symbols-outlined text-[14px]">badge</span>
               <span>Sales &amp; Field Staff Network</span>
             </div>
             <h2 className="font-headline-md text-xl font-bold text-white mt-1 leading-tight">
               Powering Today.<br />
-              <span className="text-emerald-400">Protecting Tomorrow.</span>
+              <span className="text-[#6CBF3D]">Protecting Tomorrow.</span>
             </h2>
             <p className="font-body-sm text-xs text-secondary-fixed-dim max-w-[270px] mt-0.5">
               Field lead management, customer files vault &amp; AI radar scanner.
@@ -132,9 +132,9 @@ export default function StaffLogin() {
             </button>
             <button
               type="button"
-              className="flex-1 py-1 px-2 rounded-lg bg-surface-container-lowest text-emerald-700 font-bold text-xs shadow-xs flex items-center justify-center gap-1"
+              className="flex-1 py-1 px-2 rounded-lg bg-surface-container-lowest text-primary font-bold text-xs shadow-xs flex items-center justify-center gap-1"
             >
-              <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
+              <span className="material-symbols-outlined text-[15px] text-primary">badge</span>
               <span>Staff</span>
             </button>
             <button
@@ -228,7 +228,7 @@ export default function StaffLogin() {
                   <span className="material-symbols-outlined text-base">lock</span>
                 </span>
                 <input
-                  className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-surface-bright border border-surface-container-high"
+                  className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-primary-container focus:bg-surface-bright border border-surface-container-high"
                   id="mobile-staff-password"
                   placeholder="Enter password"
                   required
@@ -252,7 +252,7 @@ export default function StaffLogin() {
             <div className="flex items-center justify-between pt-0.5">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
-                  className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 bg-surface-container"
+                  className="w-3.5 h-3.5 rounded text-primary-container focus:ring-primary-container bg-surface-container"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
@@ -262,7 +262,7 @@ export default function StaffLogin() {
             </div>
 
             <button
-              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
               type="submit"
               disabled={loading}
             >
@@ -380,7 +380,7 @@ export default function StaffLogin() {
                 </div>
 
                 <div className="flex items-start gap-3 bg-surface-container-lowest/5 p-2.5 sm:p-3 rounded-xl backdrop-blur-sm border border-white/5">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 shrink-0">
+                  <div className="p-1.5 rounded-lg bg-primary-container/20 text-primary-fixed shrink-0">
                     <span className="material-symbols-outlined text-base">cloud_done</span>
                   </div>
                   <div>
@@ -394,7 +394,7 @@ export default function StaffLogin() {
             {/* Bottom Status Strip */}
             <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 pt-3 text-secondary-fixed-dim text-xs shrink-0">
               <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-emerald-400 text-sm">verified_user</span>
+                <span className="material-symbols-outlined text-[#6CBF3D] text-sm">verified_user</span>
                 <span>ISO 27001 Certified Workstation</span>
               </div>
               <div className="flex items-center gap-3">
@@ -422,9 +422,9 @@ export default function StaffLogin() {
                   </button>
                   <button
                     type="button"
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-lowest text-emerald-700 font-bold text-xs shadow-xs flex items-center justify-center gap-1"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-surface-container-lowest text-primary font-bold text-xs shadow-xs flex items-center justify-center gap-1"
                   >
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">badge</span>
+                    <span className="material-symbols-outlined text-[15px] text-primary">badge</span>
                     <span>Staff Login</span>
                   </button>
                   <button
@@ -437,8 +437,8 @@ export default function StaffLogin() {
                   </button>
                 </div>
 
-                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-800 border border-emerald-500/20 mb-2.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-secondary-container/60 text-on-secondary-fixed mb-2.5">
+                  <span className="w-2 h-2 rounded-full bg-primary-container"></span>
                   <span className="font-label-xs font-semibold uppercase tracking-wider">Field Staff Console</span>
                 </div>
                 <h1 className="font-headline-xl text-2xl sm:text-3xl text-on-surface font-bold">Staff Login</h1>
@@ -458,9 +458,9 @@ export default function StaffLogin() {
                       key={s.id}
                       type="button"
                       onClick={() => handleQuickSelectStaff(s)}
-                      className="px-2 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-emerald-700 flex items-center gap-1 cursor-pointer transition-colors text-left"
+                      className="px-2 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-primary-container/10 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-primary flex items-center gap-1 cursor-pointer transition-colors text-left"
                     >
-                      <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0">person</span>
+                      <span className="material-symbols-outlined text-[14px] text-primary shrink-0">person</span>
                       <span className="truncate">{s.name.split(' ')[0]} ({s.city})</span>
                     </button>
                   ))}
@@ -476,10 +476,10 @@ export default function StaffLogin() {
                   </label>
                   <div className="relative flex items-center">
                     <span className="absolute left-3.5 flex items-center gap-1.5 text-secondary font-label-sm select-none">
-                      <span className="material-symbols-outlined text-base text-emerald-600">badge</span>
+                      <span className="material-symbols-outlined text-base text-primary">badge</span>
                     </span>
                     <input
-                      className="w-full h-10 pl-11 pr-4 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-surface-bright border border-surface-container-high"
+                      className="w-full h-10 pl-11 pr-4 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-primary-container focus:bg-surface-bright border border-surface-container-high"
                       id="staff-identifier"
                       placeholder="Enter mobile or ID (e.g. STF-001)"
                       required
@@ -514,7 +514,7 @@ export default function StaffLogin() {
                       <span className="material-symbols-outlined text-base">lock</span>
                     </span>
                     <input
-                      className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-surface-bright border border-surface-container-high"
+                      className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-primary-container focus:bg-surface-bright border border-surface-container-high"
                       id="staff-password"
                       placeholder="Enter your password"
                       required
@@ -539,7 +539,7 @@ export default function StaffLogin() {
                 <div className="flex items-center justify-between pt-0.5">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
-                      className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-500 bg-surface-container"
+                      className="w-3.5 h-3.5 rounded text-primary-container focus:ring-primary-container bg-surface-container"
                       type="checkbox"
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
@@ -550,7 +550,7 @@ export default function StaffLogin() {
 
                 {/* Primary Submit Button */}
                 <button
-                  className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
                   type="submit"
                   disabled={loading}
                 >

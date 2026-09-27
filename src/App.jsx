@@ -24,6 +24,7 @@ import DealerSettings from './components/DealerPortal/DealerSettings';
 // Staff Portal Views
 import StaffDashboard from './components/StaffPortal/StaffDashboard';
 import StaffFiles from './components/StaffPortal/StaffFiles';
+import VerificationDesk from './components/StaffPortal/VerificationDesk';
 import StaffNewLead from './components/StaffPortal/StaffNewLead';
 import StaffRadarMap from './components/StaffPortal/StaffRadarMap';
 
@@ -105,6 +106,8 @@ function MainApp() {
           return <DealerManagement />;
         case 'staff_mgmt':
           return <StaffManagement />;
+        case 'admin_verification':
+          return <VerificationDesk />;
         case 'admin_reports':
           return <ReportsAnalytics />;
         case 'admin_audit':
@@ -132,6 +135,8 @@ function MainApp() {
           return <StaffDashboard />;
         case 'staff_files':
           return <StaffFiles />;
+        case 'staff_verification':
+          return <VerificationDesk />;
         case 'staff_performance':
           return <BusinessPerformance />;
         case 'staff_new_lead':
