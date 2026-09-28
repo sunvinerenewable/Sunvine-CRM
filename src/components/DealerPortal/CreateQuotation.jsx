@@ -247,6 +247,20 @@ export default function CreateQuotation() {
     }
   }, [customKwRate, pricingPresets?.baseRatePerKw, bomPricingMode]);
 
+  // Margin configuration
+  const effectiveMarginPerKw = isDirectCompanyQuote ? 0 : (
+    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 4500)
+  );
+
+  const [marginMode, setMarginMode] = useState('amount');
+  const [dealerMarginRate, setDealerMarginRate] = useState(isDirectCompanyQuote ? 0 : 8);
+  const [dealerMarginFixed, setDealerMarginFixed] = useState(() => {
+    if (initialSource?.dealerTotalMargin !== undefined) return Number(initialSource.dealerTotalMargin);
+    if (isDirectCompanyQuote) return 0;
+    return effectiveMarginPerKw * kw;
+  });
+  const [saveStatus, setSaveStatus] = useState('');
+
   // Inverter procurement price mapping
   const inverterProcurementPrice = useMemo(() => {
     if (kw <= 2.5) return 12500;
