@@ -5,7 +5,6 @@ import { useToast } from '../Shared/Toast';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
-import { useToast } from '../Shared/Toast';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -239,13 +238,10 @@ export default function CreateQuotation() {
   }, [editingQuotation?.id]);
 
   useEffect(() => {
-<<<<<<< HEAD
-    if (!editingQuotation && !activeDraftQuote && pricingPresets?.baseRatePerKw) {
-      setRatePerKw(pricingPresets.baseRatePerKw);
-    }
-  }, [pricingPresets?.baseRatePerKw, editingQuotation, activeDraftQuote]);
-=======
     if (!editingQuotation && !activeDraftQuote) {
+      if (pricingPresets?.baseRatePerKw && !customKwRate) {
+        setRatePerKw(pricingPresets.baseRatePerKw);
+      }
       if (isDirectCompanyQuote) {
         setDealerMarginFixed(0);
         setDealerMarginRate(0);
@@ -253,8 +249,7 @@ export default function CreateQuotation() {
         setDealerMarginFixed(effectiveMarginPerKw * kw);
       }
     }
-  }, [kw, effectiveMarginPerKw, isDirectCompanyQuote, editingQuotation, activeDraftQuote]);
->>>>>>> e2a5d98 (feat: revamp quotation engine with dynamic sizing, admin/staff access, dealer custom pricing, and executive proposal layout)
+  }, [kw, effectiveMarginPerKw, isDirectCompanyQuote, pricingPresets?.baseRatePerKw, customKwRate, editingQuotation, activeDraftQuote]);
 
   // Auto-populate when editing an existing quote or restoring draft
   useEffect(() => {
@@ -345,24 +340,12 @@ export default function CreateQuotation() {
     ? ((dealerMarginINR / baseProjectCost) * 100).toFixed(1)
     : '0.0';
 
-<<<<<<< HEAD
-  // Tier Margin Cap & Audit Validation (SR-24)
-  // Direct Company Quotes (Admin) are not constrained by dealer tier caps
-=======
   // Tier Margin Cap & Audit Validation
->>>>>>> e2a5d98 (feat: revamp quotation engine with dynamic sizing, admin/staff access, dealer custom pricing, and executive proposal layout)
   const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 6000);
-  const currentMarginPerKw = kw > 0 ? Math.round(dealerMarginINR / kw) : 0;
+  const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
   const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
 
-<<<<<<< HEAD
-  // Total Customer Quoted Project Cost (Base Cost + Dealer/Company Margin)
-  const totalCost = baseProjectCost + dealerMarginINR;
-
-  // PM Surya Ghar Central DBT Subsidy Formula (Linked to Admin Presets & Project Type)
-=======
   // PM Surya Ghar Central DBT Subsidy Formula
->>>>>>> e2a5d98 (feat: revamp quotation engine with dynamic sizing, admin/staff access, dealer custom pricing, and executive proposal layout)
   const calculateSubsidy = (capacity, type) => {
     if (type === 'Commercial') return 0;
     const maxSubsidy = pricingPresets?.subsidyCap || 78000;
@@ -483,9 +466,6 @@ export default function CreateQuotation() {
       baseCost: baseProjectCost,
       dealerMargin: dealerMarginINR,
       dealerTotalMargin: dealerMarginINR,
-<<<<<<< HEAD
-      dealerMarginPerKW: currentMarginPerKw,
-=======
       dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
       hasCustomDealerPricing,
       customDiscountPercent,
@@ -505,7 +485,6 @@ export default function CreateQuotation() {
       annualSavings,
       monthlySavings,
       paybackYears,
->>>>>>> e2a5d98 (feat: revamp quotation engine with dynamic sizing, admin/staff access, dealer custom pricing, and executive proposal layout)
       isDirectCompanyQuote,
       quoteChannel,
       creatorRole: role,
@@ -619,12 +598,8 @@ export default function CreateQuotation() {
       inverterType: inverterModel,
       inverterCount: '1 NOS',
       baseRatePerKW: ratePerKw,
-<<<<<<< HEAD
-      dealerMarginPerKW: currentMarginPerKw,
-=======
       baseCost: baseProjectCost,
       dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
->>>>>>> e2a5d98 (feat: revamp quotation engine with dynamic sizing, admin/staff access, dealer custom pricing, and executive proposal layout)
       dealerTotalMargin: dealerMarginINR,
       dealerMargin: dealerMarginINR,
       hasCustomDealerPricing,
