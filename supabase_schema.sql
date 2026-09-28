@@ -76,18 +76,59 @@ CREATE TABLE IF NOT EXISTS public.otp_verifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 6. INDEXES FOR LIGHTNING FAST SEARCH & LOW SERVER LOAD
+-- 6. SOLAR MODULES TABLE (Hardware Catalog)
+CREATE TABLE IF NOT EXISTS public.solar_modules (
+    id VARCHAR(100) PRIMARY KEY,
+    brand VARCHAR(255) NOT NULL,
+    model VARCHAR(255) NOT NULL,
+    wattage INTEGER NOT NULL DEFAULT 550,
+    cell_tech VARCHAR(100) NOT NULL DEFAULT 'TOPCon Mono Bifacial',
+    efficiency VARCHAR(50) NOT NULL DEFAULT '22.6%',
+    rate_per_wp VARCHAR(50) NOT NULL DEFAULT '₹ 19.20/Wp',
+    warranty VARCHAR(100) NOT NULL DEFAULT '30 Years Performance',
+    dimensions VARCHAR(255) NOT NULL DEFAULT '2278 × 1134 × 30 mm | 28 kg',
+    is_archived BOOLEAN DEFAULT false NOT NULL,
+    is_default BOOLEAN DEFAULT false NOT NULL,
+    is_new BOOLEAN DEFAULT false NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7. SOLAR INVERTERS TABLE (Hardware Catalog)
+CREATE TABLE IF NOT EXISTS public.solar_inverters (
+    id VARCHAR(100) PRIMARY KEY,
+    brand VARCHAR(255) NOT NULL,
+    model VARCHAR(255) NOT NULL,
+    capacity VARCHAR(100) NOT NULL DEFAULT '5.0 kW',
+    capacity_kw NUMERIC(6,2) NOT NULL DEFAULT 5.0,
+    phase VARCHAR(100) NOT NULL DEFAULT 'Three Phase',
+    efficiency VARCHAR(50) NOT NULL DEFAULT '98.4%',
+    warranty VARCHAR(100) NOT NULL DEFAULT '8 Years Comprehensive',
+    base_price VARCHAR(100) NOT NULL DEFAULT '₹ 54,000',
+    is_archived BOOLEAN DEFAULT false NOT NULL,
+    is_default BOOLEAN DEFAULT false NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 8. INDEXES FOR LIGHTNING FAST SEARCH & LOW SERVER LOAD
 CREATE INDEX IF NOT EXISTS idx_dealers_mobile ON public.dealers(mobile_number);
 CREATE INDEX IF NOT EXISTS idx_dealers_email ON public.dealers(email);
 CREATE INDEX IF NOT EXISTS idx_quotations_dealer ON public.quotations(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_quotations_status ON public.quotations(status);
 CREATE INDEX IF NOT EXISTS idx_otp_recipient_active ON public.otp_verifications(recipient, verified, expires_at);
+CREATE INDEX IF NOT EXISTS idx_solar_modules_archived ON public.solar_modules(is_archived);
+CREATE INDEX IF NOT EXISTS idx_solar_modules_brand ON public.solar_modules(brand);
+CREATE INDEX IF NOT EXISTS idx_solar_inverters_archived ON public.solar_inverters(is_archived);
+CREATE INDEX IF NOT EXISTS idx_solar_inverters_capacity ON public.solar_inverters(capacity_kw);
 
--- 7. ROW LEVEL SECURITY (RLS) POLICIES
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.otp_verifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.solar_modules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.solar_inverters ENABLE ROW LEVEL SECURITY;
 
 -- Public Anon Read/Write Policies for API Gateway
 DROP POLICY IF EXISTS "Public Read Active Dealers" ON public.dealers;
@@ -101,6 +142,12 @@ CREATE POLICY "OTP Verification Service" ON public.otp_verifications FOR ALL USI
 
 DROP POLICY IF EXISTS "Admin Secure Access" ON public.admin_users;
 CREATE POLICY "Admin Secure Access" ON public.admin_users FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Public Manage Solar Modules" ON public.solar_modules;
+CREATE POLICY "Public Manage Solar Modules" ON public.solar_modules FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public Manage Solar Inverters" ON public.solar_inverters;
+CREATE POLICY "Public Manage Solar Inverters" ON public.solar_inverters FOR ALL USING (true) WITH CHECK (true);
 
 -- 8. SEED INITIAL VERIFIED DEALER AND SUPER ADMIN (BCRYPT HASHED PASSWORDS)
 -- Password for demo dealer '9876543210' is 'dealer123' (bcrypt hashed)
@@ -154,4 +201,29 @@ INSERT INTO public.quotations (
     7500,
     'Approved'
 )
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed Approved Solar PV Modules Master Catalog
+INSERT INTO public.solar_modules (
+    id, brand, model, wattage, cell_tech, efficiency, rate_per_wp, warranty, dimensions, is_archived, is_default
+) VALUES 
+('mod-aps-600', 'APS / Sunvine Premier', '600WP TOPCON MONO BIFACIAL Panel', 600, 'TOPCon Mono Bifacial', '22.8%', '₹ 18.00/Wp', '30 Years Performance', '2278 × 1134 × 30 mm | 28 kg', false, true),
+('mod-waaree-585', 'Waaree Energies', '585WP TOPCon Bifacial Dual Glass (HyperIon)', 585, 'TOPCon Mono Bifacial', '22.4%', '₹ 18.25/Wp', '30 Years Performance', '2278 × 1134 × 30 mm | 28 kg', false, false),
+('mod-adani-550', 'Adani Solar', 'Elan Bi-550W Mono PERC Half-Cut', 550, 'Mono PERC Bifacial', '21.8%', '₹ 17.80/Wp', '25 Years Performance', '2278 × 1134 × 30 mm | 28 kg', false, false),
+('mod-aps-550', 'APS Bi-Fi', '550W Bifacial Dual Glass', 550, 'TOPCon Mono Bifacial', '21.6%', '₹ 17.50/Wp', '25 Years Performance', '2278 × 1134 × 30 mm | 28 kg', false, false),
+('mod-rayzone-550', 'Rayzone Solar', '550W Bi-Fi Mono PERC Half-Cut', 550, 'Mono PERC Bifacial', '21.6%', '₹ 17.50/Wp', '25 Years Performance', '2278 × 1134 × 30 mm | 28 kg', false, false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed Approved String Inverters Master Catalog
+INSERT INTO public.solar_inverters (
+    id, brand, model, capacity, capacity_kw, phase, efficiency, warranty, base_price, is_archived, is_default
+) VALUES 
+('inv-solis-2_2', 'Solis / Solaryaan', '2.2 KW Single Phase Grid-Tied Inverter', '2.2 kW', 2.2, 'Single Phase', '97.8%', '8 Years Comprehensive', '₹ 38,000', false, false),
+('inv-sunvine-3', 'Sunvine Smart Series', '3.0 KW 1-Phase Smart MPPT On-Grid', '3.0 kW', 3.0, 'Single Phase', '98.0%', '8 Years Comprehensive', '₹ 42,000', false, true),
+('inv-solis-3_6', 'Solis / Vsole', '3.6 KW Single Phase Dual MPPT On-Grid', '3.6 kW', 3.6, 'Single Phase', '98.2%', '8 Years Comprehensive', '₹ 46,000', false, false),
+('inv-sunvine-5', 'Sunvine Smart Series', '5.0 KW 3-Phase Smart MPPT On-Grid', '5.0 kW', 5.0, 'Three Phase', '98.4%', '8 Years Comprehensive', '₹ 54,000', false, false),
+('inv-sunvine-6', 'Sunvine Smart Series', '6.0 KW 3-Phase Smart MPPT On-Grid', '6.0 kW', 6.0, 'Three Phase', '98.4%', '8 Years Comprehensive', '₹ 58,000', false, false),
+('inv-growatt-10', 'Growatt / Deye', '10.0 KW 3-Phase Dual MPPT On-Grid', '10.0 kW', 10.0, 'Three Phase', '98.6%', '8 Years Comprehensive', '₹ 82,000', false, false),
+('inv-solis-50', 'Solis Cloud Series', '50.0 KW 3-Phase Grid-Tied Inverter with Wi-Fi Logger', '50.0 kW', 50.0, 'Three Phase', '98.7%', '8 Years Comprehensive', '₹ 1,85,000', false, false),
+('inv-solaryaan-125', 'Solaryaan / Solis / Vsole', '125.0 KW String type Three-Phase Grid Tied Inverter', '125.0 kW', 125.0, 'Three Phase', '99.0%', '8 Years Comprehensive', '₹ 3,90,000', false, false)
 ON CONFLICT (id) DO NOTHING;

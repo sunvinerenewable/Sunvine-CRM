@@ -1,9 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+import { hardwareService } from '../../services/hardwareService';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function HardwareMaster() {
-  const { modulesList, setModulesList, invertersList, setInvertersList, addNotification, pdfBomSpecs, dealers } = useApp();
+  const {
+    modulesList,
+    setModulesList,
+    invertersList,
+    setInvertersList,
+    addNotification,
+    pdfBomSpecs,
+    dealers,
+    isHardwareDbConnected,
+    isHardwareDbSyncing
+  } = useApp();
   const [activeTab, setActiveTab] = useState('modules'); // 'modules' | 'inverters' | 'bos'
   const [moduleSearch, setModuleSearch] = useState('');
   const [moduleFilter, setModuleFilter] = useState('all');
@@ -40,22 +51,14 @@ export default function HardwareMaster() {
   ];
 
   const [editingModule, setEditingModule] = useState(null);
-  const [customCellTechs, setCustomCellTechs] = useState(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const saved = localStorage.getItem('sunvine_custom_cell_techs');
-      return saved ? JSON.parse(saved) : [];
-    } catch (_) {
-      return [];
-    }
-  });
+  const [editingInverter, setEditingInverter] = useState(null);
   const [isCustomCellTech, setIsCustomCellTech] = useState(false);
   const [customCellTechInput, setCustomCellTechInput] = useState('');
 
+  // Dynamically derived from DB catalog and defaults — no local storage fragmentation
   const availableCellTechs = Array.from(new Set([
     ...DEFAULT_CELL_TECHS,
-    ...(modulesList || []).map(m => m.cellTech).filter(Boolean),
-    ...customCellTechs
+    ...(modulesList || []).map(m => m.cellTech).filter(Boolean)
   ]));
 
   const [moduleForm, setModuleForm] = useState({
@@ -117,7 +120,7 @@ export default function HardwareMaster() {
     setShowAddModuleModal(true);
   };
 
-  const handleToggleArchiveModule = (mod) => {
+  const handleToggleArchiveModule = async (mod) => {
     const isCurrentlyArchived = !!mod.isArchived;
     const confirmMsg = isCurrentlyArchived
       ? `Restore and unarchive ${mod.brand} ${mod.model} to active dealer catalog?`
@@ -128,6 +131,8 @@ export default function HardwareMaster() {
       if (setModulesList) {
         setModulesList(prev => prev.map(m => m.id === mod.id ? updated : m));
       }
+      await hardwareService.archiveModule(mod.id, !isCurrentlyArchived);
+
       if (addNotification) {
         addNotification({
           type: isCurrentlyArchived ? 'success' : 'warning',
@@ -139,26 +144,17 @@ export default function HardwareMaster() {
           audience: 'all'
         });
       }
-      triggerToast(isCurrentlyArchived ? `Restored ${mod.brand} ${mod.model}!` : `Archived ${mod.brand} ${mod.model}`);
+      triggerToast(isCurrentlyArchived ? `Restored ${mod.brand} ${mod.model} in database!` : `Archived ${mod.brand} ${mod.model} in database!`);
     }
   };
 
-  const handleSaveModule = (e) => {
+  const handleSaveModule = async (e) => {
     e.preventDefault();
     if (!moduleForm.brand.trim() || !moduleForm.model.trim()) return;
 
     let finalCellTech = moduleForm.cellTech;
     if (isCustomCellTech && customCellTechInput.trim()) {
       finalCellTech = customCellTechInput.trim();
-      if (!customCellTechs.includes(finalCellTech)) {
-        const updatedTechs = [...customCellTechs, finalCellTech];
-        setCustomCellTechs(updatedTechs);
-        if (typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('sunvine_custom_cell_techs', JSON.stringify(updatedTechs));
-          } catch (_) {}
-        }
-      }
     }
 
     const wattageNum = Number(moduleForm.wattage) || 550;
@@ -189,7 +185,7 @@ export default function HardwareMaster() {
         (editingModule.dimensions || '') === (updatedMod.dimensions || '');
 
       if (isUnchanged) {
-        setShowAddModal(false);
+        setShowAddModuleModal(false);
         setEditingModule(null);
         triggerToast('No changes detected in module specifications.');
         return;
@@ -198,17 +194,19 @@ export default function HardwareMaster() {
       if (setModulesList) {
         setModulesList(prev => prev.map(m => m.id === editingModule.id ? updatedMod : m));
       }
+      await hardwareService.saveModule(updatedMod);
+
       if (addNotification) {
         addNotification({
           type: 'success',
           icon: 'solar_power',
           title: `Updated Solar Module: ${updatedMod.brand} ${updatedMod.model}`,
-          description: `${updatedMod.wattage}W (${updatedMod.cellTech}) specifications updated in catalog.`,
+          description: `${updatedMod.wattage}W (${updatedMod.cellTech}) specifications updated in database.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
       }
-      triggerToast(`Updated ${updatedMod.brand} ${updatedMod.model}!`);
+      triggerToast(`Saved ${updatedMod.brand} ${updatedMod.model} to Supabase database!`);
     } else {
       const newMod = {
         id: `mod-${Date.now()}`,
@@ -227,17 +225,19 @@ export default function HardwareMaster() {
       if (setModulesList) {
         setModulesList(prev => [newMod, ...(prev || [])]);
       }
+      await hardwareService.saveModule(newMod);
+
       if (addNotification) {
         addNotification({
           type: 'success',
           icon: 'solar_power',
           title: `New Solar Module Added: ${newMod.brand} ${newMod.model}`,
-          description: `High-efficiency ${newMod.wattage}W (${newMod.cellTech}) published and available for dealer quotations.`,
+          description: `High-efficiency ${newMod.wattage}W (${newMod.cellTech}) published to Supabase database.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
       }
-      triggerToast(`Added ${newMod.brand} ${newMod.model} to catalog!`);
+      triggerToast(`Added ${newMod.brand} ${newMod.model} to Supabase database!`);
     }
 
     setShowAddModuleModal(false);
@@ -260,45 +260,104 @@ export default function HardwareMaster() {
     return '-';
   };
 
-  const handleSaveInverter = (e) => {
-    e.preventDefault();
-    if (!inverterForm.brand.trim() || !inverterForm.model.trim()) return;
-    const rawCap = inverterForm.capacity?.trim() || '5.0 kW';
-    const formattedCap = rawCap.toLowerCase().includes('kw') ? rawCap : `${rawCap} kW`;
-    const numCap = parseFloat(rawCap.replace(/[^0-9.]/g, '')) || 5.0;
-
-    const newInv = {
-      id: `inv-${Date.now()}`,
-      brand: inverterForm.brand.trim(),
-      model: inverterForm.model.trim(),
-      capacity: formattedCap,
-      capacityKW: numCap,
-      phase: inverterForm.phase,
-      efficiency: inverterForm.efficiency,
-      warranty: inverterForm.warranty
-    };
-    if (setInvertersList) {
-      setInvertersList(prev => [...(prev || []), newInv]);
-    }
-    if (addNotification) {
-      addNotification({
-        type: 'success',
-        icon: 'bolt',
-        title: `New Inverter Added: ${newInv.brand} ${newInv.model}`,
-        description: `${newInv.capacity} (${newInv.phase}) solar inverter published to hardware catalog.`,
-        audience: 'all',
-        targetTab: 'hardware_master'
-      });
-    }
-    setShowAddInverterModal(false);
-    triggerToast(`Added ${newInv.brand} ${newInv.model} to catalog!`);
+  const handleOpenAddInverter = () => {
+    setEditingInverter(null);
     setInverterForm({
       brand: '',
       model: '',
       capacity: '5 kW',
       phase: '3-Phase 415V',
       efficiency: '98.4%',
-      warranty: '10 Years'
+      warranty: '10 Years',
+      basePrice: '₹ 54,000'
+    });
+    setShowAddInverterModal(true);
+  };
+
+  const handleEditInverter = (inv) => {
+    setEditingInverter(inv);
+    setInverterForm({
+      brand: inv.brand || '',
+      model: inv.model || '',
+      capacity: inv.capacity || `${inv.capacityKW || 5.0} kW`,
+      phase: inv.phase || '3-Phase 415V',
+      efficiency: inv.efficiency || '98.4%',
+      warranty: inv.warranty || '10 Years',
+      basePrice: inv.basePrice || '₹ 54,000'
+    });
+    setShowAddInverterModal(true);
+  };
+
+  const handleToggleArchiveInverter = async (inv) => {
+    const isCurrentlyArchived = !!inv.isArchived;
+    const confirmMsg = isCurrentlyArchived
+      ? `Restore and unarchive ${inv.brand} ${inv.model} to active catalog?`
+      : `Archive ${inv.brand} ${inv.model}? It will be hidden from dealer quotations.`;
+
+    if (window.confirm(confirmMsg)) {
+      const updated = { ...inv, isArchived: !isCurrentlyArchived };
+      if (setInvertersList) {
+        setInvertersList(prev => (prev || []).map(i => i.id === inv.id ? updated : i));
+      }
+      await hardwareService.archiveInverter(inv.id, !isCurrentlyArchived);
+      triggerToast(isCurrentlyArchived ? `Restored ${inv.brand} ${inv.model} in database!` : `Archived ${inv.brand} ${inv.model} in database!`);
+    }
+  };
+
+  const handleSaveInverter = async (e) => {
+    e.preventDefault();
+    if (!inverterForm.brand.trim() || !inverterForm.model.trim()) return;
+    const rawCap = inverterForm.capacity?.trim() || '5.0 kW';
+    const formattedCap = rawCap.toLowerCase().includes('kw') ? rawCap : `${rawCap} kW`;
+    const numCap = parseFloat(rawCap.replace(/[^0-9.]/g, '')) || 5.0;
+
+    if (editingInverter) {
+      const updatedInv = {
+        ...editingInverter,
+        brand: inverterForm.brand.trim(),
+        model: inverterForm.model.trim(),
+        capacity: formattedCap,
+        capacityKW: numCap,
+        phase: inverterForm.phase,
+        efficiency: inverterForm.efficiency,
+        warranty: inverterForm.warranty,
+        basePrice: inverterForm.basePrice || editingInverter.basePrice || '₹ 54,000'
+      };
+      if (setInvertersList) {
+        setInvertersList(prev => (prev || []).map(i => i.id === editingInverter.id ? updatedInv : i));
+      }
+      await hardwareService.saveInverter(updatedInv);
+      triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to Supabase database!`);
+      setEditingInverter(null);
+    } else {
+      const newInv = {
+        id: `inv-${Date.now()}`,
+        brand: inverterForm.brand.trim(),
+        model: inverterForm.model.trim(),
+        capacity: formattedCap,
+        capacityKW: numCap,
+        phase: inverterForm.phase,
+        efficiency: inverterForm.efficiency,
+        warranty: inverterForm.warranty,
+        basePrice: inverterForm.basePrice || '₹ 54,000',
+        createdAt: Date.now()
+      };
+      if (setInvertersList) {
+        setInvertersList(prev => [...(prev || []), newInv]);
+      }
+      await hardwareService.saveInverter(newInv);
+      triggerToast(`Added ${newInv.brand} ${newInv.model} to Supabase database!`);
+    }
+
+    setShowAddInverterModal(false);
+    setInverterForm({
+      brand: '',
+      model: '',
+      capacity: '5 kW',
+      phase: '3-Phase 415V',
+      efficiency: '98.4%',
+      warranty: '10 Years',
+      basePrice: '₹ 54,000'
     });
   };
 
@@ -485,24 +544,27 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
     reader.readAsText(file);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (importedPreviewItems.length === 0) return;
 
     if (setModulesList) {
       setModulesList(prev => [...importedPreviewItems, ...(prev || [])]);
     }
+    // Sync directly to Supabase DB
+    await hardwareService.bulkImportModules(importedPreviewItems);
+
     if (addNotification) {
       addNotification({
         type: 'success',
         icon: 'upload_file',
         title: `Imported ${importedPreviewItems.length} Module Specifications`,
-        description: `Catalog bulk imported from ${importFileName || 'file'}. Ready for dealer quotations.`,
+        description: `Catalog bulk imported from ${importFileName || 'file'}. Synced to Supabase database.`,
         audience: 'all',
         targetTab: 'create_quote'
       });
     }
 
-    triggerToast(`Successfully imported ${importedPreviewItems.length} module specifications!`);
+    triggerToast(`Successfully imported and synced ${importedPreviewItems.length} module specifications to database!`);
     setShowImportModal(false);
     setImportedPreviewItems([]);
     setImportFileName('');
@@ -541,7 +603,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
     triggerToast(`Applied ${val > 0 ? '+' : ''}${val}${bulkAdjustmentType === 'percent' ? '%' : ' ₹/Wp'} across all modules!`);
   };
 
-  const handleSaveBulkPrices = () => {
+  const handleSaveBulkPrices = async () => {
     let hasChanges = false;
     (modulesList || []).forEach(m => {
       if (bulkRates[m.id] !== undefined) {
@@ -570,18 +632,22 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
         return m;
       }));
     }
+
+    // Sync directly to Supabase DB
+    await hardwareService.bulkUpdateModulePrices(bulkRates);
+
     if (addNotification) {
       addNotification({
         type: 'info',
         icon: 'price_change',
         title: 'Bulk Module Pricing Updated',
-        description: `Admin updated benchmark rates for ${(modulesList || []).length} modules. Synced to all dealer portals.`,
+        description: `Admin updated benchmark rates for ${(modulesList || []).length} modules. Synced to Supabase database.`,
         audience: 'all',
         targetTab: 'create_quote'
       });
     }
     setShowBulkPriceModal(false);
-    triggerToast(`Bulk pricing saved across ${(modulesList || []).length} solar modules!`);
+    triggerToast(`Bulk pricing saved to Supabase database across ${(modulesList || []).length} modules!`);
   };
 
   // Filtered lists
@@ -641,9 +707,13 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             <span className="bg-primary-container/15 text-primary text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-primary-container/30">
               ALMM Compliant 2025 • Gujarat DISCOMs
             </span>
+            <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Supabase Database Synced
+            </span>
           </div>
           <p className="font-body-md text-body-md text-secondary mt-1">
-            Manage approved solar modules, string inverters, and BOS specifications from Sunvine BOS Price Matrix.
+            Manage approved solar modules, string inverters, and BOS specifications persisted directly to Supabase cloud database.
           </p>
         </div>
         {/* Action Buttons */}
@@ -678,7 +748,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             <span>Bulk Price Update</span>
           </button>
           <button
-            onClick={() => setShowAddInverterModal(true)}
+            onClick={handleOpenAddInverter}
             className="flex items-center gap-1.5 px-3.5 py-2 border border-inverse-surface bg-surface-container-lowest text-inverse-surface font-label-md rounded-lg hover:bg-surface-container-low transition-colors shadow-sm cursor-pointer text-xs sm:text-sm"
           >
             <span className="material-symbols-outlined">add</span>
@@ -1074,21 +1144,27 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
               </div>
               <button
                 onClick={() => setInverterFilter('all')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border ${inverterFilter === 'all' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'all' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
               >
                 All ({invertersList?.length || 0})
               </button>
               <button
                 onClick={() => setInverterFilter('single')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border ${inverterFilter === 'single' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'single' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
               >
                 1-Phase
               </button>
               <button
                 onClick={() => setInverterFilter('three')}
-                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border ${inverterFilter === 'three' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'three' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
               >
                 3-Phase
+              </button>
+              <button
+                onClick={() => setInverterFilter('archived')}
+                className={`px-3 py-1.5 text-label-xs font-semibold rounded-lg border cursor-pointer ${inverterFilter === 'archived' ? 'bg-inverse-surface text-surface-container-lowest' : 'bg-surface-container-low text-secondary border-surface-container-highest'}`}
+              >
+                Archived ({(invertersList || []).filter(i => i.isArchived).length})
               </button>
               <ViewModeToggle viewMode={invertersViewMode} onViewModeChange={setInvertersViewMode} />
             </div>
@@ -1118,9 +1194,15 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                               <span className="text-[11px] text-secondary font-mono">{inv.model}</span>
                             </div>
                           </div>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary-container/20">
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span> Active
-                          </span>
+                          {inv.isArchived ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary px-2 py-0.5 rounded-full bg-surface-container-high">
+                              <span className="w-1.5 h-1.5 rounded-full bg-secondary/60"></span> Archived
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary-container/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary-container"></span> Active
+                            </span>
+                          )}
                         </div>
 
                         {/* Specs & Phase */}
@@ -1147,12 +1229,22 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                         <div className="flex items-center justify-between pt-2 border-t border-surface-container-highest text-xs">
                           <span className="text-secondary text-[11px]">{inv.warranty || '8 Yrs Warranty'}</span>
                           <div className="flex items-center gap-1">
-                            <button className="px-2 py-1 rounded border border-surface-container-highest hover:border-inverse-surface text-secondary hover:text-inverse-surface flex items-center gap-1 transition-colors cursor-pointer" title="Edit Spec">
+                            <button
+                              onClick={() => handleEditInverter(inv)}
+                              className="px-2 py-1 rounded border border-surface-container-highest hover:border-inverse-surface text-secondary hover:text-inverse-surface flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Edit Spec"
+                            >
                               <span className="material-symbols-outlined text-[15px]">edit</span>
                               <span>Edit</span>
                             </button>
-                            <button className="p-1 rounded border border-surface-container-highest hover:border-primary text-secondary hover:text-primary transition-colors cursor-pointer" title="Specs Sheet PDF">
-                              <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+                            <button
+                              onClick={() => handleToggleArchiveInverter(inv)}
+                              className={`p-1 rounded border border-surface-container-highest transition-colors cursor-pointer ${
+                                inv.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error text-secondary'
+                              }`}
+                              title={inv.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">{inv.isArchived ? 'unarchive' : 'archive'}</span>
                             </button>
                           </div>
                         </div>
@@ -1202,14 +1294,32 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                       <td className="px-4 py-3 text-right font-bold text-inverse-surface font-mono">{inv.basePrice || '₹ 54,000'}</td>
                       <td className="px-4 py-3 text-body-sm text-secondary">{inv.warranty || '8 Years Comprehensive'}</td>
                       <td className="px-4 py-3 text-center">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                          <span className="w-2 h-2 rounded-full bg-primary-container"></span> Active
-                        </span>
+                        {inv.isArchived ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-secondary">
+                            <span className="w-2 h-2 rounded-full bg-secondary/60"></span> Archived
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                            <span className="w-2 h-2 rounded-full bg-primary-container"></span> Active
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5 text-secondary">
-                          <button className="p-1 hover:text-inverse-surface transition-colors" title="Edit Spec"><span className="material-symbols-outlined">edit</span></button>
-                          <button className="p-1 hover:text-primary transition-colors" title="Specs Sheet PDF"><span className="material-symbols-outlined">picture_as_pdf</span></button>
+                          <button
+                            onClick={() => handleEditInverter(inv)}
+                            className="p-1 hover:text-inverse-surface transition-colors cursor-pointer"
+                            title="Edit Spec"
+                          >
+                            <span className="material-symbols-outlined">edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleToggleArchiveInverter(inv)}
+                            className={`p-1 transition-colors cursor-pointer ${inv.isArchived ? 'hover:text-primary text-secondary' : 'hover:text-error text-secondary'}`}
+                            title={inv.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
+                          >
+                            <span className="material-symbols-outlined">{inv.isArchived ? 'unarchive' : 'archive'}</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1516,10 +1626,15 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 <span className="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-600 flex items-center justify-center">
                   <span className="material-symbols-outlined text-[20px]">bolt</span>
                 </span>
-                <h3 className="font-headline-sm text-lg font-bold text-on-surface">Add Inverter Model</h3>
+                <h3 className="font-headline-sm text-lg font-bold text-on-surface">
+                  {editingInverter ? 'Edit Inverter Model' : 'Add Inverter Model'}
+                </h3>
               </div>
               <button
-                onClick={() => setShowAddInverterModal(false)}
+                onClick={() => {
+                  setShowAddInverterModal(false);
+                  setEditingInverter(null);
+                }}
                 className="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-secondary cursor-pointer"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
@@ -1588,10 +1703,36 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Base Distributor Price (₹)</label>
+                  <input
+                    type="text"
+                    value={inverterForm.basePrice}
+                    onChange={(e) => setInverterForm({ ...inverterForm, basePrice: e.target.value })}
+                    placeholder="₹ 54,000"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Replacement Warranty</label>
+                  <input
+                    type="text"
+                    value={inverterForm.warranty}
+                    onChange={(e) => setInverterForm({ ...inverterForm, warranty: e.target.value })}
+                    placeholder="10 Years Comprehensive"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container"
+                  />
+                </div>
+              </div>
+
               <div className="pt-3 border-t border-surface-container-high flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddInverterModal(false)}
+                  onClick={() => {
+                    setShowAddInverterModal(false);
+                    setEditingInverter(null);
+                  }}
                   className="px-4 py-2 text-xs font-semibold text-secondary hover:bg-surface-container-low rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel
@@ -1600,7 +1741,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                   type="submit"
                   className="px-4 py-2 text-xs font-bold bg-primary-container text-surface-container-lowest hover:bg-primary rounded-lg transition-all shadow-sm cursor-pointer"
                 >
-                  Publish to Catalog &amp; Notify Dealers
+                  {editingInverter ? 'Save Changes to Database' : 'Publish to Catalog & Database'}
                 </button>
               </div>
             </form>

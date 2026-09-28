@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
+import { hardwareService } from '../../services/hardwareService';
 
 const DEFAULT_INVERTER_BENCHMARK_MATRIX = [
   { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
@@ -531,11 +532,14 @@ ${origin}/?tab=pricing_master
     triggerToast(`Added ${created.brand} ${created.model} - "NEW" badge active for dealers!`);
   };
 
-  const handleDeleteModule = (idx) => {
+  const handleDeleteModule = async (idx) => {
     const mod = modulesList[idx];
     if (window.confirm(`Remove ${mod.brand} ${mod.model} from master catalog?`)) {
       setModulesList(prev => prev.filter((_, i) => i !== idx));
-      triggerToast(`Removed ${mod.brand} ${mod.model}`);
+      if (mod.id) {
+        await hardwareService.deleteModule(mod.id);
+      }
+      triggerToast(`Removed ${mod.brand} ${mod.model} from catalog and database`);
     }
   };
 
@@ -559,11 +563,14 @@ ${origin}/?tab=pricing_master
     triggerToast(`Added ${created.brand} ${created.model} - "NEW" badge active for dealers!`);
   };
 
-  const handleDeleteInverter = (idx) => {
+  const handleDeleteInverter = async (idx) => {
     const inv = invertersList[idx];
     if (window.confirm(`Remove ${inv.brand} ${inv.model} from master catalog?`)) {
       setInvertersList(prev => prev.filter((_, i) => i !== idx));
-      triggerToast(`Removed ${inv.brand} ${inv.model}`);
+      if (inv.id) {
+        await hardwareService.deleteInverter(inv.id);
+      }
+      triggerToast(`Removed ${inv.brand} ${inv.model} from catalog and database`);
     }
   };
 

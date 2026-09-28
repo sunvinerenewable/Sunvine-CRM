@@ -30,6 +30,8 @@ import {
   calculateDealerPerformance,
   calculateOverallBusinessMetrics
 } from '../utils/performanceAnalytics';
+import { hardwareService } from '../services/hardwareService';
+import { quotationService } from '../services/quotationService';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
@@ -239,7 +241,7 @@ const safeSetItem = (key, value) => {
     safeSetItem('sunvine_governance_settings', governanceSettings);
   }, [governanceSettings]);
 
-  // Solar Hardware Catalogs (from PDF)
+  // Solar Hardware Catalogs (Primary: Supabase DB, with offline cache fallback)
   const [modulesList, setModulesList] = useState(() => {
     if (!isDbUpToDate) return DEFAULT_MODULES;
     return safeJsonParse('sunvine_modules', DEFAULT_MODULES);
@@ -249,6 +251,45 @@ const safeSetItem = (key, value) => {
     if (!isDbUpToDate) return DEFAULT_INVERTERS;
     return safeJsonParse('sunvine_inverters', DEFAULT_INVERTERS);
   });
+
+  const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
+  const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(false);
+
+  // Live Supabase Hardware Sync (SR-45)
+  useEffect(() => {
+    let isMounted = true;
+    const loadHardwareFromSupabase = async () => {
+      setIsHardwareDbSyncing(true);
+      try {
+        const [dbModules, dbInverters] = await Promise.all([
+          hardwareService.getAllModules(),
+          hardwareService.getAllInverters()
+        ]);
+
+        if (isMounted) {
+          if (dbModules && Array.isArray(dbModules) && dbModules.length > 0) {
+            setModulesList(dbModules);
+            setIsHardwareDbConnected(true);
+          } else {
+            // Seed Supabase if tables are newly created and empty
+            hardwareService.seedInitialHardwareIfEmpty(DEFAULT_MODULES, DEFAULT_INVERTERS);
+          }
+
+          if (dbInverters && Array.isArray(dbInverters) && dbInverters.length > 0) {
+            setInvertersList(dbInverters);
+            setIsHardwareDbConnected(true);
+          }
+        }
+      } catch (err) {
+        console.warn('[AppContext] Supabase hardware sync fallback to local cache:', err);
+      } finally {
+        if (isMounted) setIsHardwareDbSyncing(false);
+      }
+    };
+
+    loadHardwareFromSupabase();
+    return () => { isMounted = false; };
+  }, []);
 
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
@@ -573,10 +614,10 @@ const safeSetItem = (key, value) => {
     }));
   };
 
-  const addNewModule = (newModule) => {
+  const addNewModule = async (newModule) => {
     const brand = newModule.brand?.trim() || 'Custom';
     const model = newModule.model?.trim() || 'Solar Module';
-    const id = `mod-${Date.now()}`;
+    const id = newModule.id || `mod-${Date.now()}`;
     const moduleEntry = {
       id,
       brand,
@@ -586,6 +627,7 @@ const safeSetItem = (key, value) => {
       efficiency: newModule.efficiency || '22.0%',
       ratePerWp: newModule.ratePerWp ? (typeof newModule.ratePerWp === 'number' ? `₹ ${newModule.ratePerWp.toFixed(2)}/Wp` : newModule.ratePerWp) : '₹ 19.50/Wp',
       warranty: newModule.warranty || '30 Yrs',
+      dimensions: newModule.dimensions || '2278 × 1134 × 30 mm | 28 kg',
       isNew: true,
       createdAt: Date.now()
     };
@@ -597,13 +639,15 @@ const safeSetItem = (key, value) => {
       description: `Admin introduced ${brand} ${model} (${moduleEntry.wattage}W) to dealer catalogs.`,
       audience: 'all'
     });
+    // Sync directly to Supabase DB
+    await hardwareService.saveModule(moduleEntry);
     return moduleEntry;
   };
 
-  const addNewInverter = (newInverter) => {
+  const addNewInverter = async (newInverter) => {
     const brand = newInverter.brand?.trim() || 'Custom';
     const model = newInverter.model?.trim() || 'Solar Inverter';
-    const id = `inv-${Date.now()}`;
+    const id = newInverter.id || `inv-${Date.now()}`;
     const capStr = newInverter.capacity ? (String(newInverter.capacity).toLowerCase().includes('kw') ? newInverter.capacity : `${newInverter.capacity} kW`) : '5.0 kW';
     const inverterEntry = {
       id,
@@ -614,6 +658,7 @@ const safeSetItem = (key, value) => {
       phase: newInverter.phase || '1-Phase 230V / 2 MPPT',
       efficiency: newInverter.efficiency || '98.5%',
       warranty: newInverter.warranty || '8 Years',
+      basePrice: newInverter.basePrice || '₹ 54,000',
       cloud: newInverter.cloud || 'Integrated Wi-Fi',
       isNew: true,
       createdAt: Date.now()
@@ -626,6 +671,8 @@ const safeSetItem = (key, value) => {
       description: `Admin introduced ${brand} ${model} (${inverterEntry.capacity}) to dealer catalogs.`,
       audience: 'all'
     });
+    // Sync directly to Supabase DB
+    await hardwareService.saveInverter(inverterEntry);
     return inverterEntry;
   };
 
@@ -875,6 +922,8 @@ const safeSetItem = (key, value) => {
     const updated = [newQuote, ...quotations];
     setQuotations(updated);
     setPreviewQuotation(newQuote);
+    // Sync directly to Supabase DB
+    quotationService.saveQuotation(newQuote);
   };
 
   const updateQuotation = (updatedQuote) => {
@@ -887,6 +936,8 @@ const safeSetItem = (key, value) => {
     });
     setPreviewQuotation(updatedQuote);
     setEditingQuotation(null);
+    // Sync directly to Supabase DB
+    quotationService.saveQuotation(updatedQuote);
   };
 
   const startEditingQuotation = (quote) => {
@@ -907,7 +958,14 @@ const safeSetItem = (key, value) => {
   };
 
   const updateQuotationStatus = (id, newStatus) => {
-    setQuotations(prev => prev.map(q => q.id === id ? { ...q, status: newStatus } : q));
+    setQuotations(prev => {
+      const updated = prev.map(q => q.id === id ? { ...q, status: newStatus } : q);
+      const target = updated.find(q => q.id === id);
+      if (target) {
+        quotationService.saveQuotation(target);
+      }
+      return updated;
+    });
   };
 
   const addDealer = (newDealer) => {
@@ -1224,6 +1282,9 @@ const safeSetItem = (key, value) => {
         setModulesList,
         invertersList,
         setInvertersList,
+        isHardwareDbSyncing,
+        isHardwareDbConnected,
+        hardwareService,
         dealers,
         addDealer,
         updateDealer,
