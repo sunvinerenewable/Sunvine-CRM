@@ -94,6 +94,7 @@ export default function CreateQuotation() {
 
   // 2D Solar Panel Structure & Mounting Layout Studio
   const [showLayoutStudio, setShowLayoutStudio] = useState(false);
+  const [layoutStudioInitialTab, setLayoutStudioInitialTab] = useState('2d');
   const [isInlineLayoutOpen, setIsInlineLayoutOpen] = useState(false);
   const [selectedStructureLayout, setSelectedStructureLayout] = useState(() => {
     return initialSource?.structureLayout || null;
@@ -1050,12 +1051,25 @@ export default function CreateQuotation() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setShowLayoutStudio(true)}
+                      onClick={() => {
+                        setLayoutStudioInitialTab('2d');
+                        setShowLayoutStudio(true);
+                      }}
                       className="px-3.5 py-1.5 bg-[#6CBF3D] hover:bg-[#5ca633] text-[#0F1B2E] font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
                     >
                       <span className="material-symbols-outlined text-[16px]">open_in_full</span>
                       <span>Full 2D Studio ({moduleCount}P)</span>
                     </button>
+                    <div
+                      className="px-3 py-1.5 bg-white/5 border border-white/10 text-slate-400 font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-not-allowed select-none opacity-80 whitespace-nowrap"
+                      title="3D Realistic Rooftop Structure Engine — Coming Soon in Future Update"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-slate-400">view_in_ar</span>
+                      <span>3D Studio</span>
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                        Coming Soon
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1068,6 +1082,7 @@ export default function CreateQuotation() {
                       selectedLayoutId={selectedStructureLayout?.id}
                       initialRoofConfig={quotationRoofConfig}
                       onRoofConfigChange={handleUpdateRoofConfig}
+                      initialTab="2d"
                       onSelectLayout={(layout) => {
                         setSelectedStructureLayout(layout);
                         if (addToast) {
@@ -1086,7 +1101,7 @@ export default function CreateQuotation() {
             </div>
           </section>
 
-          {/* Full 2D Layout Studio Modal - Full Window Workspace */}
+          {/* Full 2D / 3D Layout Studio Modal - Full Window Workspace */}
           {showLayoutStudio && (
             <div className="fixed inset-0 z-50 w-screen h-screen bg-[#070D18] flex flex-col overflow-hidden animate-in fade-in duration-150">
               <div className="relative w-full h-full flex flex-col overflow-y-auto">
@@ -1096,6 +1111,7 @@ export default function CreateQuotation() {
                   selectedLayoutId={selectedStructureLayout?.id}
                   initialRoofConfig={quotationRoofConfig}
                   onRoofConfigChange={handleUpdateRoofConfig}
+                  initialTab={layoutStudioInitialTab}
                   onSelectLayout={(layout) => {
                     setSelectedStructureLayout(layout);
                     if (addToast) {
