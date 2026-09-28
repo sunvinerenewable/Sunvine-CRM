@@ -32,6 +32,8 @@ import {
 } from '../utils/performanceAnalytics';
 import { hardwareService } from '../services/hardwareService';
 import { quotationService } from '../services/quotationService';
+import { pricingService } from '../services/pricingService';
+import { generateFieldBOM } from '../data/standardBomData';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
@@ -346,6 +348,73 @@ const safeSetItem = (key, value) => {
     if (!isDbUpToDate) return DEFAULT_CAPACITY_BOM;
     return safeJsonParse('sunvine_capacity_bom', DEFAULT_CAPACITY_BOM);
   });
+
+  // Reusable Solar BOM Kits & Presets (Field-Grade)
+  const [kitsPresets, setKitsPresets] = useState(() => {
+    return safeJsonParse('sunvine_solar_kits_presets_v2', [
+      {
+        id: 'kit-standard-3_3kw',
+        name: '3.3 kW Standard 6-Panel HDGI Kit (Field Sheet)',
+        capacityKw: 3.3,
+        createdBy: 'Sunvine HO',
+        creatorRole: 'admin',
+        items: generateFieldBOM({ kw: 3.3, panelWatt: 540, panelQuantity: 6, ratePerWp: 18.00 })
+      },
+      {
+        id: 'kit-standard-4_4kw',
+        name: '4.4 kW Standard 8-Panel HDGI Kit',
+        capacityKw: 4.4,
+        createdBy: 'Sunvine HO',
+        creatorRole: 'admin',
+        items: generateFieldBOM({ kw: 4.4, panelWatt: 550, panelQuantity: 8, ratePerWp: 18.00 })
+      },
+      {
+        id: 'kit-standard-5_5kw',
+        name: '5.5 kW 10-Panel High-Rise HDGI Kit',
+        capacityKw: 5.5,
+        createdBy: 'Sunvine HO',
+        creatorRole: 'admin',
+        items: generateFieldBOM({ kw: 5.5, panelWatt: 550, panelQuantity: 10, ratePerWp: 18.00 })
+      }
+    ]);
+  });
+
+  useEffect(() => {
+    safeSetItem('sunvine_solar_kits_presets_v2', kitsPresets);
+  }, [kitsPresets]);
+
+  // Load kits & dealer custom prices from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const remoteKits = await pricingService.getKitsPresets();
+        if (isMounted && remoteKits && remoteKits.length > 0) {
+          setKitsPresets(prev => {
+            const merged = [...remoteKits];
+            prev.forEach(p => {
+              if (!merged.some(m => m.id === p.id)) merged.push(p);
+            });
+            return merged;
+          });
+        }
+      } catch (_) {}
+
+      try {
+        const remotePricings = await pricingService.getAllDealerPricings();
+        if (isMounted && remotePricings && Object.keys(remotePricings).length > 0) {
+          setDealers(prev => prev.map(d => {
+            const remoteCfg = remotePricings[d.id] || remotePricings[d.dealerCode];
+            if (remoteCfg) {
+              return { ...d, pricingConfig: { ...(d.pricingConfig || {}), ...remoteCfg } };
+            }
+            return d;
+          }));
+        }
+      } catch (_) {}
+    })();
+    return () => { isMounted = false; };
+  }, []);
 
   // Catalog items viewed by dealer (for "NEW" badge management)
   const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
@@ -1038,12 +1107,59 @@ const safeSetItem = (key, value) => {
       }));
     }
 
+    // Persist to Supabase / offline cache
+    pricingService.saveDealerPricing(id, pricingConfig).catch(err => {
+      console.warn('[AppContext] saveDealerPricing error:', err);
+    });
+
     logActivity({
       action: 'UPDATE_DEALER_PRICING',
       module: 'DEALER_MANAGEMENT',
       recordId: id,
       details: `Custom pricing configured: Mode=${pricingConfig.pricingMode || 'standard'}, Wp=₹${pricingConfig.customBaseRatePerWp || 'N/A'}, kW=₹${pricingConfig.customBaseRatePerKw || 'N/A'}`
     });
+  };
+
+  const saveKitPreset = async (kitData) => {
+    const newKit = {
+      ...kitData,
+      id: kitData.id || `kit-${Date.now()}`,
+      createdAt: kitData.createdAt || new Date().toISOString()
+    };
+    setKitsPresets(prev => {
+      const idx = prev.findIndex(k => k.id === newKit.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newKit;
+        return copy;
+      }
+      return [newKit, ...prev];
+    });
+    try {
+      await pricingService.saveKitPreset(newKit);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync kit to Supabase:', e);
+    }
+    return newKit;
+  };
+
+  const deleteKitPreset = async (kitId) => {
+    setKitsPresets(prev => prev.filter(k => k.id !== kitId));
+    try {
+      await pricingService.deleteKitPreset(kitId);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete kit from Supabase:', e);
+    }
+  };
+
+  const getAccessibleDealers = () => {
+    if (role === 'admin') return dealers;
+    if (role === 'staff') {
+      const staffId = currentStaff?.id || 'STF-001';
+      return dealers.filter(d => (d.assignedStaffId === staffId) || (!d.assignedStaffId && staffId === 'STF-001'));
+    }
+    if (currentDealer) return [currentDealer];
+    return dealers;
   };
 
   const updatePricingMaster = (newMaster) => {
@@ -1336,6 +1452,10 @@ const safeSetItem = (key, value) => {
         updateDealerMarginCap,
         updateDealerPassword,
         updateDealerPricing,
+        getAccessibleDealers,
+        kitsPresets,
+        saveKitPreset,
+        deleteKitPreset,
         quotations,
         addQuotation,
         updateQuotation,

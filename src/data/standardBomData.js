@@ -406,3 +406,160 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
     totalBoSCost
   };
 }
+
+// =====================================================================
+// SUNVINE FIELD BOM ENGINE (EXACT MATCH FOR GUJARAT ROOFTOP EXCEL FORMAT)
+// 5% GST on Solar Panels & Inverters, 18% GST on all BOS & Materials
+// =====================================================================
+
+export const FIELD_BOM_MASTER_CATALOG = [
+  { id: 'gi_pipe_40x40', name: '40*40 Hot Dip GI Pipe', category: 'structure', unit: 'NOS', defaultRate: 1420, gstRate: 18 },
+  { id: 'gi_pipe_60x40', name: '60*40 Hot Dip GI Pipe', category: 'structure', unit: 'NOS', defaultRate: 1785, gstRate: 18 },
+  { id: 'stud_12x2m', name: 'STUD 12*2MTR (Threaded Stud)', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
+  { id: 'ms_angels', name: 'MS Angles (Structural Bracing)', category: 'structure', unit: 'NOS', defaultRate: 35, gstRate: 18 },
+  { id: 'fastner', name: 'Fastener Anchor Bolts (M10/M12)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
+  { id: 'ms_j_bolt', name: 'MS J-Bolt (40*40)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
+  { id: 'mc4_connector', name: 'MC4 Solar Connectors (M+F Pair)', category: 'electrical', unit: 'NOS', defaultRate: 35, gstRate: 18 },
+  { id: 'pvc_pipe_25mm', name: '25mm Heavy PVC Conduit Pipe', category: 'conduits', unit: 'NOS', defaultRate: 45, gstRate: 18 },
+  { id: 'pvc_tee_25mm', name: 'PVC Tee 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 5, gstRate: 18 },
+  { id: 'pvc_elbow_25mm', name: 'PVC Elbow 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 6, gstRate: 18 },
+  { id: 'shadel_clamp', name: 'Shadel / Saddle Clamps', category: 'conduits', unit: 'PKT', defaultRate: 120, gstRate: 18 },
+  { id: 'acdb_dcdb_combo', name: 'ASG ACDB / DCDB Combo (1kW - 6kW)', category: 'electrical', unit: 'SET', defaultRate: 1650, gstRate: 18 },
+  { id: 'dc_wire_4sqmm', name: 'DC 4 Sq.mm 1-Core Red/Black (EN Type)', category: 'cables', unit: 'MTR', defaultRate: 60, gstRate: 18 },
+  { id: 'ac_wire_4sqmm', name: 'AC Cable 4 Sq.mm Copper (Red/Black)', category: 'cables', unit: 'MTR', defaultRate: 58, gstRate: 18 },
+  { id: 'la_cable', name: 'LA Cable 1-Core 16 Sq.mm (Down Conductor)', category: 'cables', unit: 'MTR', defaultRate: 20, gstRate: 18 },
+  { id: 'earthing_cable', name: 'Earthing Cable 4 Sq.mm (Reputed Make)', category: 'cables', unit: 'MTR', defaultRate: 35, gstRate: 18 },
+  { id: 'earthing_kit', name: 'Chemical Earthing Kit (Electrode + BFC)', category: 'electrical', unit: 'NOS', defaultRate: 650, gstRate: 18 },
+  { id: 'foundation_bag', name: 'RCC Foundation Bag / Grouting', category: 'structure', unit: 'NOS', defaultRate: 120, gstRate: 18 },
+  { id: 'walkway', name: 'Rooftop Safety Walkway Set', category: 'structure', unit: 'SET', defaultRate: 420, gstRate: 18 },
+  { id: 'zinc_spray', name: 'Zinc Spray Can (200ml Anti-Rust)', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
+  { id: 'nut_washer', name: 'SS Nut & Washers (Grade 8.8)', category: 'structure', unit: 'NOS', defaultRate: 2.50, gstRate: 18 },
+  { id: 'transportation', name: 'Transportation & Doorstep Freight', category: 'logistics', unit: 'SET', defaultRate: 1000, gstRate: 0 }
+];
+
+export function generateFieldBOM({
+  kw = 3.3,
+  panelBrand = 'Waaree Energies',
+  panelWatt = 540,
+  panelQuantity = 6,
+  ratePerWp = 18.00,
+  inverterModel = 'Sunvine Solaryaan 5.0G',
+  inverterPrice = 14400,
+  customBomRates = {}
+}) {
+  const panelPricePerPiece = Math.round(panelWatt * ratePerWp);
+  
+  // 1. Major Equipment (5% GST)
+  const panelItem = {
+    id: 'solar_panel',
+    name: `SOLAR PANEL (${panelBrand.toUpperCase()} ${panelWatt}WP X ${panelQuantity} PANEL)`,
+    category: 'panel',
+    unit: 'NOS',
+    qty: panelQuantity,
+    rate: panelPricePerPiece,
+    gstRate: 5,
+    isMajorEquipment: true
+  };
+
+  const inverterItem = {
+    id: 'solar_inverter',
+    name: `SOLAR INVERTER (${inverterModel.toUpperCase()})`,
+    category: 'inverter',
+    unit: 'NOS',
+    qty: 1,
+    rate: Number(inverterPrice) || (kw <= 3.6 ? 14400 : kw <= 5.5 ? 24500 : 38000),
+    gstRate: 5,
+    isMajorEquipment: true
+  };
+
+  // 2. Standard Materials & BOS (18% GST) calibrated to panel count
+  const pCount = Math.max(1, panelQuantity);
+  const bosItems = [
+    { id: 'gi_pipe_40x40', name: '40*40 hot dip pipe', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: customBomRates.gi_pipe_40x40 || 1420, gstRate: 18 },
+    { id: 'gi_pipe_60x40', name: '60*40 HOT DIP GIPIPE', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.67)), rate: customBomRates.gi_pipe_60x40 || 1785, gstRate: 18 },
+    { id: 'stud_12x2m', name: 'STUD 12*2MTR', category: 'structure', unit: 'NOS', qty: Math.max(1, Math.round(pCount * 0.33)), rate: customBomRates.stud_12x2m || 140, gstRate: 18 },
+    { id: 'ms_angels', name: 'MS ANGELS', category: 'structure', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.33)), rate: customBomRates.ms_angels || 35, gstRate: 18 },
+    { id: 'fastner', name: 'FASTNER', category: 'structure', unit: 'NOS', qty: Math.max(8, Math.round(pCount * 2.67)), rate: customBomRates.fastner || 15, gstRate: 18 },
+    { id: 'ms_j_bolt', name: 'MS J BOLT(40*40)', category: 'structure', unit: 'NOS', qty: Math.max(12, pCount * 4), rate: customBomRates.ms_j_bolt || 15, gstRate: 18 },
+    { id: 'mc4_connector', name: 'mc4 connector', category: 'electrical', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.33)), rate: customBomRates.mc4_connector || 35, gstRate: 18 },
+    { id: 'pvc_pipe_25mm', name: '25 PVC PIPE', category: 'conduits', unit: 'NOS', qty: Math.max(6, Math.round(pCount * 1.67)), rate: customBomRates.pvc_pipe_25mm || 45, gstRate: 18 },
+    { id: 'pvc_tee_25mm', name: 'PVC TEE 25 MM POLYCAB', category: 'conduits', unit: 'PSC', qty: Math.max(4, Math.round(pCount * 1.17)), rate: customBomRates.pvc_tee_25mm || 5, gstRate: 18 },
+    { id: 'pvc_elbow_25mm', name: 'PVC ELBOW 25MM POLYCAB', category: 'conduits', unit: 'PSC', qty: Math.max(12, Math.round(pCount * 4.17)), rate: customBomRates.pvc_elbow_25mm || 6, gstRate: 18 },
+    { id: 'shadel_clamp', name: 'SHADEL', category: 'conduits', unit: 'PKT', qty: 1, rate: customBomRates.shadel_clamp || 120, gstRate: 18 },
+    { id: 'acdb_dcdb_combo', name: 'ASG ACDB 1KW - 6KW', category: 'electrical', unit: 'SET', qty: 1, rate: customBomRates.acdb_dcdb_combo || 1650, gstRate: 18 },
+    { id: 'dc_wire_4sqmm', name: 'DC 4 SQMM 1 CORE RED/BLACK EN TYPE', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 8.33)), rate: customBomRates.dc_wire_4sqmm || 60, gstRate: 18 },
+    { id: 'ac_wire_4sqmm', name: 'AC CABLE 4SQ MM', category: 'cables', unit: 'MTR', qty: Math.max(10, Math.round(pCount * 1.67)), rate: customBomRates.ac_wire_4sqmm || 58, gstRate: 18 },
+    { id: 'la_cable', name: 'LA CABLE', category: 'cables', unit: 'MTR', qty: 25, rate: customBomRates.la_cable || 20, gstRate: 18 },
+    { id: 'earthing_cable', name: 'EARTHING CABLE 4SQ MM (REPUTED MAKE)', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 6.67)), rate: customBomRates.earthing_cable || 35, gstRate: 18 },
+    { id: 'earthing_kit', name: 'EARTHING KIT', category: 'electrical', unit: 'NOS', qty: Math.max(1, kw > 5 ? 2 : 1), rate: customBomRates.earthing_kit || 650, gstRate: 18 },
+    { id: 'foundation_bag', name: 'FOUNDATION BAG', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: customBomRates.foundation_bag || 120, gstRate: 18 },
+    { id: 'walkway', name: 'WALKWAY', category: 'structure', unit: 'SET', qty: 0, rate: customBomRates.walkway || 420, gstRate: 18 },
+    { id: 'zinc_spray', name: 'ZINK SPRAY(200ML)', category: 'structure', unit: 'NOS', qty: 1, rate: customBomRates.zinc_spray || 140, gstRate: 18 },
+    { id: 'nut_washer', name: 'NUT WASHER', category: 'structure', unit: 'NOS', qty: Math.max(16, pCount * 4), rate: customBomRates.nut_washer || 2.50, gstRate: 18 },
+    { id: 'transportation', name: 'TRANSPORTATION', category: 'logistics', unit: 'SET', qty: 1, rate: customBomRates.transportation || 1000, gstRate: 0 }
+  ];
+
+  return [
+    ...bosItems.slice(0, 11),
+    panelItem,
+    bosItems[11], // ACDB
+    inverterItem,
+    ...bosItems.slice(12)
+  ];
+}
+
+export function calculateFieldBOMTotals(items = []) {
+  let subtotal5GstBase = 0;
+  let gst5Total = 0;
+  let subtotal18GstBase = 0;
+  let gst18Total = 0;
+  let transportTotal = 0;
+  let grossTurnkeyCost = 0;
+
+  const calculatedItems = (items || []).map((item, idx) => {
+    const qty = Number(item.qty) || 0;
+    const rate = Number(item.rate) || 0;
+    const gstRate = Number(item.gstRate !== undefined ? item.gstRate : 18);
+    const baseAmount = Math.round(qty * rate);
+    const gstAmount = Math.round(baseAmount * (gstRate / 100));
+    const totalWithGst = baseAmount + gstAmount;
+
+    if (gstRate === 5) {
+      subtotal5GstBase += baseAmount;
+      gst5Total += gstAmount;
+    } else if (gstRate === 18) {
+      subtotal18GstBase += baseAmount;
+      gst18Total += gstAmount;
+    } else {
+      transportTotal += baseAmount;
+    }
+
+    grossTurnkeyCost += totalWithGst;
+
+    return {
+      ...item,
+      srNo: idx + 1,
+      qty,
+      rate,
+      gstRate,
+      baseAmount,
+      gstAmount,
+      totalWithGst
+    };
+  });
+
+  const totalGstAmount = gst5Total + gst18Total;
+  const totalTaxableBase = subtotal5GstBase + subtotal18GstBase + transportTotal;
+
+  return {
+    calculatedItems,
+    subtotal5GstBase,
+    gst5Total,
+    subtotal18GstBase,
+    gst18Total,
+    transportTotal,
+    totalTaxableBase,
+    totalGstAmount,
+    grossTurnkeyCost
+  };
+}
