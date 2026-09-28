@@ -1024,12 +1024,20 @@ export default function CreateQuotation() {
                           Coming Soon
                         </span>
                       </div>
-                      <p className="text-xs text-slate-300 mt-0.5">
-                        Active Layout: <span className="text-[#6CBF3D] font-bold">{selectedStructureLayout?.name || `2 Rows × 3 Columns (3×2 Khadi Grid)`}</span>
-                        <span className="text-amber-400 font-bold ml-2">
-                          • J-Bolts: {selectedStructureLayout?.bom?.jBoltsCount || moduleCount * 4} Pcs
-                        </span>
-                      </p>
+                      {selectedStructureLayout?.name ? (
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Active Layout: <span className="text-[#6CBF3D] font-bold">{selectedStructureLayout.name}</span>
+                          {selectedStructureLayout.bom?.jBoltsCount && (
+                            <span className="text-amber-400 font-bold ml-2">
+                              • J-Bolts: {selectedStructureLayout.bom.jBoltsCount} Pcs
+                            </span>
+                          )}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Interactive rooftop structure mounting &amp; layout visualizer will be enabled in a future update.
+                        </p>
+                      )}
                     </div>
                   </div>
 
