@@ -14,519 +14,593 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
 
   const {
     id = 'SV-2026-Q801',
-    date = '17-08-2026',
-    customerName = 'MIRANA TECHNOCAST PVT.LTD.',
-    systemCapacityKW = 280.20,
-    solarModule = '600 WP',
-    moduleCount = 467,
-    pvModuleSize = '4 * 8',
-    inverterCapacity = '125 KW',
-    inverterCount = '2 NOS',
-    inverterType = '',
-    baseRatePerKW = 24000,
+    date = new Date().toLocaleDateString('en-GB'),
+    customerName = 'Valued Customer',
+    customerPhone = '',
+    location = 'Rajkot, Gujarat',
+    city = 'Rajkot',
+    systemCapacityKW,
+    capacityKW,
+    capacity,
+    solarModule = '585W TOPCon Bifacial',
+    moduleWattage,
+    moduleCount,
+    pvModuleSize = '2278 × 1134 × 30 mm',
+    inverterCapacity,
+    inverterCount = '1 NOS',
+    inverterType = 'Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)',
+    baseRatePerKW = 59800,
     dealerMarginPerKW = 0,
-    discomMeterCharge = 'Extra',
-    gedaRegistrationCharge = 'Including',
-    meterTestingCharge = 'CUSTOMER SCOPE',
-    gstPercentage = 8.9,
-    grandTotalCustomer = 6724800,
+    dealerName,
+    isDirectCompanyQuote,
+    projectType = 'Residential',
     multiBrandComparison = false,
     multiBrandPackages = null,
     selectedModuleMake = '',
     selectedInverterMake = '',
+    coverImage,
+    customCoverUrl
   } = quotation;
 
-  // Resolve standard engineering BOM for this kW
-  const resolvedBom = resolveCapacityBom(systemCapacityKW);
+  // Resolve numerical capacity and dimensions
+  const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(2));
+  const rawWattMatch = (solarModule || '').match(/(\d{3})\s*W/i);
+  const resolvedWatt = Number(moduleWattage || (rawWattMatch ? rawWattMatch[1] : 585));
+  const resolvedCount = Number(moduleCount || Math.ceil((resolvedCapKW * 1000) / resolvedWatt) || 6);
+  const resolvedArea = Math.round(resolvedCapKW * 64);
+
+  const effectiveModuleMake = selectedModuleMake || (solarModule ? solarModule.split(' ')[0] : 'WAAREE');
+  const effectiveInverterMake = selectedInverterMake || (inverterType ? inverterType.split(' ')[0] : 'SOLARYAAN');
+  const resolvedInverterCap = inverterCapacity || `${resolvedCapKW} kW`;
+
+  // Standard engineering BOM for this capacity
+  const resolvedBom = resolveCapacityBom(resolvedCapKW);
   const bomQtyMap = (resolvedBom?.items || []).reduce((acc, i) => {
     acc[i.id] = i.quantity;
     return acc;
   }, {});
 
-  const effectiveModuleMake = selectedModuleMake || (solarModule ? solarModule.split(' ')[0] : 'WAAREE');
-  const effectiveInverterMake = selectedInverterMake || (inverterType ? inverterType.split(' ')[0] : 'SOLARYAAN');
-
-  // Calculate customer-facing rate (Dealer margin is strictly merged into rate or kept confidential)
+  // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
-  const calculatedGrandTotal = grandTotalCustomer || Math.round(customerRatePerKW * systemCapacityKW);
+  const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
+  const baseBeforeGst = quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
+  const gstAmount = quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+
+  const subsidyAmount = quotation.subsidyAmount !== undefined 
+    ? quotation.subsidyAmount 
+    : (projectType === 'Commercial' ? 0 : (resolvedCapKW <= 1 ? 30000 : resolvedCapKW <= 2 ? 60000 : 78000));
+  const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
+
+  // Line item breakdown
+  const transportCharge = quotation.transportCharge || 2500;
+  const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2500);
+  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (quotation.ratePerWp || 18.00));
+  const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
+  const structureCost = quotation.structureEstimatedCost || Math.round(resolvedCount * 3200);
+  const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
+
+  // Telemetry metrics
+  const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * 1440);
+  const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * 6.67);
+  const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '3.6');
+
+  const resolvedCoverSrc = customCoverUrl || coverImage || '/mirana_page1_original.jpg';
 
   return (
-    <div className="pdf-document font-sans text-[#1B1F23] bg-white print:bg-white select-none">
+    <div className="pdf-document font-sans text-[#0F1B2E] bg-white print:bg-white select-none">
       {/* ========================================================
           PAGE 1: DYNAMIC SUNVINE PROPOSAL COVER PAGE (SR-34)
           ======================================================== */}
       <div className={`pdf-page pdf-page-cover relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!p-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden items-center justify-center box-border ${activePage === 'all' || activePage === 1 ? 'flex' : 'hidden print:flex'}`}>
         <img
-          src="/mirana_page1_original.jpg"
+          src={resolvedCoverSrc}
           alt="Sunvine Quotation Cover"
           className="w-full h-full object-cover block select-none"
         />
       </div>
 
-
       {/* ========================================================
-          PAGE 2: SYSTEM DETAILS & PRICE SUMMARY (EXACT MIRANA PDF)
+          PAGE 2: EXECUTIVE COMMERCIAL PROPOSAL & SYSTEM SPECIFICATION
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-10 flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 2 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 2 ? 'flex' : 'hidden print:flex'}`}>
         <div>
-          {/* Top Right Logo */}
-          <div className="flex justify-end pb-3">
-            <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+          {/* Top Header with Corporate Identity */}
+          <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <div>
+                <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
+                  SUNVINE RENEWABLE ENERGY
+                </h1>
+                <p className="text-[10px] text-gray-600 font-medium mt-0.5">
+                  ISO 9001:2015 &amp; MNRE Registered Solar EPC Channel Partner • Gujarat
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="inline-block bg-[#0B2545] text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+                REF: {id}
+              </div>
+              <p className="text-[10px] text-gray-600 font-medium mt-0.5">
+                Date: <strong className="text-gray-900">{date}</strong> | Validity: <strong>15 Days</strong>
+              </p>
+            </div>
           </div>
 
-          {/* Heading */}
-          <div className="text-center my-2">
-            <h2 className="text-2xl font-black text-[#2E7D32] tracking-wide uppercase">
-              SYSTEM DETAILS
-            </h2>
-            <p className="text-xs italic text-gray-700 font-serif mt-0.5">
-              Empowering The Future with Solar Energy
-            </p>
+          {/* Color Gradient Accent Bar */}
+          <div className="h-1 w-full bg-gradient-to-r from-[#2E7D32] via-[#6CBF3D] to-[#0B2545] my-2 rounded-full"></div>
+
+          {/* Section: Project & Client Intelligence Grid */}
+          <div className="grid grid-cols-2 gap-3 mb-3 bg-[#F8FAFC] border border-slate-200 rounded-lg p-3">
+            <div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Client Information</div>
+              <div className="text-xs font-black text-[#0B2545] uppercase mt-0.5">{customerName}</div>
+              <div className="text-[11px] text-gray-700 mt-0.5">
+                <span>Site: {location || `${city}, Gujarat`}</span>
+                {customerPhone && <span className="ml-2 font-mono">| Tel: {customerPhone}</span>}
+              </div>
+              <div className="text-[10px] text-[#2E7D32] font-bold mt-0.5">
+                Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central DBT)'}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">System Architecture</div>
+              <div className="text-xs font-black text-[#0B2545] mt-0.5">
+                {resolvedCapKW} kW On-Grid Solar PV Plant
+              </div>
+              <div className="text-[11px] text-gray-700 mt-0.5">
+                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({((resolvedCount * resolvedWatt)/1000).toFixed(2)} kWp)
+              </div>
+              <div className="text-[10px] text-gray-600 mt-0.5">
+                Inverter: {inverterType.split('(')[0]?.trim() || inverterType} • Roof: ~{resolvedArea} Sq. Ft.
+              </div>
+            </div>
           </div>
 
-          {/* TABLE 1: SPECIFICATION & SYSTEM DETAILS */}
-          <div className="mt-3 mb-4 overflow-hidden border border-[#406c70]">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-[#58979c] text-[#0B2545]">
+          {/* Heading: Commercial Price Breakdown */}
+          <div className="flex items-center justify-between my-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-3.5 bg-[#2E7D32] inline-block rounded-xs"></span>
+              <h2 className="text-xs font-black text-[#0B2545] tracking-wide uppercase">
+                ITEMIZED COMMERCIAL PROPOSAL &amp; STATUTORY TAX BREAKDOWN
+              </h2>
+            </div>
+            <span className="text-[10px] text-gray-500 font-semibold">All figures in Indian Rupees (INR)</span>
+          </div>
+
+          {/* TABLE: ITEM ITEMIZATION WITH GST & TRANSPORTATION */}
+          <div className="overflow-hidden border border-slate-300 rounded-md mb-2 shadow-2xs">
+            <table className="w-full text-[11px] text-left">
+              <thead className="bg-[#0B2545] text-white">
                 <tr>
-                  <th className="py-2 px-4 font-black uppercase tracking-wider w-1/2 border-r border-[#406c70]">
-                    SPECIFICATION
-                  </th>
-                  <th className="py-2 px-4 font-black uppercase tracking-wider w-1/2">
-                    SYSTEM DETAILS
-                  </th>
+                  <th className="py-1.5 px-3 font-bold uppercase w-10 text-center border-r border-slate-700">SR</th>
+                  <th className="py-1.5 px-3 font-bold uppercase border-r border-slate-700">DESCRIPTION OF SUPPLY &amp; TURNKEY SERVICES</th>
+                  <th className="py-1.5 px-2 font-bold uppercase text-center w-20 border-r border-slate-700">HSN/SAC</th>
+                  <th className="py-1.5 px-3 font-bold uppercase text-right w-28">TAXABLE (₹)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#406c70] text-gray-900 font-medium">
+              <tbody className="divide-y divide-slate-200 text-gray-900 font-medium">
+                {/* Item 1 */}
                 <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">CUSTOMER NAME</td>
-                  <td className="py-2 px-4 font-bold uppercase">{customerName}</td>
+                  <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">1</td>
+                  <td className="py-1.5 px-3 border-r border-slate-200">
+                    <span className="font-bold text-[#0B2545]">Tier-1 High-Efficiency Solar PV Modules &amp; On-Grid Inverter</span>
+                    <p className="text-[10px] text-gray-600 leading-tight">
+                      {resolvedCount} Nos × {resolvedWatt}W {effectiveModuleMake} Mono Bifacial Dual Glass Modules (ALMM List-I) + {inverterType.split('(')[0]?.trim()} with Built-in Cloud WiFi Monitoring.
+                    </p>
+                  </td>
+                  <td className="py-1.5 px-2 text-center border-r border-slate-200 text-[10px] font-mono text-gray-600">8541 / 8504</td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold">{formatINR(moduleCost + inverterCost)}</td>
                 </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">DATE</td>
-                  <td className="py-2 px-4">{date}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">SOLAR MODULE</td>
-                  <td className="py-2 px-4">{solarModule}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">SYSTEM TOTAL CAPACITY</td>
-                  <td className="py-2 px-4 font-semibold">{systemCapacityKW} KW On Grid Solar</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">PV MODULE SIZE</td>
-                  <td className="py-2 px-4">{pvModuleSize}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">INVERTER CAPACITY</td>
-                  <td className="py-2 px-4">{inverterCapacity}</td>
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">NUMBER OF INVERTER</td>
-                  <td className="py-2 px-4">{inverterCount}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
 
-          {/* 3 Guarantees with green tick */}
-          <div className="space-y-1 text-xs text-gray-900 font-semibold my-4 pl-2">
-            <div className="flex items-center gap-2">
-              <span className="text-[#2E7D32] font-bold">✔</span>
-              <span>30 Years Solar Panel Performance Warranty</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[#2E7D32] font-bold">✔</span>
-              <span>Premium Installation Quality</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[#2E7D32] font-bold">✔</span>
-              <span>Smart Savings on Electricity Bills</span>
-            </div>
-          </div>
+                {/* Item 2 */}
+                <tr className="bg-slate-50/50">
+                  <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">2</td>
+                  <td className="py-1.5 px-3 border-r border-slate-200">
+                    <span className="font-bold text-[#0B2545]">Module Mounting Structure (MMS) &amp; Electrical BOS Hardware</span>
+                    <p className="text-[10px] text-gray-600 leading-tight">
+                      Elevated Hot-Dip Galvanized (80+ Micron) / Aluminium structure rated for 150 km/h wind speed, Polycab/RR UV-resistant DC/AC cabling, MC4 connectors, and IP65 ACDB/DCDB combo box.
+                    </p>
+                  </td>
+                  <td className="py-1.5 px-2 text-center border-r border-slate-200 text-[10px] font-mono text-gray-600">7308 / 8537</td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold">{formatINR(structureCost + bosCost)}</td>
+                </tr>
 
-          {/* Heading: PRICE SUMMARY */}
-          <div className="text-center my-3">
-            <h2 className="text-2xl font-black text-[#2E7D32] tracking-wide uppercase">
-              PRICE SUMMARY
-            </h2>
-          </div>
+                {/* Item 3 */}
+                <tr className="bg-white">
+                  <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">3</td>
+                  <td className="py-1.5 px-3 border-r border-slate-200">
+                    <span className="font-bold text-[#0B2545]">Safe Logistics, Freight, Packaging &amp; Transit Insurance</span>
+                    <p className="text-[10px] text-gray-600 leading-tight">
+                      Factory-to-site transportation, transit insurance protection against damage/theft, and doorstep unloading.
+                    </p>
+                  </td>
+                  <td className="py-1.5 px-2 text-center border-r border-slate-200 text-[10px] font-mono text-gray-600">9965</td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold">{formatINR(transportCharge)}</td>
+                </tr>
 
-          {/* Project Type Rooftop Tag */}
-          <div className="flex items-center gap-1.5 text-xs font-black text-gray-900 uppercase my-2">
-            <span className="w-1.5 h-4 bg-[#B4C400] inline-block"></span>
-            <span>{quotation.projectType === 'Commercial' || (typeof quotation.type === 'string' && quotation.type.includes('Commercial')) ? 'COMMERCIAL / INDUSTRIAL ROOFTOP :' : 'RESIDENTIAL ROOFTOP :'}</span>
-          </div>
+                {/* Item 4 */}
+                <tr className="bg-slate-50/50">
+                  <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">4</td>
+                  <td className="py-1.5 px-3 border-r border-slate-200">
+                    <span className="font-bold text-[#0B2545]">Turnkey Civil &amp; Electrical Installation + DISCOM Net-Metering Liaisoning</span>
+                    <p className="text-[10px] text-gray-600 leading-tight">
+                      Array civil anchoring, electrical stringing, dual-chemical earthing pits (&lt;5Ω), DISCOM net-metering application, inspection coordination, and CEI safety compliance.
+                    </p>
+                  </td>
+                  <td className="py-1.5 px-2 text-center border-r border-slate-200 text-[10px] font-mono text-gray-600">9954</td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold">
+                    {formatINR(installationCost + (quotation.dealerTotalMargin || quotation.dealerMargin || 0))}
+                  </td>
+                </tr>
 
-          {/* TABLE 2: PROJECT COST SUMMARY */}
-          <div className="overflow-hidden border border-[#406c70] mb-4">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-[#58979c] text-[#0B2545]">
-                <tr>
-                  <th className="py-2 px-4 font-black uppercase tracking-wider border-r border-[#406c70]">
-                    PROJECT COST SUMMARY
-                  </th>
-                  {multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? (
-                    multiBrandPackages.map((pkg, pIdx) => (
-                      <th key={pIdx} className="py-2 px-3 font-black uppercase tracking-wider text-center border-r last:border-r-0 border-[#406c70]">
-                        {pkg.brand}
-                      </th>
-                    ))
-                  ) : (
-                    <th className="py-2 px-4 font-black uppercase tracking-wider text-center w-1/3">
-                      {effectiveModuleMake}
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#406c70] text-gray-900">
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">PRODUCT DESCRIPTION</td>
-                  {multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? (
-                    multiBrandPackages.map((pkg, pIdx) => (
-                      <td key={pIdx} className="py-2 px-3 text-center font-medium border-r last:border-r-0 border-[#406c70] text-[11px]">
-                        {pkg.wattage} WP : ({systemCapacityKW} KW)
-                      </td>
-                    ))
-                  ) : (
-                    <td className="py-2 px-4 text-center font-medium">{solarModule} : ({systemCapacityKW} KW)</td>
-                  )}
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">TOTAL NUMBER OF MODULES</td>
-                  {multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? (
-                    multiBrandPackages.map((pkg, pIdx) => (
-                      <td key={pIdx} className="py-2 px-3 text-center font-medium border-r last:border-r-0 border-[#406c70]">
-                        {pkg.moduleCount}
-                      </td>
-                    ))
-                  ) : (
-                    <td className="py-2 px-4 text-center font-medium">{moduleCount}</td>
-                  )}
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">RATE PER KW</td>
-                  {multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? (
-                    multiBrandPackages.map((pkg, pIdx) => (
-                      <td key={pIdx} className="py-2 px-3 text-center font-mono font-bold border-r last:border-r-0 border-[#406c70]">
-                        ₹ {formatINR(pkg.ratePerKw)}
-                      </td>
-                    ))
-                  ) : (
-                    <td className="py-2 px-4 text-center font-mono font-bold">₹ {formatINR(customerRatePerKW)}</td>
-                  )}
-                </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">
-                    DISCOM Meter Charge ( Extra as actual if more from PGVCL)
+                {/* Taxable Subtotal */}
+                <tr className="bg-slate-100 font-bold text-gray-900 border-t border-slate-300">
+                  <td colSpan={3} className="py-1.5 px-3 text-right uppercase tracking-wider text-[10px] border-r border-slate-300">
+                    TOTAL TAXABLE VALUE (EXCLUDING GST) :
                   </td>
-                  <td colSpan={multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? multiBrandPackages.length : 1} className="py-2 px-4 text-center text-gray-700">
-                    {discomMeterCharge}
-                  </td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold text-xs">{formatINR(baseBeforeGst)}</td>
                 </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">GEDA Registration Charge</td>
-                  <td colSpan={multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? multiBrandPackages.length : 1} className="py-2 px-4 text-center text-gray-700">
-                    {gedaRegistrationCharge}
+
+                {/* Composite GST 13.8% */}
+                <tr className="bg-emerald-50/40 text-emerald-950 font-bold border-t border-emerald-200">
+                  <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Statutory GST</span>
+                      <span>COMPOSITE GST @ 13.8% (70% GOODS @ 12% + 30% SERVICES @ 18%) :</span>
+                    </div>
                   </td>
+                  <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(gstAmount)}</td>
                 </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">
-                    METER , METER BOX , CT-PT SET , METER TESTING CHARGE
+
+                {/* Gross Turnkey Price */}
+                <tr className="bg-[#0B2545] text-white font-black text-xs">
+                  <td colSpan={3} className="py-2 px-3 text-right uppercase tracking-wider border-r border-slate-700">
+                    GROSS TURNKEY PROJECT COST (INCLUSIVE OF ALL TAXES) :
                   </td>
-                  <td colSpan={multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? multiBrandPackages.length : 1} className="py-2 px-4 text-center text-gray-700">
-                    {meterTestingCharge}
-                  </td>
+                  <td className="py-2 px-3 text-right font-mono text-sm font-black text-amber-300">{formatINR(grossTurnkey)}</td>
                 </tr>
-                <tr className="bg-white">
-                  <td className="py-2 px-4 font-bold border-r border-[#406c70]">GST {gstPercentage}%</td>
-                  <td colSpan={multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? multiBrandPackages.length : 1} className="py-2 px-4 text-center text-gray-700">
-                    Extra (As Applicable)
-                  </td>
-                </tr>
-                {/* GRAND TOTAL ROW */}
-                <tr className="bg-[#58979c] text-[#0B2545] font-black text-sm">
-                  <td className="py-2.5 px-4 uppercase tracking-wider text-right pr-6 border-r border-[#406c70]">
-                    GRAND TOTAL
-                  </td>
-                  {multiBrandComparison && multiBrandPackages && multiBrandPackages.length > 0 ? (
-                    multiBrandPackages.map((pkg, pIdx) => (
-                      <td key={pIdx} className="py-2.5 px-3 text-center font-mono text-sm font-black text-[#0B2545] border-r last:border-r-0 border-[#406c70]">
-                        ₹ {formatINR(pkg.totalCost)}
-                      </td>
-                    ))
-                  ) : (
-                    <td className="py-2.5 px-4 text-center font-mono text-base font-black text-[#0B2545]">
-                      ₹ {formatINR(calculatedGrandTotal)}
+
+                {/* Subsidy Row */}
+                {subsidyAmount > 0 && (
+                  <tr className="bg-emerald-100/80 text-emerald-950 font-bold">
+                    <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-emerald-300">
+                      <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold mr-1.5">DBT BENEFIT</span>
+                      LESS: PM SURYA GHAR MUFT BIJLI YOJANA CENTRAL SUBSIDY :
                     </td>
-                  )}
-                </tr>
+                    <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">- {formatINR(subsidyAmount)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          {/* Section: BANK DETAILS */}
-          <div className="flex items-center gap-1.5 text-xs font-black text-gray-900 uppercase my-2">
-            <span className="w-1.5 h-4 bg-[#B4C400] inline-block"></span>
-            <span>BANK DETAILS</span>
+          {/* Luxury Net Payable Highlight Banner */}
+          <div className="bg-gradient-to-r from-[#1B5E20] via-[#2E7D32] to-[#1B5E20] text-white rounded-lg p-2.5 px-4 mb-3 flex items-center justify-between shadow-md">
+            <div>
+              <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-200">
+                Final Net Investment Post-Subsidy
+              </div>
+              <div className="text-xs font-semibold text-white/90">
+                Direct bank reimbursement by Ministry of New &amp; Renewable Energy (MNRE)
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black font-mono tracking-tight text-white">
+                ₹ {formatINR(netPayable)}
+              </span>
+              <span className="bg-amber-400 text-slate-950 font-extrabold text-[9px] uppercase px-2 py-0.5 rounded shadow-xs">
+                Net Cost
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-gray-900 pt-1 font-medium">
-            <div>
-              <span className="font-bold">FIRM NAME : </span> <strong>SUNVINE RENEWABLE</strong>
+          {/* Key ROI & Energy Telemetry Badges */}
+          <div className="grid grid-cols-3 gap-2.5 mb-3">
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded-md text-center">
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Est. Annual Generation</div>
+              <div className="text-sm font-black text-[#0B2545] font-mono mt-0.5">
+                ~{annualGenUnits.toLocaleString('en-IN')} <span className="text-[10px] font-normal text-gray-600">Units/Yr</span>
+              </div>
+              <div className="text-[9px] text-gray-500 mt-0.5">4.0–4.2 units / kW / day average</div>
             </div>
-            <div>
-              <span className="font-bold">A/C NO. : </span> <strong className="font-mono">99998000050580</strong>
+
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded-md text-center">
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Est. Annual Savings</div>
+              <div className="text-sm font-black text-emerald-700 font-mono mt-0.5">
+                ₹ {formatINR(annualSavings)} <span className="text-[10px] font-normal text-gray-600">/ Year</span>
+              </div>
+              <div className="text-[9px] text-gray-500 mt-0.5">Calculated @ ₹6.67/unit benchmark</div>
             </div>
-            <div>
-              <span className="font-bold">BANK NAME : </span> <strong>HDFC BANK LTD.</strong>
-            </div>
-            <div>
-              <span className="font-bold">IFSC : </span> <strong className="font-mono">HDFC0002012</strong>
-            </div>
-            <div>
-              <span className="font-bold">Gmail : </span> <span>sunvinerenewable@gmail.com</span>
-            </div>
-            <div>
-              <span className="font-bold">BRANCH : </span> <strong>METODA BRANCH</strong>
+
+            <div className="p-2 bg-slate-50 border border-slate-200 rounded-md text-center">
+              <div className="text-[10px] font-bold text-gray-500 uppercase">Estimated Payback</div>
+              <div className="text-sm font-black text-[#0B2545] font-mono mt-0.5">
+                {paybackYears} <span className="text-[10px] font-normal text-gray-600">Years</span>
+              </div>
+              <div className="text-[9px] text-emerald-700 font-bold mt-0.5">21+ Yrs Free Solar Electricity</div>
             </div>
           </div>
+
+          {/* Official Bank Coordinates & Company Legal Identifiers */}
+          <div className="bg-[#F8FAFC] border border-slate-200 rounded-md p-2 text-xs">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-200 mb-1">
+              <span className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider">
+                Official Banking Settlement Coordinates
+              </span>
+              <span className="text-[10px] font-mono text-gray-600">GSTIN: <strong>24AAMCS7145F1ZA</strong></span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-800">
+              <div>
+                <span className="text-gray-500 font-medium">Beneficiary:</span> <strong>SUNVINE RENEWABLE</strong>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">Bank:</span> <strong>HDFC BANK LTD.</strong>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">Branch:</span> <strong>METODA GIDC, RAJKOT</strong>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">A/C No.:</span> <strong className="font-mono">99998000050580</strong>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">IFSC:</span> <strong className="font-mono">HDFC0002012</strong>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">Email:</span> <strong>sunvinerenewable@gmail.com</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Footer Note */}
+        <div className="text-[9px] text-gray-500 pt-1 border-t border-gray-200 flex items-center justify-between">
+          <span>Sunvine Renewable Energy • Commercial Proposal • Ref: {id}</span>
+          <span>Page 2 of 4</span>
         </div>
       </div>
 
       {/* ========================================================
-          PAGE 3: BILL OF MATERIAL : SOLAR ON GRID SYSTEM (EXACT MIRANA PDF)
+          PAGE 3: ENGINEERING BILL OF MATERIALS (BOM) & COMPLIANCE
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-10 flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
         <div>
-          {/* Top Right Logo */}
-          <div className="flex justify-end pb-3">
-            <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+          {/* Top Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <div>
+                <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
+                  BILL OF MATERIALS &amp; TECHNICAL STANDARDS
+                </h1>
+                <p className="text-[10px] text-gray-600 font-medium mt-0.5">
+                  MNRE Approved • ALMM List-I Tier-1 Components • BIS &amp; IEC Certified
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-black text-[#0B2545] font-mono">{resolvedCapKW} kW System</div>
+              <p className="text-[10px] text-gray-600 mt-0.5">Ref: {id}</p>
+            </div>
           </div>
 
-          {/* Section Title */}
-          <div className="flex items-center gap-1.5 text-sm font-black text-gray-900 uppercase mb-3">
-            <span className="w-1.5 h-4 bg-[#B4C400] inline-block"></span>
-            <span>BILL OF MATERIAL : SOLAR ON GRID SYSTEM</span>
-          </div>
+          <div className="h-1 w-full bg-gradient-to-r from-[#2E7D32] via-[#6CBF3D] to-[#0B2545] my-2 rounded-full"></div>
 
-          {/* EXACT BOM TABLE */}
-          <div className="overflow-hidden border border-[#4d7594]">
-            <table className="w-full text-[11px] text-left">
-              <thead className="bg-[#6b95b5] text-gray-900">
+          {/* ITEM BOM TABLE */}
+          <div className="overflow-hidden border border-slate-300 rounded-md mb-2 shadow-2xs">
+            <table className="w-full text-[10.5px] text-left">
+              <thead className="bg-[#0B2545] text-white">
                 <tr>
-                  <th className="py-1.5 px-3 font-bold border-r border-[#4d7594] text-center w-12">SR. NO.</th>
-                  <th className="py-1.5 px-4 font-bold border-r border-[#4d7594]">ITEM</th>
-                  <th className="py-1.5 px-3 font-bold border-r border-[#4d7594] text-center w-28">QTY.</th>
-                  <th className="py-1.5 px-3 font-bold text-center w-48">MAKE</th>
+                  <th className="py-1 px-2.5 font-bold uppercase w-10 text-center border-r border-slate-700">SR</th>
+                  <th className="py-1 px-3 font-bold uppercase border-r border-slate-700">EQUIPMENT &amp; MATERIAL DESCRIPTION</th>
+                  <th className="py-1 px-2.5 font-bold uppercase text-center w-24 border-r border-slate-700">QTY</th>
+                  <th className="py-1 px-2.5 font-bold uppercase text-center w-36">APPROVED MAKE / SPEC</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#4d7594] text-gray-900">
+              <tbody className="divide-y divide-slate-200 text-gray-900">
                 {/* 1. SOLAR MODULES */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">SOLAR MODULES</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">1</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">SOLAR PV MODULES (ALMM LIST-I COMPLIANT)</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">1.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">PV MODULE, {solarModule || 'TOPCON MONO BIFACIAL Panel'}</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">{moduleCount}</td>
-                  <td className="py-1 px-3 text-center font-semibold">{effectiveModuleMake}</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">1.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">
+                    {solarModule || `${resolvedWatt}W TOPCon Mono Bifacial Panel`} (Dual-Glass, Multi-Busbar)
+                  </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-bold font-mono">{resolvedCount} Nos</td>
+                  <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">{effectiveModuleMake} / Tier-1</td>
                 </tr>
 
-                {/* 2. INVERTER DETAILS */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">2</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">INVERTER DETAILS</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                {/* 2. INVERTER */}
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">2</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">SOLAR INVERTER &amp; TELEMETRY</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">2.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">String type On-Grid Solar Inverter ({inverterCapacity || `${systemCapacityKW} kW`})</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">1 NOS</td>
-                  <td className="py-1 px-3 text-center text-[10px] leading-tight font-semibold">
-                    {effectiveInverterMake}<br />Any Reputed
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">2.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">
+                    High Efficiency String Inverter ({resolvedInverterCap}), Dual MPPT, IP65, Built-in WiFi Logger
                   </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-bold font-mono">1 NOS</td>
+                  <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">{effectiveInverterMake} / Any Reputed</td>
                 </tr>
 
-                {/* 3. MODULE MOUNTING STRUCTURE */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">3</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">MODULE MOUNTING STRUCTURE</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                {/* 3. STRUCTURE */}
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">3</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">MODULE MOUNTING STRUCTURE (MMS)</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">3.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">ALUMINIUM CHANNEL (MONO RAIL &amp; CLAMPS)</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">{moduleCount * 2 + 4} Sets</td>
-                  <td className="py-1 px-3 text-center font-semibold">STANDARD</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">3.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">Aluminium Channel Mono Rails, Mid &amp; End Clamps with EPDM Gaskets</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono">{resolvedCount * 2 + 4} Sets</td>
+                  <td className="py-1 px-2.5 text-center text-gray-700">Anodized 6063-T6</td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">3.2</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">
-                    Hot Dip Galvanized Pipe<br />
-                    (60,80 Micron - 2MM thickness)
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">3.2</td>
+                  <td className="py-1 px-3 border-r border-slate-200">Hot-Dip Galvanized Iron (HDGI 80 Micron) Purlins &amp; Legs (60x40 / 40x40 2mm)</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-[9.5px]">
+                    {bomQtyMap['gi_pipe_60x40'] || 3} Pcs (60x40) + {bomQtyMap['gi_pipe_40x40'] || 3} Pcs (40x40)
                   </td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold text-[10px] leading-tight">
-                    {bomQtyMap['gi_pipe_60x40'] || 3} Nos (60x40)<br />+ {bomQtyMap['gi_pipe_40x40'] || 3} Nos (40x40)
-                  </td>
-                  <td className="py-1 px-3 text-center text-[10px] leading-tight">
-                    FORTUNE / HINDUSTAR SIZE : 60X40 / 40X40<br />Any Reputed
-                  </td>
+                  <td className="py-1 px-2.5 text-center text-gray-700 text-[10px]">Fortune / Hindustar / Reputed</td>
                 </tr>
 
                 {/* 4. DC CABLES */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">4</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">DC CABLES</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">4</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">DC SOLAR POWER CABLES</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">4.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">
-                    1C X 4 sq.mm (Red) Type-1, (Black) Type-1,<br />
-                    UV Resistant Solar DC Cable
-                  </td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">{bomQtyMap['dc_wire_4sqmm'] || 50} Meter</td>
-                  <td className="py-1 px-3 text-center font-semibold">
-                    POLYCAB / RR KABEL<br />Any Reputed
-                  </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">4.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">1C × 4 sq.mm (Red/Black) UV &amp; Ozone Resistant Tinned Copper Solar Cable</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono">{bomQtyMap['dc_wire_4sqmm'] || 50} Meters</td>
+                  <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">Polycab / RR Kabel (EN 50618)</td>
                 </tr>
 
                 {/* 5. AC CABLES */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">5</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">AC CABLES</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">5</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">AC GRID CABLING</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">5.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">
-                    AC Grid Copper Cable 4 sq mm (Red/Black)<br />
-                    + Flexible Grounding Conductor
-                  </td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">{bomQtyMap['ac_wire_4sqmm'] || 10} Meter</td>
-                  <td className="py-1 px-3 text-center font-semibold">
-                    POLYCAB / RR KABEL<br />Any Reputed
-                  </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">5.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">AC Grid Copper Armoured / Flexible Cable (4 sq.mm / 6 sq.mm)</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono">{bomQtyMap['ac_wire_4sqmm'] || 10} Meters</td>
+                  <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">Polycab / Havells / RR Kabel</td>
                 </tr>
 
-                {/* 6. ACDB + DCDB */}
+                {/* 6. SWITCHGEAR */}
                 <tr>
-                  <td className="py-1 px-3 text-center font-bold border-r border-[#4d7594]">6</td>
-                  <td className="py-1 px-4 font-bold border-r border-[#4d7594]">ACDB + DCDB COMBO BOX</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">1 Combo Unit</td>
-                  <td className="py-1 px-3 text-center text-[10px] leading-tight font-semibold">
-                    L&amp;T (L&amp;K) / HAVELLS<br />/ SCHNEIDER<br />Any Reputed
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">6</td>
+                  <td className="py-1 px-3 border-r border-slate-200 font-bold text-[#0B2545]">
+                    ACDB + DCDB Array Protection Combo Box (Type-II SPD, MCB &amp; Isolator)
                   </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono font-bold">1 Combo Unit</td>
+                  <td className="py-1 px-2.5 text-center text-gray-800 text-[10px] font-bold">L&amp;T / Schneider / Havells</td>
                 </tr>
 
-                {/* 7. LA CABLE */}
+                {/* 7. LIGHTNING PROTECTION & LA CABLE */}
                 <tr>
-                  <td className="py-1 px-3 text-center font-bold border-r border-[#4d7594]">7</td>
-                  <td className="py-1 px-4 font-bold border-r border-[#4d7594]">LA CABLE 1C X 16 sq.mm (Down Conductor)</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">{bomQtyMap['la_cable_16sqmm'] || 30} Meter</td>
-                  <td className="py-1 px-3 text-center font-semibold">
-                    POLYCAB / RR KABEL<br />Any Reputed
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">7</td>
+                  <td className="py-1 px-3 border-r border-slate-200">
+                    Pure Copper Lightning Arrestor (LA) + 1C × 16 sq.mm Down Conductor
                   </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono">{bomQtyMap['la_cable_16sqmm'] || 30} Meters</td>
+                  <td className="py-1 px-2.5 text-center text-gray-700 text-[10px]">Vasundhara / Polycab (ISI)</td>
                 </tr>
 
-                {/* 8. EARTHING & ACCESSORIES */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">8</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">EARTHING &amp; ACCESSORIES</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
+                {/* 8. CHEMICAL EARTHING */}
+                <tr className="bg-slate-100 font-bold">
+                  <td className="py-0.5 px-2.5 text-center border-r border-slate-300">8</td>
+                  <td className="py-0.5 px-3 border-r border-slate-300 uppercase text-[#0B2545]">EARTHING SYSTEM &amp; SAFETY PROTECTION</td>
+                  <td className="py-0.5 px-2.5 border-r border-slate-300"></td>
+                  <td className="py-0.5 px-2.5"></td>
                 </tr>
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">8.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">Chemical Earthing Kit (Electrode + BFC Compound)</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold text-[10px] leading-tight">
-                    {bomQtyMap['earthing_kit'] || 1} Kit<br />({bomQtyMap['earthing_wire_4sqmm'] || 35}m Wire)
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500">8.1</td>
+                  <td className="py-1 px-3 border-r border-slate-200">
+                    Dual Chemical Gel Earthing System (Heavy Duty Electrode + BFC Compound)
                   </td>
-                  <td className="py-1 px-3 text-center text-[10px] font-semibold">
-                    VASUNDHARA<br />ISI STANDARD
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">8.2</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">Lightning Arrestor (Pure Copper LA + Base)</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold">1 Set</td>
-                  <td className="py-1 px-3 text-center text-[10px] font-semibold">
-                    VASUNDHARA<br />ISI STANDARD
-                  </td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono">{bomQtyMap['earthing_kit'] || 2} Kits</td>
+                  <td className="py-1 px-2.5 text-center text-gray-800 text-[10px]">IS 3043 Compliant (&lt;5Ω)</td>
                 </tr>
 
-                {/* 9. OTHER ACCESSORIES */}
-                <tr className="bg-gray-100 font-bold">
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">9</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">OTHER HARDWARE &amp; CONDUITS</td>
-                  <td className="py-1 px-3 border-r border-[#4d7594]"></td>
-                  <td className="py-1 px-3"></td>
-                </tr>
+                {/* 9. FASTENERS & ACCESSORIES */}
                 <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">9.1</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">Structural Studs, Nut &amp; Washers, Anchor Fasteners</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold text-[10px] leading-tight">
-                    {bomQtyMap['anchor_fastener'] || 8} Fasteners,<br />{bomQtyMap['nut_bolts_washers'] || 10} Sets Nut/Wash
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">9</td>
+                  <td className="py-1 px-3 border-r border-slate-200">
+                    Anchor Fasteners (M10/M12), SS Nut/Bolts/Washers, MC4 Pairs &amp; Rigid PVC Conduits
                   </td>
-                  <td className="py-1 px-3 text-center font-semibold">STANDARD SS/GI</td>
-                </tr>
-                <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">9.2</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">Cable Ties, MC4 Connectors, PVC Conduit Elbows</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold text-[10px] leading-tight">
-                    {bomQtyMap['mc4_connectors'] || 2} Prs MC4, {bomQtyMap['pvc_elbow'] || 15} Elbows,<br />{bomQtyMap['cable_ties_pack'] || 1} Pk Ties
-                  </td>
-                  <td className="py-1 px-3 text-center font-semibold">STANDARD</td>
-                </tr>
-                <tr>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594]">9.3</td>
-                  <td className="py-1 px-4 border-r border-[#4d7594]">Saddle Clips, Rigid PVC Conduit Pipes &amp; Fittings</td>
-                  <td className="py-1 px-3 text-center border-r border-[#4d7594] font-semibold text-[10px] leading-tight">
-                    {bomQtyMap['pvc_conduit_pipe'] || 12} Nos (10ft),<br />{bomQtyMap['saddle_clips_pack'] || 1} Pk Clips
-                  </td>
-                  <td className="py-1 px-3 text-center font-semibold">STANDARD</td>
+                  <td className="py-1 px-2.5 text-center border-r border-slate-200 font-mono text-[10px]">Complete Set</td>
+                  <td className="py-1 px-2.5 text-center text-gray-700 text-[10px]">ISI Heavy Duty Standard</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Bottom Engineering & Material Substitution Note */}
-          <div className="mt-3 text-[10px] text-gray-800 leading-normal border-t border-[#4d7594]/30 pt-2 font-medium">
-            <p><strong>* Note:</strong> The above BOM quantities are standard engineered baseline estimates (Ground + 1st floor). Actual required quantities may vary based on specific site roof structure, elevation heights, and ACDB-to-meter routing path.</p>
-            <p className="mt-1 text-gray-700"><strong>Material Substitution:</strong> If any specific material brand listed above is temporarily unavailable at time of dispatch, Sunvine reserves the right to supply equivalent or superior Tier-1 MNRE/BIS approved material without prior notice.</p>
+          {/* Turnkey Scope of Work & Statutory Checklist */}
+          <div className="bg-[#F8FAFC] border border-slate-200 rounded-md p-3 mb-2">
+            <div className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider mb-1">
+              Turnkey EPC Scope of Work &amp; Statutory Approvals Included
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10.5px] text-gray-700">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#2E7D32] font-bold text-xs">✔</span>
+                <span>DISCOM Net-Metering Application &amp; Sanctioning</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#2E7D32] font-bold text-xs">✔</span>
+                <span>Bi-Directional Meter Testing Coordination</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#2E7D32] font-bold text-xs">✔</span>
+                <span>Dual Chemical Gel Earthing Pits (&lt; 5 Ohms Certified)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[#2E7D32] font-bold text-xs">✔</span>
+                <span>WiFi Cloud Telemetry &amp; Mobile App Handover</span>
+              </div>
+            </div>
           </div>
+
+          {/* Bottom Engineering Notes */}
+          <div className="text-[9.5px] text-gray-600 leading-normal border-t border-slate-200 pt-1.5">
+            <p><strong>* Note:</strong> Standard BOM quantities are calibrated for standard RCC rooftop layout. Actual site cable routing distance and elevation heights may require minor adjustments during final site survey.</p>
+            <p className="mt-0.5 text-gray-500"><strong>Equivalence Clause:</strong> In the event of temporary supply chain constraints for any specific brand, Sunvine guarantees installation of equal or superior Tier-1 MNRE/BIS approved materials without compromising plant performance.</p>
+          </div>
+        </div>
+
+        {/* Bottom Footer Note */}
+        <div className="text-[9px] text-gray-500 pt-1 border-t border-gray-200 flex items-center justify-between">
+          <span>Sunvine Renewable Energy • Engineering BOM • Ref: {id}</span>
+          <span>Page 3 of 4</span>
         </div>
       </div>
 
       {/* ========================================================
-          PAGE 4: TERMS & CONDITIONS (EXACT MIRANA PDF)
+          PAGE 4: TERMS & CONDITIONS (EXACT UNTOUCHED TEXT)
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-10 flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 4 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 4 ? 'flex' : 'hidden print:flex'}`}>
         <div>
-          {/* Top Right Logo */}
-          <div className="flex justify-end pb-2">
-            <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+          {/* Top Header */}
+          <div className="flex items-center justify-between pb-2 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <div>
+                <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
+                  TERMS &amp; CONDITIONS
+                </h1>
+                <p className="text-[10px] text-gray-600 font-medium mt-0.5">
+                  Standard Warranty Terms, Payment Schedule &amp; Handover Protocols
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-mono font-bold text-gray-700">Ref: {id}</span>
+              <p className="text-[10px] text-gray-600 mt-0.5">Date: {date}</p>
+            </div>
           </div>
 
-          {/* Title */}
-          <h2 className="text-center text-xl font-black text-gray-900 uppercase mb-2">
-            TERMS &amp; CONDITIONS
-          </h2>
+          <div className="h-1 w-full bg-gradient-to-r from-[#2E7D32] via-[#6CBF3D] to-[#0B2545] my-2 rounded-full"></div>
 
-          <div className="space-y-1.5 text-[10px] text-gray-900 leading-normal">
+          {/* EXACT UNTOUCHED TERMS AND CONDITIONS BODY */}
+          <div className="space-y-1.5 text-[9.5px] text-gray-900 leading-normal">
             <div>
-              <strong className="block font-bold">Guarantee &amp; Warranty of The Plant</strong>
-              <strong className="block font-bold mt-0.5">Module Warranty:</strong>
-              <ul className="list-disc pl-4 space-y-0.5">
+              <strong className="block font-bold text-gray-950">Guarantee &amp; Warranty of The Plant</strong>
+              <strong className="block font-bold mt-0.5 text-gray-900">Module Warranty:</strong>
+              <ul className="list-disc pl-4 space-y-0.5 text-gray-800">
                 <li>The 30-year limited warranty covers the module as follows:</li>
                 <li>10 years against manufacturing defects.</li>
                 <li>90% power output for the first 10 years, and 80% for the next 15 years. (Terms subject to the module's manufacturing conditions.)</li>
@@ -535,22 +609,22 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
             </div>
 
             <div>
-              <strong className="block font-bold">Inverter Warranty:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Inverter Warranty:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>The solar inverter comes with a 8-year warranty against manufacturing defects (Terms subject to the inverter's manufacturing conditions and based on inverter make).</li>
               </ul>
             </div>
 
             <div>
-              <strong className="block font-bold">Other Equipment Warranty:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Other Equipment Warranty:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>Up to 5 years from installation.</li>
               </ul>
             </div>
 
             <div className="pt-0.5">
-              <strong className="block font-bold">Warranty Exclusions: (This warranty shall not apply to damages, failures, or defects resulting from) :</strong>
-              <ul className="list-disc pl-4 space-y-0.5">
+              <strong className="block font-bold text-gray-900">Warranty Exclusions: (This warranty shall not apply to damages, failures, or defects resulting from) :</strong>
+              <ul className="list-disc pl-4 space-y-0.5 text-gray-800">
                 <li>Switch Gears (L&amp;T): 12-month manufacturing defect warranty from the invoice date (No burning conditions covered).</li>
                 <li>SPD: No coverage for burning or failure.</li>
                 <li>DCDB/ACDB (Residential Projects): No warranty.</li>
@@ -565,62 +639,91 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
             </div>
 
             <div className="pt-0.5">
-              <strong className="block font-bold">Terms of Payment:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Terms of Payment:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>10% advance with purchase order.</li>
                 <li>90% before material dispatch.</li>
               </ul>
             </div>
 
             <div>
-              <strong className="block font-bold">Delivery:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Delivery:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>Typically, 30 days from the PO date, subject to legal and government approvals.</li>
               </ul>
             </div>
 
             <div>
-              <strong className="block font-bold">Insurance:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Insurance:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>After commissioning, the plant will be handed over to the client, who must arrange appropriate asset insurance for the PV system.</li>
               </ul>
             </div>
 
             <div>
-              <strong className="block font-bold">Validity:</strong>
-              <ul className="list-disc pl-4">
+              <strong className="block font-bold text-gray-900">Validity:</strong>
+              <ul className="list-disc pl-4 text-gray-800">
                 <li>Our offer is valid for 15 days from the date of this offer</li>
               </ul>
             </div>
 
-            <div className="font-bold pt-0.5">
+            <div className="font-bold pt-0.5 text-[#0B2545]">
               Note: Breakage of panels or other equipment is not covered under warranty.
             </div>
           </div>
 
-          {/* Large Centered Green Banner */}
-          <div className="text-center my-3">
-            <h3 className="text-base font-black text-[#2E7D32] tracking-wide uppercase">
+          {/* Large Centered Banner */}
+          <div className="text-center my-2 p-2 bg-[#F0FDF4] border border-[#6CBF3D]/40 rounded-lg">
+            <h3 className="text-xs font-black text-[#2E7D32] tracking-wide uppercase">
               THANK YOU FOR CHOOSING SUNVINE RENEWABLE
             </h3>
+            <p className="text-[10px] text-gray-600 mt-0.5">Committed to Green Energy Independence &amp; Sustainable Growth</p>
           </div>
 
-          {/* Bottom Metoda Rajkot Address & Contacts */}
-          <div className="grid grid-cols-2 gap-4 text-xs pt-2 border-t border-gray-200">
-            <div>
-              <strong className="block text-gray-900 font-bold">SUNVINE RENEWABLE:</strong>
-              <p className="text-gray-800 leading-snug">
-                G-705, Second Gate, Metoda GIDC,<br />
-                Rajkot - 360021. (Guj.) India
+          {/* Formal Sign-off and Corporate Stamp Block */}
+          <div className="grid grid-cols-2 gap-4 mt-2 pt-2 border-t-2 border-slate-200">
+            {/* Customer Sign-off Block */}
+            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/50">
+              <div className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider mb-1">
+                Client Acceptance &amp; Order Confirmation
+              </div>
+              <p className="text-[9px] text-gray-500 leading-tight mb-6">
+                I/We hereby accept the technical configuration, prices, and terms outlined in this proposal.
               </p>
+              <div className="border-t border-dashed border-gray-400 pt-1 flex items-center justify-between text-[10px] text-gray-700">
+                <span>Authorized Signatory</span>
+                <span>Date: ____________</span>
+              </div>
             </div>
-            <div className="text-right">
-              <strong className="block font-bold text-gray-900">+91 95865 33750</strong>
-              <a href="mailto:sunvinerenewable@gmail.com" className="text-blue-700 underline block font-medium">
-                sunvinerenewable@gmail.com
-              </a>
+
+            {/* Sunvine Authorized Signatory Stamp */}
+            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider">
+                    For Sunvine Renewable Energy
+                  </span>
+                  <span className="text-[9px] text-[#2E7D32] font-bold">Authorized Seal</span>
+                </div>
+                <p className="text-[9.5px] text-gray-700 mt-0.5">
+                  G-705, Second Gate, Metoda GIDC, Rajkot - 360021 (Guj.)
+                </p>
+                <div className="text-[9.5px] text-gray-700 font-mono mt-0.5">
+                  +91 95865 33750 • sunvinerenewable@gmail.com
+                </div>
+              </div>
+              <div className="border-t border-dashed border-gray-400 pt-1 flex items-center justify-between text-[10px] text-gray-700 mt-4">
+                <span>Authorized Executive</span>
+                <span className="font-semibold text-emerald-800">Sunvine EPC Operations</span>
+              </div>
             </div>
           </div>
+        </div>
+
+        {/* Bottom Footer Note */}
+        <div className="text-[9px] text-gray-500 pt-1 border-t border-gray-200 flex items-center justify-between">
+          <span>Sunvine Renewable Energy • Terms &amp; Conditions • Ref: {id}</span>
+          <span>Page 4 of 4</span>
         </div>
       </div>
     </div>
