@@ -60,6 +60,7 @@ export default function HardwareMaster() {
     ...DEFAULT_CELL_TECHS,
     ...(modulesList || []).map(m => m.cellTech).filter(Boolean)
   ]));
+  const customCellTechs = availableCellTechs;
 
   const [moduleForm, setModuleForm] = useState({
     brand: '',
@@ -1586,7 +1587,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                     <option value="Mono PERC">Mono PERC Half-Cut</option>
                     <option value="HJT Ultra-Efficiency">HJT Ultra-Efficiency</option>
                     <option value="Polycrystalline DCR">Polycrystalline DCR</option>
-                    {customCellTechs.filter(t => !['TOPCon Mono Bifacial', 'Mono PERC', 'HJT Ultra-Efficiency', 'Polycrystalline DCR'].includes(t)).map(t => (
+                    {availableCellTechs.filter(t => !['TOPCon Mono Bifacial', 'Mono PERC', 'HJT Ultra-Efficiency', 'Polycrystalline DCR'].includes(t)).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                     <option value="__custom__">+ Enter Custom Cell Tech...</option>
