@@ -5,6 +5,11 @@ import { useToast } from '../Shared/Toast';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import {
+  generateFieldBOM,
+  calculateFieldBOMTotals,
+  FIELD_BOM_MASTER_CATALOG
+} from '../../data/standardBomData';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -54,7 +59,12 @@ export default function CreateQuotation() {
     modulesList,
     invertersList,
     isCatalogItemNew,
-    markCatalogItemSeen
+    markCatalogItemSeen,
+    kitsPresets,
+    saveKitPreset,
+    deleteKitPreset,
+    getAccessibleDealers,
+    updateDealerPricing
   } = useApp();
 
   const { addToast } = useToast();
@@ -63,6 +73,11 @@ export default function CreateQuotation() {
   const isAdmin = role === 'admin';
   const isStaff = role === 'staff';
   const initialSource = editingQuotation || activeDraftQuote;
+
+  // Strictly filter dealers: Sales staff only sees their assigned dealers; Admin sees all
+  const accessibleDealers = useMemo(() => {
+    return getAccessibleDealers ? getAccessibleDealers() : (dealers || []);
+  }, [getAccessibleDealers, dealers, role, currentStaff]);
 
   // Channel configuration (Direct Company Quote vs Dealer Partner)
   const [quoteChannel, setQuoteChannel] = useState(() => {
@@ -76,13 +91,19 @@ export default function CreateQuotation() {
     if (initialSource?.dealerCode && initialSource?.dealerCode !== 'SV-DIRECT') {
       return initialSource.dealerCode;
     }
-    return currentDealer?.id || (dealers && dealers[0]?.id) || 'SV-DLR-0104';
+    return currentDealer?.id || (accessibleDealers && accessibleDealers[0]?.id) || 'SV-DLR-0104';
   });
 
   const isDirectCompanyQuote = (isAdmin || isStaff) ? (quoteChannel === 'direct') : false;
   const effectiveDealer = isDirectCompanyQuote
     ? null
-    : ((isAdmin || isStaff) ? (dealers?.find(d => d.id === assignedDealerId) || currentDealer) : currentDealer);
+    : ((isAdmin || isStaff) ? (accessibleDealers?.find(d => d.id === assignedDealerId) || currentDealer) : currentDealer);
+
+  // Pricing mode: 'standard' (Company Base Price) vs 'custom' (Dealer Negotiated Price)
+  const [bomPricingMode, setBomPricingMode] = useState(() => {
+    if (initialSource?.pricingMode) return initialSource.pricingMode;
+    return effectiveDealer?.pricingConfig?.pricingMode === 'custom' ? 'custom' : 'standard';
+  });
 
   // Derive dealer tier margin configuration & custom pricing
   const dealerTierKey = isDirectCompanyQuote ? 'gold' :
@@ -94,11 +115,11 @@ export default function CreateQuotation() {
     : (tierMargins?.[dealerTierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 });
 
   // Custom Negotiated Dealer Pricing Resolution
-  const hasCustomDealerPricing = Boolean(!isDirectCompanyQuote && effectiveDealer?.pricingConfig?.pricingMode === 'custom');
-  const customWpRate = hasCustomDealerPricing ? Number(effectiveDealer.pricingConfig.customBaseRatePerWp) : null;
-  const customKwRate = hasCustomDealerPricing ? Number(effectiveDealer.pricingConfig.customBaseRatePerKw) : null;
-  const customMarginKw = hasCustomDealerPricing ? Number(effectiveDealer.pricingConfig.customMarginPerKw) : null;
-  const customDiscountPercent = hasCustomDealerPricing ? Number(effectiveDealer.pricingConfig.customDiscountPercent || 0) : 0;
+  const hasCustomDealerPricing = Boolean(!isDirectCompanyQuote && (bomPricingMode === 'custom' || effectiveDealer?.pricingConfig?.pricingMode === 'custom'));
+  const customWpRate = hasCustomDealerPricing ? Number(effectiveDealer?.pricingConfig?.customBaseRatePerWp) : null;
+  const customKwRate = hasCustomDealerPricing ? Number(effectiveDealer?.pricingConfig?.customBaseRatePerKw) : null;
+  const customMarginKw = hasCustomDealerPricing ? Number(effectiveDealer?.pricingConfig?.customMarginPerKw) : null;
+  const customDiscountPercent = hasCustomDealerPricing ? Number(effectiveDealer?.pricingConfig?.customDiscountPercent || 0) : 0;
 
   // Step 1.1 Customer Details (Persisted across multi-step navigation)
   const [custName, setCustName] = useState(initialSource?.customerName || '');
@@ -182,133 +203,308 @@ export default function CreateQuotation() {
   // Multi-Panel Quotation Toggle
   const [multiBrandComparison, setMultiBrandComparison] = useState(initialSource?.multiBrandComparison || false);
 
-  // Step 1.3 Pricing & Dynamic Rates
+  // Step 1.3 Pricing & Dynamic Rates with Per-Panel & Rate/Wp Bidirectional Reactivity
   const activeBrandObj = SOLAR_PANEL_BRANDS.find(b => b.name === panelBrand) || SOLAR_PANEL_BRANDS[0];
   const initialWpRate = customWpRate || activeBrandObj.ratePerWp || 18.00;
   const [ratePerWp, setRatePerWp] = useState(initialWpRate);
+  const [perPanelPrice, setPerPanelPrice] = useState(() => Math.round(initialWpRate * (panelWatt || 585)));
 
-  useEffect(() => {
-    if (customWpRate) {
-      setRatePerWp(customWpRate);
-    } else {
-      setRatePerWp(activeBrandObj.ratePerWp || 18.00);
+  // Bidirectional reactivity handlers
+  const handleRatePerWpChange = (val) => {
+    const num = Math.max(0, parseFloat(val) || 0);
+    setRatePerWp(num);
+    setPerPanelPrice(Math.round(num * panelWatt));
+  };
+
+  const handlePerPanelPriceChange = (val) => {
+    const num = Math.max(0, parseFloat(val) || 0);
+    setPerPanelPrice(num);
+    if (panelWatt > 0) {
+      setRatePerWp(parseFloat((num / panelWatt).toFixed(2)));
     }
-  }, [panelBrand, customWpRate]);
+  };
+
+  // Sync when brand, watt, or custom pricing mode updates
+  useEffect(() => {
+    if (customWpRate && bomPricingMode === 'custom') {
+      setRatePerWp(customWpRate);
+      setPerPanelPrice(Math.round(customWpRate * panelWatt));
+    } else {
+      const brandRate = activeBrandObj.ratePerWp || 18.00;
+      setRatePerWp(brandRate);
+      setPerPanelPrice(Math.round(brandRate * panelWatt));
+    }
+  }, [panelBrand, panelWatt, customWpRate, bomPricingMode]);
 
   const defaultKwRate = customKwRate || pricingPresets?.baseRatePerKw || 59800;
   const [ratePerKw, setRatePerKw] = useState(() => Number(initialSource?.baseRatePerKW) || defaultKwRate);
 
   useEffect(() => {
-    if (customKwRate) {
+    if (customKwRate && bomPricingMode === 'custom') {
       setRatePerKw(customKwRate);
     } else if (pricingPresets?.baseRatePerKw) {
       setRatePerKw(pricingPresets.baseRatePerKw);
     }
-  }, [customKwRate, pricingPresets?.baseRatePerKw]);
+  }, [customKwRate, pricingPresets?.baseRatePerKw, bomPricingMode]);
 
-  // Margin configuration
-  const effectiveMarginPerKw = isDirectCompanyQuote ? 0 : (
-    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 4500)
-  );
+  // Inverter procurement price mapping
+  const inverterProcurementPrice = useMemo(() => {
+    if (kw <= 2.5) return 12500;
+    if (kw <= 3.6) return 14400; // Standard 3.3G from Image 2
+    if (kw <= 5.5) return 21000;
+    if (kw <= 6.8) return 26000;
+    if (kw <= 11.0) return 38000;
+    return 55000;
+  }, [kw]);
 
-  const [marginMode, setMarginMode] = useState('amount');
-  const [dealerMarginRate, setDealerMarginRate] = useState(isDirectCompanyQuote ? 0 : 8);
-  const [dealerMarginFixed, setDealerMarginFixed] = useState(() => {
-    if (initialSource?.dealerTotalMargin !== undefined) return Number(initialSource.dealerTotalMargin);
-    if (isDirectCompanyQuote) return 0;
-    return effectiveMarginPerKw * kw;
+  // Initial Field BOM items list
+  const [bomItems, setBomItems] = useState(() => {
+    if (initialSource?.bomItems && Array.isArray(initialSource.bomItems) && initialSource.bomItems.length > 0) {
+      return initialSource.bomItems;
+    }
+    return generateFieldBOM({
+      kw,
+      panelBrand,
+      panelWatt,
+      panelQuantity,
+      ratePerWp,
+      inverterModel,
+      inverterPrice: inverterProcurementPrice,
+      customBomRates: (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates) 
+        ? effectiveDealer.pricingConfig.customBomRates 
+        : null
+    });
   });
-  const [saveStatus, setSaveStatus] = useState('');
 
-  // Always reset scroll to top on mount
-  useEffect(() => {
-    const scrollToTop = () => {
-      if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-        if (document.documentElement) document.documentElement.scrollTop = 0;
-        if (document.body) document.body.scrollTop = 0;
-        if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
-        const main = document.querySelector('main');
-        if (main) main.scrollTop = 0;
-      }
-    };
-    scrollToTop();
-    const t = setTimeout(scrollToTop, 50);
-    return () => clearTimeout(t);
-  }, [editingQuotation?.id]);
+  // Selected kit preset for loading
+  const [selectedKitId, setSelectedKitId] = useState('');
+  const [isSaveKitModalOpen, setIsSaveKitModalOpen] = useState(false);
+  const [newKitName, setNewKitName] = useState('');
+  const [showAddCustomBomItemModal, setShowAddCustomBomItemModal] = useState(false);
+  const [customItemForm, setCustomItemForm] = useState({
+    item: '',
+    category: 'custom',
+    unit: 'NOS',
+    qty: 1,
+    rate: 1000,
+    taxRate: 18,
+    specs: ''
+  });
 
+  // Auto-sync solar panels & inverters in BOM when inputs change
   useEffect(() => {
-    if (!editingQuotation && !activeDraftQuote) {
-      if (pricingPresets?.baseRatePerKw && !customKwRate) {
-        setRatePerKw(pricingPresets.baseRatePerKw);
+    if (editingQuotation && initialSource?.bomItems) return; // Keep existing quotation items if editing
+    setBomItems(prev => {
+      const hasPanel = prev.some(i => i.id === 'solar_panel');
+      if (!hasPanel) {
+        return generateFieldBOM({
+          kw,
+          panelBrand,
+          panelWatt,
+          panelQuantity,
+          ratePerWp,
+          inverterModel,
+          inverterPrice: inverterProcurementPrice
+        });
       }
-      if (isDirectCompanyQuote) {
-        setDealerMarginFixed(0);
-        setDealerMarginRate(0);
-      } else {
-        setDealerMarginFixed(effectiveMarginPerKw * kw);
-      }
-    }
-  }, [kw, effectiveMarginPerKw, isDirectCompanyQuote, pricingPresets?.baseRatePerKw, customKwRate, editingQuotation, activeDraftQuote]);
-
-  // Auto-populate when editing an existing quote or restoring draft
-  useEffect(() => {
-    const source = editingQuotation || activeDraftQuote;
-    if (source) {
-      if (source.customerName !== undefined) setCustName(source.customerName);
-      if (source.customerPhone !== undefined) setCustPhone(source.customerPhone);
-      if (source.location || source.city) {
-        setCustLocation(source.location || `${source.city || 'Rajkot'}, Gujarat`);
-      }
-      if (source.moduleWattage) {
-        setPanelWatt(Number(source.moduleWattage));
-      } else if (source.solarModule || source.panelType) {
-        const m = (source.solarModule || source.panelType).match(/(\d{3})\s*W/i);
-        if (m) setPanelWatt(Number(m[1]));
-      }
-      if (source.moduleCount) {
-        setPanelQuantity(Number(source.moduleCount));
-      } else if (source.systemCapacityKW || source.capacity) {
-        const rawKw = parseFloat(source.systemCapacityKW || source.capacity);
-        if (!isNaN(rawKw)) {
-          setPanelQuantity(Math.max(1, Math.round((rawKw * 1000) / 585)));
+      return prev.map(item => {
+        if (item.id === 'solar_panel') {
+          const baseRate = Math.round(panelWatt * ratePerWp);
+          const total = baseRate * panelQuantity;
+          const totalWithGst = Math.round(total * 1.05);
+          return {
+            ...item,
+            item: `${panelBrand} ${panelWatt}W TOPCon Bifacial Panel`,
+            qty: panelQuantity,
+            rate: baseRate,
+            ratePerWp,
+            total,
+            totalWithGst
+          };
         }
+        if (item.id === 'solar_inverter') {
+          const total = inverterProcurementPrice * 1;
+          const totalWithGst = Math.round(total * 1.05);
+          return {
+            ...item,
+            item: `${inverterModel} (Dual MPPT / IP65)`,
+            rate: inverterProcurementPrice,
+            total,
+            totalWithGst
+          };
+        }
+        // Scalable structure items update unless user explicitly modified qty
+        if (item.id === 'gi_pipe_60x40' && !item.userOverridden) {
+          const dynamicQty = Math.max(2, Math.round(panelQuantity * 0.5));
+          return {
+            ...item,
+            qty: dynamicQty,
+            total: dynamicQty * item.rate,
+            totalWithGst: Math.round(dynamicQty * item.rate * 1.18)
+          };
+        }
+        if (item.id === 'gi_pipe_40x40' && !item.userOverridden) {
+          const dynamicQty = Math.max(2, Math.round(panelQuantity * 0.5));
+          return {
+            ...item,
+            qty: dynamicQty,
+            total: dynamicQty * item.rate,
+            totalWithGst: Math.round(dynamicQty * item.rate * 1.18)
+          };
+        }
+        if (item.id === 'j_bolt' && !item.userOverridden) {
+          const dynamicQty = Math.max(4, Math.round(panelQuantity * 1.5));
+          return {
+            ...item,
+            qty: dynamicQty,
+            total: dynamicQty * item.rate,
+            totalWithGst: Math.round(dynamicQty * item.rate * 1.18)
+          };
+        }
+        return item;
+      });
+    });
+  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterModel, inverterProcurementPrice]);
+
+  // Live BOM Totals
+  const bomTotals = useMemo(() => {
+    return calculateFieldBOMTotals(bomItems);
+  }, [bomItems]);
+
+  // Item quantity updater
+  const handleBomQtyChange = (itemId, newQty) => {
+    const numericQty = Math.max(0, Number(newQty) || 0);
+    setBomItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const total = numericQty * item.rate;
+      const totalWithGst = Math.round(total * (1 + (item.taxRate || 18) / 100));
+      return {
+        ...item,
+        qty: numericQty,
+        total,
+        totalWithGst,
+        userOverridden: true
+      };
+    }));
+  };
+
+  // Item unit rate updater
+  const handleBomRateChange = (itemId, newRate) => {
+    const numericRate = Math.max(0, Number(newRate) || 0);
+    setBomItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const total = item.qty * numericRate;
+      const totalWithGst = Math.round(total * (1 + (item.taxRate || 18) / 100));
+      return {
+        ...item,
+        rate: numericRate,
+        total,
+        totalWithGst,
+        userOverridden: true
+      };
+    }));
+  };
+
+  // Item deletion
+  const handleRemoveBomItem = (itemId) => {
+    setBomItems(prev => prev.filter(item => item.id !== itemId));
+  };
+
+  // Custom Item insertion
+  const handleAddCustomBomItem = (e) => {
+    if (e) e.preventDefault();
+    if (!customItemForm.item.trim()) return;
+    const qty = Math.max(1, Number(customItemForm.qty) || 1);
+    const rate = Math.max(0, Number(customItemForm.rate) || 0);
+    const taxRate = Number(customItemForm.taxRate) || 18;
+    const total = qty * rate;
+    const totalWithGst = Math.round(total * (1 + taxRate / 100));
+
+    setBomItems(prev => [
+      ...prev,
+      {
+        id: `custom_${Date.now()}`,
+        item: customItemForm.item.trim(),
+        category: customItemForm.category || 'custom',
+        unit: customItemForm.unit || 'NOS',
+        qty,
+        rate,
+        taxRate,
+        total,
+        totalWithGst,
+        specs: customItemForm.specs || 'Custom Field Item',
+        isCustom: true
       }
-      if (source.selectedModuleMake) {
-        setPanelBrand(source.selectedModuleMake);
-      }
-      if (source.inverterType) {
-        setInverterModel(source.inverterType);
-        setUserOverrodeInverter(true);
-      }
-      if (source.projectType) {
-        setProjectType(source.projectType);
-      } else if (typeof source.type === 'string' && source.type.includes('Commercial')) {
-        setProjectType('Commercial');
-      } else {
-        setProjectType('Residential');
-      }
-      if (source.baseRatePerKW) {
-        setRatePerKw(Number(source.baseRatePerKW));
-      }
-      if (source.ratePerWp) {
-        setRatePerWp(Number(source.ratePerWp));
-      }
-      if (source.multiBrandComparison !== undefined) {
-        setMultiBrandComparison(source.multiBrandComparison);
-      }
-      if (source.dealerTotalMargin) {
-        setMarginMode('amount');
-        setDealerMarginFixed(Number(source.dealerTotalMargin));
-      }
-      if (source.customCoverUrl || source.coverImage) {
-        setCustomCoverUrl(source.customCoverUrl || source.coverImage);
+    ]);
+    setShowAddCustomBomItemModal(false);
+    setCustomItemForm({
+      item: '',
+      category: 'custom',
+      unit: 'NOS',
+      qty: 1,
+      rate: 1000,
+      taxRate: 18,
+      specs: ''
+    });
+    addToast({
+      title: 'Item Added to BOM',
+      message: `Added custom line item to field BOM.`,
+      type: 'success'
+    });
+  };
+
+  // Apply Kit Preset
+  const handleApplyKitPreset = (kitId) => {
+    const targetKit = (kitsPresets || []).find(k => k.id === kitId);
+    if (!targetKit || !targetKit.items) return;
+    setBomItems(targetKit.items);
+    if (targetKit.capacityKw) {
+      const panelItem = targetKit.items.find(i => i.id === 'solar_panel');
+      if (panelItem && panelItem.qty) {
+        setPanelQuantity(panelItem.qty);
       }
     }
-  }, [editingQuotation, activeDraftQuote]);
+    addToast({
+      title: 'Kit Preset Loaded',
+      message: `Loaded ${targetKit.name} with ${targetKit.items.length} BOM line items.`,
+      type: 'success'
+    });
+  };
 
-  // Turnkey Base Cost before dealer margin
-  const baseProjectCost = Math.round(kw * ratePerKw);
+  // Save current BOM as Kit Preset
+  const handleSaveAsKit = async () => {
+    if (!newKitName.trim()) {
+      addToast({
+        title: 'Kit Name Required',
+        message: 'Please enter a recognizable name for this solar BOM kit.',
+        type: 'warning'
+      });
+      return;
+    }
+    const newKit = {
+      id: `kit-${Date.now()}`,
+      name: newKitName.trim(),
+      capacityKw: kw,
+      createdBy: role === 'admin' ? 'Sunvine Admin HO' : currentStaff?.name || 'Sales Staff',
+      creatorRole: role,
+      creatorStaffId: role === 'staff' ? currentStaff?.id : null,
+      items: bomItems
+    };
+    if (saveKitPreset) {
+      await saveKitPreset(newKit);
+    }
+    setIsSaveKitModalOpen(false);
+    setNewKitName('');
+    addToast({
+      title: 'Kit Preset Saved',
+      message: `Kit "${newKit.name}" saved successfully for reuse across quotations.`,
+      type: 'success'
+    });
+  };
+
+
+  // Turnkey Base Cost before dealer margin strictly follows Field BOM Totals!
+  const baseProjectCost = bomTotals.grossTurnkeyCost;
 
   // Commercial margin computation (dual mode: % or fixed ₹ amount)
   // For dealer partners: Custom Dealer Margin. For direct company quotes: Sunvine HO Company Margin.
@@ -323,16 +519,16 @@ export default function CreateQuotation() {
   const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR - discountAmount);
   const totalCost = grossTurnkeyBeforeSubsidy;
 
-  // Transparent GST Invoice Breakdown: 13.8% composite solar GST included in turnkey
-  const baseBeforeGst = Math.round(grossTurnkeyBeforeSubsidy / 1.138);
-  const gstAmount = grossTurnkeyBeforeSubsidy - baseBeforeGst;
+  // Transparent GST Invoice Breakdown:
+  const baseBeforeGst = bomTotals.totalTaxableBase;
+  const gstAmount = bomTotals.totalGstAmount;
 
-  // Equipment & Service Component Breakdown for transparent proposal:
-  const moduleEstimatedCost = Math.round(panelWatt * panelQuantity * ratePerWp);
-  const inverterEstimatedCost = Math.round(kw <= 3 ? 29800 : kw <= 5.5 ? 42000 : kw <= 7 ? 48500 : 72000);
-  const structureEstimatedCost = Math.round(panelQuantity * 3200);
-  const bosEstimatedCost = Math.round(kw * 3800);
-  const transportCharge = 2500;
+  // Equipment & Service Component Breakdown from BOM:
+  const moduleEstimatedCost = bomItems.find(i => i.id === 'solar_panel')?.total || Math.round(panelWatt * panelQuantity * ratePerWp);
+  const inverterEstimatedCost = bomItems.find(i => i.id === 'solar_inverter')?.total || inverterProcurementPrice;
+  const structureEstimatedCost = bomItems.filter(i => i.category === 'structure').reduce((sum, i) => sum + i.total, 0);
+  const bosEstimatedCost = bomItems.filter(i => ['bos', 'cable', 'earthing', 'fastener'].includes(i.category)).reduce((sum, i) => sum + i.total, 0);
+  const transportCharge = bomItems.find(i => i.id === 'transportation')?.total || 1000;
   const installationEstimatedCost = Math.round(kw * 2500);
 
   // Effective margin percentage
@@ -507,7 +703,10 @@ export default function CreateQuotation() {
       loanBank: financeType === 'LOAN' ? loanBank : null,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
-      customCoverUrl: customCoverUrl || null
+      customCoverUrl: customCoverUrl || null,
+      bomItems,
+      bomTotals,
+      pricingMode: bomPricingMode
     };
 
     setIsSubmitting(true);
@@ -642,7 +841,10 @@ export default function CreateQuotation() {
       loanBank: financeType === 'LOAN' ? loanBank : null,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
-      customCoverUrl: customCoverUrl || null
+      customCoverUrl: customCoverUrl || null,
+      bomItems,
+      bomTotals,
+      pricingMode: bomPricingMode
     };
 
     if (isEdit && updateQuotation) {
@@ -775,7 +977,7 @@ export default function CreateQuotation() {
                 onClick={() => {
                   setQuoteChannel('dealer');
                   if (tierConfig?.defaultMarginPerKw) {
-                    setDealerMarginFixed(tierConfig.defaultMarginPerKw * (parseFloat(systemCapacity) || 5));
+                    setDealerMarginFixed(tierConfig.defaultMarginPerKw * kw);
                   }
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -793,9 +995,9 @@ export default function CreateQuotation() {
               <select
                 value={assignedDealerId}
                 onChange={(e) => setAssignedDealerId(e.target.value)}
-                className="h-9 px-3 text-xs bg-slate-800 text-white rounded-xl border border-slate-700 outline-none focus:border-[#6CBF3D]"
+                className="h-9 px-3 text-xs bg-slate-800 text-white rounded-xl border border-slate-700 outline-none focus:border-[#6CBF3D] cursor-pointer max-w-[280px]"
               >
-                {(dealers || []).slice(0, 100).map((d) => (
+                {(accessibleDealers || []).map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.firmName} ({d.city}) • {d.tier}
                   </option>
@@ -1123,14 +1325,14 @@ export default function CreateQuotation() {
                   </span>
                 </div>
 
-                {/* Wattage per piece (Wp) */}
-                <div className="flex flex-col gap-1.5">
+                {/* Wattage per piece (Wp) and Dual Reactive Rate Controls */}
+                <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <label className="font-label-sm text-label-sm text-on-surface font-semibold">
                       2. Watt per Piece (Wp) *
                     </label>
                     <span className="text-[11px] text-primary font-bold">
-                      Base Rate: ₹{ratePerWp.toFixed(2)}/Wp
+                      {panelWatt}W × ₹{ratePerWp.toFixed(2)}/Wp
                     </span>
                   </div>
                   <div className="grid grid-cols-5 gap-1.5">
@@ -1149,9 +1351,50 @@ export default function CreateQuotation() {
                       </button>
                     ))}
                   </div>
-                  <span className="text-[11px] text-secondary">
-                    Per-panel value: ₹{(panelWatt * ratePerWp).toLocaleString('en-IN', { maximumFractionDigits: 0 })} / piece
-                  </span>
+
+                  {/* Dual Reactive Inputs: Rate / Wp AND Price / Panel */}
+                  <div className="p-2.5 rounded-lg bg-surface border border-surface-container-high grid grid-cols-2 gap-2 mt-0.5">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
+                          Rate per Wp
+                        </label>
+                        <span className="text-[10px] text-primary font-semibold">₹ / Watt</span>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="10"
+                          max="40"
+                          value={ratePerWp}
+                          onChange={(e) => handleRatePerWpChange(e.target.value)}
+                          className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[10px] font-bold text-secondary uppercase tracking-wider block">
+                          Price per Panel
+                        </label>
+                        <span className="text-[10px] text-primary font-semibold">₹ / Piece</span>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                        <input
+                          type="number"
+                          step="50"
+                          min="1000"
+                          max="25000"
+                          value={perPanelPrice}
+                          onChange={(e) => handlePerPanelPriceChange(e.target.value)}
+                          className="w-full h-8 pl-6 pr-2 rounded-md bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1309,6 +1552,201 @@ export default function CreateQuotation() {
                   <span className="text-[11px] text-secondary">
                     {projectType === 'Residential' ? 'Central DBT subsidy up to ₹78,000 applicable' : 'No government DBT subsidy for C&I'}
                   </span>
+                </div>
+              </div>
+
+              {/* FIELD ENGINEERING BILL OF MATERIALS (BOM) & LIVE COSTING */}
+              <div className="p-4 sm:p-5 bg-surface-container-low rounded-xl border border-surface-container-high space-y-4">
+                {/* Header & Controls Bar */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                      <span className="material-symbols-outlined text-[24px]">format_list_bulleted</span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-bold text-sm sm:text-base text-on-surface">Field Engineering BOM &amp; Costing</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 uppercase">
+                          Excel Field Standard
+                        </span>
+                      </div>
+                      <p className="text-xs text-secondary mt-0.5">
+                        Interactive component list with dual statutory GST (5% panels/inverters, 18% materials). Editable qty &amp; rates.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mode & Kit Presets Bar */}
+                  <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                    {/* Pricing Mode Toggle */}
+                    <div className="flex items-center p-0.5 rounded-lg bg-surface border border-surface-container-high text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setBomPricingMode('standard')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          bomPricingMode === 'standard'
+                            ? 'bg-primary text-white shadow-xs font-bold'
+                            : 'text-secondary hover:text-on-surface'
+                        }`}
+                        title="Use official company procurement base rates"
+                      >
+                        Company Base
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBomPricingMode('custom')}
+                        className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
+                          bomPricingMode === 'custom'
+                            ? 'bg-amber-600 text-white shadow-xs font-bold'
+                            : 'text-secondary hover:text-on-surface'
+                        }`}
+                        title="Use customized rates negotiated for this dealer"
+                      >
+                        Dealer Custom
+                      </button>
+                    </div>
+
+                    {/* Kit Preset Selector */}
+                    <div className="flex items-center gap-1">
+                      <select
+                        value={selectedKitId}
+                        onChange={(e) => {
+                          const kId = e.target.value;
+                          setSelectedKitId(kId);
+                          if (kId) handleApplyKitPreset(kId);
+                        }}
+                        className="h-8 px-2 rounded-lg bg-surface text-on-surface text-xs font-semibold border border-surface-container-high outline-none cursor-pointer max-w-[150px] truncate"
+                      >
+                        <option value="">-- Load Kit Preset --</option>
+                        {(kitsPresets || []).map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {k.name} ({k.capacityKw} kW)
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsSaveKitModalOpen(true)}
+                        className="h-8 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high border border-surface-container-high text-xs font-semibold text-on-surface flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                        title="Save current BOM itemization as a reusable kit"
+                      >
+                        <span className="material-symbols-outlined text-[15px] text-primary">bookmark_add</span>
+                        <span className="hidden sm:inline">Save Kit</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BOM Items Table */}
+                <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface shadow-xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#0B2545] text-white font-bold">
+                      <tr>
+                        <th className="py-2.5 px-3 w-10 text-center border-r border-slate-700">#</th>
+                        <th className="py-2.5 px-3 border-r border-slate-700 min-w-[200px]">Product / Material Description</th>
+                        <th className="py-2.5 px-2 text-center w-28 border-r border-slate-700">Qty</th>
+                        <th className="py-2.5 px-2 text-center w-20 border-r border-slate-700">Unit</th>
+                        <th className="py-2.5 px-3 text-right w-28 border-r border-slate-700">Unit Rate (₹)</th>
+                        <th className="py-2.5 px-2 text-center w-16 border-r border-slate-700">GST</th>
+                        <th className="py-2.5 px-3 text-right w-28 border-r border-slate-700">Total (₹)</th>
+                        <th className="py-2.5 px-2 text-center w-10">Act</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-high font-medium text-on-surface">
+                      {bomItems.map((item, idx) => {
+                        return (
+                          <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-surface-container-lowest/50' : 'bg-surface'}>
+                            <td className="py-2 px-3 text-center text-secondary font-mono border-r border-surface-container-high/60">
+                              {idx + 1}
+                            </td>
+                            <td className="py-2 px-3 border-r border-surface-container-high/60 min-w-0">
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-on-surface truncate">{item.item}</span>
+                                {item.specs && (
+                                  <span className="text-[10px] text-secondary truncate">{item.specs}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2 px-2 text-center border-r border-surface-container-high/60">
+                              <div className="flex items-center justify-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step={item.unit === 'MTR' ? '5' : '1'}
+                                  value={item.qty}
+                                  onChange={(e) => handleBomQtyChange(item.id, e.target.value)}
+                                  className="w-16 h-7 text-center font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1 text-xs focus:border-primary outline-none"
+                                />
+                              </div>
+                            </td>
+                            <td className="py-2 px-2 text-center font-mono text-[11px] text-secondary border-r border-surface-container-high/60">
+                              {item.unit || 'PCS'}
+                            </td>
+                            <td className="py-2 px-3 text-right border-r border-surface-container-high/60">
+                              <div className="relative inline-flex items-center justify-end w-full">
+                                <span className="text-[11px] text-secondary mr-1">₹</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="10"
+                                  value={item.rate}
+                                  onChange={(e) => handleBomRateChange(item.id, e.target.value)}
+                                  className="w-20 h-7 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1.5 text-xs focus:border-primary outline-none"
+                                />
+                              </div>
+                            </td>
+                            <td className="py-2 px-2 text-center border-r border-surface-container-high/60">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                item.taxRate === 5
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : 'bg-blue-100 text-blue-800 border border-blue-300'
+                              }`}>
+                                {item.taxRate}%
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-on-surface border-r border-surface-container-high/60 whitespace-nowrap">
+                              {formatINR(item.totalWithGst)}
+                            </td>
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBomItem(item.id)}
+                                className="w-6 h-6 rounded hover:bg-error/10 text-secondary hover:text-error flex items-center justify-center cursor-pointer transition-colors"
+                                title="Remove line item"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">delete</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Add Custom Item Button & Live Category Breakdown Badges */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCustomBomItemModal(true)}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:text-primary-container bg-primary/10 hover:bg-primary/15 px-3 py-1.5 rounded-lg transition-colors cursor-pointer self-start"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                    <span>+ Add Custom BOM Item / Surcharge</span>
+                  </button>
+
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 font-semibold">
+                      5% GST (PV &amp; Inv): <strong>{formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-900 font-semibold">
+                      18% GST (BOS/Structure): <strong>{formatINR(bomTotals.subtotal18GstBase + bomTotals.gst18Total)}</strong>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-[#0F1B2E] text-white font-mono font-bold">
+                      BOM Total: {formatINR(bomTotals.grossTurnkeyCost)}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1998,6 +2436,218 @@ export default function CreateQuotation() {
         selectedBankName={loanBank}
         onSelectBank={(selectedName) => setLoanBank(selectedName)}
       />
+
+      {/* MODAL: SAVE AS KIT PRESET */}
+      {isSaveKitModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface-container-lowest rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-surface-container-high animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[22px]">bookmark_add</span>
+                <h3 className="font-headline-sm text-base sm:text-lg font-bold text-on-surface">Save Current BOM as Kit</h3>
+              </div>
+              <button
+                onClick={() => setIsSaveKitModalOpen(false)}
+                className="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-secondary cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <div className="py-4 space-y-3.5">
+              <div className="p-3 bg-surface-container-low rounded-xl border border-surface-container-high text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-secondary">System Capacity:</span>
+                  <strong className="text-on-surface font-mono">{kw} kW ({panelQuantity} Panels)</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-secondary">BOM Items Count:</span>
+                  <strong className="text-on-surface font-mono">{bomItems.length} line items</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-secondary">BOM Turnkey Value:</span>
+                  <strong className="text-emerald-700 font-mono">{formatINR(bomTotals.grossTurnkeyCost)}</strong>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1.5">
+                  Kit Preset Name *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 3.3 kW Standard 6-Panel Field Kit"
+                  value={newKitName}
+                  onChange={(e) => setNewKitName(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none"
+                  autoFocus
+                />
+                <span className="text-[11px] text-secondary mt-1 block">
+                  This kit preset will be stored and available to load across quotations.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container-high">
+              <button
+                type="button"
+                onClick={() => setIsSaveKitModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-secondary hover:text-on-surface bg-surface-container hover:bg-surface-container-high cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAsKit}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-primary hover:bg-primary-container cursor-pointer transition-colors shadow-sm"
+              >
+                Save Kit Preset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD CUSTOM BOM LINE ITEM */}
+      {showAddCustomBomItemModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface-container-lowest rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-surface-container-high animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[22px]">add_circle</span>
+                <h3 className="font-headline-sm text-base sm:text-lg font-bold text-on-surface">Add Custom BOM Line Item</h3>
+              </div>
+              <button
+                onClick={() => setShowAddCustomBomItemModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-secondary cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomBomItem} className="py-4 space-y-3">
+              <div>
+                <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                  Product / Service Description *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Extra 25mm PVC Conduit Pipe, Portal Fees, Crane Service"
+                  value={customItemForm.item}
+                  onChange={(e) => setCustomItemForm(prev => ({ ...prev, item: e.target.value }))}
+                  className="w-full h-9 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none"
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={customItemForm.qty}
+                    onChange={(e) => setCustomItemForm(prev => ({ ...prev, qty: e.target.value }))}
+                    className="w-full h-9 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                    Unit
+                  </label>
+                  <select
+                    value={customItemForm.unit}
+                    onChange={(e) => setCustomItemForm(prev => ({ ...prev, unit: e.target.value }))}
+                    className="w-full h-9 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none cursor-pointer"
+                  >
+                    <option value="PCS">PCS (Pieces)</option>
+                    <option value="MTR">MTR (Meters)</option>
+                    <option value="NOS">NOS (Numbers)</option>
+                    <option value="SET">SET</option>
+                    <option value="BAG">BAG</option>
+                    <option value="LOT">LOT</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                    Unit Rate (₹ before GST) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      value={customItemForm.rate}
+                      onChange={(e) => setCustomItemForm(prev => ({ ...prev, rate: e.target.value }))}
+                      className="w-full h-9 pl-6 pr-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                    Statutory GST Rate *
+                  </label>
+                  <select
+                    value={customItemForm.taxRate}
+                    onChange={(e) => setCustomItemForm(prev => ({ ...prev, taxRate: Number(e.target.value) }))}
+                    className="w-full h-9 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-semibold text-on-surface focus:border-primary outline-none cursor-pointer"
+                  >
+                    <option value={18}>18% (Structure, BOS, Logistics, Service)</option>
+                    <option value={5}>5% (Solar PV Modules &amp; Inverter)</option>
+                    <option value={0}>0% (Tax Exempted Charge)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-label-sm text-xs font-semibold text-on-surface block mb-1">
+                  Technical Specifications / Notes
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Heavy Duty, Grade 304, Site Specific Liaisoning"
+                  value={customItemForm.specs}
+                  onChange={(e) => setCustomItemForm(prev => ({ ...prev, specs: e.target.value }))}
+                  className="w-full h-9 px-3 rounded-lg bg-surface border border-surface-container-high text-xs font-medium text-on-surface focus:border-primary outline-none"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high text-xs flex justify-between items-center font-mono">
+                <span className="text-secondary font-sans">Estimated Line Total (with GST):</span>
+                <strong className="text-emerald-700 text-sm">
+                  {formatINR(Math.round((Number(customItemForm.qty) || 1) * (Number(customItemForm.rate) || 0) * (1 + (customItemForm.taxRate || 18) / 100)))}
+                </strong>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container-high">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustomBomItemModal(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-secondary hover:text-on-surface bg-surface-container hover:bg-surface-container-high cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-primary hover:bg-primary-container cursor-pointer transition-colors shadow-sm"
+                >
+                  Add Line Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
