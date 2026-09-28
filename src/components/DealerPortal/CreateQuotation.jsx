@@ -272,7 +272,7 @@ export default function CreateQuotation() {
       inverterPrice: inverterProcurementPrice,
       customBomRates: (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates) 
         ? effectiveDealer.pricingConfig.customBomRates 
-        : null
+        : {}
     });
   });
 
@@ -304,7 +304,10 @@ export default function CreateQuotation() {
           panelQuantity,
           ratePerWp,
           inverterModel,
-          inverterPrice: inverterProcurementPrice
+          inverterPrice: inverterProcurementPrice,
+          customBomRates: (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates) 
+            ? effectiveDealer.pricingConfig.customBomRates 
+            : {}
         });
       }
       return prev.map(item => {
