@@ -10,6 +10,7 @@ import {
   DEFAULT_MODULE_DIMS
 } from '../../utils/solarLayoutEngine';
 import SolarStructure3DViewer from './SolarStructure3DViewer';
+import SolarStructure3DComingSoon from './SolarStructure3DComingSoon';
 import RooftopDesigner, { DEFAULT_ROOF_CONFIG, SAMPLE_HAND_DRAWN_SKETCH_CONFIG, SITE_SKETCH_2_CONFIG } from './RooftopDesigner';
 
 export default function PanelLayoutVisualizer({
@@ -20,12 +21,14 @@ export default function PanelLayoutVisualizer({
   isModal = false,
   onClose = null,
   initialRoofConfig = null,
-  onRoofConfigChange = null
+  onRoofConfigChange = null,
+  initialTab = null
 }) {
   const [panelCount, setPanelCount] = useState(initialPanelCount || 6);
   const [activeCategory, setActiveCategory] = useState('all');
   const [selectedId, setSelectedId] = useState(selectedLayoutId || 'portrait_2x3');
-  const [activeViewTab, setActiveViewTab] = useState('roof'); // Step 1: Rooftop Setup first
+  const [activeViewTab, setActiveViewTab] = useState(initialTab || 'roof'); // Step 1: Rooftop Setup first
+  const [showLive3D, setShowLive3D] = useState(false);
   const [roofConfig, setRoofConfigState] = useState(() => {
     if (initialRoofConfig) return initialRoofConfig;
     try {
@@ -218,18 +221,16 @@ export default function PanelLayoutVisualizer({
               <span>2. 📐 2D Solar Layouts ({filteredLayouts.length})</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveViewTab('3d')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                activeViewTab === '3d'
-                  ? 'bg-primary-container text-white shadow-xs'
-                  : 'text-secondary hover:text-on-surface hover:bg-surface-container-high'
-              }`}
+            <div
+              className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 text-secondary/70 bg-surface-container/50 border border-transparent cursor-not-allowed select-none"
+              title="3D Structure Model — Coming Soon in Future Update"
             >
-              <span className="material-symbols-outlined text-[16px]">view_in_ar</span>
-              <span>3. 🌐 3D Structure Model</span>
-            </button>
+              <span className="material-symbols-outlined text-[16px] text-secondary/60">view_in_ar</span>
+              <span>3. 🌐 3D Structure</span>
+              <span className="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider rounded bg-amber-400/20 text-amber-500 dark:text-amber-300 border border-amber-400/30">
+                Coming Soon
+              </span>
+            </div>
 
             <button
               type="button"
@@ -564,7 +565,7 @@ export default function PanelLayoutVisualizer({
                         e.stopPropagation();
                         handleSelect(layout);
                       }}
-                      className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
                         isSelected
                           ? 'bg-primary text-white ring-2 ring-primary/30'
                           : !fit.fits
@@ -576,20 +577,6 @@ export default function PanelLayoutVisualizer({
                         {isSelected ? 'check_circle' : !fit.fits ? 'warning' : 'touch_app'}
                       </span>
                       <span>{isSelected ? 'Selected Active' : !fit.fits ? 'Select (Exceeds Roof)' : 'Select Layout'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSelect(layout);
-                        setActiveViewTab('3d');
-                      }}
-                      className="py-2.5 px-3 rounded-xl text-xs font-bold bg-[#0F1B2E] hover:bg-slate-800 text-white transition-all flex items-center justify-center gap-1 cursor-pointer shrink-0 shadow-xs"
-                      title="Inspect this layout in 3D Three.js Structure Viewer"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-[#6CBF3D]">view_in_ar</span>
-                      <span>3D Model</span>
                     </button>
                   </div>
                 </div>
@@ -721,10 +708,10 @@ export default function PanelLayoutVisualizer({
           </div>
           <button
             type="button"
-            onClick={() => setActiveViewTab('3d')}
+            onClick={() => setActiveViewTab('pipes')}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6CBF3D] to-emerald-500 hover:brightness-110 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg transition-all cursor-pointer"
           >
-            <span>Proceed to Step 3: Mount on 3D Realistic Roof</span>
+            <span>Proceed to 20-ft GI Pipe Cutting BOM</span>
             <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
           </button>
         </div>
@@ -744,59 +731,84 @@ export default function PanelLayoutVisualizer({
         </div>
       )}
 
-      {/* Active Tab View: 3D Three.js Structure Model */}
+      {/* Active Tab View: 3D Three.js Structure Model or Coming Soon Placeholder */}
       {activeViewTab === '3d' && (
         <div className="p-4 sm:p-6 bg-slate-950 flex flex-col gap-4 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between text-white flex-wrap gap-2 pb-2 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#6CBF3D]">view_in_ar</span>
-              <span className="text-sm font-bold">Interactive 3D Rooftop Structure View:</span>
-              <span className="text-xs text-[#6CBF3D] font-bold">({activeSelectedLayout?.name})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveViewTab('roof')}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1 border border-white/10"
-              >
-                <span className="material-symbols-outlined text-[16px] text-amber-400">roofing</span>
-                <span>House Roof Designer</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveViewTab('2d')}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1"
-              >
-                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-                <span>Back to 2D Presets</span>
-              </button>
-            </div>
-          </div>
+          {!showLive3D ? (
+            <SolarStructure3DComingSoon
+              layout={activeSelectedLayout}
+              frontLegFt={frontLegHeightFt}
+              tiltDegrees={tiltDegrees}
+              onProceedToPipes={() => setActiveViewTab('pipes')}
+              onBackTo2D={() => setActiveViewTab('2d')}
+              onBackToRoof={() => setActiveViewTab('roof')}
+              onToggleLive3D={() => setShowLive3D(true)}
+            />
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-white flex-wrap gap-2 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#6CBF3D]">view_in_ar</span>
+                  <span className="text-sm font-bold">Interactive 3D Rooftop Structure View:</span>
+                  <span className="text-xs text-[#6CBF3D] font-bold">({activeSelectedLayout?.name})</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    Dev Mode
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowLive3D(false)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-xs font-bold text-amber-300 transition-all cursor-pointer flex items-center gap-1 border border-amber-500/40"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">visibility_off</span>
+                    <span>Back to Coming Soon Preview</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveViewTab('roof')}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1 border border-white/10"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-amber-400">roofing</span>
+                    <span>House Roof Designer</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveViewTab('2d')}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                    <span>Back to 2D Presets</span>
+                  </button>
+                </div>
+              </div>
 
-          <SolarStructure3DViewer
-            layout={activeSelectedLayout}
-            moduleDims={moduleDims}
-            initialFrontLegHeightFt={frontLegHeightFt}
-            tiltDegrees={tiltDegrees}
-            roofConfig={roofConfig}
-            onOpenRoofDesigner={() => setActiveViewTab('roof')}
-          />
+              <SolarStructure3DViewer
+                layout={activeSelectedLayout}
+                moduleDims={moduleDims}
+                initialFrontLegHeightFt={frontLegHeightFt}
+                tiltDegrees={tiltDegrees}
+                roofConfig={roofConfig}
+                onOpenRoofDesigner={() => setActiveViewTab('roof')}
+              />
 
-          {/* Step 3 Footer Navigation to Pipes */}
-          <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-2 text-xs text-slate-300">
-              <span className="material-symbols-outlined text-[#6CBF3D] text-[18px]">verified</span>
-              <span>Structure safely mounted &amp; clamped inside terrace</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveViewTab('pipes')}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6CBF3D] to-emerald-500 hover:brightness-110 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg transition-all cursor-pointer"
-            >
-              <span>Proceed to Step 4: 20-ft GI Pipe Cutting BOM</span>
-              <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-            </button>
-          </div>
+              {/* Step 3 Footer Navigation to Pipes */}
+              <div className="p-3.5 bg-slate-900 rounded-xl border border-slate-800 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2 text-xs text-slate-300">
+                  <span className="material-symbols-outlined text-[#6CBF3D] text-[18px]">verified</span>
+                  <span>Structure safely mounted &amp; clamped inside terrace</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveViewTab('pipes')}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#6CBF3D] to-emerald-500 hover:brightness-110 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg transition-all cursor-pointer"
+                >
+                  <span>Proceed to Step 4: 20-ft GI Pipe Cutting BOM</span>
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

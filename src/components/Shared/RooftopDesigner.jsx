@@ -580,16 +580,16 @@ export default function RooftopDesigner({
         </div>
 
         <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
-          {onOpen3D && (
-            <button
-              type="button"
-              onClick={onOpen3D}
-              className="px-4 py-2 rounded-xl bg-primary-container hover:bg-primary text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">view_in_ar</span>
-              <span>Open in 3D Model</span>
-            </button>
-          )}
+          <div
+            className="px-3.5 py-2 rounded-xl bg-surface-container-high border border-surface-container-highest text-secondary font-bold text-xs flex items-center gap-1.5 cursor-not-allowed select-none opacity-80"
+            title="3D Model — Coming Soon in Future Update"
+          >
+            <span className="material-symbols-outlined text-[18px] text-secondary">view_in_ar</span>
+            <span>3D Model</span>
+            <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-amber-400/20 text-amber-600 dark:text-amber-300 border border-amber-400/30">
+              Coming Soon
+            </span>
+          </div>
         </div>
       </div>
 
