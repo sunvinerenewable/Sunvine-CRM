@@ -151,15 +151,7 @@ export default function CreateQuotation() {
     if (!editingQuotation && !activeDraftQuote && pricingPresets?.baseRatePerKw) {
       setRatePerKw(pricingPresets.baseRatePerKw);
     }
-    if (!editingQuotation && !activeDraftQuote) {
-      if (isDirectCompanyQuote) {
-        setDealerMarginFixed(0);
-        setDealerMarginRate(0);
-      } else if (tierConfig?.defaultMarginPerKw) {
-        setDealerMarginFixed(tierConfig.defaultMarginPerKw * (parseFloat(systemCapacity) || 5));
-      }
-    }
-  }, [pricingPresets?.baseRatePerKw, tierConfig?.defaultMarginPerKw, editingQuotation, activeDraftQuote, systemCapacity, isDirectCompanyQuote]);
+  }, [pricingPresets?.baseRatePerKw, editingQuotation, activeDraftQuote]);
 
   // Auto-populate when editing an existing quote or restoring draft (SR-36)
   useEffect(() => {
@@ -211,26 +203,24 @@ export default function CreateQuotation() {
   // Base EPC & Hardware Project Cost
   const baseProjectCost = Math.round(kw * ratePerKw);
 
-  // Dealer margin computation (dual mode: % or fixed ₹ amount, strictly 0 for direct company quotes)
-  const dealerMarginINR = isDirectCompanyQuote ? 0 : (
-    marginMode === 'percent'
-      ? Math.round(baseProjectCost * (dealerMarginRate / 100))
-      : Math.round(dealerMarginFixed)
-  );
+  // Commercial margin computation (dual mode: % or fixed ₹ amount)
+  // For dealer partners: Custom Dealer Margin. For direct company quotes: Sunvine HO Company Margin.
+  const dealerMarginINR = marginMode === 'percent'
+    ? Math.round(baseProjectCost * (dealerMarginRate / 100))
+    : Math.round(dealerMarginFixed);
 
   // Effective margin percentage
-  const effectiveMarginPercent = isDirectCompanyQuote ? '0.0' : (
-    baseProjectCost > 0
-      ? ((dealerMarginINR / baseProjectCost) * 100).toFixed(1)
-      : '0.0'
-  );
+  const effectiveMarginPercent = baseProjectCost > 0
+    ? ((dealerMarginINR / baseProjectCost) * 100).toFixed(1)
+    : '0.0';
 
   // Tier Margin Cap & Audit Validation (SR-24)
+  // Direct Company Quotes (Admin) are not constrained by dealer tier caps
   const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 6000);
-  const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
+  const currentMarginPerKw = kw > 0 ? Math.round(dealerMarginINR / kw) : 0;
   const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
 
-  // Total Customer Quoted Project Cost (Base Cost + Dealer Margin)
+  // Total Customer Quoted Project Cost (Base Cost + Dealer/Company Margin)
   const totalCost = baseProjectCost + dealerMarginINR;
 
   // PM Surya Ghar Central DBT Subsidy Formula (Linked to Admin Presets & Project Type)
@@ -345,7 +335,7 @@ export default function CreateQuotation() {
       baseCost: baseProjectCost,
       dealerMargin: dealerMarginINR,
       dealerTotalMargin: dealerMarginINR,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
+      dealerMarginPerKW: currentMarginPerKw,
       isDirectCompanyQuote,
       isFlagged: isMarginExceeded,
       requiresAudit: isMarginExceeded,
@@ -445,7 +435,7 @@ export default function CreateQuotation() {
       inverterType: inverterModel,
       inverterCount: '1 NOS',
       baseRatePerKW: ratePerKw,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
+      dealerMarginPerKW: currentMarginPerKw,
       dealerTotalMargin: dealerMarginINR,
       dealerMargin: dealerMarginINR,
       isDirectCompanyQuote,
@@ -514,7 +504,11 @@ export default function CreateQuotation() {
               {editingQuotation ? 'Edit Quotation' : (isDirectCompanyQuote ? 'New Direct Company Quotation' : 'New Quotation')}
             </h1>
             <span className="bg-primary/10 text-primary px-2.5 py-0.5 rounded-full text-[10px] tracking-wide uppercase font-semibold shrink-0">
-              {editingQuotation ? `#${editingQuotation.id}` : (isDirectCompanyQuote ? 'Sunvine HO Direct (Zero Margin)' : 'Ref #SV-2025-Q408')}
+              {editingQuotation
+                ? `#${editingQuotation.id}`
+                : (isDirectCompanyQuote
+                    ? (dealerMarginINR > 0 ? `Sunvine HO Direct (+${formatINR(dealerMarginINR)})` : 'Sunvine HO Direct (Zero Margin)')
+                    : 'Ref #SV-2025-Q408')}
             </span>
             {editingQuotation && (
               <button
@@ -572,6 +566,8 @@ export default function CreateQuotation() {
                 type="button"
                 onClick={() => {
                   setQuoteChannel('direct');
+                  setDealerMarginFixed(0);
+                  setDealerMarginRate(0);
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   quoteChannel === 'direct'
@@ -584,7 +580,12 @@ export default function CreateQuotation() {
               </button>
               <button
                 type="button"
-                onClick={() => setQuoteChannel('dealer')}
+                onClick={() => {
+                  setQuoteChannel('dealer');
+                  if (tierConfig?.defaultMarginPerKw) {
+                    setDealerMarginFixed(tierConfig.defaultMarginPerKw * (parseFloat(systemCapacity) || 5));
+                  }
+                }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   quoteChannel === 'dealer'
                     ? 'bg-white text-[#0F1B2E] shadow-sm'
@@ -699,74 +700,76 @@ export default function CreateQuotation() {
               </div>
 
               {/* Payment Mode: Cash vs Solar Bank Loan */}
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-surface-container-high/60">
-                <div className="flex flex-col gap-1.5">
-                  <label className="font-label-sm text-label-sm text-on-surface font-semibold">
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-surface-container-high/60 min-w-0">
+                <div className="flex flex-col gap-1.5 min-w-0">
+                  <label className="font-label-sm text-label-sm text-on-surface font-semibold truncate">
                     Payment / Finance Mode
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2 min-w-0">
                     <button
                       type="button"
                       onClick={() => setFinanceType('CASH')}
-                      className={`h-10 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      className={`h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${
                         financeType === 'CASH'
                           ? 'bg-[#6CBF3D] text-white border-[#6CBF3D] shadow-xs'
                           : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-[#6CBF3D]'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[16px]">payments</span>
-                      <span>Cash Case</span>
+                      <span className="material-symbols-outlined text-[16px] shrink-0">payments</span>
+                      <span className="truncate">Cash Case</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setFinanceType('LOAN')}
-                      className={`h-10 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      className={`h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${
                         financeType === 'LOAN'
                           ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                           : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-amber-500'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[16px]">account_balance</span>
-                      <span>Solar Loan (EMI)</span>
+                      <span className="material-symbols-outlined text-[16px] shrink-0">account_balance</span>
+                      <span className="truncate">Solar Loan (EMI)</span>
                     </button>
                   </div>
                 </div>
 
                 {financeType === 'LOAN' && (
-                  <div className="flex flex-col gap-1.5 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between">
-                      <label className="font-label-sm text-label-sm text-amber-900 font-semibold">
+                  <div className="flex flex-col gap-1.5 animate-in fade-in duration-200 min-w-0">
+                    <div className="flex items-center justify-between gap-1 min-w-0">
+                      <label className="font-label-sm text-label-sm text-amber-900 font-semibold truncate shrink-0">
                         Financing Bank / Provider
                       </label>
                       <button
                         type="button"
                         onClick={() => setShowBankModal(true)}
-                        className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                        className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer shrink-0 whitespace-nowrap"
                       >
                         <span className="material-symbols-outlined text-[13px]">manage_search</span>
-                        <span>Browse 40+ Official Banks &amp; Rates</span>
+                        <span>Browse 40+ Banks</span>
                       </button>
                     </div>
-                    <div className="flex gap-2">
-                      <select
-                        value={loanBank}
-                        onChange={(e) => setLoanBank(e.target.value)}
-                        className="flex-1 h-10 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer text-xs"
-                      >
-                        {GROUPED_SOLAR_BANKS.map((group) => (
-                          <optgroup key={group.category} label={group.label}>
-                            {group.banks.map((b) => (
-                              <option key={b.id} value={b.name}>
-                                {b.name} ({b.interestRate.split(' ')[0]})
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
+                    <div className="flex items-center gap-2 min-w-0 w-full">
+                      <div className="flex-1 min-w-0">
+                        <select
+                          value={loanBank}
+                          onChange={(e) => setLoanBank(e.target.value)}
+                          className="w-full h-10 px-3 rounded-lg bg-surface-container-lowest text-on-surface font-body-md outline-none shadow-sm border border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all cursor-pointer text-xs truncate"
+                        >
+                          {GROUPED_SOLAR_BANKS.map((group) => (
+                            <optgroup key={group.category} label={group.label}>
+                              {group.banks.map((b) => (
+                                <option key={b.id} value={b.name}>
+                                  {b.name} ({b.interestRate.split(' ')[0]})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowBankModal(true)}
-                        className="h-10 px-3 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer shadow-xs"
+                        className="h-10 w-10 min-w-[40px] bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer shadow-xs transition-colors"
                         title="Browse All 40+ Banks, Rates & Tenures"
                       >
                         <span className="material-symbols-outlined text-[18px]">search</span>
@@ -1191,15 +1194,23 @@ export default function CreateQuotation() {
                 </span>
               </div>
 
-              {/* Line 2: Dealer Margin Added */}
+              {/* Line 2: Dealer / Company Margin Added */}
               <div className="flex items-center justify-between gap-2">
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs text-on-surface font-semibold">Dealer Margin</span>
+                    <span className="text-xs text-on-surface font-semibold">
+                      {isDirectCompanyQuote ? 'Company Margin' : 'Dealer Margin'}
+                    </span>
                     {isDirectCompanyQuote ? (
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
-                        ₹0 Direct Sale
-                      </span>
+                      dealerMarginINR > 0 ? (
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0">
+                          {marginMode === 'percent' ? `${dealerMarginRate}%` : `${effectiveMarginPercent}%`}
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0">
+                          ₹0 Direct Sale
+                        </span>
+                      )
                     ) : (
                       <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0">
                         {marginMode === 'percent' ? `${dealerMarginRate}%` : `${effectiveMarginPercent}%`}
@@ -1207,11 +1218,13 @@ export default function CreateQuotation() {
                     )}
                   </div>
                   <span className="text-[10px] text-secondary">
-                    {isDirectCompanyQuote ? 'Direct company quotation (zero middleman markup)' : 'Added to proposal'}
+                    {isDirectCompanyQuote
+                      ? (dealerMarginINR > 0 ? 'Sunvine HO direct margin' : 'Direct company quotation (zero middleman markup)')
+                      : 'Added to proposal'}
                   </span>
                 </div>
-                <span className={`text-sm font-bold tabular-nums whitespace-nowrap shrink-0 ${isDirectCompanyQuote ? 'text-secondary font-medium' : 'text-emerald-700'}`}>
-                  {isDirectCompanyQuote ? '₹\u00A00' : `+ ${formatINR(dealerMarginINR)}`}
+                <span className={`text-sm font-bold tabular-nums whitespace-nowrap shrink-0 ${dealerMarginINR === 0 ? 'text-secondary font-medium' : 'text-emerald-700'}`}>
+                  {dealerMarginINR > 0 ? `+ ${formatINR(dealerMarginINR)}` : '₹\u00A00'}
                 </span>
               </div>
 
@@ -1439,9 +1452,15 @@ export default function CreateQuotation() {
                       Spread: <strong className={isMarginExceeded ? 'text-error font-bold' : 'text-on-surface font-bold'}>{formatINR(currentMarginPerKw)} / kW</strong> ({effectiveMarginPercent}%)
                     </span>
                     <span className="text-secondary/60">•</span>
-                    <span className="text-[10px] bg-surface-container px-2 py-0.5 rounded font-medium">
-                      Cap: <strong>{formatINR(maxMarginCapPerKw)}/kW</strong> ({effectiveDealer?.tier || currentDealer?.tier || 'Gold'})
-                    </span>
+                    {isDirectCompanyQuote ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+                        Sunvine HO Direct
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-surface-container px-2 py-0.5 rounded font-medium">
+                        Cap: <strong>{formatINR(maxMarginCapPerKw)}/kW</strong> ({effectiveDealer?.tier || currentDealer?.tier || 'Gold'})
+                      </span>
+                    )}
                   </div>
                   <span className="inline-flex items-center gap-1 text-primary font-medium text-[10px] bg-primary/10 px-2 py-0.5 rounded-full shrink-0">
                     <span className="material-symbols-outlined text-[12px]">lock</span>
@@ -1492,30 +1511,30 @@ export default function CreateQuotation() {
                 Generate official 4-page branded PDF ready for preview &amp; WhatsApp sharing.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 min-w-0">
               <button
                 onClick={handleReset}
                 type="button"
-                className="h-10 px-2 rounded-lg bg-surface-container-lowest text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1"
+                className="h-10 px-2 rounded-lg bg-surface-container-lowest text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 min-w-0"
                 title="Reset form"
               >
-                <span className="material-symbols-outlined text-[16px]">refresh</span>
-                <span>Reset</span>
+                <span className="material-symbols-outlined text-[16px] shrink-0">refresh</span>
+                <span className="truncate">Reset</span>
               </button>
               <button
                 onClick={handleSaveDraft}
                 disabled={isSubmitting}
                 type="button"
-                className="h-10 px-2 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 disabled:opacity-50"
+                className="h-10 px-2 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 disabled:opacity-50 min-w-0"
               >
-                <span className="material-symbols-outlined text-[16px] text-secondary">bookmark_border</span>
+                <span className="material-symbols-outlined text-[16px] text-secondary shrink-0">bookmark_border</span>
                 <span className="truncate">{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
               </button>
               <button
                 onClick={handlePreview}
                 disabled={isSubmitting}
                 type="button"
-                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50"
+                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
               >
                 <span className="truncate">Preview</span>
                 <span className="material-symbols-outlined text-[16px] shrink-0">arrow_forward</span>
