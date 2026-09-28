@@ -4,7 +4,7 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, toggleDealerStatus, updateDealerPassword, tierMargins, updateTierMargins, addNotification, setActiveTab } = useApp();
+  const { dealers, addDealer, updateDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -16,6 +16,43 @@ export default function DealerManagement() {
   const [editingDealer, setEditingDealer] = useState(null);
   const [showTierModal, setShowTierModal] = useState(false);
   const [viewMode, setViewMode] = useTableViewMode('admin_dealer_mgmt');
+
+  // Dealer Custom Pricing Modal States
+  const [pricingModalDealer, setPricingModalDealer] = useState(null);
+  const [pricingMode, setPricingMode] = useState('standard');
+  const [customWpRate, setCustomWpRate] = useState(18.00);
+  const [customKwRate, setCustomKwRate] = useState(58000);
+  const [customMarginKw, setCustomMarginKw] = useState(4500);
+  const [customDiscount, setCustomDiscount] = useState(0);
+  const [customNotes, setCustomNotes] = useState('');
+
+  const openPricingModal = (d) => {
+    setPricingModalDealer(d);
+    const cfg = d.pricingConfig || {};
+    setPricingMode(cfg.pricingMode || 'standard');
+    setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : 18.00);
+    setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : 58000);
+    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : 4500);
+    setCustomDiscount(cfg.customDiscountPercent || 0);
+    setCustomNotes(cfg.customNotes || '');
+  };
+
+  const handleSaveDealerPricing = () => {
+    if (!pricingModalDealer) return;
+    const newCfg = {
+      pricingMode,
+      customBaseRatePerWp: Number(customWpRate) || 18.00,
+      customBaseRatePerKw: Number(customKwRate) || 58000,
+      customMarginPerKw: Number(customMarginKw) || 4500,
+      customDiscountPercent: Number(customDiscount) || 0,
+      customNotes: customNotes.trim()
+    };
+    if (updateDealerPricing) {
+      updateDealerPricing(pricingModalDealer.id, newCfg);
+    }
+    addToast(`Pricing updated for ${pricingModalDealer.firmName} (${pricingMode === 'custom' ? `Custom ₹${newCfg.customBaseRatePerWp}/Wp` : 'Standard Tier'})`, 'success');
+    setPricingModalDealer(null);
+  };
 
   // Onboarding Form States
   const [newFirm, setNewFirm] = useState('');
@@ -1128,6 +1165,14 @@ export default function DealerManagement() {
                         </span>
                         <div className="flex items-center gap-1">
                           <button
+                            onClick={() => openPricingModal(d)}
+                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-amber-500 text-amber-700 hover:bg-amber-50 flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Configure Custom Dealer Pricing & Margins"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">tune</span>
+                            <span>{d.pricingConfig?.pricingMode === 'custom' ? `₹${d.pricingConfig.customBaseRatePerWp}/Wp` : 'Pricing'}</span>
+                          </button>
+                          <button
                             onClick={() => {
                               setCredModalDealer(d);
                               setEditPassword(d.password || 'dealer123');
@@ -1262,8 +1307,16 @@ export default function DealerManagement() {
                               <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor} whitespace-nowrap`}>
                                 <span className="material-symbols-outlined text-[13px]">military_tech</span> {d.tier || conf.tierName}
                               </div>
+                              {d.pricingConfig?.pricingMode === 'custom' && (
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap">
+                                    <span className="material-symbols-outlined text-[11px]">bolt</span>
+                                    Custom: ₹{d.pricingConfig.customBaseRatePerWp}/Wp
+                                  </span>
+                                </div>
+                              )}
                               <div className="text-[11px] text-secondary mt-1 leading-tight">
-                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{conf.defaultMarginPerKw.toLocaleString('en-IN')}/kW</strong>
+                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{(d.pricingConfig?.pricingMode === 'custom' ? d.pricingConfig.customMarginPerKw : conf.defaultMarginPerKw).toLocaleString('en-IN')}/kW</strong>
                               </div>
                               <div className="text-[10px] text-secondary mt-0.5 leading-tight whitespace-nowrap">
                                 Cap: ₹{(d.maxMarginCapPerKw || conf.maxMarginCapPerKw).toLocaleString('en-IN')}/kW
@@ -1306,6 +1359,13 @@ export default function DealerManagement() {
                       </td>
                       <td className="py-4 px-3 text-center align-top whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => openPricingModal(d)}
+                            className="w-7 h-7 rounded hover:bg-amber-100 text-amber-700 hover:text-amber-900 transition-colors flex items-center justify-center cursor-pointer"
+                            title="Configure Custom Dealer Pricing & Margins"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">tune</span>
+                          </button>
                           <button
                             onClick={() => {
                               setCredModalDealer(d);
@@ -1702,6 +1762,247 @@ export default function DealerManagement() {
               >
                 <span className="material-symbols-outlined text-[16px]">save</span>
                 <span>Save Password</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DEALER CUSTOM PRICING & MARGINS CONFIGURATION */}
+      {pricingModalDealer && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto text-on-surface">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-surface-container-high pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
+                    #{pricingModalDealer.id}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-surface-container-high text-secondary">
+                    {pricingModalDealer.tier || 'Gold Partner'}
+                  </span>
+                </div>
+                <h2 className="text-lg font-bold text-on-surface mt-1.5 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-amber-600">tune</span>
+                  <span>Custom Dealer Pricing &amp; Margin Configuration</span>
+                </h2>
+                <p className="text-xs text-secondary mt-0.5">
+                  <strong>{pricingModalDealer.firmName}</strong> ({pricingModalDealer.contactPerson}, {pricingModalDealer.city})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPricingModalDealer(null)}
+                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Mode Selector */}
+            <div className="grid grid-cols-2 gap-3 p-1.5 bg-surface-container-low rounded-xl border border-surface-container-high">
+              <button
+                type="button"
+                onClick={() => setPricingMode('standard')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  pricingMode === 'standard'
+                    ? 'bg-surface text-primary shadow-xs border border-primary/30'
+                    : 'text-secondary hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">military_tech</span>
+                <span>Standard Tier Pricing</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPricingMode('custom')}
+                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  pricingMode === 'custom'
+                    ? 'bg-amber-500 text-white shadow-xs font-bold'
+                    : 'text-secondary hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">bolt</span>
+                <span>Custom Negotiated Rate</span>
+              </button>
+            </div>
+
+            {pricingMode === 'standard' ? (
+              <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl text-xs space-y-2 text-secondary">
+                <p className="font-semibold text-on-surface">
+                  This dealer is currently using <strong>Standard Tier Pricing</strong> ({pricingModalDealer.tier || 'Gold'}).
+                </p>
+                <p>
+                  Turnkey base rate and margin defaults will follow the global master configuration for this partner tier.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                  <p className="font-bold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[16px]">info</span>
+                    Custom Dealer Pricing Active
+                  </p>
+                  <p className="mt-0.5 text-amber-800">
+                    When this dealer generates quotations (or when office staff creates quotations for this dealer), the specific rates configured below will automatically apply instead of standard presets.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Custom Rate per Wp */}
+                  <div>
+                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                      Custom Panel Rate per Wp (₹/Wp) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="10"
+                        max="35"
+                        value={customWpRate}
+                        onChange={(e) => setCustomWpRate(e.target.value)}
+                        className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                        placeholder="18.00"
+                      />
+                    </div>
+                    <span className="text-[11px] text-secondary mt-1 block">Catalog baseline: ₹18.00/Wp</span>
+                  </div>
+
+                  {/* Custom Base Rate per kW */}
+                  <div>
+                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                      Custom Turnkey Rate per kW (₹/kW) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                      <input
+                        type="number"
+                        step="500"
+                        min="20000"
+                        max="90000"
+                        value={customKwRate}
+                        onChange={(e) => setCustomKwRate(e.target.value)}
+                        className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                        placeholder="58000"
+                      />
+                    </div>
+                    <span className="text-[11px] text-secondary mt-1 block">Company baseline: ₹59,800/kW</span>
+                  </div>
+
+                  {/* Custom Dealer Margin per kW */}
+                  <div>
+                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                      Custom Margin per kW (₹/kW)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                      <input
+                        type="number"
+                        step="250"
+                        min="0"
+                        max="15000"
+                        value={customMarginKw}
+                        onChange={(e) => setCustomMarginKw(e.target.value)}
+                        className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                        placeholder="4500"
+                      />
+                    </div>
+                    <span className="text-[11px] text-secondary mt-1 block">Tier baseline: ₹4,500/kW</span>
+                  </div>
+
+                  {/* Negotiated Discount */}
+                  <div>
+                    <label className="block text-xs font-semibold text-on-surface mb-1">
+                      Special Dealer Discount (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="20"
+                        value={customDiscount}
+                        onChange={(e) => setCustomDiscount(e.target.value)}
+                        className="w-full bg-surface border border-surface-container-high rounded-lg px-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                        placeholder="0"
+                      />
+                      <span className="absolute right-3 top-2.5 text-secondary text-xs font-bold">%</span>
+                    </div>
+                    <span className="text-[11px] text-secondary mt-1 block">Applicable on gross project turnkey</span>
+                  </div>
+                </div>
+
+                {/* Commercial Notes */}
+                <div>
+                  <label className="block text-xs font-semibold text-on-surface mb-1">
+                    Commercial Agreement Notes &amp; Terms
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={customNotes}
+                    onChange={(e) => setCustomNotes(e.target.value)}
+                    placeholder="e.g. Approved by Director for Saurashtra territory quarterly commitment of 2.5 MW."
+                    className="w-full bg-surface border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                {/* Live Simulation Card */}
+                <div className="p-3 bg-surface-container-low border border-surface-container-high rounded-xl space-y-2">
+                  <span className="text-xs font-bold text-on-surface block">
+                    ⚡ Live Rate Simulation for {pricingModalDealer.firmName}:
+                  </span>
+                  <div className="grid grid-cols-3 gap-2 text-[11px]">
+                    <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
+                      <span className="text-secondary block font-medium">3.30 kW (6 Panels)</span>
+                      <strong className="text-primary font-bold block mt-0.5">
+                        ₹{Math.round((Number(customKwRate) || 58000) * 3.3).toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-secondary">
+                        Panel: ₹{Math.round(550 * 6 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
+                      <span className="text-secondary block font-medium">4.40 kW (8 Panels)</span>
+                      <strong className="text-primary font-bold block mt-0.5">
+                        ₹{Math.round((Number(customKwRate) || 58000) * 4.4).toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-secondary">
+                        Panel: ₹{Math.round(550 * 8 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
+                      <span className="text-secondary block font-medium">6.00 kW (10 Panels)</span>
+                      <strong className="text-primary font-bold block mt-0.5">
+                        ₹{Math.round((Number(customKwRate) || 58000) * 6.0).toLocaleString('en-IN')}
+                      </strong>
+                      <span className="text-[10px] text-secondary">
+                        Panel: ₹{Math.round(600 * 10 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-surface-container-high">
+              <button
+                type="button"
+                onClick={() => setPricingModalDealer(null)}
+                className="px-4 py-2 rounded-lg border border-surface-container-high text-xs font-semibold text-secondary hover:bg-surface-container-low cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDealerPricing}
+                className="px-5 py-2 rounded-lg bg-primary hover:bg-[#4F9A2C] text-on-primary text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">save</span>
+                <span>Save Dealer Pricing</span>
               </button>
             </div>
           </div>

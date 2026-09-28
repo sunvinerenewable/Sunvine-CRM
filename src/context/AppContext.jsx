@@ -294,13 +294,22 @@ const safeSetItem = (key, value) => {
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
       if (!d) return d;
-      if (d.assignedStaffId && d.assignedStaffName) return d;
-      const assigned = getAssignedStaffForDealer(d);
+      const assigned = (d.assignedStaffId && d.assignedStaffName) ? null : getAssignedStaffForDealer(d);
+      const tierLower = (d.tier || '').toLowerCase();
+      const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
       return {
         ...d,
         assignedStaffId: d.assignedStaffId || assigned?.assignedStaffId || assigned?.staffId || 'STF-001',
         assignedStaffName: d.assignedStaffName || assigned?.assignedStaffName || assigned?.staffName || 'Jayesh Patel',
-        onboardedDate: d.onboardedDate || '2025-06-15'
+        onboardedDate: d.onboardedDate || '2025-06-15',
+        pricingConfig: d.pricingConfig || {
+          pricingMode: 'standard', // 'standard' | 'custom'
+          customBaseRatePerWp: 18.00,
+          customBaseRatePerKw: 58000,
+          customMarginPerKw: defaultTierMargin,
+          customDiscountPercent: 0,
+          customNotes: ''
+        }
       };
     });
   };
@@ -1002,6 +1011,41 @@ const safeSetItem = (key, value) => {
     }
   };
 
+  const updateDealerPricing = (id, pricingConfig) => {
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        if (d.id !== id) return d;
+        const mergedConfig = {
+          ...(d.pricingConfig || {}),
+          ...pricingConfig
+        };
+        return {
+          ...d,
+          pricingConfig: mergedConfig
+        };
+      });
+      safeSetItem('sunvine_dealers', updated);
+      return updated;
+    });
+
+    if (currentDealer?.id === id) {
+      setCurrentDealer(prev => ({
+        ...prev,
+        pricingConfig: {
+          ...(prev.pricingConfig || {}),
+          ...pricingConfig
+        }
+      }));
+    }
+
+    logActivity({
+      action: 'UPDATE_DEALER_PRICING',
+      module: 'DEALER_MANAGEMENT',
+      recordId: id,
+      details: `Custom pricing configured: Mode=${pricingConfig.pricingMode || 'standard'}, Wp=₹${pricingConfig.customBaseRatePerWp || 'N/A'}, kW=₹${pricingConfig.customBaseRatePerKw || 'N/A'}`
+    });
+  };
+
   const updatePricingMaster = (newMaster) => {
     setPricingMaster(newMaster);
     safeSetItem('sunvine_pricing_master', newMaster);
@@ -1291,6 +1335,7 @@ const safeSetItem = (key, value) => {
         toggleDealerStatus,
         updateDealerMarginCap,
         updateDealerPassword,
+        updateDealerPricing,
         quotations,
         addQuotation,
         updateQuotation,

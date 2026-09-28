@@ -139,6 +139,8 @@ function MainApp() {
           return <VerificationDesk />;
         case 'staff_dashboard':
           return <StaffDashboard />;
+        case 'create_quote':
+          return <CreateQuotation />;
         case 'staff_files':
           return <StaffFiles />;
         case 'staff_performance':
