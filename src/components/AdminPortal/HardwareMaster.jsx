@@ -60,6 +60,7 @@ export default function HardwareMaster() {
     ...DEFAULT_CELL_TECHS,
     ...(modulesList || []).map(m => m.cellTech).filter(Boolean)
   ]));
+  const customCellTechs = availableCellTechs;
 
   const [moduleForm, setModuleForm] = useState({
     brand: '',
@@ -161,57 +162,66 @@ export default function HardwareMaster() {
     const rateClean = String(moduleForm.ratePerWp).replace(/[^0-9.]/g, '') || '19.20';
     const rateFormatted = `₹ ${rateClean}/Wp`;
 
-    if (editingModule) {
+    const isEdit = !!editingModule;
+    const currentEditing = editingModule;
+    const brandTrimmed = moduleForm.brand.trim();
+    const modelTrimmed = moduleForm.model.trim();
+
+    // 1. Immediately close modal and reset state so modal never hangs
+    setShowAddModuleModal(false);
+    setEditingModule(null);
+    setIsCustomCellTech(false);
+    setCustomCellTechInput('');
+    setModuleForm({
+      brand: '',
+      model: '',
+      cellTech: 'TOPCon Mono Bifacial',
+      wattage: '550',
+      efficiency: '22.6%',
+      ratePerWp: '19.20',
+      warranty: '30 Years Performance',
+      dimensions: '2278 × 1134 × 30 mm | 28 kg'
+    });
+
+    if (isEdit && currentEditing) {
       const updatedMod = {
-        ...editingModule,
-        brand: moduleForm.brand.trim(),
-        model: moduleForm.model.trim(),
+        ...currentEditing,
+        brand: brandTrimmed,
+        model: modelTrimmed,
         cellTech: finalCellTech,
         wattage: wattageNum,
         efficiency: moduleForm.efficiency.trim() || '22.6%',
         ratePerWp: rateFormatted,
         warranty: moduleForm.warranty.trim() || '30 Years Performance',
-        dimensions: moduleForm.dimensions?.trim() || editingModule.dimensions || '2278 × 1134 × 30 mm | 28 kg'
+        dimensions: moduleForm.dimensions?.trim() || currentEditing.dimensions || '2278 × 1134 × 30 mm | 28 kg'
       };
 
-      const isUnchanged =
-        editingModule.brand === updatedMod.brand &&
-        editingModule.model === updatedMod.model &&
-        editingModule.cellTech === updatedMod.cellTech &&
-        Number(editingModule.wattage) === Number(updatedMod.wattage) &&
-        (editingModule.efficiency || '') === (updatedMod.efficiency || '') &&
-        (editingModule.ratePerWp || '') === (updatedMod.ratePerWp || '') &&
-        (editingModule.warranty || '') === (updatedMod.warranty || '') &&
-        (editingModule.dimensions || '') === (updatedMod.dimensions || '');
-
-      if (isUnchanged) {
-        setShowAddModuleModal(false);
-        setEditingModule(null);
-        triggerToast('No changes detected in module specifications.');
-        return;
-      }
-
       if (setModulesList) {
-        setModulesList(prev => prev.map(m => m.id === editingModule.id ? updatedMod : m));
+        setModulesList(prev => (prev || []).map(m => m.id === currentEditing.id ? updatedMod : m));
       }
-      await hardwareService.saveModule(updatedMod);
 
       if (addNotification) {
         addNotification({
           type: 'success',
           icon: 'solar_power',
           title: `Updated Solar Module: ${updatedMod.brand} ${updatedMod.model}`,
-          description: `${updatedMod.wattage}W (${updatedMod.cellTech}) specifications updated in database.`,
+          description: `${updatedMod.wattage}W (${updatedMod.cellTech}) specifications updated.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
       }
-      triggerToast(`Saved ${updatedMod.brand} ${updatedMod.model} to Supabase database!`);
+
+      const res = await hardwareService.saveModule(updatedMod);
+      if (res && res.success) {
+        triggerToast(`Saved ${updatedMod.brand} ${updatedMod.model} to Supabase database!`);
+      } else {
+        triggerToast(`Saved locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
+      }
     } else {
       const newMod = {
         id: `mod-${Date.now()}`,
-        brand: moduleForm.brand.trim(),
-        model: moduleForm.model.trim(),
+        brand: brandTrimmed,
+        model: modelTrimmed,
         cellTech: finalCellTech,
         wattage: wattageNum,
         efficiency: moduleForm.efficiency.trim() || '22.6%',
@@ -225,25 +235,25 @@ export default function HardwareMaster() {
       if (setModulesList) {
         setModulesList(prev => [newMod, ...(prev || [])]);
       }
-      await hardwareService.saveModule(newMod);
 
       if (addNotification) {
         addNotification({
           type: 'success',
           icon: 'solar_power',
           title: `New Solar Module Added: ${newMod.brand} ${newMod.model}`,
-          description: `High-efficiency ${newMod.wattage}W (${newMod.cellTech}) published to Supabase database.`,
+          description: `High-efficiency ${newMod.wattage}W (${newMod.cellTech}) published.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
       }
-      triggerToast(`Added ${newMod.brand} ${newMod.model} to Supabase database!`);
-    }
 
-    setShowAddModuleModal(false);
-    setEditingModule(null);
-    setIsCustomCellTech(false);
-    setCustomCellTechInput('');
+      const res = await hardwareService.saveModule(newMod);
+      if (res && res.success) {
+        triggerToast(`Added ${newMod.brand} ${newMod.model} to Supabase database!`);
+      } else {
+        triggerToast(`Added locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
+      }
+    }
   };
 
   const getInverterCapacityText = (inv) => {
@@ -311,29 +321,50 @@ export default function HardwareMaster() {
     const formattedCap = rawCap.toLowerCase().includes('kw') ? rawCap : `${rawCap} kW`;
     const numCap = parseFloat(rawCap.replace(/[^0-9.]/g, '')) || 5.0;
 
-    if (editingInverter) {
+    const isEdit = !!editingInverter;
+    const currentEditingInv = editingInverter;
+    const brandTrimmed = inverterForm.brand.trim();
+    const modelTrimmed = inverterForm.model.trim();
+
+    // 1. Immediately close modal and reset form
+    setShowAddInverterModal(false);
+    setEditingInverter(null);
+    setInverterForm({
+      brand: '',
+      model: '',
+      capacity: '5 kW',
+      phase: '3-Phase 415V',
+      efficiency: '98.4%',
+      warranty: '10 Years',
+      basePrice: '₹ 54,000'
+    });
+
+    if (isEdit && currentEditingInv) {
       const updatedInv = {
-        ...editingInverter,
-        brand: inverterForm.brand.trim(),
-        model: inverterForm.model.trim(),
+        ...currentEditingInv,
+        brand: brandTrimmed,
+        model: modelTrimmed,
         capacity: formattedCap,
         capacityKW: numCap,
         phase: inverterForm.phase,
         efficiency: inverterForm.efficiency,
         warranty: inverterForm.warranty,
-        basePrice: inverterForm.basePrice || editingInverter.basePrice || '₹ 54,000'
+        basePrice: inverterForm.basePrice || currentEditingInv.basePrice || '₹ 54,000'
       };
       if (setInvertersList) {
-        setInvertersList(prev => (prev || []).map(i => i.id === editingInverter.id ? updatedInv : i));
+        setInvertersList(prev => (prev || []).map(i => i.id === currentEditingInv.id ? updatedInv : i));
       }
-      await hardwareService.saveInverter(updatedInv);
-      triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to Supabase database!`);
-      setEditingInverter(null);
+      const res = await hardwareService.saveInverter(updatedInv);
+      if (res && res.success) {
+        triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to Supabase database!`);
+      } else {
+        triggerToast(`Saved locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
+      }
     } else {
       const newInv = {
         id: `inv-${Date.now()}`,
-        brand: inverterForm.brand.trim(),
-        model: inverterForm.model.trim(),
+        brand: brandTrimmed,
+        model: modelTrimmed,
         capacity: formattedCap,
         capacityKW: numCap,
         phase: inverterForm.phase,
@@ -345,20 +376,33 @@ export default function HardwareMaster() {
       if (setInvertersList) {
         setInvertersList(prev => [...(prev || []), newInv]);
       }
-      await hardwareService.saveInverter(newInv);
-      triggerToast(`Added ${newInv.brand} ${newInv.model} to Supabase database!`);
+      const res = await hardwareService.saveInverter(newInv);
+      if (res && res.success) {
+        triggerToast(`Added ${newInv.brand} ${newInv.model} to Supabase database!`);
+      } else {
+        triggerToast(`Added locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
+      }
     }
+  };
 
-    setShowAddInverterModal(false);
-    setInverterForm({
-      brand: '',
-      model: '',
-      capacity: '5 kW',
-      phase: '3-Phase 415V',
-      efficiency: '98.4%',
-      warranty: '10 Years',
-      basePrice: '₹ 54,000'
-    });
+  const handleDeleteModule = async (mod) => {
+    if (window.confirm(`Permanently remove ${mod.brand} ${mod.model} from catalog and database?`)) {
+      if (setModulesList) {
+        setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
+      }
+      await hardwareService.deleteModule(mod.id);
+      triggerToast(`Removed ${mod.brand} ${mod.model}`);
+    }
+  };
+
+  const handleDeleteInverter = async (inv) => {
+    if (window.confirm(`Permanently remove ${inv.brand} ${inv.model} from catalog and database?`)) {
+      if (setInvertersList) {
+        setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
+      }
+      await hardwareService.deleteInverter(inv.id);
+      triggerToast(`Removed ${inv.brand} ${inv.model}`);
+    }
   };
 
   // ==========================================
@@ -707,10 +751,17 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             <span className="bg-primary-container/15 text-primary text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-primary-container/30">
               ALMM Compliant 2025 • Gujarat DISCOMs
             </span>
-            <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Supabase Database Synced
-            </span>
+            {isHardwareDbConnected ? (
+              <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Supabase DB Connected
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-amber-500/20" title="Supabase project is paused or unreachable. Ensure active URL in .env">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                Supabase Disconnected (Project Inactive)
+              </span>
+            )}
           </div>
           <p className="font-body-md text-body-md text-secondary mt-1">
             Manage approved solar modules, string inverters, and BOS specifications persisted directly to Supabase cloud database.
@@ -1024,6 +1075,13 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                             >
                               <span className="material-symbols-outlined text-[16px]">{mod.isArchived ? 'unarchive' : 'archive'}</span>
                             </button>
+                            <button
+                              onClick={() => handleDeleteModule(mod)}
+                              className="p-1 rounded border border-surface-container-highest hover:border-error text-secondary hover:text-error transition-colors cursor-pointer"
+                              title="Delete Spec"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1106,6 +1164,13 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                             title={mod.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                           >
                             <span className="material-symbols-outlined">{mod.isArchived ? 'unarchive' : 'archive'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteModule(mod)}
+                            className="p-1 hover:text-error transition-colors cursor-pointer"
+                            title="Delete Spec"
+                          >
+                            <span className="material-symbols-outlined">delete</span>
                           </button>
                         </div>
                       </td>
@@ -1246,6 +1311,13 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                             >
                               <span className="material-symbols-outlined text-[16px]">{inv.isArchived ? 'unarchive' : 'archive'}</span>
                             </button>
+                            <button
+                              onClick={() => handleDeleteInverter(inv)}
+                              className="p-1 rounded border border-surface-container-highest hover:border-error text-secondary hover:text-error transition-colors cursor-pointer"
+                              title="Delete Spec"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -1319,6 +1391,13 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                             title={inv.isArchived ? 'Restore to Catalog' : 'Archive Spec'}
                           >
                             <span className="material-symbols-outlined">{inv.isArchived ? 'unarchive' : 'archive'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInverter(inv)}
+                            className="p-1 hover:text-error transition-colors cursor-pointer"
+                            title="Delete Spec"
+                          >
+                            <span className="material-symbols-outlined">delete</span>
                           </button>
                         </div>
                       </td>
@@ -1586,7 +1665,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                     <option value="Mono PERC">Mono PERC Half-Cut</option>
                     <option value="HJT Ultra-Efficiency">HJT Ultra-Efficiency</option>
                     <option value="Polycrystalline DCR">Polycrystalline DCR</option>
-                    {customCellTechs.filter(t => !['TOPCon Mono Bifacial', 'Mono PERC', 'HJT Ultra-Efficiency', 'Polycrystalline DCR'].includes(t)).map(t => (
+                    {availableCellTechs.filter(t => !['TOPCon Mono Bifacial', 'Mono PERC', 'HJT Ultra-Efficiency', 'Polycrystalline DCR'].includes(t)).map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                     <option value="__custom__">+ Enter Custom Cell Tech...</option>
