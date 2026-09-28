@@ -1020,14 +1020,9 @@ export default function CreateQuotation() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-bold text-sm text-white">2D Structure &amp; Panel Layout Presets</h4>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-[#6CBF3D] text-[#0F1B2E] uppercase">
-                          Dynamic 2D
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase tracking-wider">
+                          Coming Soon
                         </span>
-                        {selectedStructureLayout?.excelTag && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-400 text-slate-950 uppercase">
-                            {selectedStructureLayout.excelTag}
-                          </span>
-                        )}
                       </div>
                       <p className="text-xs text-slate-300 mt-0.5">
                         Active Layout: <span className="text-[#6CBF3D] font-bold">{selectedStructureLayout?.name || `2 Rows × 3 Columns (3×2 Khadi Grid)`}</span>
@@ -1038,37 +1033,15 @@ export default function CreateQuotation() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setIsInlineLayoutOpen(!isInlineLayoutOpen)}
-                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">
-                        {isInlineLayoutOpen ? 'expand_less' : 'expand_more'}
-                      </span>
-                      <span>{isInlineLayoutOpen ? 'Collapse 2D Studio' : 'Inline Studio'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLayoutStudioInitialTab('2d');
-                        setShowLayoutStudio(true);
-                      }}
-                      className="px-3.5 py-1.5 bg-[#6CBF3D] hover:bg-[#5ca633] text-[#0F1B2E] font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">open_in_full</span>
-                      <span>Full 2D Studio ({moduleCount}P)</span>
-                    </button>
+                  {/* Non-Clickable Coming Soon Status Indicator */}
+                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
                     <div
-                      className="px-3 py-1.5 bg-white/5 border border-white/10 text-slate-400 font-semibold text-xs rounded-lg flex items-center gap-1.5 cursor-not-allowed select-none opacity-80 whitespace-nowrap"
-                      title="3D Realistic Rooftop Structure Engine — Coming Soon in Future Update"
+                      className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-amber-400/15 border border-amber-400/30 text-amber-300 font-bold text-xs select-none shadow-xs"
+                      title="Interactive 2D & 3D Structure Studio is coming in a future update"
                     >
-                      <span className="material-symbols-outlined text-[16px] text-slate-400">view_in_ar</span>
-                      <span>3D Studio</span>
-                      <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                        Coming Soon
-                      </span>
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                      <span className="material-symbols-outlined text-[16px] text-amber-400">lock_clock</span>
+                      <span className="uppercase tracking-wider font-black text-[11px]">Coming Soon</span>
                     </div>
                   </div>
                 </div>
