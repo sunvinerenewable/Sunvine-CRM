@@ -66,7 +66,12 @@ export default class ErrorBoundary extends React.Component {
       sessionStorage.clear();
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then(regs => {
-          regs.forEach(r => r.update());
+          regs.forEach(r => r.unregister());
+        }).catch(() => {});
+      }
+      if ('caches' in window) {
+        caches.keys().then(names => {
+          names.forEach(name => caches.delete(name));
         }).catch(() => {});
       }
     } catch (_) {}
