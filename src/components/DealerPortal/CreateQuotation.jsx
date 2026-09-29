@@ -38,6 +38,37 @@ export const BOM_MOBILE_CATEGORIES = [
   { id: 'other', label: 'Logistics / Custom', match: ['logistics', 'custom'] }
 ];
 
+export const INVERTER_BRANDS = [
+  { id: 'solaryaan', name: 'Sunvine Solaryaan', type: 'Single & 3-Phase Smart MPPT IP65', defaultMultiplier: 1.0 },
+  { id: 'solis', name: 'Solis (Ginlong)', type: 'Dual MPPT Residential & C&I', defaultMultiplier: 1.05 },
+  { id: 'growatt', name: 'Growatt New Energy', type: 'MIN / MOD Series Dual MPPT', defaultMultiplier: 1.02 },
+  { id: 'deye', name: 'Deye Solar', type: 'High-Efficiency European Certified', defaultMultiplier: 1.08 },
+  { id: 'sungrow', name: 'Sungrow Power', type: 'SG Multi-MPPT Global Tier-1', defaultMultiplier: 1.10 },
+  { id: 'polycab', name: 'Polycab Solar', type: 'Commercial & Residential On-Grid', defaultMultiplier: 0.98 },
+  { id: 'sofar', name: 'Sofar Solar', type: 'G3 Intelligent Series IP65', defaultMultiplier: 1.0 }
+];
+
+export const INVERTER_CAPACITY_OPTIONS = [
+  { kw: 2.2, label: '2.2 kW (1-Phase 230V)', basePrice: 12500 },
+  { kw: 3.3, label: '3.3 kW (1-Phase 230V Dual MPPT)', basePrice: 14400 },
+  { kw: 4.0, label: '4.0 kW (1-Phase 230V)', basePrice: 18000 },
+  { kw: 5.0, label: '5.0 kW (1-Phase / 3-Phase)', basePrice: 21000 },
+  { kw: 6.0, label: '6.0 kW (3-Phase 415V)', basePrice: 24500 },
+  { kw: 8.0, label: '8.0 kW (3-Phase 415V)', basePrice: 32000 },
+  { kw: 10.0, label: '10.0 kW (3-Phase 415V)', basePrice: 38000 },
+  { kw: 12.0, label: '12.0 kW (3-Phase 415V)', basePrice: 46000 }
+];
+
+export const getAutoInverterCapacity = (systemKw) => {
+  const match = INVERTER_CAPACITY_OPTIONS.find(opt => opt.kw >= systemKw);
+  return match ? match.kw : 12.0;
+};
+
+export const getInverterBenchmarkRate = (brandName, capKw) => {
+  const capObj = INVERTER_CAPACITY_OPTIONS.find(c => Math.abs(c.kw - capKw) < 0.2) || INVERTER_CAPACITY_OPTIONS[1];
+  const brandObj = INVERTER_BRANDS.find(b => b.name === brandName) || INVERTER_BRANDS[0];
+  return Math.round(capObj.basePrice * (brandObj?.defaultMultiplier || 1.0));
+};
 export const getAutoMatchingInverter = (kwVal) => {
   if (kwVal <= 2.5) return 'Sunvine Solaryaan 2.2G (1-Phase)';
   if (kwVal <= 3.6) return 'Sunvine Solaryaan 3.3G (1-Phase 2 MPPT)';
@@ -45,6 +76,13 @@ export const getAutoMatchingInverter = (kwVal) => {
   if (kwVal <= 6.8) return 'Sunvine Solaryaan 6.0G (3-Phase Smart MPPT)';
   if (kwVal <= 11.0) return 'Growatt / Deye 10.0 KW 3-Phase';
   return 'Industrial String Inverter 3-Phase';
+};
+
+export const generateUniqueQuotationId = () => {
+  const year = new Date().getFullYear();
+  const entropy = Date.now().toString(36).toUpperCase().slice(-4);
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  return `SV-${year}-Q${entropy}-${randNum}`;
 };
 
 export default function CreateQuotation() {
@@ -166,17 +204,54 @@ export default function CreateQuotation() {
   const moduleCount = panelQuantity;
   const rooftopAreaSqFt = Math.round(kw * 64);
 
-  // Inverter Model with auto-suggestion
-  const [inverterModel, setInverterModel] = useState(() => {
-    return initialSource?.inverterType || getAutoMatchingInverter(kw);
+  // Dedicated Inverter Controls (Brand, Capacity kW, Quantity, Unit Rate) - Issue SR-61
+  const [inverterBrand, setInverterBrand] = useState(() => {
+    if (initialSource?.selectedInverterMake) {
+      const match = INVERTER_BRANDS.find(b => b.name.toLowerCase().includes(initialSource.selectedInverterMake.toLowerCase()));
+      if (match) return match.name;
+    }
+    if (initialSource?.inverterType) {
+      const match = INVERTER_BRANDS.find(b => initialSource.inverterType.toLowerCase().includes(b.name.toLowerCase()));
+      if (match) return match.name;
+    }
+    return 'Sunvine Solaryaan';
   });
+
+  const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
+    if (initialSource?.inverterCapacity) {
+      const parsed = parseFloat(initialSource.inverterCapacity);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return getAutoInverterCapacity(kw);
+  });
+
+  const [inverterQuantity, setInverterQuantity] = useState(() => {
+    return Number(initialSource?.inverterQuantity || initialSource?.inverterQty) || 1;
+  });
+
+  const [inverterUnitPrice, setInverterUnitPrice] = useState(() => {
+    if (initialSource?.inverterUnitPrice) return Number(initialSource.inverterUnitPrice);
+    return getInverterBenchmarkRate(inverterBrand, inverterCapacityKw);
+  });
+
   const [userOverrodeInverter, setUserOverrodeInverter] = useState(false);
 
+  // Auto-derived model string for display & PDF compatibility
+  const inverterModel = `${inverterBrand} ${inverterCapacityKw}kW (${inverterQuantity > 1 ? `${inverterQuantity} Units` : 'Grid-Tied'})`;
+
+  // Auto-match inverter capacity when solar kw changes
   useEffect(() => {
     if (!userOverrodeInverter && !editingQuotation) {
-      setInverterModel(getAutoMatchingInverter(kw));
+      const autoCap = getAutoInverterCapacity(kw);
+      setInverterCapacityKw(autoCap);
+      setInverterUnitPrice(getInverterBenchmarkRate(inverterBrand, autoCap));
     }
-  }, [kw, userOverrodeInverter, editingQuotation]);
+  }, [kw, userOverrodeInverter, editingQuotation, inverterBrand]);
+
+  // Financing Loan Tenure & EMI (Issue SR-64)
+  const [loanTenureYears, setLoanTenureYears] = useState(() => {
+    return Number(initialSource?.loanTenureYears) || 5;
+  });
 
   const [projectType, setProjectType] = useState(() => {
     if (initialSource?.projectType) return initialSource.projectType;
@@ -293,8 +368,11 @@ export default function CreateQuotation() {
       panelWatt,
       panelQuantity,
       ratePerWp,
+      inverterBrand,
+      inverterCapacityKw,
+      inverterQuantity,
       inverterModel,
-      inverterPrice: inverterProcurementPrice,
+      inverterPrice: inverterUnitPrice,
       customBomRates: (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates) 
         ? effectiveDealer.pricingConfig.customBomRates 
         : {}
@@ -330,8 +408,11 @@ export default function CreateQuotation() {
           panelWatt,
           panelQuantity,
           ratePerWp,
+          inverterBrand,
+          inverterCapacityKw,
+          inverterQuantity,
           inverterModel,
-          inverterPrice: inverterProcurementPrice,
+          inverterPrice: inverterUnitPrice,
           customBomRates: (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates) 
             ? effectiveDealer.pricingConfig.customBomRates 
             : {}
@@ -353,12 +434,13 @@ export default function CreateQuotation() {
           };
         }
         if (item.id === 'solar_inverter') {
-          const total = inverterProcurementPrice * 1;
+          const total = inverterQuantity * inverterUnitPrice;
           const totalWithGst = Math.round(total * 1.05);
           return {
             ...item,
-            item: `${inverterModel} (Dual MPPT / IP65)`,
-            rate: inverterProcurementPrice,
+            item: `SOLAR INVERTER (${inverterBrand.toUpperCase()} ${inverterCapacityKw}KW)`,
+            qty: inverterQuantity,
+            rate: inverterUnitPrice,
             total,
             totalWithGst
           };
@@ -394,7 +476,7 @@ export default function CreateQuotation() {
         return item;
       });
     });
-  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterModel, inverterProcurementPrice]);
+  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterBrand, inverterCapacityKw, inverterQuantity, inverterUnitPrice]);
 
   // Live BOM Totals
   const bomTotals = useMemo(() => {
@@ -569,7 +651,7 @@ export default function CreateQuotation() {
 
   // Equipment & Service Component Breakdown from BOM:
   const moduleEstimatedCost = bomItems.find(i => i.id === 'solar_panel')?.total || Math.round(panelWatt * panelQuantity * ratePerWp);
-  const inverterEstimatedCost = bomItems.find(i => i.id === 'solar_inverter')?.total || inverterProcurementPrice;
+  const inverterEstimatedCost = bomItems.find(i => i.id === 'solar_inverter')?.total || (inverterQuantity * inverterUnitPrice);
   const structureEstimatedCost = bomItems.filter(i => i.category === 'structure').reduce((sum, i) => sum + i.total, 0);
   const bosEstimatedCost = bomItems.filter(i => ['bos', 'cable', 'earthing', 'fastener'].includes(i.category)).reduce((sum, i) => sum + i.total, 0);
   const transportCharge = bomItems.find(i => i.id === 'transportation')?.total || 1000;
@@ -603,6 +685,18 @@ export default function CreateQuotation() {
   const paybackYears = annualSavings > 0 ? (finalPayable / annualSavings).toFixed(1) : '3.8';
   const paybackPercent = Math.min(100, Math.round((parseFloat(paybackYears) / 10) * 100));
   const breakEvenYear = new Date().getFullYear() + Math.ceil(parseFloat(paybackYears));
+ 
+  // Solar Bank Loan Estimated Monthly EMI (Issue SR-64)
+  const estimatedMonthlyEmi = useMemo(() => {
+    if (financeType !== 'LOAN') return 0;
+    const principal = Math.max(0, finalPayable);
+    if (principal <= 0) return 0;
+    const annualRate = 8.5; // Benchmark solar interest rate p.a.
+    const monthlyRate = annualRate / (12 * 100);
+    const totalMonths = (Number(loanTenureYears) || 5) * 12;
+    const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1);
+    return Math.round(emi);
+  }, [financeType, finalPayable, loanTenureYears]);
 
   // Multi-brand comparison package calculator (Waaree vs APS vs Adani)
   const multiBrandPackages = useMemo(() => {
@@ -643,22 +737,68 @@ export default function CreateQuotation() {
   const handleReset = () => {
     if (clearEditingQuotation) clearEditingQuotation();
     if (clearActiveDraftQuote) clearActiveDraftQuote();
+    if (setActiveDraftQuote) setActiveDraftQuote(null);
+    try {
+      localStorage.removeItem('sunvine_saved_roof_config');
+      localStorage.removeItem('sunvine_active_draft_quote');
+    } catch (e) {}
+
+    // 1. Reset Customer Details
     setCustName('');
     setCustPhone('');
     setCustLocation('');
-    setSystemCapacity('3.3');
-    setPanelBrand('Waaree 585W TOPCon Bifacial (ALMM List-I)');
-    setInverterModel('Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)');
+    setFinanceType('CASH');
+    setLoanBank('State Bank of India (Surya Ghar Loan)');
+    setCustomCoverUrl('');
+
+    // 2. Reset Hardware & Capacity (Waaree 585W TOPCon, 6 panels = 3.51 kW)
+    const defaultBrand = 'Waaree Energies';
+    const defaultWatt = 585;
+    const defaultQty = 6;
+    const defaultKw = 3.51;
+    setPanelBrand(defaultBrand);
+    setPanelWatt(defaultWatt);
+    setPanelQuantity(defaultQty);
+    setUserOverrodeInverter(false);
+    setInverterModel(getAutoMatchingInverter(defaultKw));
     setProjectType('Residential');
     setMultiBrandComparison(false);
-    setRatePerKw(pricingPresets?.baseRatePerKw || 59800);
+    setSelectedStructureLayout(null);
+    setQuotationRoofConfig(null);
+
+    // 3. Reset Pricing, Margins & BOM
+    const baseWpRate = customWpRate || 18.25;
+    setRatePerWp(baseWpRate);
+    setPerPanelPrice(Math.round(baseWpRate * defaultWatt));
+    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 59800);
+    setMarginMode('amount');
     if (isAdmin) {
       setQuoteChannel('direct');
       setDealerMarginFixed(0);
       setDealerMarginRate(0);
     } else {
-      setDealerMarginFixed(tierConfig.defaultMarginPerKw * 3.3);
+      setQuoteChannel('dealer');
+      setDealerMarginRate(8);
+      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 4500) * defaultKw));
     }
+    setBomPricingMode(isAdmin ? 'standard' : (effectiveDealer?.pricingConfig?.pricingMode === 'custom' ? 'custom' : 'standard'));
+    setSelectedKitId('');
+    setBomItems(generateFieldBOM({
+      kw: defaultKw,
+      panelBrand: defaultBrand,
+      panelWatt: defaultWatt,
+      panelQuantity: defaultQty,
+      ratePerWp: baseWpRate,
+      inverterModel: getAutoMatchingInverter(defaultKw),
+      inverterPrice: 14400,
+      customBomRates: {}
+    }));
+
+    addToast({
+      title: 'Quotation Reset Complete',
+      message: 'All customer fields, hardware, pricing, and BOM settings have been reset to default baseline.',
+      type: 'info'
+    });
   };
 
   const handleSaveDraft = async () => {
@@ -677,7 +817,7 @@ export default function CreateQuotation() {
 
     const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
     const quotePayload = {
-      id: isEdit ? editingQuotation.id : `SV-2026-Q${Math.floor(100 + Math.random() * 900)}`,
+      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
@@ -691,7 +831,7 @@ export default function CreateQuotation() {
       panelType: fullPanelDescription,
       solarModule: fullPanelDescription,
       selectedModuleMake: panelBrand,
-      selectedInverterMake: inverterModel.split(' ')[0],
+      selectedInverterMake: inverterBrand,
       moduleWattage: panelWatt,
       moduleCount: panelQuantity,
       ratePerWp: ratePerWp,
@@ -699,9 +839,18 @@ export default function CreateQuotation() {
       multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
       structureLayout: selectedStructureLayout || null,
       pvModuleSize: '4 * 8',
+      inverterBrand,
+      inverterCapacityKw,
+      inverterQuantity,
+      inverterUnitPrice,
       inverterType: inverterModel,
-      inverterCapacity: `${kw} kW`,
-      inverterCount: '1 NOS',
+      inverterCapacity: `${inverterCapacityKw} kW`,
+      inverterCount: `${inverterQuantity} NOS`,
+      financeType,
+      paymentMode: financeType,
+      loanBank: financeType === 'LOAN' ? loanBank : null,
+      loanTenureYears: financeType === 'LOAN' ? loanTenureYears : null,
+      estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
       baseRatePerKW: ratePerKw,
       baseCost: baseProjectCost,
       dealerMargin: dealerMarginINR,
@@ -742,9 +891,6 @@ export default function CreateQuotation() {
       dealerCode: resolvedDealerCode,
       dealerId: resolvedDealerCode,
       dealerName: resolvedDealerName,
-      financeType,
-      paymentMode: financeType,
-      loanBank: financeType === 'LOAN' ? loanBank : null,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
       customCoverUrl: customCoverUrl || null,
@@ -772,7 +918,7 @@ export default function CreateQuotation() {
           specs: { moduleCount, panelWatt, rooftopAreaSqFt }
         });
       }
-      await quotationService.saveQuotation(quotePayload);
+
       setSaveStatus(isEdit ? 'Quotation updated successfully!' : 'Draft saved successfully to cloud!');
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Draft Saved',
@@ -781,9 +927,10 @@ export default function CreateQuotation() {
       });
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (e) {
+      setSaveStatus('');
       addToast({
         title: 'Save Failed',
-        message: 'Could not save quotation to storage.',
+        message: e?.message || 'Could not save quotation to storage.',
         type: 'error'
       });
     } finally {
@@ -815,7 +962,7 @@ export default function CreateQuotation() {
 
     const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
     const quotePayload = {
-      id: isEdit ? editingQuotation.id : `SV-2026-Q${Math.floor(100 + Math.random() * 900)}`,
+      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
@@ -829,7 +976,7 @@ export default function CreateQuotation() {
       solarModule: fullPanelDescription,
       panelType: fullPanelDescription,
       selectedModuleMake: panelBrand,
-      selectedInverterMake: inverterModel.split(' ')[0],
+      selectedInverterMake: inverterBrand,
       moduleWattage: panelWatt,
       moduleCount: panelQuantity,
       ratePerWp: ratePerWp,
@@ -837,9 +984,18 @@ export default function CreateQuotation() {
       multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
       structureLayout: selectedStructureLayout || null,
       pvModuleSize: '4 * 8',
-      inverterCapacity: `${kw} kW`,
+      inverterBrand,
+      inverterCapacityKw,
+      inverterQuantity,
+      inverterUnitPrice,
+      inverterCapacity: `${inverterCapacityKw} kW`,
       inverterType: inverterModel,
-      inverterCount: '1 NOS',
+      inverterCount: `${inverterQuantity} NOS`,
+      financeType,
+      paymentMode: financeType,
+      loanBank: financeType === 'LOAN' ? loanBank : null,
+      loanTenureYears: financeType === 'LOAN' ? loanTenureYears : null,
+      estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
       baseRatePerKW: ratePerKw,
       baseCost: baseProjectCost,
       dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
@@ -880,9 +1036,6 @@ export default function CreateQuotation() {
       dealerId: resolvedDealerCode,
       dealerCode: resolvedDealerCode,
       dealerName: resolvedDealerName,
-      financeType,
-      paymentMode: financeType,
-      loanBank: financeType === 'LOAN' ? loanBank : null,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
       customCoverUrl: customCoverUrl || null,
@@ -1213,6 +1366,59 @@ export default function CreateQuotation() {
                         <span className="material-symbols-outlined text-[18px]">search</span>
                       </button>
                     </div>
+
+                    {/* Loan Tenure Selector (Issue SR-64) */}
+                    <div className="mt-2 pt-2 border-t border-amber-200/60">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-bold text-amber-950 uppercase tracking-wider">
+                          Loan Repayment Tenure
+                        </label>
+                        <span className="text-[10px] font-mono text-amber-800 font-bold">
+                          {loanTenureYears * 12} Months
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { years: 3, label: '3 Yrs (36M)' },
+                          { years: 5, label: '5 Yrs (60M)' },
+                          { years: 7, label: '7 Yrs (84M)' },
+                          { years: 10, label: '10 Yrs (120M)' }
+                        ].map((t) => (
+                          <button
+                            key={t.years}
+                            type="button"
+                            onClick={() => setLoanTenureYears(t.years)}
+                            className={`py-1 px-1.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer text-center ${
+                              loanTenureYears === t.years
+                                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                                : 'bg-surface-container-lowest text-on-surface border-surface-container-high hover:border-amber-400'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Estimated EMI Summary Callout */}
+                      <div className="mt-2.5 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-amber-700 text-[18px]">calculate</span>
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                              Estimated Monthly EMI
+                            </div>
+                            <div className="text-[10px] text-amber-800">
+                              ~8.5% p.a. on {formatINR(finalPayable)} Net Cost
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm sm:text-base font-black text-amber-950 font-mono">
+                            {formatINR(estimatedMonthlyEmi)} <span className="text-[10px] font-normal text-amber-850">/ mo</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1379,21 +1585,24 @@ export default function CreateQuotation() {
                       {panelWatt}W × ₹{ratePerWp.toFixed(2)}/Wp
                     </span>
                   </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {STANDARD_WATTS.map((w) => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setPanelWatt(w)}
-                        className={`h-10 rounded-lg text-xs font-bold border transition-all cursor-pointer flex flex-col items-center justify-center ${
-                          panelWatt === w
-                            ? 'bg-primary text-white border-primary shadow-xs'
-                            : 'bg-surface-container-lowest text-on-surface border-surface-container-high hover:border-primary'
-                        }`}
-                      >
-                        <span>{w}W</span>
-                      </button>
-                    ))}
+                  <div className="relative">
+                    <select
+                      id="panelWatt"
+                      value={panelWatt}
+                      onChange={(e) => {
+                        const newWatt = Number(e.target.value);
+                        setPanelWatt(newWatt);
+                        setPerPanelPrice(Math.round(ratePerWp * newWatt));
+                      }}
+                      className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-surface-container-high focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none cursor-pointer font-bold text-xs"
+                    >
+                      {STANDARD_WATTS.map((w) => (
+                        <option key={w} value={w}>
+                          {w} Wp — {w >= 580 ? `${activeBrandObj?.name || 'Solar PV'} (TOPCon Bi-facial)` : `${activeBrandObj?.name || 'Solar PV'} (Mono PERC)`}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
                   </div>
 
                   {/* Collapsible Dropdown Menu: Rate / Wp AND Price / Panel */}
@@ -1560,70 +1769,186 @@ export default function CreateQuotation() {
                 </div>
               </div>
 
-              {/* INVERTER SELECTION & PROJECT TYPE */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {/* Inverter Unit */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="font-label-sm text-label-sm text-on-surface font-semibold">
-                      4. Inverter Unit *
-                    </label>
-                    <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      Auto-Matched for {kw} kW
+              {/* DEDICATED INVERTER CONFIGURATION MODULE (Issue SR-61) */}
+              <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-surface-container-high/60 gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[18px]">developer_board</span>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-on-surface">3. Inverter Configuration Module</h3>
+                      <p className="text-[11px] text-secondary">Brand, rated capacity (kW), units counter &amp; custom pricing</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-primary/10 text-primary border border-primary/20 text-[10px] font-extrabold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                      Auto-Matched for {kw} kW Plant
                     </span>
                   </div>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">developer_board</span>
-                    <select
-                      className="w-full h-10 pl-10 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-surface-container-high focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none cursor-pointer font-semibold"
-                      value={inverterModel}
-                      onChange={(e) => {
-                        setInverterModel(e.target.value);
-                        setUserOverrodeInverter(true);
-                      }}
-                    >
-                      <option value="Sunvine Solaryaan 2.2G (1-Phase)">Sunvine Solaryaan 2.2G (1-Phase Grid-Tied)</option>
-                      <option value="Sunvine Solaryaan 3.3G (1-Phase 2 MPPT)">Sunvine Solaryaan 3.3G (1-Phase 2 MPPT)</option>
-                      <option value="Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)">Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)</option>
-                      <option value="Sunvine Solaryaan 6.0G (3-Phase Smart MPPT)">Sunvine Solaryaan 6.0G (3-Phase Smart MPPT)</option>
-                      <option value="Growatt / Deye 10.0 KW 3-Phase">Growatt / Deye 10.0 KW 3-Phase Dual MPPT</option>
-                      <option value="Solis S6-GR1P-5K (1-Phase 2 MPPT)">Solis S6-GR1P-5K (1-Phase 2 MPPT)</option>
-                      <option value="Sungrow SG5.0RS Residential Grid-Tied">Sungrow SG5.0RS Residential Grid-Tied</option>
-                      <option value="Industrial String Inverter 3-Phase">Industrial String Inverter 3-Phase (&gt; 10kW)</option>
-                    </select>
-                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
-                  </div>
-                  <span className="text-[11px] text-secondary">
-                    8 Years Standard Product Warranty • Dual MPPT Tracking
-                  </span>
                 </div>
 
-                {/* Project Type */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="font-label-sm text-label-sm text-on-surface font-semibold" htmlFor="projectType">
-                      Project Type / Scheme
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {/* Control 1: Inverter Brand */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-label-sm text-xs text-on-surface font-semibold">
+                      Inverter Brand / Make *
                     </label>
-                    <span className="text-[10px] text-secondary font-medium uppercase tracking-wider">
-                      {projectType === 'Residential' ? 'PM Surya Ghar DBT' : 'Commercial EPC'}
+                    <div className="relative">
+                      <select
+                        value={inverterBrand}
+                        onChange={(e) => {
+                          const newBrand = e.target.value;
+                          setInverterBrand(newBrand);
+                          setUserOverrodeInverter(true);
+                          setInverterUnitPrice(getInverterBenchmarkRate(newBrand, inverterCapacityKw));
+                        }}
+                        className="w-full h-10 pl-3 pr-8 rounded-lg bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary-container outline-none appearance-none cursor-pointer"
+                      >
+                        {INVERTER_BRANDS.map((b) => (
+                          <option key={b.id} value={b.name}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary text-[18px] pointer-events-none">arrow_drop_down</span>
+                    </div>
+                    <span className="text-[10px] text-secondary truncate">
+                      {INVERTER_BRANDS.find(b => b.name === inverterBrand)?.type || 'IP65 Dual MPPT'}
                     </span>
                   </div>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">apartment</span>
-                    <select
-                      className="w-full h-10 pl-10 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-body-md outline-none shadow-sm border border-surface-container-high focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none cursor-pointer font-semibold"
-                      id="projectType"
-                      value={projectType}
-                      onChange={(e) => setProjectType(e.target.value)}
-                    >
-                      <option value="Residential">Residential (PM Surya Ghar Subsidy Eligible)</option>
-                      <option value="Commercial">Commercial / Industrial (Non-Subsidy Accelerated Depr.)</option>
-                    </select>
-                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+
+                  {/* Control 2: Rated Capacity */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-label-sm text-xs text-on-surface font-semibold">
+                      Rated Capacity (kW) *
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={inverterCapacityKw}
+                        onChange={(e) => {
+                          const newCap = Number(e.target.value);
+                          setInverterCapacityKw(newCap);
+                          setUserOverrodeInverter(true);
+                          setInverterUnitPrice(getInverterBenchmarkRate(inverterBrand, newCap));
+                        }}
+                        className="w-full h-10 pl-3 pr-8 rounded-lg bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary-container outline-none appearance-none cursor-pointer font-mono"
+                      >
+                        {INVERTER_CAPACITY_OPTIONS.map((c) => (
+                          <option key={c.kw} value={c.kw}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary text-[18px] pointer-events-none">arrow_drop_down</span>
+                    </div>
+                    <span className="text-[10px] text-emerald-700 font-semibold truncate">
+                      {inverterCapacityKw >= kw ? '✓ Compliant with Solar Array' : '⚠ Undersized vs Array kW'}
+                    </span>
                   </div>
-                  <span className="text-[11px] text-secondary">
-                    {projectType === 'Residential' ? 'Central DBT subsidy up to ₹78,000 applicable' : 'No government DBT subsidy for C&I'}
-                  </span>
+
+                  {/* Control 3: Inverter Quantity */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-label-sm text-xs text-on-surface font-semibold">
+                      Quantity (Units) *
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setInverterQuantity(prev => Math.max(1, prev - 1))}
+                        className="w-10 h-10 rounded-lg bg-surface border border-surface-container-high text-on-surface hover:bg-surface-container font-bold flex items-center justify-center cursor-pointer shadow-xs shrink-0"
+                        title="Decrease Units"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">remove</span>
+                      </button>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={inverterQuantity}
+                        onChange={(e) => setInverterQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="w-full h-10 text-center rounded-lg bg-surface-container-lowest text-on-surface font-mono font-bold text-sm border border-surface-container-high focus:border-primary outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setInverterQuantity(prev => prev + 1)}
+                        className="w-10 h-10 rounded-lg bg-surface border border-surface-container-high text-on-surface hover:bg-surface-container font-bold flex items-center justify-center cursor-pointer shadow-xs shrink-0"
+                        title="Increase Units"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">add</span>
+                      </button>
+                    </div>
+                    <span className="text-[10px] text-secondary text-center">
+                      Total Inverter Units: {inverterQuantity}
+                    </span>
+                  </div>
+
+                  {/* Control 4: Unit Price / Override */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="font-label-sm text-xs text-on-surface font-semibold">
+                        Unit Rate (₹ before GST)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setInverterUnitPrice(getInverterBenchmarkRate(inverterBrand, inverterCapacityKw))}
+                        className="text-[10px] text-primary hover:underline font-bold"
+                        title="Reset to benchmark rate"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-secondary font-bold select-none">₹</span>
+                      <input
+                        type="number"
+                        step="100"
+                        min="5000"
+                        max="200000"
+                        value={inverterUnitPrice}
+                        onChange={(e) => {
+                          setInverterUnitPrice(Math.max(0, Number(e.target.value) || 0));
+                          setUserOverrodeInverter(true);
+                        }}
+                        className="w-full h-10 pl-6 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-mono font-bold text-xs border border-surface-container-high focus:border-primary outline-none"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-secondary">Line Total:</span>
+                      <strong className="text-emerald-700 font-mono">
+                        {formatINR(inverterQuantity * inverterUnitPrice)} + 5% GST
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Project Scheme & Subsidy Eligibility */}
+              <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-surface-container text-secondary flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[18px]">apartment</span>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-on-surface">4. Project Scheme &amp; Subsidy Eligibility</h4>
+                      <p className="text-[11px] text-secondary">Residential (PM Surya Ghar DBT up to ₹78,000) or Commercial/Industrial</p>
+                    </div>
+                  </div>
+                  <div className="w-full sm:w-80">
+                    <div className="relative">
+                      <select
+                        className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs outline-none shadow-sm border border-surface-container-high focus:border-primary-container font-semibold appearance-none cursor-pointer"
+                        id="projectType"
+                        value={projectType}
+                        onChange={(e) => setProjectType(e.target.value)}
+                      >
+                        <option value="Residential">Residential (PM Surya Ghar Subsidy Eligible)</option>
+                        <option value="Commercial">Commercial / Industrial (Accelerated Depr.)</option>
+                      </select>
+                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2324,6 +2649,24 @@ export default function CreateQuotation() {
                   </span>
                 </div>
               </div>
+
+              {/* Solar Loan EMI Preview Row (Issue SR-64) */}
+              {financeType === 'LOAN' && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-950">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px]">account_balance</span>
+                      <span>Estimated Solar EMI</span>
+                    </span>
+                    <span className="text-[10px] text-amber-800">{loanTenureYears} Years ({loanTenureYears * 12} Mos) • {loanBank?.split(' ')[0]}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-amber-950 font-mono">
+                      {formatINR(estimatedMonthlyEmi)} <span className="text-[10px] font-normal text-amber-800">/ mo</span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ROI & Payback Micro-Telemetry Graphic */}

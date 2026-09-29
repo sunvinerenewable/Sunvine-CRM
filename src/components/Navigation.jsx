@@ -88,6 +88,7 @@ export default function Navigation() {
     { id: 'staff_dashboard', label: 'My Dashboard', mobileLabel: 'Dashboard', icon: 'dashboard' },
     { id: 'create_quote', label: 'New Quotation', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'staff_files', label: 'My Customer Files', mobileLabel: 'My Files', icon: 'folder' },
+    { id: 'staff_pricing', label: 'Pricing & Presets', mobileLabel: 'Pricing', icon: 'tune' },
     { id: 'staff_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'staff_new_lead', label: 'New Customer Lead', mobileLabel: 'New Lead', icon: 'person_add' },
     { id: 'staff_map', label: 'Nearby Radar (AI)', mobileLabel: 'Radar Map', icon: 'radar' },

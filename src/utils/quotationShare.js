@@ -1,4 +1,5 @@
 import html2pdf from 'html2pdf.js';
+import { quotationService } from '../services/quotationService';
 
 // Clean customer phone number to Indian 10-digit format with country code 91
 export function cleanCustomerPhone(phoneStr) {
@@ -8,6 +9,12 @@ export function cleanCustomerPhone(phoneStr) {
     return '91' + digits.slice(-10);
   }
   return '919825012345';
+}
+
+// Generate online link for customer proposal
+export function getPublicProposalUrl(quoteId) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
+  return `${origin}/?view=quote&id=${encodeURIComponent(quoteId || 'SV-2026-Q801')}`;
 }
 
 // Generate the official proposal WhatsApp message
@@ -57,6 +64,9 @@ _Empowering The Future with Solar Energy_`;
 
 // Open WhatsApp chat directly with pre-filled message (fast link)
 export function openWhatsAppChat(quote, customPhone = null) {
+  if (quote && quote.id) {
+    quotationService.saveQuotation(quote).catch(() => {});
+  }
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
     : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
@@ -94,6 +104,9 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
 
 // Share actual PDF file to WhatsApp (Web Share API on mobile, auto-download + chat on desktop)
 export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
+  if (quote && quote.id) {
+    quotationService.saveQuotation(quote).catch(() => {});
+  }
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
     : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);

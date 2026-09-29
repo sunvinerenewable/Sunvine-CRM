@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { openWhatsAppChat } from '../../utils/quotationShare';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+import ConvertQuotationModal from './ConvertQuotationModal';
 
 export default function MyQuotations() {
   const { 
@@ -15,6 +16,7 @@ export default function MyQuotations() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useTableViewMode('dealer_my_quotes');
+  const [convertingQuote, setConvertingQuote] = useState(null);
 
   const handleOpenPDF = (quote) => {
     if (setPreviewQuotation) setPreviewQuotation(quote);
@@ -157,6 +159,14 @@ export default function MyQuotations() {
                     <span className="material-symbols-outlined text-[16px]">description</span>
                   </button>
                   <button
+                    onClick={() => setConvertingQuote(q)}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:bg-primary-container/20 transition-colors cursor-pointer"
+                    title="Book Order / Convert to Customer File"
+                    type="button"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                  </button>
+                  <button
                     onClick={() => openWhatsAppChat(q)}
                     className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
                     title="Share via WhatsApp"
@@ -238,6 +248,14 @@ export default function MyQuotations() {
                         <span className="material-symbols-outlined text-[18px]">description</span>
                       </button>
                       <button
+                        onClick={() => setConvertingQuote(q)}
+                        className="p-1.5 rounded hover:bg-primary-container/20 text-primary transition-colors cursor-pointer"
+                        title="Book Order / Convert to Customer File"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                      </button>
+                      <button
                         onClick={() => openWhatsAppChat(q)}
                         className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
                         title="Share via WhatsApp"
@@ -253,6 +271,13 @@ export default function MyQuotations() {
           </table>
         </div>
       )}
+
+      {/* Convert Quotation to Booked Order / Customer File Modal */}
+      <ConvertQuotationModal
+        quotation={convertingQuote}
+        isOpen={Boolean(convertingQuote)}
+        onClose={() => setConvertingQuote(null)}
+      />
     </div>
   );
 }

@@ -443,6 +443,9 @@ export function generateFieldBOM({
   panelWatt = 540,
   panelQuantity = 6,
   ratePerWp = 18.00,
+  inverterBrand = 'Sunvine Solaryaan',
+  inverterCapacityKw = 3.3,
+  inverterQuantity = 1,
   inverterModel = 'Sunvine Solaryaan 5.0G',
   inverterPrice = 14400,
   customBomRates = {}
@@ -462,13 +465,19 @@ export function generateFieldBOM({
     isMajorEquipment: true
   };
 
+  const invQty = Number(inverterQuantity) || 1;
+  const invRate = Number(inverterPrice) || (kw <= 3.6 ? 14400 : kw <= 5.5 ? 24500 : 38000);
+  const invTotal = invQty * invRate;
+
   const inverterItem = {
     id: 'solar_inverter',
-    name: `SOLAR INVERTER (${inverterModel.toUpperCase()})`,
+    name: `SOLAR INVERTER (${(inverterBrand || inverterModel).toUpperCase()} ${inverterCapacityKw || kw}KW)`,
     category: 'inverter',
     unit: 'NOS',
-    qty: 1,
-    rate: Number(inverterPrice) || (kw <= 3.6 ? 14400 : kw <= 5.5 ? 24500 : 38000),
+    qty: invQty,
+    rate: invRate,
+    total: invTotal,
+    totalWithGst: Math.round(invTotal * 1.05),
     gstRate: 5,
     isMajorEquipment: true
   };

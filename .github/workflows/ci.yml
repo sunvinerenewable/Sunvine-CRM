@@ -3,14 +3,17 @@ name: CI Build & Verification Gate
 on:
   push:
     branches:
-      - devlopment
+      - main
+      - development
+      - dev
   pull_request:
     branches:
       - main
+      - development
 
 jobs:
   build-and-verify:
-    name: Verify Build & Compile Integrity
+    name: Verify Build & Test Integrity
     runs-on: ubuntu-latest
 
     steps:
@@ -24,7 +27,11 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci || npm install
+
+      - name: Run Solar Engine Unit Tests
+        run: npm test
 
       - name: Compile Production Build
         run: npm run build
+
