@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
