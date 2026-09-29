@@ -1,6 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 
+// Helper to safely resolve dealer display name, firm name and avatar initial
+const getDealerName = (d) => {
+  if (!d) return 'Dealer Partner';
+  return d.name || d.dealerName || d.firmName || d.businessName || d.contactPerson || d.id || 'Dealer Partner';
+};
+
+const getDealerFirm = (d) => {
+  if (!d) return 'Channel Partner';
+  return d.firmName || d.businessName || d.dealerName || 'Solar Partner';
+};
+
+const getDealerInitial = (d) => {
+  const str = getDealerName(d);
+  return (str && typeof str === 'string' && str.length > 0) ? str.charAt(0).toUpperCase() : 'D';
+};
+
 export default function DealerCustomPricingMatrix({ onShowToast }) {
   const {
     dealers,
@@ -66,11 +82,11 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
   // Filtered dealers list for search/table
   const filteredDealers = useMemo(() => {
     return accessibleDealers.filter(d => {
-      const name = (d.name || '').toLowerCase();
-      const firm = (d.firmName || d.businessName || '').toLowerCase();
+      const name = getDealerName(d).toLowerCase();
+      const firm = getDealerFirm(d).toLowerCase();
       const city = (d.city || d.location || '').toLowerCase();
       const phone = (d.phone || '').toLowerCase();
-      const code = (d.dealerCode || d.id || '').toLowerCase();
+      const code = (d.dealerCode || d.dealerId || d.id || '').toLowerCase();
       const q = searchTerm.toLowerCase();
 
       const matchesSearch = !searchTerm || name.includes(q) || firm.includes(q) || city.includes(q) || phone.includes(q) || code.includes(q);
@@ -104,11 +120,13 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
 
     updateDealerPricing(selectedDealer.id, payload);
 
+    const displayName = getDealerName(selectedDealer);
+
     if (addNotification) {
       addNotification({
         type: 'success',
         icon: 'tune',
-        title: `Custom Pricing Saved for ${selectedDealer.name}`,
+        title: `Custom Pricing Saved for ${displayName}`,
         description: `Pricing Mode: ${pricingMode.toUpperCase()} | Wp: ₹${payload.customBaseRatePerWp || 'Benchmark'} | Margin: ₹${payload.customMarginPerKw || 'Standard'}`,
         targetTab: 'pricing_master'
       });
@@ -119,17 +137,18 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
         action: 'UPDATE_DEALER_PRICING_MATRIX',
         module: 'PRICING_MASTER',
         recordId: selectedDealer.id,
-        details: `Updated custom pricing for dealer ${selectedDealer.name} (${selectedDealer.id}). Mode=${pricingMode}`
+        details: `Updated custom pricing for dealer ${displayName} (${selectedDealer.id}). Mode=${pricingMode}`
       });
     }
 
     setSaveSuccess(true);
-    if (onShowToast) onShowToast(`Pricing matrix updated for ${selectedDealer.name}`);
+    if (onShowToast) onShowToast(`Pricing matrix updated for ${displayName}`);
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 
   const handleResetToBenchmark = () => {
     if (!selectedDealer) return;
+    const displayName = getDealerName(selectedDealer);
     setPricingMode('standard');
     setCustomBaseRatePerWp('');
     setCustomBaseRatePerKw('');
@@ -148,7 +167,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
       updatedBy: role === 'staff' ? (currentStaff?.name || 'Sales Staff') : 'Admin Desk'
     });
 
-    if (onShowToast) onShowToast(`Reverted ${selectedDealer.name} to global benchmark pricing`);
+    if (onShowToast) onShowToast(`Reverted ${displayName} to global benchmark pricing`);
   };
 
   return (
@@ -278,7 +297,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-bold text-xs text-on-surface truncate">
-                        {dealer.name}
+                        {getDealerName(dealer)}
                       </span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0 ${
                         isCustom
@@ -290,7 +309,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-secondary">
-                      <span className="truncate">{dealer.firmName || dealer.businessName || 'Solar Partner'}</span>
+                      <span className="truncate">{getDealerFirm(dealer)}</span>
                       <span className="font-mono shrink-0">{dealer.city || 'Gujarat'}</span>
                     </div>
 
@@ -328,22 +347,22 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-surface-container gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-base border border-primary/20">
-                    {selectedDealer.name.charAt(0)}
+                    {getDealerInitial(selectedDealer)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-headline-md text-base font-bold text-inverse-surface">
-                        {selectedDealer.name}
+                        {getDealerName(selectedDealer)}
                       </h3>
                       <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-surface-container text-secondary">
-                        {selectedDealer.id}
+                        {selectedDealer.id || selectedDealer.dealerId || 'SV-DLR'}
                       </span>
                       <span className="font-label-xs text-[10px] px-2 py-0.5 rounded-full bg-surface-container-high text-secondary uppercase font-semibold">
                         {selectedDealer.tier || 'Gold Partner'}
                       </span>
                     </div>
                     <p className="font-body-sm text-xs text-secondary mt-0.5">
-                      {selectedDealer.firmName || selectedDealer.businessName || 'Channel Partner'} • {selectedDealer.city || 'Gujarat'} • Phone: {selectedDealer.phone || 'N/A'}
+                      {getDealerFirm(selectedDealer)} • {selectedDealer.city || 'Gujarat'} • Phone: {selectedDealer.phone || 'N/A'}
                     </p>
                   </div>
                 </div>
@@ -536,7 +555,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
                 <div className="flex items-center justify-between pb-3 border-b border-surface-container">
                   <span className="font-bold text-xs text-on-surface flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-primary text-[18px]">calculate</span>
-                    Live Sizing Rate Comparison: Benchmark vs {selectedDealer.name}
+                    Live Sizing Rate Comparison: Benchmark vs {getDealerName(selectedDealer)}
                   </span>
                   <span className="text-[11px] font-mono text-secondary">
                     Composite GST Included
@@ -603,7 +622,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
                   {saveSuccess && (
                     <span className="text-xs text-primary font-bold flex items-center gap-1">
                       <span className="material-symbols-outlined text-base">check_circle</span>
-                      Enforced for {selectedDealer.name}
+                      Enforced for {getDealerName(selectedDealer)}
                     </span>
                   )}
                   <button
@@ -663,8 +682,8 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
                 return (
                   <tr key={dealer.id} className="hover:bg-surface-container-low/50 transition-colors">
                     <td className="py-3 px-3">
-                      <div className="font-bold text-on-surface">{dealer.name}</div>
-                      <div className="text-[11px] text-secondary">{dealer.firmName || dealer.businessName || 'Channel Partner'}</div>
+                      <div className="font-bold text-on-surface">{getDealerName(dealer)}</div>
+                      <div className="text-[11px] text-secondary">{getDealerFirm(dealer)}</div>
                     </td>
                     <td className="py-3 px-3 font-mono text-secondary">
                       {dealer.city || 'Gujarat'}
