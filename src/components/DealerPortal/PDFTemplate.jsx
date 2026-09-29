@@ -1,5 +1,5 @@
-import React from 'react';
-import { resolveCapacityBom } from '../../data/standardBomData';
+import React, { useMemo } from 'react';
+import { resolveCapacityBom, calculateFieldBOMTotals } from '../../data/standardBomData';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -85,6 +85,36 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
   const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * 1440);
   const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * 6.67);
   const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '3.6');
+
+  // Multi-brand comparative proposal packages
+  const resolvedMultiBrandPackages = useMemo(() => {
+    if (!multiBrandComparison) return null;
+    if (multiBrandPackages && Array.isArray(multiBrandPackages) && multiBrandPackages.length > 0) {
+      return multiBrandPackages;
+    }
+    const candidates = [
+      { name: 'Waaree 585W TOPCon Bifacial', brand: 'Waaree', wattage: 585, rateOffset: 0 },
+      { name: 'APS 600W TOPCon Bifacial', brand: 'APS', wattage: 600, rateOffset: -600 },
+      { name: 'Adani 550W Vertex Mono PERC', brand: 'Adani', wattage: 550, rateOffset: 500 }
+    ];
+    return candidates.map((c) => {
+      const pWatt = c.wattage;
+      const count = Math.ceil((resolvedCapKW * 1000) / pWatt);
+      const pkgRate = customerRatePerKW + c.rateOffset;
+      const tCost = Math.round(resolvedCapKW * pkgRate);
+      const payable = Math.max(0, tCost - subsidyAmount);
+      return {
+        brand: c.brand,
+        name: c.name,
+        wattage: pWatt,
+        moduleCount: count,
+        ratePerKw: pkgRate,
+        totalCost: tCost,
+        subsidy: subsidyAmount,
+        netPayable: payable
+      };
+    });
+  }, [multiBrandComparison, multiBrandPackages, resolvedCapKW, customerRatePerKW, subsidyAmount]);
 
   const resolvedCoverSrc = customCoverUrl || coverImage || '/mirana_page1_original.jpg';
 
@@ -279,7 +309,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
           </div>
 
           {/* Luxury Net Payable Highlight Banner */}
-          <div className="bg-gradient-to-r from-[#1B5E20] via-[#2E7D32] to-[#1B5E20] text-white rounded-lg p-2.5 px-4 mb-3 flex items-center justify-between shadow-md">
+          <div className="bg-gradient-to-r from-[#1B5E20] via-[#2E7D32] to-[#1B5E20] text-white rounded-lg p-2.5 px-4 mb-2.5 flex items-center justify-between shadow-md">
             <div>
               <div className="text-[10px] uppercase font-bold tracking-wider text-emerald-200">
                 Final Net Investment Post-Subsidy
@@ -297,6 +327,60 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
               </span>
             </div>
           </div>
+
+          {/* MULTI-BRAND COMPARATIVE PROPOSAL TABLE */}
+          {resolvedMultiBrandPackages && resolvedMultiBrandPackages.length > 0 && (
+            <div className="overflow-hidden border border-emerald-400/60 rounded-md mb-2.5 shadow-2xs">
+              <div className="bg-gradient-to-r from-[#0B2545] via-[#1B5E20] to-[#0B2545] text-white px-2.5 py-1 flex items-center justify-between">
+                <span className="text-[9.5px] font-black uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-amber-300 text-xs">★</span> TIER-1 MULTI-PANEL BRAND COMPARATIVE PROPOSAL ({resolvedCapKW} kW)
+                </span>
+                <span className="text-[8.5px] text-emerald-200 font-semibold uppercase tracking-wider">Side-by-Side Options</span>
+              </div>
+              <table className="w-full text-[10px] text-left">
+                <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200 text-[9px]">
+                  <tr>
+                    <th className="py-1 px-2.5 border-r border-slate-200">BRAND / MODULE TECHNOLOGY</th>
+                    <th className="py-1 px-2 text-center border-r border-slate-200 w-28">ARRAY CONFIG</th>
+                    <th className="py-1 px-2 text-right border-r border-slate-200 w-24">GROSS COST (₹)</th>
+                    <th className="py-1 px-2 text-right border-r border-slate-200 w-24">DBT SUBSIDY (₹)</th>
+                    <th className="py-1 px-2.5 text-right font-black text-emerald-900 bg-emerald-50/90 w-28">NET PAYABLE (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-slate-900 font-medium text-[9.5px]">
+                  {resolvedMultiBrandPackages.map((pkg, pIdx) => {
+                    const isSelected = (effectiveModuleMake && pkg.brand?.toLowerCase().includes(effectiveModuleMake.toLowerCase())) || pIdx === 0;
+                    return (
+                      <tr key={pIdx} className={isSelected ? 'bg-emerald-50/80 font-bold' : 'bg-white'}>
+                        <td className="py-1 px-2.5 border-r border-slate-200">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[#0B2545]">{pkg.name || `${pkg.brand} ${pkg.wattage}W`}</span>
+                            {isSelected && (
+                              <span className="bg-[#2E7D32] text-white text-[7.5px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
+                                Proposed
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-1 px-2 text-center border-r border-slate-200 font-mono text-[9px] text-slate-700">
+                          {pkg.moduleCount} Nos × {pkg.wattage}W
+                        </td>
+                        <td className="py-1 px-2 text-right font-mono border-r border-slate-200">
+                          {formatINR(pkg.totalCost)}
+                        </td>
+                        <td className="py-1 px-2 text-right font-mono text-emerald-800 border-r border-slate-200">
+                          - {formatINR(pkg.subsidy !== undefined ? pkg.subsidy : subsidyAmount)}
+                        </td>
+                        <td className="py-1 px-2.5 text-right font-mono font-black text-[10.5px] text-emerald-950 bg-emerald-50/90">
+                          ₹ {formatINR(pkg.netPayable)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Key ROI & Energy Telemetry Badges */}
           <div className="grid grid-cols-3 gap-2.5 mb-3">
@@ -405,64 +489,89 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-gray-900 font-medium">
-                  {bomItems.map((item, idx) => (
-                    <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
-                      <td className="py-0.5 px-2 text-center text-gray-500 font-mono border-r border-slate-200">
-                        {idx + 1}
-                      </td>
-                      <td className="py-0.5 px-2 border-r border-slate-200">
-                        <span className="font-bold text-[#0B2545]">{item.item}</span>
-                        {item.specs && <span className="text-[8px] text-gray-500 ml-1">({item.specs})</span>}
-                      </td>
-                      <td className="py-0.5 px-1.5 text-center font-mono font-bold border-r border-slate-200">
-                        {item.qty}
-                      </td>
-                      <td className="py-0.5 px-1.5 text-center font-mono text-[8.5px] text-gray-600 border-r border-slate-200">
-                        {item.unit || 'PCS'}
-                      </td>
-                      <td className="py-0.5 px-2 text-right font-mono border-r border-slate-200">
-                        {formatINR(item.rate)}
-                      </td>
-                      <td className="py-0.5 px-1 text-center border-r border-slate-200">
-                        <span className={`px-1 py-0.2 rounded font-bold text-[8px] ${item.taxRate === 5 ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`}>
-                          {item.taxRate}%
-                        </span>
-                      </td>
-                      <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900">
-                        {formatINR(item.totalWithGst)}
-                      </td>
-                    </tr>
-                  ))}
+                  {bomItems.map((item, idx) => {
+                    const itemName = item.name || item.item || item.description || `BOM Item #${idx + 1}`;
+                    const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
+                    const qty = Number(item.qty) || 0;
+                    const rate = Number(item.rate) || 0;
+                    const lineTotal = (item.totalWithGst !== undefined && item.totalWithGst > 0)
+                      ? item.totalWithGst
+                      : (item.total !== undefined && item.total > 0)
+                        ? Math.round(item.total * (1 + gst / 100))
+                        : Math.round(qty * rate * (1 + gst / 100));
+
+                    return (
+                      <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
+                        <td className="py-0.5 px-2 text-center text-gray-500 font-mono border-r border-slate-200">
+                          {idx + 1}
+                        </td>
+                        <td className="py-0.5 px-2 border-r border-slate-200">
+                          <span className="font-bold text-[#0B2545]">{itemName}</span>
+                          {item.specs && <span className="text-[8px] text-gray-500 ml-1">({item.specs})</span>}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-center font-mono font-bold border-r border-slate-200">
+                          {qty}
+                        </td>
+                        <td className="py-0.5 px-1.5 text-center font-mono text-[8.5px] text-gray-600 border-r border-slate-200">
+                          {item.unit || 'NOS'}
+                        </td>
+                        <td className="py-0.5 px-2 text-right font-mono border-r border-slate-200">
+                          {formatINR(rate)}
+                        </td>
+                        <td className="py-0.5 px-1 text-center border-r border-slate-200">
+                          <span className={`px-1 py-0.2 rounded font-bold text-[8px] ${gst === 5 ? 'bg-emerald-100 text-emerald-800' : gst === 0 ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-800'}`}>
+                            {gst}%
+                          </span>
+                        </td>
+                        <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900">
+                          {formatINR(lineTotal)}
+                        </td>
+                      </tr>
+                    );
+                  })}
 
                   {/* Field BOM Subtotals Summary Rows */}
-                  {bomTotals && (
-                    <>
-                      <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px] border-t border-slate-300">
-                        <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                          SOLAR PV MODULES &amp; INVERTER (5% GST BASE: ₹{formatINR(bomTotals.subtotal5GstBase)} + TAX: ₹{formatINR(bomTotals.gst5Total)}) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                          ₹ {formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}
-                        </td>
-                      </tr>
-                      <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
-                        <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                          STRUCTURE &amp; BOS MATERIALS (18% GST BASE: ₹{formatINR(bomTotals.subtotal18GstBase)} + TAX: ₹{formatINR(bomTotals.gst18Total)}) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                          ₹ {formatINR(bomTotals.subtotal18GstBase + bomTotals.gst18Total)}
-                        </td>
-                      </tr>
-                      <tr className="bg-[#0B2545] text-white font-black text-[9.5px]">
-                        <td colSpan={4} className="py-1 px-2 text-right uppercase tracking-wider border-r border-slate-700">
-                          TOTAL ENGINEERING BILL OF MATERIALS (GROSS INCL. GST) :
-                        </td>
-                        <td colSpan={3} className="py-1 px-2 text-right font-mono text-xs font-black text-amber-300">
-                          ₹ {formatINR(bomTotals.grossTurnkeyCost)}
-                        </td>
-                      </tr>
-                    </>
-                  )}
+                  {(bomTotals || (bomItems && bomItems.length > 0 ? calculateFieldBOMTotals(bomItems) : null)) && (() => {
+                    const effectiveTotals = bomTotals || calculateFieldBOMTotals(bomItems);
+                    return (
+                      <>
+                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px] border-t border-slate-300">
+                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                            SOLAR PV MODULES, INVERTER &amp; MC4 CONNECTORS (5% GST BASE: ₹{formatINR(effectiveTotals.subtotal5GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst5Total)}) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                            ₹ {formatINR(effectiveTotals.subtotal5GstBase + effectiveTotals.gst5Total)}
+                          </td>
+                        </tr>
+                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
+                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                            STRUCTURE &amp; BOS MATERIALS (18% GST BASE: ₹{formatINR(effectiveTotals.subtotal18GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst18Total)}) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                            ₹ {formatINR(effectiveTotals.subtotal18GstBase + effectiveTotals.gst18Total)}
+                          </td>
+                        </tr>
+                        {effectiveTotals.transportTotal > 0 && (
+                          <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
+                            <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
+                              FREIGHT, PACKAGING &amp; TRANSIT LOGISTICS (0% GST BASE: ₹{formatINR(effectiveTotals.transportTotal)}) :
+                            </td>
+                            <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
+                              ₹ {formatINR(effectiveTotals.transportTotal)}
+                            </td>
+                          </tr>
+                        )}
+                        <tr className="bg-[#0B2545] text-white font-black text-[9.5px]">
+                          <td colSpan={4} className="py-1 px-2 text-right uppercase tracking-wider border-r border-slate-700">
+                            TOTAL ENGINEERING BILL OF MATERIALS (GROSS INCL. GST) :
+                          </td>
+                          <td colSpan={3} className="py-1 px-2 text-right font-mono text-xs font-black text-amber-300">
+                            ₹ {formatINR(effectiveTotals.grossTurnkeyCost)}
+                          </td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
