@@ -1147,6 +1147,131 @@ const safeSetItem = (key, value) => {
     });
   };
 
+  const updateDealerProductRate = (dealerId, productId, customRate, productMeta = {}) => {
+    let updatedConfig = null;
+    const numRate = Number(customRate);
+
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        if (d.id !== dealerId && d.dealerCode !== dealerId) return d;
+        const currentCfg = d.pricingConfig || {};
+        const currentProductRates = { ...(currentCfg.customProductRates || {}) };
+        const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const productDetails = { ...(currentCfg.productDetails || {}) };
+
+        currentProductRates[productId] = numRate;
+
+        if (productMeta.name) {
+          currentProductRates[productMeta.name] = numRate;
+        }
+
+        if (productMeta.category === 'bom') {
+          currentBomRates[productId] = numRate;
+        }
+
+        productDetails[productId] = {
+          id: productId,
+          name: productMeta.name || productId,
+          category: productMeta.category || 'general',
+          benchmarkPrice: productMeta.benchmarkPrice || 0,
+          customPrice: numRate,
+          unit: productMeta.unit || '₹',
+          updatedAt: new Date().toISOString()
+        };
+
+        updatedConfig = {
+          ...currentCfg,
+          pricingMode: 'custom',
+          customProductRates: currentProductRates,
+          customBomRates: currentBomRates,
+          productDetails
+        };
+
+        return {
+          ...d,
+          pricingConfig: updatedConfig
+        };
+      });
+      safeSetItem('sunvine_dealers', updated);
+      return updated;
+    });
+
+    if (updatedConfig) {
+      if (currentDealer?.id === dealerId) {
+        setCurrentDealer(prev => ({
+          ...prev,
+          pricingConfig: updatedConfig
+        }));
+      }
+
+      pricingService.saveDealerPricing(dealerId, updatedConfig).catch(err => {
+        console.warn('[AppContext] saveDealerPricing error:', err);
+      });
+
+      logActivity({
+        action: 'UPDATE_DEALER_PRODUCT_RATE',
+        module: 'PRICING_MASTER',
+        recordId: dealerId,
+        details: `Updated custom price for product "${productMeta.name || productId}": ₹${numRate} (${productMeta.unit || ''}) for dealer ${dealerId}`
+      });
+    }
+  };
+
+  const removeDealerProductRate = (dealerId, productId) => {
+    let updatedConfig = null;
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        if (d.id !== dealerId && d.dealerCode !== dealerId) return d;
+        const currentCfg = d.pricingConfig || {};
+        const currentProductRates = { ...(currentCfg.customProductRates || {}) };
+        const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const productDetails = { ...(currentCfg.productDetails || {}) };
+
+        const removedName = productDetails[productId]?.name;
+        delete currentProductRates[productId];
+        if (removedName) {
+          delete currentProductRates[removedName];
+        }
+        delete currentBomRates[productId];
+        delete productDetails[productId];
+
+        updatedConfig = {
+          ...currentCfg,
+          customProductRates: currentProductRates,
+          customBomRates: currentBomRates,
+          productDetails
+        };
+
+        return {
+          ...d,
+          pricingConfig: updatedConfig
+        };
+      });
+      safeSetItem('sunvine_dealers', updated);
+      return updated;
+    });
+
+    if (updatedConfig) {
+      if (currentDealer?.id === dealerId) {
+        setCurrentDealer(prev => ({
+          ...prev,
+          pricingConfig: updatedConfig
+        }));
+      }
+
+      pricingService.saveDealerPricing(dealerId, updatedConfig).catch(err => {
+        console.warn('[AppContext] saveDealerPricing error:', err);
+      });
+
+      logActivity({
+        action: 'REMOVE_DEALER_PRODUCT_RATE',
+        module: 'PRICING_MASTER',
+        recordId: dealerId,
+        details: `Removed custom negotiated price for product ${productId} on dealer ${dealerId}`
+      });
+    }
+  };
+
   const saveKitPreset = async (kitData) => {
     const newKit = {
       ...kitData,
@@ -1479,6 +1604,8 @@ const safeSetItem = (key, value) => {
         updateDealerMarginCap,
         updateDealerPassword,
         updateDealerPricing,
+        updateDealerProductRate,
+        removeDealerProductRate,
         getAccessibleDealers,
         kitsPresets,
         saveKitPreset,
