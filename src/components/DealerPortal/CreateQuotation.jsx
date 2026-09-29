@@ -244,9 +244,24 @@ export default function CreateQuotation() {
     if (!userOverrodeInverter && !editingQuotation) {
       const autoCap = getAutoInverterCapacity(kw);
       setInverterCapacityKw(autoCap);
-      setInverterUnitPrice(getInverterBenchmarkRate(inverterBrand, autoCap));
+
+      const customProductRates = effectiveDealer?.pricingConfig?.customProductRates || {};
+      let specificInvPrice = customProductRates[inverterBrand] ??
+        customProductRates[`${inverterBrand} ${autoCap}kW`] ??
+        customProductRates[`${inverterBrand} ${autoCap}`];
+
+      if (specificInvPrice === undefined) {
+        const foundKey = Object.keys(customProductRates).find(k => k.toLowerCase().includes(inverterBrand.toLowerCase()) || inverterBrand.toLowerCase().includes(k.toLowerCase()));
+        if (foundKey) specificInvPrice = customProductRates[foundKey];
+      }
+
+      if (specificInvPrice !== undefined && (bomPricingMode === 'custom' || effectiveDealer?.pricingConfig?.pricingMode === 'custom')) {
+        setInverterUnitPrice(Number(specificInvPrice));
+      } else {
+        setInverterUnitPrice(getInverterBenchmarkRate(inverterBrand, autoCap));
+      }
     }
-  }, [kw, userOverrodeInverter, editingQuotation, inverterBrand]);
+  }, [kw, userOverrodeInverter, editingQuotation, inverterBrand, effectiveDealer, bomPricingMode]);
 
   // Financing Loan Tenure & EMI (Issue SR-64)
   const [loanTenureYears, setLoanTenureYears] = useState(() => {
@@ -312,7 +327,20 @@ export default function CreateQuotation() {
 
   // Sync when brand, watt, or custom pricing mode updates
   useEffect(() => {
-    if (customWpRate && bomPricingMode === 'custom') {
+    const customProductRates = effectiveDealer?.pricingConfig?.customProductRates || {};
+    let specificPanelRate = customProductRates[panelBrand] ??
+      (activeBrandObj?.id ? customProductRates[activeBrandObj.id] : undefined);
+
+    if (specificPanelRate === undefined) {
+      const foundKey = Object.keys(customProductRates).find(k => k.toLowerCase().includes(panelBrand.toLowerCase()) || panelBrand.toLowerCase().includes(k.toLowerCase()));
+      if (foundKey) specificPanelRate = customProductRates[foundKey];
+    }
+
+    if (specificPanelRate !== undefined && (bomPricingMode === 'custom' || effectiveDealer?.pricingConfig?.pricingMode === 'custom')) {
+      const numRate = Number(specificPanelRate);
+      setRatePerWp(numRate);
+      setPerPanelPrice(Math.round(numRate * panelWatt));
+    } else if (customWpRate && bomPricingMode === 'custom') {
       setRatePerWp(customWpRate);
       setPerPanelPrice(Math.round(customWpRate * panelWatt));
     } else {
@@ -320,7 +348,7 @@ export default function CreateQuotation() {
       setRatePerWp(brandRate);
       setPerPanelPrice(Math.round(brandRate * panelWatt));
     }
-  }, [panelBrand, panelWatt, customWpRate, bomPricingMode]);
+  }, [panelBrand, panelWatt, customWpRate, bomPricingMode, effectiveDealer]);
 
   const defaultKwRate = customKwRate || pricingPresets?.baseRatePerKw || 59800;
   const [ratePerKw, setRatePerKw] = useState(() => Number(initialSource?.baseRatePerKW) || defaultKwRate);

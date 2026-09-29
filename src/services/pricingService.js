@@ -39,6 +39,13 @@ export const pricingService = {
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
 
+    // Support overloaded invocation: saveDealerPricing(dealerId, pricingConfig)
+    if (typeof dealerCode === 'object' && dealerCode !== null && pricingData === undefined) {
+      pricingData = dealerCode;
+      dealerCode = dealerId;
+      salespersonId = null;
+    }
+
     // Update local cache first
     try {
       const cached = JSON.parse(localStorage.getItem(DEALER_PRICING_KEY) || '{}');

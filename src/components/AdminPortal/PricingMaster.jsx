@@ -25,6 +25,9 @@ export default function PricingMaster() {
     pdfBomSpecs,
     officialProfile,
     dealers,
+    getAccessibleDealers,
+    updateDealerProductRate,
+    removeDealerProductRate,
     tierMargins,
     updateTierMargins,
     modulesList,
@@ -151,6 +154,58 @@ export default function PricingMaster() {
   const [customBroadcastPhone, setCustomBroadcastPhone] = useState('');
   const [dealerSearchQuery, setDealerSearchQuery] = useState('');
   const [copiedMessage, setCopiedMessage] = useState(false);
+
+  // Dealer Product Override Modal State
+  const [dealerOverrideModal, setDealerOverrideModal] = useState({
+    isOpen: false,
+    product: null
+  });
+  const [overrideTargetDealerId, setOverrideTargetDealerId] = useState('');
+  const [overrideRateInput, setOverrideRateInput] = useState('');
+
+  const accessibleDealersList = useMemo(() => {
+    if (getAccessibleDealers) return getAccessibleDealers();
+    return dealers || [];
+  }, [dealers, getAccessibleDealers]);
+
+  const getDealerDisplayName = (d) => {
+    if (!d) return 'Dealer Partner';
+    return d.name || d.dealerName || d.firmName || d.businessName || d.contactPerson || d.id || 'Dealer Partner';
+  };
+
+  const handleOpenDealerOverride = (product) => {
+    const defaultDealer = accessibleDealersList[0];
+    setDealerOverrideModal({
+      isOpen: true,
+      product
+    });
+    setOverrideTargetDealerId(defaultDealer?.id || '');
+    const existing = defaultDealer?.pricingConfig?.customProductRates?.[product.id] ?? defaultDealer?.pricingConfig?.customProductRates?.[product.name];
+    setOverrideRateInput(existing !== undefined ? String(existing) : String(product.benchmarkPrice || ''));
+  };
+
+  const handleSaveDealerOverride = (e) => {
+    if (e) e.preventDefault();
+    if (!dealerOverrideModal.product || !overrideTargetDealerId) return;
+    const num = parseFloat(overrideRateInput);
+    if (isNaN(num) || num < 0) {
+      triggerToast('Please enter a valid price');
+      return;
+    }
+
+    if (updateDealerProductRate) {
+      updateDealerProductRate(overrideTargetDealerId, dealerOverrideModal.product.id, num, {
+        name: dealerOverrideModal.product.name,
+        category: dealerOverrideModal.product.category,
+        benchmarkPrice: dealerOverrideModal.product.benchmarkPrice,
+        unit: dealerOverrideModal.product.unit
+      });
+    }
+
+    const d = accessibleDealersList.find(x => x.id === overrideTargetDealerId);
+    triggerToast(`Negotiated rate set for ${dealerOverrideModal.product.name}: ₹${num} ${dealerOverrideModal.product.unit} (${getDealerDisplayName(d)})`);
+    setDealerOverrideModal({ isOpen: false, product: null });
+  };
 
   // Form states initialized with pricingMaster or realistic defaults
   const [rate1to3, setRate1to3] = useState(pricingMaster?.baseRates?.tier1to3kw || 62000);
@@ -1764,38 +1819,61 @@ ${origin}/?tab=pricing_master
                         <th className="px-3 py-2 text-xs text-center whitespace-nowrap">Efficiency</th>
                         <th className="px-3 py-2 text-right whitespace-nowrap">Benchmark Wp Rate</th>
                         <th className="px-3 py-2 text-right whitespace-nowrap">Warranty</th>
+                        <th className="px-3 py-2 text-center whitespace-nowrap">Dealer Pricing</th>
                         <th className="px-3 py-2 text-center whitespace-nowrap">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
-                      {(modulesList || []).map((mod, idx) => (
-                        <tr key={mod.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
-                          <td className="px-3 py-2.5 font-bold text-inverse-surface whitespace-nowrap flex items-center gap-1.5">
-                            <span>{mod.brand}</span>
-                            {mod.isNew && (
-                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                                NEW
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 font-medium text-primary whitespace-nowrap">{mod.model}</td>
-                          <td className="px-3 py-2.5 text-secondary whitespace-nowrap">{mod.cellTech}</td>
-                          <td className="px-3 py-2.5 text-center font-mono font-bold text-on-surface whitespace-nowrap">{mod.wattage} W</td>
-                          <td className="px-3 py-2.5 text-center font-mono whitespace-nowrap">{mod.efficiency}</td>
-                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-inverse-surface whitespace-nowrap tabular-nums">{mod.ratePerWp}</td>
-                          <td className="px-3 py-2.5 text-right text-secondary whitespace-nowrap">{mod.warranty}</td>
-                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteModule(idx)}
-                              title="Delete module from catalog"
-                              className="text-secondary hover:text-error transition-colors p-1"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {(modulesList || []).map((mod, idx) => {
+                        const rawRate = typeof mod.ratePerWp === 'string' ? parseFloat(mod.ratePerWp.replace(/[^0-9.]/g, '')) : Number(mod.ratePerWp);
+                        const bench = rawRate || 18.25;
+                        const modId = mod.id || `mod-${mod.brand}-${mod.wattage}`;
+                        const modName = `${mod.brand} ${mod.wattage ? `${mod.wattage}W` : ''} ${mod.model || ''}`.trim();
+                        return (
+                          <tr key={mod.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
+                            <td className="px-3 py-2.5 font-bold text-inverse-surface whitespace-nowrap flex items-center gap-1.5">
+                              <span>{mod.brand}</span>
+                              {mod.isNew && (
+                                <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                                  NEW
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 font-medium text-primary whitespace-nowrap">{mod.model}</td>
+                            <td className="px-3 py-2.5 text-secondary whitespace-nowrap">{mod.cellTech}</td>
+                            <td className="px-3 py-2.5 text-center font-mono font-bold text-on-surface whitespace-nowrap">{mod.wattage} W</td>
+                            <td className="px-3 py-2.5 text-center font-mono whitespace-nowrap">{mod.efficiency}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-inverse-surface whitespace-nowrap tabular-nums">{mod.ratePerWp}</td>
+                            <td className="px-3 py-2.5 text-right text-secondary whitespace-nowrap">{mod.warranty}</td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDealerOverride({
+                                  id: modId,
+                                  name: modName,
+                                  category: 'module',
+                                  benchmarkPrice: bench,
+                                  unit: '₹/Wp'
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary-container/15 hover:bg-primary-container hover:text-on-primary text-primary transition-colors text-[11px] font-semibold cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">tune</span>
+                                <span>Set Dealer Rate</span>
+                              </button>
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteModule(idx)}
+                                title="Delete module from catalog"
+                                className="text-secondary hover:text-error transition-colors p-1"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1843,46 +1921,189 @@ ${origin}/?tab=pricing_master
                         <th className="px-3 py-2 text-xs text-center">Peak Efficiency</th>
                         <th className="px-3 py-2 text-right">Warranty Term</th>
                         <th className="px-3 py-2 text-center">Cloud Sync</th>
+                        <th className="px-3 py-2 text-center">Dealer Pricing</th>
                         <th className="px-3 py-2 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
-                      {(invertersList || []).map((inv, idx) => (
-                        <tr key={inv.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
-                          <td className="px-3 py-2.5 font-bold text-inverse-surface flex items-center gap-1.5">
-                            <span>{inv.brand}</span>
-                            {inv.isNew && (
-                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                                NEW
+                      {(invertersList || []).map((inv, idx) => {
+                        const capKW = parseFloat(inv.capacityKW || inv.capacity) || 5.0;
+                        const bench = inv.benchmarkPrice || (capKW <= 3 ? 28000 : capKW <= 5 ? 42000 : 70000);
+                        const invId = inv.id || `inv-${inv.brand}-${capKW}`;
+                        const invName = `${inv.brand} ${inv.capacity ? inv.capacity : `${capKW} kW`} ${inv.model || ''}`.trim();
+                        return (
+                          <tr key={inv.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
+                            <td className="px-3 py-2.5 font-bold text-inverse-surface flex items-center gap-1.5">
+                              <span>{inv.brand}</span>
+                              {inv.isNew && (
+                                <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                                  NEW
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5 font-medium text-primary">{inv.model}</td>
+                            <td className="px-3 py-2.5 text-center font-mono font-bold text-on-surface">{inv.capacity}</td>
+                            <td className="px-3 py-2.5 text-secondary">{inv.phase}</td>
+                            <td className="px-3 py-2.5 text-center font-mono">{inv.efficiency}</td>
+                            <td className="px-3 py-2.5 text-right font-mono font-semibold text-inverse-surface">{inv.warranty}</td>
+                            <td className="px-3 py-2.5 text-center">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-container/20 text-primary">
+                                {inv.cloud || 'Wi-Fi IoT'}
                               </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 font-medium text-primary">{inv.model}</td>
-                          <td className="px-3 py-2.5 text-center font-mono font-bold text-on-surface">{inv.capacity}</td>
-                          <td className="px-3 py-2.5 text-secondary">{inv.phase}</td>
-                          <td className="px-3 py-2.5 text-center font-mono">{inv.efficiency}</td>
-                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-inverse-surface">{inv.warranty}</td>
-                          <td className="px-3 py-2.5 text-center">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary-container/20 text-primary">
-                              {inv.cloud || 'Wi-Fi IoT'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteInverter(idx)}
-                              title="Delete inverter from catalog"
-                              className="text-secondary hover:text-error transition-colors p-1"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">delete</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDealerOverride({
+                                  id: invId,
+                                  name: invName,
+                                  category: 'inverter',
+                                  benchmarkPrice: bench,
+                                  unit: '₹/unit'
+                                })}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary-container/15 hover:bg-primary-container hover:text-on-primary text-primary transition-colors text-[11px] font-semibold cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">tune</span>
+                                <span>Set Dealer Rate</span>
+                              </button>
+                            </td>
+                            <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteInverter(idx)}
+                                title="Delete inverter from catalog"
+                                className="text-secondary hover:text-error transition-colors p-1"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
+
+              {/* Active Dealer Negotiated Hardware Rates Table */}
+              {(() => {
+                const hardwareOverrides = [];
+                (dealers || []).forEach(d => {
+                  const cfg = d.pricingConfig || {};
+                  const rates = cfg.customProductRates || {};
+                  const details = cfg.productDetails || {};
+                  Object.keys(rates).forEach(prodId => {
+                    const detail = details[prodId];
+                    if (!detail || detail.category === 'module' || detail.category === 'inverter' || prodId.startsWith('mod-') || prodId.startsWith('inv-')) {
+                      hardwareOverrides.push({
+                        dealerId: d.id,
+                        dealerName: getDealerDisplayName(d),
+                        dealerFirm: d.firmName || d.businessName || 'Channel Partner',
+                        dealerCity: d.city || 'Gujarat',
+                        productId: prodId,
+                        productName: detail?.name || prodId,
+                        category: detail?.category || (prodId.startsWith('mod-') ? 'module' : 'inverter'),
+                        customPrice: rates[prodId],
+                        unit: detail?.unit || (prodId.startsWith('mod-') ? '₹/Wp' : '₹/unit')
+                      });
+                    }
+                  });
+                });
+
+                return (
+                  <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-surface-container">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-primary-container/15 text-primary">
+                          <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+                        </div>
+                        <div>
+                          <h3 className="font-headline-sm text-sm font-bold text-inverse-surface flex items-center gap-2">
+                            Active Dealer-Wise Negotiated Hardware Rates Ledger
+                            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                              {hardwareOverrides.length} Configured
+                            </span>
+                          </h3>
+                          <p className="text-xs text-secondary mt-0.5">
+                            Specific price overrides configured per authorized dealer. When quotes are generated, these prices auto-populate.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto border border-surface-container rounded-xl">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-surface-container bg-surface-container-low text-secondary font-semibold uppercase text-[10px] tracking-wider">
+                            <th className="py-2.5 px-3">Dealer Partner</th>
+                            <th className="py-2.5 px-3">Hardware Product</th>
+                            <th className="py-2.5 px-3">Category</th>
+                            <th className="py-2.5 px-3 text-right">Negotiated Custom Rate</th>
+                            <th className="py-2.5 px-3 text-center">Status</th>
+                            <th className="py-2.5 px-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-container">
+                          {hardwareOverrides.length > 0 ? (
+                            hardwareOverrides.map((row, idx) => (
+                              <tr key={`${row.dealerId}-${row.productId}-${idx}`} className="hover:bg-surface-container-low/50 transition-colors">
+                                <td className="py-2.5 px-3">
+                                  <div className="font-bold text-on-surface">{row.dealerName}</div>
+                                  <div className="text-[10px] text-secondary">{row.dealerFirm} • {row.dealerCity}</div>
+                                </td>
+                                <td className="py-2.5 px-3 font-medium text-on-surface">
+                                  {row.productName}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    row.category === 'module'
+                                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  }`}>
+                                    {row.category === 'module' ? 'Solar Module' : 'Solar Inverter'}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-right font-mono font-bold text-primary">
+                                  ₹{Number(row.customPrice).toLocaleString('en-IN')} {row.unit}
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    Active for Dealer
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Remove custom rate for ${row.productName} on ${row.dealerName}?`)) {
+                                        if (removeDealerProductRate) {
+                                          removeDealerProductRate(row.dealerId, row.productId);
+                                        }
+                                        triggerToast(`Removed custom rate for ${row.productName}`);
+                                      }
+                                    }}
+                                    className="px-2 py-1 rounded text-secondary hover:text-error hover:bg-error/10 transition-colors text-[11px] font-medium cursor-pointer"
+                                    title="Reset to benchmark"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} className="py-6 text-center text-secondary text-xs">
+                                No dealer hardware overrides configured yet. Click "Set Dealer Rate" on any module or inverter above to set dealer-specific prices.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
 
@@ -2087,6 +2308,7 @@ ${origin}/?tab=pricing_master
                                     <th className="px-3 py-2 text-center w-36">Preset Qty ({selectedBomCapacity} kW)</th>
                                     <th className="px-3 py-2 text-right w-44">Unit Benchmark Rate (₹)</th>
                                     <th className="px-4 py-2 text-right w-36">Total Amount (₹)</th>
+                                    <th className="px-3 py-2 text-center w-28">Dealer Rate</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
@@ -2136,6 +2358,23 @@ ${origin}/?tab=pricing_master
                                       <td className="px-4 py-2.5 text-right font-mono font-bold text-inverse-surface whitespace-nowrap">
                                         {formatINR(item.totalCost)}
                                       </td>
+                                      <td className="px-3 py-2.5 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenDealerOverride({
+                                            id: item.id,
+                                            name: item.name,
+                                            category: 'bom',
+                                            benchmarkPrice: item.unitRate,
+                                            unit: `₹/${item.unit}`
+                                          })}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-primary-container hover:text-on-primary text-secondary transition-colors text-[11px] font-semibold cursor-pointer"
+                                          title="Set dealer negotiated rate for this BOM item"
+                                        >
+                                          <span className="material-symbols-outlined text-[13px]">tune</span>
+                                          <span>Dealer</span>
+                                        </button>
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -2155,6 +2394,115 @@ ${origin}/?tab=pricing_master
                     </div>
                   </div>
                 </div>
+
+                {/* Active Dealer Negotiated BOM Component Rates Ledger */}
+                {(() => {
+                  const bomOverrides = [];
+                  (dealers || []).forEach(d => {
+                    const cfg = d.pricingConfig || {};
+                    const rates = cfg.customProductRates || cfg.customBomRates || {};
+                    const details = cfg.productDetails || {};
+                    Object.keys(rates).forEach(prodId => {
+                      const detail = details[prodId];
+                      if (detail?.category === 'bom' || prodId.startsWith('bom-') || cfg.customBomRates?.[prodId]) {
+                        bomOverrides.push({
+                          dealerId: d.id,
+                          dealerName: getDealerDisplayName(d),
+                          dealerFirm: d.firmName || d.businessName || 'Channel Partner',
+                          dealerCity: d.city || 'Gujarat',
+                          productId: prodId,
+                          productName: detail?.name || prodId,
+                          customPrice: rates[prodId],
+                          unit: detail?.unit || '₹'
+                        });
+                      }
+                    });
+                  });
+
+                  return (
+                    <div className="mt-6 bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-surface-container">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 rounded-lg bg-primary-container/15 text-primary">
+                            <span className="material-symbols-outlined text-[20px]">handshake</span>
+                          </div>
+                          <div>
+                            <h3 className="font-headline-sm text-sm font-bold text-inverse-surface flex items-center gap-2">
+                              Active Dealer-Wise Negotiated BOM Component Rates Ledger
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                {bomOverrides.length} Configured
+                              </span>
+                            </h3>
+                            <p className="text-xs text-secondary mt-0.5">
+                              Custom material rates negotiated for specific channel partners. When those partners generate proposals, these exact prices apply.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto border border-surface-container rounded-xl">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-surface-container bg-surface-container-low text-secondary font-semibold uppercase text-[10px] tracking-wider">
+                              <th className="py-2.5 px-3">Dealer Partner</th>
+                              <th className="py-2.5 px-3">BOM Hardware Component</th>
+                              <th className="py-2.5 px-3 text-right">Negotiated Custom Rate</th>
+                              <th className="py-2.5 px-3 text-center">Status</th>
+                              <th className="py-2.5 px-3 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-surface-container">
+                            {bomOverrides.length > 0 ? (
+                              bomOverrides.map((row, idx) => (
+                                <tr key={`${row.dealerId}-${row.productId}-${idx}`} className="hover:bg-surface-container-low/50 transition-colors">
+                                  <td className="py-2.5 px-3">
+                                    <div className="font-bold text-on-surface">{row.dealerName}</div>
+                                    <div className="text-[10px] text-secondary">{row.dealerFirm} • {row.dealerCity}</div>
+                                  </td>
+                                  <td className="py-2.5 px-3 font-medium text-on-surface">
+                                    {row.productName}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-primary">
+                                    ₹{Number(row.customPrice).toLocaleString('en-IN')} {row.unit}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                      Active for Dealer
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm(`Remove custom rate for ${row.productName} on ${row.dealerName}?`)) {
+                                          if (removeDealerProductRate) {
+                                            removeDealerProductRate(row.dealerId, row.productId);
+                                          }
+                                          triggerToast(`Removed custom rate for ${row.productName}`);
+                                        }
+                                      }}
+                                      className="px-2 py-1 rounded text-secondary hover:text-error hover:bg-error/10 transition-colors text-[11px] font-medium cursor-pointer"
+                                      title="Reset to benchmark"
+                                    >
+                                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="py-6 text-center text-secondary text-xs">
+                                  No dealer BOM item overrides configured yet. Click "Dealer" on any component in the tables above to assign dealer-specific rates.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Technical Quality Standards Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
@@ -3101,6 +3449,127 @@ ${origin}/?tab=pricing_master
                 className="px-4 py-2 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: SET DEALER NEGOTIATED PRODUCT PRICE                                */}
+      {/* ========================================================================= */}
+      {dealerOverrideModal.isOpen && dealerOverrideModal.product && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-primary-container/20 text-primary">
+                  <span className="material-symbols-outlined text-[20px]">tune</span>
+                </div>
+                <div>
+                  <h3 className="font-headline-md text-base font-bold text-inverse-surface">
+                    Set Dealer Negotiated Rate
+                  </h3>
+                  <p className="text-xs text-secondary">
+                    Configure custom rate for {dealerOverrideModal.product.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDealerOverrideModal({ isOpen: false, product: null })}
+                className="text-secondary hover:text-on-surface p-1 rounded-lg hover:bg-surface-container cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-surface-container-low border border-surface-container flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-secondary block text-[11px]">Selected Item</span>
+                  <span className="font-bold text-on-surface">{dealerOverrideModal.product.name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-secondary block text-[11px]">Benchmark Rate</span>
+                  <span className="font-mono font-bold text-primary">
+                    ₹{dealerOverrideModal.product.benchmarkPrice.toLocaleString('en-IN')} {dealerOverrideModal.product.unit}
+                  </span>
+                </div>
+              </div>
+
+              {/* 1. Select Dealer Dropdown */}
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1.5">
+                  Select Dealer Partner
+                </label>
+                <select
+                  value={overrideTargetDealerId}
+                  onChange={(e) => {
+                    const dId = e.target.value;
+                    setOverrideTargetDealerId(dId);
+                    const targetD = accessibleDealersList.find(x => x.id === dId);
+                    const existing = targetD?.pricingConfig?.customProductRates?.[dealerOverrideModal.product.id] ?? targetD?.pricingConfig?.customProductRates?.[dealerOverrideModal.product.name];
+                    if (existing !== undefined && existing !== null) {
+                      setOverrideRateInput(String(existing));
+                    } else {
+                      setOverrideRateInput(String(dealerOverrideModal.product.benchmarkPrice || ''));
+                    }
+                  }}
+                  className="w-full h-10 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary"
+                >
+                  {accessibleDealersList.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {getDealerDisplayName(d)} ({d.city || 'Gujarat'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Custom Negotiated Price */}
+              <div>
+                <label className="block text-xs font-semibold text-on-surface mb-1.5">
+                  Negotiated Custom Rate ({dealerOverrideModal.product.unit})
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-secondary font-mono text-xs">₹</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={overrideRateInput}
+                    onChange={(e) => setOverrideRateInput(e.target.value)}
+                    className="w-full h-10 pl-7 pr-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-bold text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                {overrideRateInput && !isNaN(parseFloat(overrideRateInput)) && (
+                  <span className="text-[11px] font-mono mt-1 block">
+                    Delta vs Benchmark:{' '}
+                    <span className={parseFloat(overrideRateInput) < dealerOverrideModal.product.benchmarkPrice ? 'text-emerald-400 font-bold' : parseFloat(overrideRateInput) > dealerOverrideModal.product.benchmarkPrice ? 'text-amber-400 font-bold' : 'text-secondary'}>
+                      {parseFloat(overrideRateInput) === dealerOverrideModal.product.benchmarkPrice
+                        ? 'Equal to Benchmark'
+                        : `${parseFloat(overrideRateInput) < dealerOverrideModal.product.benchmarkPrice ? '-' : '+'}₹${Math.abs(Math.round((parseFloat(overrideRateInput) - dealerOverrideModal.product.benchmarkPrice) * 100) / 100).toLocaleString('en-IN')} ${dealerOverrideModal.product.unit}`}
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-surface-container">
+              <button
+                type="button"
+                onClick={() => setDealerOverrideModal({ isOpen: false, product: null })}
+                className="px-4 py-2 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDealerOverride}
+                className="px-5 py-2 rounded-lg bg-primary-container hover:bg-primary text-on-primary text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-base">check</span>
+                <span>Save Rate for Dealer</span>
               </button>
             </div>
           </div>
