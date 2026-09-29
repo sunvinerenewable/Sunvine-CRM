@@ -382,6 +382,29 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
             </div>
           )}
 
+          {/* Solar Loan Financing & Monthly EMI (Issue SR-64) */}
+          {(quotation.financeType === 'LOAN' || quotation.paymentMode === 'LOAN') && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 px-4 mb-3 flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-700 text-[20px]">account_balance</span>
+                <div>
+                  <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wider">
+                    Solar Bank Loan &bull; {quotation.loanBank || 'Surya Ghar Loan Scheme'}
+                  </div>
+                  <div className="text-xs text-amber-800">
+                    Tenure: {quotation.loanTenureYears || 5} Years ({(quotation.loanTenureYears || 5) * 12} Months) &bull; Standard Concessional Priority Lending
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[9px] uppercase font-bold text-amber-800">Estimated Monthly EMI</div>
+                <div className="text-base font-black text-amber-950 font-mono">
+                  {formatINR(quotation.estimatedMonthlyEmi || Math.round((netPayable * 0.085 / 12 * Math.pow(1 + 0.085 / 12, (quotation.loanTenureYears || 5) * 12)) / (Math.pow(1 + 0.085 / 12, (quotation.loanTenureYears || 5) * 12) - 1)))} <span className="text-[10px] font-normal text-amber-800">/ mo</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Key ROI & Energy Telemetry Badges */}
           <div className="grid grid-cols-3 gap-2.5 mb-3">
             <div className="p-2 bg-slate-50 border border-slate-200 rounded-md text-center">

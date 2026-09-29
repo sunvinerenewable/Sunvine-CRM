@@ -1,6 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 
+const DEFAULT_BANKS = [
+  { id: 'bnk-1', name: 'State Bank of India', scheme: 'PM Surya Ghar Collateral-Free Loan', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true },
+  { id: 'bnk-2', name: 'Bank of Baroda', scheme: 'Baroda Solar Rooftop Scheme', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: true },
+  { id: 'bnk-3', name: 'HDFC Bank Ltd.', scheme: 'Green Energy Rooftop Finance', interestRate: 8.50, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: false },
+  { id: 'bnk-4', name: 'Canara Bank', scheme: 'Canara Solar Credit Support', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: true },
+  { id: 'bnk-5', name: 'ICICI Bank', scheme: 'Solar Fin Term Facility', interestRate: 8.75, minTenureYears: 3, maxTenureYears: 5, status: 'Active', collateralFree: false },
+  { id: 'bnk-6', name: 'Union Bank of India', scheme: 'Union Solar Green Loan', interestRate: 7.15, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true }
+];
+
+const DEFAULT_PIPELINE_STAGES = [
+  { id: 'LEAD_SOURCED', label: '1. Lead Sourced & Feasibility Check', description: 'Customer inquiry recorded, initial solar feasibility verified', mandatory: true },
+  { id: 'SITE_SURVEY', label: '2. Site Feasibility & Roof CAD Survey', description: 'Rooftop measurements, tilt angle, and shadow profiling', mandatory: true },
+  { id: 'QUOTATION_ACCEPTED', label: '3. Quotation Accepted & Advance Token', description: 'Customer confirms proposal and pays booking advance', mandatory: true },
+  { id: 'DISCOM_APPLICATION', label: '4. DISCOM Net-Meter Application Filed', description: 'Formal submission to PGVCL/UGVCL/DGVCL/MGVCL web portal', mandatory: true },
+  { id: 'FEASIBILITY_APPROVAL', label: '5. Technical Feasibility & Sanction Approved', description: 'DISCOM site inspection clearance and technical sanction letter', mandatory: true },
+  { id: 'PLANT_INSTALLATION', label: '6. Solar Hardware Installation (Modules & Inverter)', description: 'Module mounting structure, solar PV panels, and inverter commissioning', mandatory: true },
+  { id: 'CEI_INSPECTION', label: '7. Safety CEI Drawing Inspection', description: 'Chief Electrical Inspectorate safety approval for systems > 10 kW', mandatory: false },
+  { id: 'NET_METER_SYNC', label: '8. Bidirectional Net-Meter Grid Energization', description: 'Installation of bi-directional meter and synchronisation with power grid', mandatory: true },
+  { id: 'SUBSIDY_CLAIM', label: '9. PM Surya Ghar DBT Claim Verification', description: 'Uploading commissioning certificate on National Portal for central subsidy', mandatory: true },
+  { id: 'HANDOVER_COMPLETED', label: '10. Commissioned & Handed Over with Warranty Pack', description: 'Plant handover to customer with manufacturer warranty documentation', mandatory: true }
+];
+
 export default function AdminSettings() {
   const {
     governanceSettings,
@@ -25,6 +47,35 @@ export default function AdminSettings() {
     discomApiStatus: 'Online - 12ms ping',
     gedaSyncStatus: 'Connected (Hourly)',
     lastBackupTimestamp: 'Today, 01:15 AM'
+  });
+
+  // Bank Master State (SR-64)
+  const [banksList, setBanksList] = useState(() => {
+    return systemSettings?.fileLifecycle?.loanBanksDetailed || DEFAULT_BANKS;
+  });
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [editingBank, setEditingBank] = useState(null);
+  const [bankForm, setBankForm] = useState({
+    name: '',
+    scheme: '',
+    interestRate: 7.0,
+    minTenureYears: 3,
+    maxTenureYears: 7,
+    status: 'Active',
+    collateralFree: true
+  });
+
+  // Pipeline Stages Master State (SR-64)
+  const [stagesList, setStagesList] = useState(() => {
+    return systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES;
+  });
+  const [showStageModal, setShowStageModal] = useState(false);
+  const [editingStage, setEditingStage] = useState(null);
+  const [stageForm, setStageForm] = useState({
+    id: '',
+    label: '',
+    description: '',
+    mandatory: true
   });
 
   // Policy editor state
@@ -87,6 +138,126 @@ export default function AdminSettings() {
     updateSystemSettings('documentPolicies', updatedPolicies);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  };
+
+  // Bank Master Handlers (SR-64)
+  const handleSaveBankMaster = () => {
+    if (!updateSystemSettings) return;
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      loanBanksDetailed: banksList,
+      loanBanks: banksList.filter(b => b.status === 'Active').map(b => b.name)
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleToggleBankStatus = (bankId) => {
+    setBanksList(prev => prev.map(b => b.id === bankId ? { ...b, status: b.status === 'Active' ? 'Disabled' : 'Active' } : b));
+  };
+
+  const handleDeleteBank = (bankId) => {
+    setBanksList(prev => prev.filter(b => b.id !== bankId));
+  };
+
+  const handleOpenAddBank = () => {
+    setEditingBank(null);
+    setBankForm({
+      name: '',
+      scheme: '',
+      interestRate: 7.0,
+      minTenureYears: 3,
+      maxTenureYears: 7,
+      status: 'Active',
+      collateralFree: true
+    });
+    setShowBankModal(true);
+  };
+
+  const handleOpenEditBank = (bank) => {
+    setEditingBank(bank);
+    setBankForm({
+      name: bank.name || '',
+      scheme: bank.scheme || '',
+      interestRate: bank.interestRate || 7.0,
+      minTenureYears: bank.minTenureYears || 3,
+      maxTenureYears: bank.maxTenureYears || 7,
+      status: bank.status || 'Active',
+      collateralFree: bank.collateralFree !== undefined ? bank.collateralFree : true
+    });
+    setShowBankModal(true);
+  };
+
+  const handleSaveBankForm = (e) => {
+    e.preventDefault();
+    if (editingBank) {
+      setBanksList(prev => prev.map(b => b.id === editingBank.id ? { ...b, ...bankForm } : b));
+    } else {
+      const newBank = {
+        ...bankForm,
+        id: `bnk-${Date.now().toString().slice(-4)}`
+      };
+      setBanksList(prev => [...prev, newBank]);
+    }
+    setShowBankModal(false);
+    setEditingBank(null);
+  };
+
+  // Pipeline Stages Master Handlers (SR-64)
+  const handleSavePipelineStages = () => {
+    if (!updateSystemSettings) return;
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: stagesList,
+      stages: stagesList.map(s => s.label)
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleToggleStageMandatory = (stageId) => {
+    setStagesList(prev => prev.map(s => s.id === stageId ? { ...s, mandatory: !s.mandatory } : s));
+  };
+
+  const handleDeleteStage = (stageId) => {
+    setStagesList(prev => prev.filter(s => s.id !== stageId));
+  };
+
+  const handleOpenAddStage = () => {
+    setEditingStage(null);
+    setStageForm({
+      id: `STAGE_${Date.now().toString().slice(-4)}`,
+      label: '',
+      description: '',
+      mandatory: true
+    });
+    setShowStageModal(true);
+  };
+
+  const handleOpenEditStage = (stage) => {
+    setEditingStage(stage);
+    setStageForm({
+      id: stage.id,
+      label: stage.label || '',
+      description: stage.description || '',
+      mandatory: stage.mandatory !== undefined ? stage.mandatory : true
+    });
+    setShowStageModal(true);
+  };
+
+  const handleSaveStageForm = (e) => {
+    e.preventDefault();
+    if (editingStage) {
+      setStagesList(prev => prev.map(s => s.id === editingStage.id ? { ...s, ...stageForm } : s));
+    } else {
+      const newStage = {
+        ...stageForm,
+        id: stageForm.id || `STAGE_${Date.now().toString().slice(-4)}`
+      };
+      setStagesList(prev => [...prev, newStage]);
+    }
+    setShowStageModal(false);
+    setEditingStage(null);
   };
 
   return (
@@ -418,101 +589,236 @@ export default function AdminSettings() {
           </div>
         )}
 
-        {/* Tab Content 4: Lifecycle Pipeline */}
+        {/* Tab Content 4: Lifecycle Pipeline Master (SR-64) */}
         {activeTab === 'lifecycle' && (
           <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-surface-container-high gap-3">
               <div className="flex items-center gap-2.5">
                 <span className="material-symbols-outlined text-primary text-[22px]">alt_route</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">Customer File Lifecycle Architecture</h3>
+                <div>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    Customer File Lifecycle Pipeline Master
+                  </h3>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Configure official Gujarat DISCOM milestones, mandatory checklist gates, and stage descriptions.
+                  </p>
+                </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-primary-container/20 text-primary font-label-xs text-label-xs font-bold">
-                10-STAGE PIPELINE ACTIVE
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenAddStage}
+                  className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">add</span>
+                  <span>Add Stage</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSavePipelineStages}
+                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold hover:bg-primary transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-base">save</span>
+                  <span>Save Pipeline</span>
+                </button>
+              </div>
             </div>
 
-            <p className="text-xs text-secondary leading-relaxed">
-              Standard chronological progression for residential and C&amp;I solar rooftop plants across Gujarat DISCOMs (UGVCL, DGVCL, MGVCL, PGVCL). Document verification steps are strictly non-blocking.
-            </p>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {(systemSettings?.fileLifecycle?.stages || [
-                { id: 'LEAD_SOURCED', label: '1. Lead Sourced & Feasibility Check' },
-                { id: 'SITE_SURVEY', label: '2. Site Feasibility & Roof CAD Survey' },
-                { id: 'QUOTATION_ACCEPTED', label: '3. Quotation Accepted & Advance Token' },
-                { id: 'DISCOM_APPLICATION', label: '4. DISCOM Net-Meter Application Filed' },
-                { id: 'FEASIBILITY_APPROVAL', label: '5. Technical Feasibility & Sanction Approved' },
-                { id: 'PLANT_INSTALLATION', label: '6. Solar Hardware Installation (Modules & Inverter)' },
-                { id: 'CEI_INSPECTION', label: '7. Safety CEI Drawing Inspection' },
-                { id: 'NET_METER_SYNC', label: '8. Bidirectional Net-Meter Grid Energization' },
-                { id: 'SUBSIDY_CLAIM', label: '9. PM Surya Ghar DBT Claim Verification' },
-                { id: 'HANDOVER_COMPLETED', label: '10. Commissioned & Handed Over with Warranty Pack' }
-              ]).map((stg, i) => (
-                <div key={stg.id || i} className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-[11px]">
-                      {i + 1}
+              {stagesList.map((stg, i) => (
+                <div key={stg.id || i} className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col justify-between gap-3 shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <span className="w-6 h-6 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-bold text-on-surface text-xs">{stg.label}</div>
+                        {stg.description && (
+                          <div className="text-[11px] text-secondary mt-0.5 leading-relaxed">{stg.description}</div>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-secondary px-2 py-0.5 rounded bg-surface-container-lowest shrink-0">
+                      {stg.id}
                     </span>
-                    <span className="font-semibold text-on-surface">{stg.label}</span>
                   </div>
-                  <span className="text-[10px] font-mono text-secondary px-2 py-0.5 rounded bg-surface-container-lowest">
-                    {stg.id}
-                  </span>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-surface-container/60 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStageMandatory(stg.id)}
+                      className={`px-2 py-0.5 rounded-full font-semibold transition-colors cursor-pointer text-[10px] flex items-center gap-1 ${
+                        stg.mandatory
+                          ? 'bg-primary/15 text-primary border border-primary/20'
+                          : 'bg-surface-container text-secondary'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                      {stg.mandatory ? 'Mandatory Gate' : 'Optional Stage'}
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditStage(stg)}
+                        className="p-1 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                        title="Edit Stage Details"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">edit</span>
+                      </button>
+                      {i >= 10 && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStage(stg.id)}
+                          className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
+                          title="Delete Custom Stage"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Tab Content 5: Cash vs Loan Financing Rules */}
+        {/* Tab Content 5: Cash vs Loan Financing & Bank Master CRUD (SR-64) */}
         {activeTab === 'finance' && (
           <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-surface-container-high gap-3">
               <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">payments</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">Payment &amp; Financing Governance</h3>
+                <span className="material-symbols-outlined text-primary text-[22px]">account_balance</span>
+                <div>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    Partner Bank Master &amp; Solar Loan Financing Rules
+                  </h3>
+                  <p className="text-xs text-secondary mt-0.5">
+                    Centralized bank interest rates, maximum loan tenures, and collateral-free flags for PM Surya Ghar rooftop credit.
+                  </p>
+                </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-primary-container/20 text-primary font-label-xs text-label-xs font-bold">
-                PM SURYA GHAR LINKED
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenAddBank}
+                  className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">add</span>
+                  <span>Add Bank</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveBankMaster}
+                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold hover:bg-primary transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <span className="material-symbols-outlined text-base">save</span>
+                  <span>Save Bank Master</span>
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-surface-container-low space-y-3">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[18px]">account_balance</span>
-                  Authorized Partner Banks (Gujarat Region)
-                </h4>
-                <div className="space-y-2 text-xs">
-                  {['State Bank of India (Surya Ghar Collateral-Free Loan)', 'Bank of Baroda (Solar Roof Loan)', 'HDFC Bank Green Energy Loan', 'Canara Bank Rooftop Credit', 'ICICI Bank Solar Fin', 'Union Bank of India'].map((b, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-surface-container-lowest">
-                      <span className="font-medium text-on-surface">{b}</span>
-                      <span className="text-[10px] font-mono font-bold text-emerald-700">7.00% p.a.</span>
-                    </div>
-                  ))}
-                </div>
+            {/* Quick Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
+                <span className="text-[10px] text-secondary font-semibold uppercase">Active Partner Banks</span>
+                <span className="font-mono text-xl font-bold text-primary">
+                  {banksList.filter(b => b.status === 'Active').length} Banks
+                </span>
+                <span className="text-[11px] text-secondary">Authorized for Gujarat Rooftops</span>
               </div>
+              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
+                <span className="text-[10px] text-secondary font-semibold uppercase">Collateral-Free Schemes</span>
+                <span className="font-mono text-xl font-bold text-emerald-400">
+                  {banksList.filter(b => b.collateralFree && b.status === 'Active').length} Schemes
+                </span>
+                <span className="text-[11px] text-secondary">Zero mortgage required</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
+                <span className="text-[10px] text-secondary font-semibold uppercase">Lowest Interest Benchmark</span>
+                <span className="font-mono text-xl font-bold text-on-surface">
+                  {Math.min(...banksList.filter(b => b.status === 'Active').map(b => b.interestRate || 7.0)).toFixed(2)}% p.a.
+                </span>
+                <span className="text-[11px] text-secondary">Concessional green credit</span>
+              </div>
+            </div>
 
-              <div className="p-4 rounded-xl bg-surface-container-low space-y-3 text-xs">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[18px]">rule</span>
-                  Financing Rules &amp; Subsidy Flow
-                </h4>
-                <div className="space-y-2">
-                  <div className="p-3 rounded-lg bg-surface-container-lowest">
-                    <span className="text-secondary block">Upfront Customer Margin / Down Payment</span>
-                    <span className="font-bold text-on-surface text-sm mt-0.5 block">Minimum 10% (Zero Down Payment on Eligible Bank Tiers)</span>
-                  </div>
-                  <div className="p-3 rounded-lg bg-surface-container-lowest">
-                    <span className="text-secondary block">Tenure Range</span>
-                    <span className="font-bold text-on-surface text-sm mt-0.5 block">36 to 84 Months (Repayment amortized via solar savings)</span>
-                  </div>
-                  <div className="p-3 rounded-lg bg-surface-container-lowest">
-                    <span className="text-secondary block">Central Subsidy DBT Handling</span>
-                    <span className="font-bold text-on-surface text-sm mt-0.5 block">₹ 78,000 credited directly to customer Aadhaar-linked account</span>
-                  </div>
-                </div>
-              </div>
+            {/* Banks Master Table */}
+            <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-surface-container text-secondary font-semibold uppercase text-[10px] tracking-wider bg-surface-container-low/80">
+                    <th className="py-2.5 px-3">Bank &amp; Financing Scheme</th>
+                    <th className="py-2.5 px-3 text-right">Interest Rate (% p.a.)</th>
+                    <th className="py-2.5 px-3 text-center">Tenure Range</th>
+                    <th className="py-2.5 px-3 text-center">Security</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-container">
+                  {banksList.map((bank) => (
+                    <tr key={bank.id} className="hover:bg-surface-container transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-on-surface">{bank.name}</div>
+                        <div className="text-[11px] text-secondary">{bank.scheme || 'Solar Rooftop Term Loan'}</div>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-primary">
+                        {Number(bank.interestRate).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono">
+                        {bank.minTenureYears} to {bank.maxTenureYears} Years
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          bank.collateralFree ? 'bg-emerald-500/15 text-emerald-400' : 'bg-surface-container text-secondary'
+                        }`}>
+                          {bank.collateralFree ? 'Collateral-Free' : 'Secured'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          bank.status === 'Active' ? 'bg-primary/15 text-primary' : 'bg-surface-container-highest text-secondary'
+                        }`}>
+                          {bank.status || 'Active'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleBankStatus(bank.id)}
+                            className="p-1 rounded hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                            title={bank.status === 'Active' ? 'Disable Bank' : 'Activate Bank'}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">
+                              {bank.status === 'Active' ? 'block' : 'check_circle'}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditBank(bank)}
+                            className="p-1 rounded hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                            title="Edit Bank"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBank(bank.id)}
+                            className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
+                            title="Delete Bank"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -587,6 +893,216 @@ export default function AdminSettings() {
           </div>
         )}
       </div>
+
+      {/* Modal: Add / Edit Partner Bank (SR-64) */}
+      {showBankModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-xl">account_balance</span>
+                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
+                  {editingBank ? 'Edit Partner Bank' : 'Add New Partner Bank'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBankModal(false)}
+                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveBankForm} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Bank Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. State Bank of India"
+                  value={bankForm.name}
+                  onChange={(e) => setBankForm({ ...bankForm, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Scheme / Product Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. PM Surya Ghar Collateral-Free Solar Loan"
+                  value={bankForm.scheme}
+                  onChange={(e) => setBankForm({ ...bankForm, scheme: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Interest (% p.a.) *</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    required
+                    value={bankForm.interestRate}
+                    onChange={(e) => setBankForm({ ...bankForm, interestRate: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Min Tenure (Yrs)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="15"
+                    value={bankForm.minTenureYears}
+                    onChange={(e) => setBankForm({ ...bankForm, minTenureYears: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Max Tenure (Yrs)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="15"
+                    value={bankForm.maxTenureYears}
+                    onChange={(e) => setBankForm({ ...bankForm, maxTenureYears: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bankForm.collateralFree}
+                    onChange={(e) => setBankForm({ ...bankForm, collateralFree: e.target.checked })}
+                    className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-semibold text-on-surface">Collateral-Free Rooftop Loan</span>
+                </label>
+
+                <select
+                  value={bankForm.status}
+                  onChange={(e) => setBankForm({ ...bankForm, status: e.target.value })}
+                  className="px-2.5 py-1.5 rounded-lg bg-surface-container border border-surface-container-highest font-semibold cursor-pointer"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Disabled">Disabled</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setShowBankModal(false)}
+                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary font-bold hover:bg-primary transition-all cursor-pointer"
+                >
+                  {editingBank ? 'Update Bank' : 'Add Bank'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Add / Edit Pipeline Stage (SR-64) */}
+      {showStageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-xl">alt_route</span>
+                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
+                  {editingStage ? 'Edit Pipeline Stage' : 'Add Custom Pipeline Stage'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStageModal(false)}
+                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStageForm} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Stage Code / ID *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. METER_BOX_INSTALL"
+                  value={stageForm.id}
+                  disabled={Boolean(editingStage)}
+                  onChange={(e) => setStageForm({ ...stageForm, id: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Stage Name / Label *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. DISCOM Meter Box Installation"
+                  value={stageForm.label}
+                  onChange={(e) => setStageForm({ ...stageForm, label: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Operational Description</label>
+                <textarea
+                  rows="2"
+                  placeholder="Scope of work and verification tasks in this stage..."
+                  value={stageForm.description}
+                  onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={stageForm.mandatory}
+                    onChange={(e) => setStageForm({ ...stageForm, mandatory: e.target.checked })}
+                    className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                  />
+                  <span className="font-semibold text-on-surface">Mandatory Compliance Gate</span>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setShowStageModal(false)}
+                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary font-bold hover:bg-primary transition-all cursor-pointer"
+                >
+                  {editingStage ? 'Update Stage' : 'Add Stage'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

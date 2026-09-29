@@ -42,6 +42,7 @@ import AuditLogViewer from './components/AdminPortal/AuditLogViewer';
 
 // Shared Expanded Views
 import LeadGenerationComingSoon from './components/Shared/LeadGenerationComingSoon';
+import ComingSoonPlaceholder from './components/Shared/ComingSoonPlaceholder';
 import DocumentationHub from './components/Shared/DocumentationHub';
 
 function MainApp() {
@@ -143,12 +144,30 @@ function MainApp() {
           return <CreateQuotation />;
         case 'staff_files':
           return <StaffFiles />;
+        case 'staff_pricing':
+          return <PricingMaster />;
         case 'staff_performance':
           return <BusinessPerformance />;
         case 'staff_new_lead':
-          return <StaffNewLead />;
+          return (
+            <ComingSoonPlaceholder
+              title="New Customer Lead Engine"
+              subtitle="Feature Under Construction"
+              icon="person_add"
+              description="We are building this module to streamline lead generation, instant customer file intake, and geo-allocated lead processing directly to field officers. This feature will be available in the next release."
+              backTab="staff_dashboard"
+            />
+          );
         case 'staff_map':
-          return <StaffRadarMap />;
+          return (
+            <ComingSoonPlaceholder
+              title="Nearby Radar (AI) Discovery"
+              subtitle="Feature Under Construction"
+              icon="radar"
+              description="AI-powered geographic rooftop solar density mapping, Gujarat DISCOM feeder proximity detection, and solar cluster prospect radar will be available in the next release."
+              backTab="staff_dashboard"
+            />
+          );
         case 'lead_generation':
           return <LeadGenerationComingSoon />;
         case 'docs':

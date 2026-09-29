@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
+import DealerCustomPricingMatrix from './DealerCustomPricingMatrix';
 
 const DEFAULT_INVERTER_BENCHMARK_MATRIX = [
   { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
@@ -42,12 +43,12 @@ export default function PricingMaster() {
     getResolvedBom
   } = useApp();
 
-  // Initialize tab from URL query param if present (?tab=base|modules|bom|bank)
+  // Initialize tab from URL query param if present (?tab=base|modules|bom|bank|dealer_custom)
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (['base', 'modules', 'bom', 'bank'].includes(tabParam)) {
+      if (['base', 'modules', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
         return tabParam;
       }
     }
@@ -217,7 +218,7 @@ export default function PricingMaster() {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const tabParam = params.get('tab');
-        if (['base', 'modules', 'bom', 'bank'].includes(tabParam)) {
+        if (['base', 'modules', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
           setActiveTab(tabParam);
         }
       }
@@ -807,6 +808,28 @@ ${origin}/?tab=pricing_master
           ) : (
             <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
               Legal &amp; Bank
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('dealer_custom')}
+          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+            activeTab === 'dealer_custom'
+              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
+              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">tune</span>
+          <span>Dealer Custom Pricing Matrix</span>
+          {activeTab === 'dealer_custom' ? (
+            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
+              Active
+            </span>
+          ) : (
+            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
+              {totalDealersCount} Dealers
             </span>
           )}
         </button>
@@ -2291,6 +2314,13 @@ ${origin}/?tab=pricing_master
                 </div>
               </div>
             </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 5: DEALER CUSTOM PRICING MATRIX & OVERRIDES (SR-62)                  */}
+          {/* ========================================================================= */}
+          {activeTab === 'dealer_custom' && (
+            <DealerCustomPricingMatrix onShowToast={triggerToast} />
           )}
       </div>
 
