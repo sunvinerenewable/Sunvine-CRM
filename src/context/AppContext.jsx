@@ -293,6 +293,33 @@ const safeSetItem = (key, value) => {
     return () => { isMounted = false; };
   }, []);
 
+  // Live Supabase Quotations Hydration (reconciled with local cache)
+  useEffect(() => {
+    let isMounted = true;
+    const loadQuotationsFromSupabase = async () => {
+      try {
+        const dbQuotations = await quotationService.getAllQuotations();
+        if (isMounted && Array.isArray(dbQuotations) && dbQuotations.length > 0) {
+          setQuotations(prev => {
+            const remoteMap = new Map(dbQuotations.map(q => [q.id, q]));
+            const merged = [...dbQuotations];
+            (prev || []).forEach(localQ => {
+              if (localQ && localQ.id && !remoteMap.has(localQ.id)) {
+                merged.push(localQ);
+              }
+            });
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.warn('[AppContext] Supabase quotation sync fallback to local cache:', err);
+      }
+    };
+
+    loadQuotationsFromSupabase();
+    return () => { isMounted = false; };
+  }, []);
+
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
       if (!d) return d;

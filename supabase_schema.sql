@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS public.quotations (
     annual_generation_kwh NUMERIC(10,2),
     status VARCHAR(50) NOT NULL DEFAULT 'Draft',
     pdf_url TEXT,
+    quote_payload JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -130,24 +131,34 @@ ALTER TABLE public.otp_verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solar_modules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solar_inverters ENABLE ROW LEVEL SECURITY;
 
--- Public Anon Read/Write Policies for API Gateway
+-- 9.1 Dealers: Public read for active dealers only
 DROP POLICY IF EXISTS "Public Read Active Dealers" ON public.dealers;
 CREATE POLICY "Public Read Active Dealers" ON public.dealers FOR SELECT USING (status = 'active');
 
+-- 9.2 Quotations: Public read for viewing quotations, insert/update for saving proposals
 DROP POLICY IF EXISTS "Public Manage Quotations" ON public.quotations;
-CREATE POLICY "Public Manage Quotations" ON public.quotations FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Read Quotations" ON public.quotations;
+DROP POLICY IF EXISTS "Public Create Update Quotations" ON public.quotations;
+CREATE POLICY "Public Read Quotations" ON public.quotations FOR SELECT USING (true);
+CREATE POLICY "Public Create Update Quotations" ON public.quotations FOR INSERT WITH CHECK (customer_name IS NOT NULL AND customer_phone IS NOT NULL);
+CREATE POLICY "Public Update Quotations" ON public.quotations FOR UPDATE USING (true) WITH CHECK (true);
 
+-- 9.3 OTP Service: Restricted to verification lifecycle
 DROP POLICY IF EXISTS "OTP Verification Service" ON public.otp_verifications;
-CREATE POLICY "OTP Verification Service" ON public.otp_verifications FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "OTP Verification Service" ON public.otp_verifications FOR ALL USING (expires_at > timezone('utc'::text, now()) OR verified = true);
 
+-- 9.4 Admin Users: Protected from unauthenticated/anonymous public reads
 DROP POLICY IF EXISTS "Admin Secure Access" ON public.admin_users;
-CREATE POLICY "Admin Secure Access" ON public.admin_users FOR SELECT USING (true);
+CREATE POLICY "Admin Secure Access" ON public.admin_users FOR SELECT USING (auth.role() = 'authenticated' OR auth.role() = 'service_role');
 
+-- 9.5 Hardware Catalog: Public Read-Only (Prevents unauthorized alteration of module & inverter master data)
 DROP POLICY IF EXISTS "Public Manage Solar Modules" ON public.solar_modules;
-CREATE POLICY "Public Manage Solar Modules" ON public.solar_modules FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Read Solar Modules" ON public.solar_modules;
+CREATE POLICY "Public Read Solar Modules" ON public.solar_modules FOR SELECT USING (is_archived = false);
 
 DROP POLICY IF EXISTS "Public Manage Solar Inverters" ON public.solar_inverters;
-CREATE POLICY "Public Manage Solar Inverters" ON public.solar_inverters FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Public Read Solar Inverters" ON public.solar_inverters;
+CREATE POLICY "Public Read Solar Inverters" ON public.solar_inverters FOR SELECT USING (is_archived = false);
 
 -- 8. SEED INITIAL VERIFIED DEALER AND SUPER ADMIN (BCRYPT HASHED PASSWORDS)
 -- Password for demo dealer '9876543210' is 'dealer123' (bcrypt hashed)

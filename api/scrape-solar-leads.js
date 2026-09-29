@@ -84,11 +84,11 @@ export default async function handler(req, res) {
             }
             seenNames.add(cleanName.toLowerCase());
 
-            // Extract phone number if present in snippet
+            // Extract phone number ONLY if authentically present in snippet
             const phoneMatch = snippet.match(/(?:\+91[\-\s]?)?[6-9]\d{9}|\b0\d{2,4}[\-\s]?\d{6,8}\b/);
-            const extractedPhone = phoneMatch ? phoneMatch[0] : '+91 98' + Math.floor(10000000 + Math.random() * 90000000);
+            const extractedPhone = phoneMatch ? phoneMatch[0] : null;
 
-            // Determine category
+            // Determine category based on snippet keywords
             const lowerSnippet = snippet.toLowerCase() + ' ' + rawTitle.toLowerCase();
             let category = 'Solar EPC Contractor & Installer';
             let type = 'epc';
@@ -101,31 +101,24 @@ export default async function handler(req, res) {
               type = 'dealer';
             }
 
-            // Generate realistic nearby coordinate offset around target area
-            const offsetLat = (Math.random() - 0.5) * 0.04;
-            const offsetLon = (Math.random() - 0.5) * 0.04;
-            const itemLat = Number((centerLat + offsetLat).toFixed(4));
-            const itemLon = Number((centerLon + offsetLon).toFixed(4));
-            const approxDist = Number((Math.sqrt(offsetLat * offsetLat + offsetLon * offsetLon) * 111).toFixed(1));
-
             leads.push({
               id: `SCRAPE-${Date.now()}-${leads.length}`,
               name: cleanName,
               category: category,
               type: type,
               phone: extractedPhone,
-              email: `info@${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`,
+              email: null,
               address: `${location}, Gujarat`,
               city: location,
-              lat: itemLat,
-              lon: itemLon,
-              distanceKm: approxDist,
-              speciality: snippet.slice(0, 140) + '...',
+              lat: Number(centerLat),
+              lon: Number(centerLon),
+              distanceKm: 0,
+              speciality: snippet.slice(0, 140) + (snippet.length > 140 ? '...' : ''),
               website: actualUrl,
-              source: 'Live AI Web Scraper',
-              rating: Number((4.5 + Math.random() * 0.4).toFixed(1)),
-              reviewsCount: Math.floor(15 + Math.random() * 50),
-              verified: true,
+              source: 'Web Search Intelligence',
+              rating: null,
+              reviewsCount: null,
+              verified: false,
               isScraped: true
             });
           }

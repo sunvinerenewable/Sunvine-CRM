@@ -29,6 +29,35 @@ export const quotationService = {
   },
 
   /**
+   * Fetch single quotation by ID (supports public proposal sharing)
+   */
+  async getQuotationById(id) {
+    if (!id) return null;
+    const cleanId = String(id).trim();
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Supabase fetch quotation by ID notice:', error.message);
+        return null;
+      }
+      if (!data) return null;
+
+      if (data.quote_payload && typeof data.quote_payload === 'object') {
+        return { ...data.quote_payload, ...data, id: data.id };
+      }
+      return data;
+    } catch (err) {
+      console.error('getQuotationById error:', err);
+      return null;
+    }
+  },
+
+  /**
    * Save / Sync Quotation to Supabase
    */
   async saveQuotation(quote) {
@@ -38,9 +67,9 @@ export const quotationService = {
       id: quote.id,
       dealer_code: quote.dealerCode || 'SV-DLR-0104',
       dealer_name: quote.dealerName || 'Sunline Solar Solutions',
-      customer_name: quote.customerName,
-      customer_phone: quote.customerPhone,
-      customer_city: quote.city || 'Ahmedabad',
+      customer_name: quote.customerName || 'Valued Customer',
+      customer_phone: quote.customerPhone || '',
+      customer_city: quote.city || quote.location || 'Ahmedabad',
       customer_state: quote.state || 'Gujarat',
       system_capacity_kw: Number(quote.systemCapacityKW || quote.capacityKW || quote.capacity) || 5.0,
       panel_type: quote.panelType || quote.solarModule || 'Mono PERC Bi-facial (550W)',
@@ -52,15 +81,27 @@ export const quotationService = {
       subsidy_amount: Number(quote.subsidyAmount) || 0,
       net_payable: Number(quote.netPayable) || 0,
       status: quote.status || 'Draft',
+      quote_payload: quote,
       updated_at: new Date().toISOString()
     };
 
     try {
-      // Try upserting full quotation
-      const { data, error } = await supabase
+      // Try upserting full quotation with fallback if quote_payload column is not yet migrated
+      let { data, error } = await supabase
         .from('quotations')
         .upsert([payload], { onConflict: 'id' })
         .select();
+
+      if (error && error.message && error.message.includes('quote_payload')) {
+        // Fallback for environments where quote_payload column is not yet migrated
+        const { quote_payload, ...fallbackPayload } = payload;
+        const res = await supabase
+          .from('quotations')
+          .upsert([fallbackPayload], { onConflict: 'id' })
+          .select();
+        data = res.data;
+        error = res.error;
+      }
 
       if (error) {
         console.warn('Supabase quotation save warning:', error.message);

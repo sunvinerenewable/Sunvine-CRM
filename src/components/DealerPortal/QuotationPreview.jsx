@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { INITIAL_QUOTATIONS } from '../../data/defaultPresets';
+import { quotationService } from '../../services/quotationService';
 import PDFTemplate from './PDFTemplate';
 import { 
   openWhatsAppChat, 
   shareQuotationPdfViaWhatsApp, 
   buildProposalWhatsAppMessage, 
-  cleanCustomerPhone 
+  cleanCustomerPhone,
+  getPublicProposalUrl
 } from '../../utils/quotationShare';
+import { useToast } from '../Shared/Toast';
 
 export default function QuotationPreview({ isPublicView = false, publicQuoteId = null }) {
   const { previewQuotation, quotations, pricingMaster, setActiveTab, role } = useApp();
+  const { addToast } = useToast();
   const [activePage, setActivePage] = useState('all'); // 'all' | 1 | 2 | 3 | 4
   const [baseScale, setBaseScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
@@ -18,8 +22,11 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [targetPhone, setTargetPhone] = useState('');
   const [copiedFeedback, setCopiedFeedback] = useState(false);
+  const [copiedLinkFeedback, setCopiedLinkFeedback] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
+  const [remoteFetchedQuote, setRemoteFetchedQuote] = useState(null);
+  const [isLoadingRemote, setIsLoadingRemote] = useState(false);
 
   const baseWidth = 794;
   const pageCount = activePage === 'all' ? 4 : 1;
@@ -35,9 +42,40 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
   const isPinchingRef = useRef(false);
   const pinchStateRef = useRef({ startDist: 0, startZoom: 1, docX: 0, docY: 0, lastMidX: 0, lastMidY: 0 });
 
-  // Resolve active quotation: priority to publicQuoteId if public, then state / presets
+  // Asynchronously hydrate quotation from Supabase if not in local cache
+  useEffect(() => {
+    if (isPublicView && publicQuoteId && !remoteFetchedQuote) {
+      const cleanId = String(publicQuoteId).trim().toLowerCase();
+      const foundInLocal = (quotations || []).some(
+        q => String(q.id || '').trim().toLowerCase() === cleanId ||
+             String(q.quoteId || '').trim().toLowerCase() === cleanId
+      ) || (INITIAL_QUOTATIONS || []).some(
+        q => String(q.id || '').trim().toLowerCase() === cleanId ||
+             String(q.quoteId || '').trim().toLowerCase() === cleanId
+      );
+
+      if (!foundInLocal) {
+        let isMounted = true;
+        setIsLoadingRemote(true);
+        quotationService.getQuotationById(publicQuoteId).then(quote => {
+          if (isMounted && quote) {
+            setRemoteFetchedQuote(quote);
+          }
+        }).catch(err => {
+          console.warn('Failed to fetch remote quote:', err);
+        }).finally(() => {
+          if (isMounted) setIsLoadingRemote(false);
+        });
+        return () => { isMounted = false; };
+      }
+    }
+  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote]);
+
+  // Resolve active quotation: priority to remote fetched, publicQuoteId, then state / presets
   const activeQuotation = useMemo(() => {
     if (isPublicView) {
+      if (remoteFetchedQuote) return remoteFetchedQuote;
+
       if (publicQuoteId) {
         const cleanId = String(publicQuoteId).trim().toLowerCase();
         // 1. Search in current state / localStorage quotations
@@ -66,13 +104,13 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
             }
           } catch (_) {}
         }
-        return null; // Explicit ID provided, but not found
+        return null; // Explicit ID provided, waiting or not found
       }
       // If public view accessed without an ID, fallback to previewQuotation or first preset
       return previewQuotation || INITIAL_QUOTATIONS[0];
     }
     return previewQuotation;
-  }, [isPublicView, publicQuoteId, quotations, previewQuotation]);
+  }, [isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
 
   // Initialize phone when quotation changes
   useEffect(() => {
@@ -433,6 +471,45 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
     setTimeout(() => setCopiedFeedback(false), 2000);
   };
 
+  const handleCopyOnlineLink = async () => {
+    if (!activeQuotation) return;
+    quotationService.saveQuotation(activeQuotation).catch(() => {});
+    const url = getPublicProposalUrl(activeQuotation.id);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLinkFeedback(true);
+      setTimeout(() => setCopiedLinkFeedback(false), 2500);
+      if (addToast) {
+        addToast({
+          title: 'Online Link Copied!',
+          message: `Customer online proposal URL copied to clipboard: ${url}`,
+          type: 'success'
+        });
+      }
+    } catch (e) {}
+  };
+
+  const handleOpenOnlineView = () => {
+    if (!activeQuotation) return;
+    quotationService.saveQuotation(activeQuotation).catch(() => {});
+    const url = getPublicProposalUrl(activeQuotation.id);
+    window.open(url, '_blank');
+  };
+
+  if (isLoadingRemote) {
+    return (
+      <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-lg border border-surface-container-high animate-pulse">
+        <div className="w-14 h-14 rounded-full bg-primary/15 text-primary flex items-center justify-center mx-auto mb-4">
+          <span className="material-symbols-outlined text-[32px] animate-spin">sync</span>
+        </div>
+        <h3 className="text-lg font-bold text-on-surface mb-2">Loading Solar Proposal...</h3>
+        <p className="text-xs text-secondary mb-4">
+          Retrieving verified proposal <span className="font-mono font-bold text-on-surface">{publicQuoteId}</span> from Sunvine cloud.
+        </p>
+      </div>
+    );
+  }
+
   if (!activeQuotation) {
     if (isPublicView) {
       return (
@@ -554,17 +631,41 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
           {/* Right: Primary Action Buttons */}
           <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             {!isPublicView ? (
-              <button
-                onClick={() => setShowWhatsAppModal(true)}
-                disabled={isGeneratingPdf}
-                className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
-                title="Share proposal on WhatsApp (sends actual PDF file)"
-              >
-                <span className={`material-symbols-outlined text-[18px] ${isGeneratingPdf ? 'animate-spin' : ''}`}>
-                  {isGeneratingPdf ? 'sync' : 'chat'}
-                </span>
-                <span>{isGeneratingPdf ? 'Preparing PDF...' : 'Share WhatsApp'}</span>
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleCopyOnlineLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer"
+                  title="Copy direct online proposal link to share with customer"
+                >
+                  <span className="material-symbols-outlined text-[17px]">
+                    {copiedLinkFeedback ? 'check' : 'link'}
+                  </span>
+                  <span>{copiedLinkFeedback ? 'Link Copied!' : 'Copy Link'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenOnlineView}
+                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer"
+                  title="View Proposal online as customer in a new tab"
+                >
+                  <span className="material-symbols-outlined text-[17px]">open_in_new</span>
+                  <span>View Online</span>
+                </button>
+
+                <button
+                  onClick={() => setShowWhatsAppModal(true)}
+                  disabled={isGeneratingPdf}
+                  className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+                  title="Share proposal on WhatsApp (sends actual PDF file + online link)"
+                >
+                  <span className={`material-symbols-outlined text-[18px] ${isGeneratingPdf ? 'animate-spin' : ''}`}>
+                    {isGeneratingPdf ? 'sync' : 'chat'}
+                  </span>
+                  <span>{isGeneratingPdf ? 'Preparing PDF...' : 'Share WhatsApp'}</span>
+                </button>
+              </>
             ) : (
               <a
                 href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I am inquiring about Proposal Reference ${activeQuotation.id} for ${activeQuotation.customerName}.`)}`}
@@ -662,6 +763,39 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
             </div>
 
             <div className="py-4 space-y-4">
+              {/* Direct Customer Proposal URL Box */}
+              <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">link</span>
+                    Online Proposal Link (Portable)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyOnlineLink}
+                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {copiedLinkFeedback ? 'check' : 'content_copy'}
+                      </span>
+                      <span>{copiedLinkFeedback ? 'Copied!' : 'Copy Link'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenOnlineView}
+                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                      <span>Open</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="text-[11px] font-mono text-blue-800 bg-white/90 p-2 rounded-lg border border-blue-200 truncate select-all">
+                  {getPublicProposalUrl(activeQuotation.id)}
+                </div>
+              </div>
+
               {/* Customer Phone Input */}
               <div>
                 <label className="block text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">

@@ -92,5 +92,18 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true
+  },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-three': ['three'],
+          'vendor-ocr': ['tesseract.js'],
+          'vendor-pdf': ['html2pdf.js'],
+          'vendor-lucide': ['lucide-react']
+        }
+      }
+    }
   }
 });

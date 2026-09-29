@@ -47,6 +47,13 @@ export const getAutoMatchingInverter = (kwVal) => {
   return 'Industrial String Inverter 3-Phase';
 };
 
+export const generateUniqueQuotationId = () => {
+  const year = new Date().getFullYear();
+  const entropy = Date.now().toString(36).toUpperCase().slice(-4);
+  const randNum = Math.floor(1000 + Math.random() * 9000);
+  return `SV-${year}-Q${entropy}-${randNum}`;
+};
+
 export default function CreateQuotation() {
   const { 
     currentDealer, 
@@ -643,22 +650,68 @@ export default function CreateQuotation() {
   const handleReset = () => {
     if (clearEditingQuotation) clearEditingQuotation();
     if (clearActiveDraftQuote) clearActiveDraftQuote();
+    if (setActiveDraftQuote) setActiveDraftQuote(null);
+    try {
+      localStorage.removeItem('sunvine_saved_roof_config');
+      localStorage.removeItem('sunvine_active_draft_quote');
+    } catch (e) {}
+
+    // 1. Reset Customer Details
     setCustName('');
     setCustPhone('');
     setCustLocation('');
-    setSystemCapacity('3.3');
-    setPanelBrand('Waaree 585W TOPCon Bifacial (ALMM List-I)');
-    setInverterModel('Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)');
+    setFinanceType('CASH');
+    setLoanBank('State Bank of India (Surya Ghar Loan)');
+    setCustomCoverUrl('');
+
+    // 2. Reset Hardware & Capacity (Waaree 585W TOPCon, 6 panels = 3.51 kW)
+    const defaultBrand = 'Waaree Energies';
+    const defaultWatt = 585;
+    const defaultQty = 6;
+    const defaultKw = 3.51;
+    setPanelBrand(defaultBrand);
+    setPanelWatt(defaultWatt);
+    setPanelQuantity(defaultQty);
+    setUserOverrodeInverter(false);
+    setInverterModel(getAutoMatchingInverter(defaultKw));
     setProjectType('Residential');
     setMultiBrandComparison(false);
-    setRatePerKw(pricingPresets?.baseRatePerKw || 59800);
+    setSelectedStructureLayout(null);
+    setQuotationRoofConfig(null);
+
+    // 3. Reset Pricing, Margins & BOM
+    const baseWpRate = customWpRate || 18.25;
+    setRatePerWp(baseWpRate);
+    setPerPanelPrice(Math.round(baseWpRate * defaultWatt));
+    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 59800);
+    setMarginMode('amount');
     if (isAdmin) {
       setQuoteChannel('direct');
       setDealerMarginFixed(0);
       setDealerMarginRate(0);
     } else {
-      setDealerMarginFixed(tierConfig.defaultMarginPerKw * 3.3);
+      setQuoteChannel('dealer');
+      setDealerMarginRate(8);
+      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 4500) * defaultKw));
     }
+    setBomPricingMode(isAdmin ? 'standard' : (effectiveDealer?.pricingConfig?.pricingMode === 'custom' ? 'custom' : 'standard'));
+    setSelectedKitId('');
+    setBomItems(generateFieldBOM({
+      kw: defaultKw,
+      panelBrand: defaultBrand,
+      panelWatt: defaultWatt,
+      panelQuantity: defaultQty,
+      ratePerWp: baseWpRate,
+      inverterModel: getAutoMatchingInverter(defaultKw),
+      inverterPrice: 14400,
+      customBomRates: {}
+    }));
+
+    addToast({
+      title: 'Quotation Reset Complete',
+      message: 'All customer fields, hardware, pricing, and BOM settings have been reset to default baseline.',
+      type: 'info'
+    });
   };
 
   const handleSaveDraft = async () => {
@@ -677,7 +730,7 @@ export default function CreateQuotation() {
 
     const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
     const quotePayload = {
-      id: isEdit ? editingQuotation.id : `SV-2026-Q${Math.floor(100 + Math.random() * 900)}`,
+      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
@@ -772,7 +825,7 @@ export default function CreateQuotation() {
           specs: { moduleCount, panelWatt, rooftopAreaSqFt }
         });
       }
-      await quotationService.saveQuotation(quotePayload);
+
       setSaveStatus(isEdit ? 'Quotation updated successfully!' : 'Draft saved successfully to cloud!');
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Draft Saved',
@@ -781,9 +834,10 @@ export default function CreateQuotation() {
       });
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (e) {
+      setSaveStatus('');
       addToast({
         title: 'Save Failed',
-        message: 'Could not save quotation to storage.',
+        message: e?.message || 'Could not save quotation to storage.',
         type: 'error'
       });
     } finally {
@@ -815,7 +869,7 @@ export default function CreateQuotation() {
 
     const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
     const quotePayload = {
-      id: isEdit ? editingQuotation.id : `SV-2026-Q${Math.floor(100 + Math.random() * 900)}`,
+      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
