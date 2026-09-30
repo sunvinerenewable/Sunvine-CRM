@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { authService } from '../../services/authService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function DealerLogin() {
   const { login, setAuthView } = useApp();
+  const { showLoader, hideLoader } = useLoading();
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -28,12 +30,14 @@ export default function DealerLogin() {
     }
     setError('');
     setLoading(true);
+    showLoader('Authenticating Dealer Portal...');
 
     try {
       const res = await authService.loginDealer(cleanNumber, password);
       if (!res.success) {
         setError(res.error || 'Authentication failed. Please verify credentials.');
         setLoading(false);
+        hideLoader();
         return;
       }
       login('dealer', res.dealer);
@@ -41,6 +45,7 @@ export default function DealerLogin() {
       setError('Server authentication error. Please try again.');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 

@@ -7,6 +7,8 @@ import UpdateNotificationPopup from './components/Shared/UpdateNotificationPopup
 import ErrorBoundary from './components/Shared/ErrorBoundary';
 import { ToastProvider } from './components/Shared/Toast';
 import NetworkStatusBanner from './components/Shared/NetworkStatusBanner';
+import { LoadingProvider } from './context/LoadingContext';
+import GlobalActionLoader from './components/Shared/GlobalActionLoader';
 
 // Authentication Views
 import DealerLogin from './components/Auth/DealerLogin';
@@ -232,12 +234,15 @@ function MainApp() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <ToastProvider>
-          <MainApp />
-          <AppUpdateModal />
-        </ToastProvider>
-      </AppProvider>
+      <LoadingProvider>
+        <AppProvider>
+          <ToastProvider>
+            <MainApp />
+            <GlobalActionLoader />
+            <AppUpdateModal />
+          </ToastProvider>
+        </AppProvider>
+      </LoadingProvider>
     </ErrorBoundary>
   );
 }

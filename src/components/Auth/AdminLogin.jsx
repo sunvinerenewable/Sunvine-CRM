@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { authService } from '../../services/authService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function AdminLogin() {
   const { login, setAuthView } = useApp();
+  const { showLoader, hideLoader } = useLoading();
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,11 +31,13 @@ export default function AdminLogin() {
     }
 
     setLoading(true);
+    showLoader('Authenticating Super Admin...');
     try {
       const res = await authService.loginAdmin(cleanNumber, password);
       if (!res.success) {
         setError(res.error || 'Invalid administrator credentials.');
         setLoading(false);
+        hideLoader();
         return;
       }
       login('admin', res.user);
@@ -41,6 +45,7 @@ export default function AdminLogin() {
       setError('Authentication server error. Please try again.');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 

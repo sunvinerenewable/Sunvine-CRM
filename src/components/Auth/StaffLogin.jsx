@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { authService } from '../../services/authService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function StaffLogin() {
   const { login, setAuthView } = useApp();
+  const { showLoader, hideLoader } = useLoading();
   const [selectedStaffRole, setSelectedStaffRole] = useState('sales'); // 'sales' or 'verification'
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -29,12 +31,18 @@ export default function StaffLogin() {
     }
     setError('');
     setLoading(true);
+    showLoader(
+      selectedStaffRole === 'verification'
+        ? 'Authenticating Verification Desk...'
+        : 'Authenticating Salesperson...'
+    );
 
     try {
       const res = await authService.loginStaff(cleanNumber, password, selectedStaffRole);
       if (!res.success) {
         setError(res.error || 'Authentication failed. Please verify credentials.');
         setLoading(false);
+        hideLoader();
         return;
       }
       login('staff', res.staff);
@@ -42,6 +50,7 @@ export default function StaffLogin() {
       setError('Server authentication error. Please try again.');
     } finally {
       setLoading(false);
+      hideLoader();
     }
   };
 

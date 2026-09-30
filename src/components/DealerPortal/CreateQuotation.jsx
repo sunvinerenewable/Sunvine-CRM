@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { quotationService } from '../../services/quotationService';
 import { useToast } from '../Shared/Toast';
+import { useLoading } from '../../context/LoadingContext';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
@@ -86,6 +87,7 @@ export const generateUniqueQuotationId = () => {
 };
 
 export default function CreateQuotation() {
+  const { showLoader, hideLoader } = useLoading();
   const { 
     currentDealer, 
     role,
@@ -929,6 +931,7 @@ export default function CreateQuotation() {
 
     setIsSubmitting(true);
     setSaveStatus('Saving quotation...');
+    showLoader('Securing Quotation with Cloud...');
     try {
       if (isEdit && updateQuotation) {
         updateQuotation(quotePayload);
@@ -963,6 +966,7 @@ export default function CreateQuotation() {
       });
     } finally {
       setIsSubmitting(false);
+      hideLoader();
     }
   };
 
@@ -1072,30 +1076,35 @@ export default function CreateQuotation() {
       pricingMode: bomPricingMode
     };
 
-    if (isEdit && updateQuotation) {
-      updateQuotation(quotePayload);
-    } else if (addQuotation) {
-      addQuotation(quotePayload);
+    showLoader('Generating Quotation Proposal...');
+    try {
+      if (isEdit && updateQuotation) {
+        updateQuotation(quotePayload);
+      } else if (addQuotation) {
+        addQuotation(quotePayload);
+      }
+      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+        saveDesignRecord({
+          quotationId: quotePayload.id,
+          customerName: custName,
+          capacityKw: kw,
+          type: '2D_ROOF_CAD',
+          roofConfig: quotationRoofConfig,
+          structureLayout: selectedStructureLayout,
+          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+        });
+      }
+      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
+      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+      setActiveTab('preview_quote');
+    } finally {
+      setTimeout(() => hideLoader(), 350);
     }
-    if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
-      saveDesignRecord({
-        quotationId: quotePayload.id,
-        customerName: custName,
-        capacityKw: kw,
-        type: '2D_ROOF_CAD',
-        roofConfig: quotationRoofConfig,
-        structureLayout: selectedStructureLayout,
-        specs: { moduleCount, panelWatt, rooftopAreaSqFt }
-      });
-    }
-    if (setPreviewQuotation) setPreviewQuotation(quotePayload);
-    if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-    }
-    setActiveTab('preview_quote');
   };
 
   return (
