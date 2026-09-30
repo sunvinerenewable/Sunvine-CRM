@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSuccess }) {
   const {
@@ -11,6 +12,7 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     addNotification,
     logActivity
   } = useApp();
+  const { showLoader, hideLoader } = useLoading();
 
   if (!isOpen || !quotation) return null;
 
@@ -67,11 +69,13 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const fileId = `FIL-2026-${Math.floor(100 + Math.random() * 900)}`;
-    const todayStr = new Date().toISOString().split('T')[0];
+    showLoader('Converting Quotation to Operations File...');
+    try {
+      const fileId = `FIL-2026-${Math.floor(100 + Math.random() * 900)}`;
+      const todayStr = new Date().toISOString().split('T')[0];
 
     // Build timeline
     const timeline = [
@@ -164,10 +168,13 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
       });
     }
 
-    if (onSuccess) {
-      onSuccess(fileId);
+      if (onSuccess) {
+        onSuccess(fileId);
+      }
+      onClose();
+    } finally {
+      hideLoader();
     }
-    onClose();
   };
 
   const docItems = [

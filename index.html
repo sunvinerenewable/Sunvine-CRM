@@ -148,21 +148,9 @@
         font-weight: 600;
         margin: 0;
       }
-      .app-boot-spinner {
-        width: 28px;
-        height: 28px;
-        margin-top: 20px;
-        border: 3px solid rgba(108, 191, 61, 0.2);
-        border-top-color: #6CBF3D;
-        border-radius: 50%;
-        animation: spinShell 0.8s linear infinite;
-      }
-      @keyframes spinShell {
-        to { transform: rotate(360deg); }
-      }
       @keyframes pulseShell {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.8; }
+        50% { opacity: 0.85; }
       }
     </style>
 
@@ -204,7 +192,6 @@
           <div style="text-align: center;">
             <p class="app-boot-subtitle">Solar EPC Operations Platform</p>
           </div>
-          <div class="app-boot-spinner" role="status" aria-label="Loading application"></div>
         </div>
       </div>
     </div>

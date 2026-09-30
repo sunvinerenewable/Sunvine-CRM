@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import SplashScreen from './components/SplashScreen';
 import Navigation from './components/Navigation';
 import AppUpdateModal from './components/Shared/AppUpdateModal';
 import UpdateNotificationPopup from './components/Shared/UpdateNotificationPopup';
@@ -54,15 +53,6 @@ function MainApp() {
     currentStaff?.department === 'verification' ||
     currentStaff?.id === 'STF-003'
   );
-  const [splashFinished, setSplashFinished] = useState(() => {
-    return sessionStorage.getItem('sunvine_splash_shown') === 'true';
-  });
-
-  const handleSplashFinish = () => {
-    sessionStorage.setItem('sunvine_splash_shown', 'true');
-    setSplashFinished(true);
-  };
-
   // 0. Public Proposal Viewer (Accessible by customer via WhatsApp link)
   const urlParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
   const isPublicProposalView = urlParams.get('view') === 'quote';
@@ -78,19 +68,14 @@ function MainApp() {
     );
   }
 
-  // 1. Unauthenticated Gateway
+  // 1. Unauthenticated Gateway - transitions directly to login page
   if (!isAuthenticated) {
-    return (
-      <>
-        {authView === 'admin_login' ? (
-          <AdminLogin />
-        ) : authView === 'staff_login' ? (
-          <StaffLogin />
-        ) : (
-          <DealerLogin />
-        )}
-        {!splashFinished && <SplashScreen onFinish={handleSplashFinish} />}
-      </>
+    return authView === 'admin_login' ? (
+      <AdminLogin />
+    ) : authView === 'staff_login' ? (
+      <StaffLogin />
+    ) : (
+      <DealerLogin />
     );
   }
 
@@ -224,9 +209,6 @@ function MainApp() {
 
       {/* Real-time Network Offline / Restored Status Banner */}
       <NetworkStatusBanner />
-
-      {/* 1-Second Splash on first arrival */}
-      {!splashFinished && <SplashScreen onFinish={handleSplashFinish} />}
     </div>
   );
 }
