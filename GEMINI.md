@@ -8,3 +8,4 @@ Permanent Core Protocols:
 3. **Security Standards**: Zero secrets in Git. Never use password: near email in mock data (use accessCode).
 4. **Non-Blocking Workflows**: Document uploads are strictly optional.
 5. **Quality Gate**: Always verify `npm run build` passes with 0 errors before committing.
+6. **Branch Protection & Deployment Policy**: All commits and pushes must go to the `sumit-updates` branch. NEVER push directly to `main` branch or production without explicit confirmation from the user.

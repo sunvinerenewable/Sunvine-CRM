@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authService } from '../../services/authService';
 
 export default function AdminLogin() {
   const { login, setAuthView } = useApp();
@@ -9,7 +10,7 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleAdminSubmit = (e) => {
+  const handleAdminSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
 
@@ -17,16 +18,25 @@ export default function AdminLogin() {
       setError('Please provide an authorized corporate email.');
       return;
     }
-    if (!password || password.length < 6) {
+    if (!password || password.trim().length === 0) {
       setError('Invalid executive master password.');
       return;
     }
 
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await authService.loginAdmin(email, password);
+      if (!res.success) {
+        setError(res.error || 'Invalid administrator credentials.');
+        setLoading(false);
+        return;
+      }
+      login('admin', res.user);
+    } catch (err) {
+      setError('Authentication server error. Please try again.');
+    } finally {
       setLoading(false);
-      login('admin');
-    }, 400);
+    }
   };
 
   return (

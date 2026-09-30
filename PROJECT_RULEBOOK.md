@@ -157,9 +157,9 @@
   - Any JSX syntax errors, missing imports, unclosed tags, or unhandled exceptions must be resolved before pushing.
 
 ### 8.3 Git Hygiene & Branch Promotion
-- All development begins on `devlopment` branch.
-- Once verified via `npm run build` and tested, changes are committed with semantic commit messages (`feat: ...`, `fix: ...`, `chore: ...`).
-- Fast-forward merge into `main` (Production) and push both branches to GitHub to trigger automated Vercel deployment.
+- All development and feature updates are committed and pushed to the `sumit-updates` branch.
+- Once verified via `npm run build` and tested, push only to `sumit-updates` on GitHub / Vercel.
+- **NEVER push directly to the `main` branch**. Merging into `main` (Production) is strictly forbidden without explicit user confirmation.
 
 ---
 

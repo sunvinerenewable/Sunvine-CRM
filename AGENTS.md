@@ -42,3 +42,10 @@ Before writing any new code, stop at the first rung of the **Decision Ladder**:
 - Use `.env` (gitignored) and `localStorage`.
 - In mock test data, use `accessCode: 'dealer123'` or `authPin: '1234'`, NEVER `email:` followed by `password:` (triggers GitGuardian / GitHub Secret Scanning).
 - Mandatory: Run `npm run build` with 0 errors before committing.
+
+---
+
+## 4. BRANCH & DEPLOYMENT PROTOCOL
+- All changes, commits, and pushes MUST be made to the `sumit-updates` branch on GitHub / Vercel.
+- NEVER push directly to the `main` branch.
+- Deploying to production (`main`) requires explicit confirmation from the user. Never auto-push to `main`.

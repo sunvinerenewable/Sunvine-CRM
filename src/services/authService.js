@@ -2,10 +2,11 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Enterprise Authentication & Security Service
- * Implements Rate Limiting, Brute Force Mitigation & Cryptographic OTP Validation
+ * Implements Rate Limiting, Brute Force Mitigation,
+ * PostgreSQL Bcrypt Cryptographic Hashing & Zero-Plaintext Security
  */
 
-// Rate Limiting Cache to protect server/database from spam
+// Rate Limiting Cache to protect server/database from spam and brute force
 const rateLimitCache = new Map();
 
 function checkClientRateLimit(key, maxRequests = 5, windowMs = 15 * 60 * 1000) {
@@ -23,7 +24,7 @@ function checkClientRateLimit(key, maxRequests = 5, windowMs = 15 * 60 * 1000) {
     const waitMins = Math.ceil((record.resetAt - now) / 60000);
     return {
       allowed: false,
-      message: `Too many attempts. Security lockout active for ${waitMins} minute(s) to protect system.`
+      message: `Too many failed attempts. Security lockout active for ${waitMins} minute(s) to protect account.`
     };
   }
 
@@ -34,6 +35,165 @@ function checkClientRateLimit(key, maxRequests = 5, windowMs = 15 * 60 * 1000) {
 
 export const authService = {
   /**
+   * Secure Super Administrator Login against Database with Bcrypt Verification
+   */
+  async loginAdmin(email, password) {
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return { success: false, error: 'Please enter a valid corporate email address.' };
+    }
+    if (!password || password.trim().length === 0) {
+      return { success: false, error: 'Master password cannot be empty.' };
+    }
+
+    // Rate Limiting to prevent brute-force dictionary attacks
+    const rateCheck = checkClientRateLimit(`admin_${cleanEmail}`, 5, 10 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return { success: false, error: rateCheck.message };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('verify_user_credentials', {
+        p_user_type: 'admin',
+        p_identifier: cleanEmail,
+        p_password: password
+      });
+
+      if (error) {
+        console.error('[authService] Admin verification error:', error.message);
+        return { success: false, error: 'Authentication service temporarily unavailable. Please retry.' };
+      }
+
+      if (!data || !data.success) {
+        return { success: false, error: data?.error || 'Invalid administrator credentials.' };
+      }
+
+      return {
+        success: true,
+        user: data.user
+      };
+    } catch (err) {
+      console.error('[authService] Admin login exception:', err);
+      return { success: false, error: 'Server authentication error. Please try again.' };
+    }
+  },
+
+  /**
+   * Secure Dealer Login with sanitized mobile number & Bcrypt Database Verification
+   */
+  async loginDealer(mobileNumber, password) {
+    const cleanNumber = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+    if (cleanNumber.length !== 10 || !/^[6-9]/.test(cleanNumber)) {
+      return { success: false, error: 'Please enter a valid 10-digit Indian mobile number.' };
+    }
+
+    if (!password || password.trim().length === 0) {
+      return { success: false, error: 'Password cannot be empty.' };
+    }
+
+    // Rate Limiting to prevent brute-force dictionary attacks
+    const rateCheck = checkClientRateLimit(`dealer_${cleanNumber}`, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return { success: false, error: rateCheck.message };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('verify_user_credentials', {
+        p_user_type: 'dealer',
+        p_identifier: cleanNumber,
+        p_password: password
+      });
+
+      if (error) {
+        console.error('[authService] Dealer verification RPC error:', error.message);
+        return { success: false, error: 'Dealer authentication service unavailable. Please retry.' };
+      }
+
+      if (!data || !data.success) {
+        return { success: false, error: data?.error || 'Invalid mobile number or password.' };
+      }
+
+      return {
+        success: true,
+        dealer: data.dealer
+      };
+    } catch (err) {
+      console.error('[authService] Dealer login error:', err);
+      return { success: false, error: 'Server authentication error. Please try again.' };
+    }
+  },
+
+  /**
+   * Secure Staff Member Login against Database with Bcrypt Verification
+   */
+  async loginStaff(identifier, password) {
+    const cleanId = String(identifier || '').trim();
+    if (!cleanId) {
+      return { success: false, error: 'Please enter your Mobile Number or Staff ID.' };
+    }
+    if (!password || password.trim().length === 0) {
+      return { success: false, error: 'Password cannot be empty.' };
+    }
+
+    // Rate Limiting to prevent brute-force dictionary attacks
+    const rateCheck = checkClientRateLimit(`staff_${cleanId.toLowerCase()}`, 5, 5 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return { success: false, error: rateCheck.message };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('verify_user_credentials', {
+        p_user_type: 'staff',
+        p_identifier: cleanId,
+        p_password: password
+      });
+
+      if (error) {
+        console.error('[authService] Staff verification error:', error.message);
+        return { success: false, error: 'Staff authentication service unavailable. Please retry.' };
+      }
+
+      if (!data || !data.success) {
+        return { success: false, error: data?.error || 'Invalid Staff ID / Mobile Number or Password.' };
+      }
+
+      return {
+        success: true,
+        staff: data.staff
+      };
+    } catch (err) {
+      console.error('[authService] Staff login error:', err);
+      return { success: false, error: 'Server authentication error. Please try again.' };
+    }
+  },
+
+  /**
+   * Securely update password with bcrypt hash in database
+   */
+  async updatePassword(userType, identifier, newPassword) {
+    if (!newPassword || newPassword.length < 6) {
+      return { success: false, error: 'Password must be at least 6 characters long.' };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('update_user_password', {
+        p_user_type: userType,
+        p_identifier: identifier,
+        p_new_password: newPassword
+      });
+
+      if (error || !data?.success) {
+        return { success: false, error: data?.error || error?.message || 'Failed to update password.' };
+      }
+
+      return { success: true };
+    } catch (err) {
+      console.error('[authService] Update password error:', err);
+      return { success: false, error: 'Failed to update password.' };
+    }
+  },
+
+  /**
    * Request 6-Digit Cryptographic OTP via Email
    */
   async requestOtp(recipientEmail) {
@@ -42,30 +202,24 @@ export const authService = {
       return { success: false, error: 'Invalid email address provided.' };
     }
 
-    // 1. Anti-Brute-Force Rate Limiter
     const rateCheck = checkClientRateLimit(`otp_${cleanEmail}`, 5, 10 * 60 * 1000);
     if (!rateCheck.allowed) {
       return { success: false, error: rateCheck.message };
     }
 
-    // 2. Generate Cryptographic 6-digit random code
     const cryptoArray = new Uint32Array(1);
     crypto.getRandomValues(cryptoArray);
     const generatedOtp = String(100000 + (cryptoArray[0] % 900000));
-
-    // 3. Expiration: 5 Minutes
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
     try {
-      // Invalidate previous unverified OTPs for this email
       await supabase
         .from('otp_verifications')
         .update({ verified: true })
         .eq('recipient', cleanEmail)
         .eq('verified', false);
 
-      // Insert new secure OTP record
-      const { error: insertError } = await supabase
+      await supabase
         .from('otp_verifications')
         .insert([
           {
@@ -78,22 +232,9 @@ export const authService = {
           }
         ]);
 
-      if (insertError) {
-        console.warn('Supabase OTP table notice:', insertError.message);
-      }
-
-      // Try sending official Supabase Auth Email OTP
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          shouldCreateUser: false
-        }
-      });
-
       return {
         success: true,
         expiresInSeconds: 300,
-        // In local development/demo, expose OTP in console for quick testing
         debugCode: process.env.NODE_ENV !== 'production' ? generatedOtp : null
       };
     } catch (err) {
@@ -114,7 +255,6 @@ export const authService = {
     }
 
     try {
-      // Check latest active OTP
       const { data, error } = await supabase
         .from('otp_verifications')
         .select('*')
@@ -126,14 +266,9 @@ export const authService = {
         .single();
 
       if (error || !data) {
-        // Fallback for standard admin demo token if database has not been seeded yet
-        if (cleanOtp === '491820' || cleanOtp === '123456') {
-          return { success: true };
-        }
         return { success: false, error: 'Security code expired or invalid. Request a new code.' };
       }
 
-      // Check max failed attempts lockout
       if (data.attempts >= data.max_attempts) {
         return {
           success: false,
@@ -141,9 +276,7 @@ export const authService = {
         };
       }
 
-      // Validate Code Match
       if (data.otp_code !== cleanOtp) {
-        // Increment failed attempts count
         await supabase
           .from('otp_verifications')
           .update({ attempts: data.attempts + 1 })
@@ -156,7 +289,6 @@ export const authService = {
         };
       }
 
-      // Mark OTP as verified
       await supabase
         .from('otp_verifications')
         .update({ verified: true })
@@ -164,73 +296,7 @@ export const authService = {
 
       return { success: true };
     } catch (err) {
-      return { success: true }; // Fallback
-    }
-  },
-
-  /**
-   * Secure Dealer Login with sanitized 10-digit mobile
-   */
-  async loginDealer(mobileNumber, password) {
-    const cleanNumber = String(mobileNumber).replace(/\D/g, '').slice(0, 10);
-    if (cleanNumber.length !== 10 || !/^[6-9]/.test(cleanNumber)) {
-      return { success: false, error: 'Please enter a valid 10-digit Indian mobile number.' };
-    }
-
-    if (!password || password.trim().length === 0) {
-      return { success: false, error: 'Password cannot be empty.' };
-    }
-
-    // Rate Limiting to prevent brute-force dictionary attacks
-    const rateCheck = checkClientRateLimit(`dealer_${cleanNumber}`, 5, 5 * 60 * 1000);
-    if (!rateCheck.allowed) {
-      return { success: false, error: rateCheck.message };
-    }
-
-    try {
-      const { data: dealer, error } = await supabase
-        .from('dealers')
-        .select('*')
-        .eq('mobile_number', cleanNumber)
-        .single();
-
-      if (error || !dealer) {
-        // Fallback for default dealer account
-        if (cleanNumber === '9876543210' && password === 'dealer123') {
-          return {
-            success: true,
-            dealer: {
-              id: 'SV-DLR-0104',
-              firmName: 'Sunline Solar Solutions',
-              contactPerson: 'Rajesh Kumar',
-              mobileNumber: '9876543210',
-              email: 'rajesh@sunlinesolar.in',
-              city: 'Ahmedabad',
-              state: 'Gujarat',
-              discom: 'UGVCL',
-              rating: 4.9
-            }
-          };
-        }
-        return { success: false, error: 'No authorized dealer account found with this mobile number.' };
-      }
-
-      return {
-        success: true,
-        dealer: {
-          id: dealer.dealer_code,
-          firmName: dealer.firm_name,
-          contactPerson: dealer.contact_person,
-          mobileNumber: dealer.mobile_number,
-          email: dealer.email,
-          city: dealer.city,
-          state: dealer.state,
-          discom: dealer.discom,
-          rating: dealer.rating
-        }
-      };
-    } catch (err) {
-      return { success: false, error: 'Server authentication error. Please try again.' };
+      return { success: false, error: 'Verification failed. Please retry.' };
     }
   }
 };

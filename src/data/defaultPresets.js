@@ -9,8 +9,8 @@ import {
   GUJARAT_INVERTERS,
   GUJARAT_DEALERS,
   GUJARAT_QUOTATIONS
-} from './gujaratDatabase';
-import { APP_VERSION, CURRENT_RELEASE_CHANGELOG } from '../config/version';
+} from './gujaratDatabase.js';
+import { APP_VERSION, CURRENT_RELEASE_CHANGELOG } from '../config/version.js';
 
 export {
   SUNVINE_OFFICIAL_PROFILE,

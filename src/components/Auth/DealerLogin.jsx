@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authService } from '../../services/authService';
 
 export default function DealerLogin() {
-  const { login, setAuthView, dealers } = useApp();
+  const { login, setAuthView } = useApp();
   const [mobileNumber, setMobileNumber] = useState('9810000000');
   const [password, setPassword] = useState('dealer123');
   const [showPassword, setShowPassword] = useState(false);
@@ -10,9 +11,9 @@ export default function DealerLogin() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    const cleanNumber = mobileNumber.replace(/\D/g, '');
+    const cleanNumber = mobileNumber.replace(/\D/g, '').slice(-10);
     if (cleanNumber.length !== 10) {
       setError('Please enter a valid 10-digit mobile number.');
       return;
@@ -26,36 +27,21 @@ export default function DealerLogin() {
       return;
     }
     setError('');
-
-    // Locate dealer in Gujarat network by phone number
-    const matchedDealer = (dealers || []).find((d) => {
-      const dClean = String(d.mobile || '').replace(/\D/g, '');
-      return dClean.endsWith(cleanNumber);
-    });
-
-    const expectedPassword = matchedDealer?.password || 'dealer123';
-
-    if (matchedDealer) {
-      if (password !== expectedPassword) {
-        setError('Incorrect password. Please contact Sunvine Admin to reset your credentials.');
-        return;
-      }
-      if (matchedDealer.status === 'Suspended') {
-        setError('Your dealer account is currently suspended. Please contact Sunvine Operations.');
-        return;
-      }
-    } else if (cleanNumber === '9876543210' && password === 'dealer123') {
-      // Demo fallback dealer
-    } else {
-      setError('No registered dealer found with this mobile number. Contact Sunvine Admin to get access.');
-      return;
-    }
-
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const res = await authService.loginDealer(cleanNumber, password);
+      if (!res.success) {
+        setError(res.error || 'Authentication failed. Please verify credentials.');
+        setLoading(false);
+        return;
+      }
+      login('dealer', res.dealer);
+    } catch (err) {
+      setError('Server authentication error. Please try again.');
+    } finally {
       setLoading(false);
-      login('dealer', matchedDealer || undefined);
-    }, 400);
+    }
   };
 
   return (

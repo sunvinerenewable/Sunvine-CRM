@@ -33,6 +33,12 @@ import {
 import { hardwareService } from '../services/hardwareService';
 import { quotationService } from '../services/quotationService';
 import { pricingService } from '../services/pricingService';
+import { dealerService } from '../services/dealerService';
+import { staffService } from '../services/staffService';
+import { customerFileService } from '../services/customerFileService';
+import { bankService } from '../services/bankService';
+import { settingsService } from '../services/settingsService';
+import { authService } from '../services/authService';
 import { generateFieldBOM } from '../data/standardBomData';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
@@ -317,6 +323,81 @@ const safeSetItem = (key, value) => {
     };
 
     loadQuotationsFromSupabase();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Solar Loan Partner Banks (Database Connected)
+  const [solarBanks, setSolarBanks] = useState([]);
+
+  // Live Supabase Master Database Hydration on Mount
+  useEffect(() => {
+    let isMounted = true;
+    const hydrateMasterDataFromDatabase = async () => {
+      try {
+        const [
+          dbDealers,
+          dbStaff,
+          dbFiles,
+          dbSettings,
+          dbPricing,
+          dbBos,
+          dbBanks,
+          dbLogs
+        ] = await Promise.all([
+          dealerService.getAllDealers(),
+          staffService.getAllStaff(),
+          customerFileService.getAllCustomerFiles(),
+          settingsService.getSystemSettings(),
+          settingsService.getPricingPresets(),
+          settingsService.getBosPriceMatrix(),
+          bankService.getAllSolarBanks(),
+          settingsService.getAuditLogs()
+        ]);
+
+        if (!isMounted) return;
+
+        if (dbDealers && dbDealers.length > 0) {
+          setDealers(ensureDealerAttribution(dbDealers));
+        }
+        if (dbStaff && dbStaff.length > 0) {
+          setStaffList(dbStaff);
+        }
+        if (dbFiles && dbFiles.length > 0) {
+          setCustomerFiles(ensureCustomerFileAttribution(dbFiles));
+        }
+        if (dbSettings) {
+          setSystemSettings(prev => ({ ...prev, ...dbSettings }));
+          if (dbSettings.governanceSettings) {
+            setGovernanceSettings(dbSettings.governanceSettings);
+          }
+        }
+        if (dbPricing) {
+          setPricingPresets(prev => ({
+            ...prev,
+            baseRatePerKw: dbPricing.baseRatePerKw || prev.baseRatePerKw,
+            subsidyCap: dbPricing.subsidyCap || prev.subsidyCap,
+            minMarginPerKw: dbPricing.minMarginPerKw || prev.minMarginPerKw,
+            lastSynced: dbPricing.lastSynced || prev.lastSynced
+          }));
+          if (dbPricing.tierMargins) {
+            setTierMargins(dbPricing.tierMargins);
+          }
+        }
+        if (dbBos && dbBos.length > 0) {
+          setPdfBosMatrix(dbBos);
+        }
+        if (dbBanks && dbBanks.length > 0) {
+          setSolarBanks(dbBanks);
+        }
+        if (dbLogs && dbLogs.length > 0) {
+          setAuditLogs(dbLogs);
+        }
+      } catch (err) {
+        console.warn('[AppContext] Supabase master database sync fallback:', err);
+      }
+    };
+
+    hydrateMasterDataFromDatabase();
     return () => { isMounted = false; };
   }, []);
 
@@ -830,22 +911,37 @@ const safeSetItem = (key, value) => {
   };
 
   // Staff and Customer File Actions
-  const addStaff = (newStaff) => {
+  const addStaff = async (newStaff) => {
     setStaffList(prev => [newStaff, ...prev]);
+    try {
+      await staffService.createStaff(newStaff);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync staff to DB:', e);
+    }
   };
 
-  const updateStaff = (staffId, updatedFields) => {
+  const updateStaff = async (staffId, updatedFields) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, ...updatedFields } : s));
     if (currentStaff?.id === staffId) {
       setCurrentStaff(prev => ({ ...prev, ...updatedFields }));
     }
+    try {
+      await staffService.updateStaff(staffId, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update staff in DB:', e);
+    }
   };
 
-  const updateStaffPassword = (staffId, newPassword) => {
+  const updateStaffPassword = async (staffId, newPassword) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, password: newPassword } : s));
+    try {
+      await staffService.updateStaffPassword(staffId, newPassword);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update staff password in DB:', e);
+    }
   };
 
-  const addCustomerFile = (newFile) => {
+  const addCustomerFile = async (newFile) => {
     setCustomerFiles(prev => [newFile, ...prev]);
     // Also update staff totalFiles and pipelineKw
     if (newFile.staffId) {
@@ -854,6 +950,11 @@ const safeSetItem = (key, value) => {
         totalFiles: (s.totalFiles || 0) + 1,
         pipelineKw: Number(((s.pipelineKw || 0) + (newFile.solarSystemKw || 0)).toFixed(1))
       } : s));
+    }
+    try {
+      await customerFileService.saveCustomerFile(newFile);
+    } catch (e) {
+      console.warn('[AppContext] Failed to save customer file to DB:', e);
     }
   };
 
@@ -874,12 +975,15 @@ const safeSetItem = (key, value) => {
       status: 'VERIFIED'
     };
     setAuditLogs(prev => [newLog, ...(prev || [])]);
+    settingsService.logActivity(newLog);
   };
 
-  const updateSystemSettings = (section, updates) => {
+  const updateSystemSettings = async (section, updates) => {
+    let updatedSectionData = null;
     setSystemSettings(prev => {
       const currentSection = prev?.[section] || {};
       const updatedSection = { ...currentSection, ...updates };
+      updatedSectionData = updatedSection;
       const updated = {
         ...prev,
         [section]: updatedSection
@@ -887,6 +991,14 @@ const safeSetItem = (key, value) => {
       safeSetItem('sunvine_system_settings', updated);
       return updated;
     });
+
+    if (updatedSectionData) {
+      try {
+        await settingsService.saveSystemSettings(section, updatedSectionData);
+      } catch (e) {
+        console.warn('[AppContext] Failed to sync system settings to DB:', e);
+      }
+    }
 
     logActivity({
       action: 'UPDATE_SYSTEM_SETTINGS',
@@ -934,7 +1046,7 @@ const safeSetItem = (key, value) => {
     return newRecord;
   };
 
-  const addCustomerFileTimelineEvent = (fileId, event) => {
+  const addCustomerFileTimelineEvent = async (fileId, event) => {
     const timestamp = new Date().toISOString();
     const newMilestone = {
       id: event.id || `TL-${Date.now()}`,
@@ -948,19 +1060,30 @@ const safeSetItem = (key, value) => {
       notes: event.notes || ''
     };
 
+    let targetUpdatedFile = null;
     setCustomerFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const updatedTimeline = [...(f.timeline || []), newMilestone];
-      return {
+      targetUpdatedFile = {
         ...f,
         currentStage: event.stage || f.currentStage,
+        stage: event.stage || f.stage,
         status: event.status || f.status,
         isCompleted: event.isCompleted !== undefined ? event.isCompleted : f.isCompleted,
         isFailed: event.isFailed !== undefined ? event.isFailed : f.isFailed,
         failureReason: event.failureReason || f.failureReason,
         timeline: updatedTimeline
       };
+      return targetUpdatedFile;
     }));
+
+    if (targetUpdatedFile) {
+      try {
+        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+      } catch (e) {
+        console.warn('[AppContext] Failed to update file timeline in DB:', e);
+      }
+    }
 
     logActivity({
       action: 'ADD_FILE_TIMELINE_EVENT',
@@ -971,8 +1094,13 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateCustomerFile = (fileId, updatedFields) => {
+  const updateCustomerFile = async (fileId, updatedFields) => {
     setCustomerFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updatedFields } : f));
+    try {
+      await customerFileService.updateCustomerFile(fileId, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update customer file in DB:', e);
+    }
     logActivity({
       action: 'UPDATE_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
@@ -982,7 +1110,8 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateFileStatus = (fileId, nextStatus, notes = '') => {
+  const updateFileStatus = async (fileId, nextStatus, notes = '') => {
+    let targetUpdatedFile = null;
     setCustomerFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const updatedTimeline = [
@@ -999,13 +1128,22 @@ const safeSetItem = (key, value) => {
           notes: notes || `Status changed from ${f.status} to ${nextStatus}`
         }
       ];
-      return {
+      targetUpdatedFile = {
         ...f,
         status: nextStatus,
         isCompleted: nextStatus === 'Subsidized' || nextStatus === 'Completed',
         timeline: updatedTimeline
       };
+      return targetUpdatedFile;
     }));
+
+    if (targetUpdatedFile) {
+      try {
+        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+      } catch (e) {
+        console.warn('[AppContext] Failed to update file status in DB:', e);
+      }
+    }
 
     logActivity({
       action: 'UPDATE_FILE_STATUS',
@@ -1016,10 +1154,15 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateDealerProfile = (updatedFields) => {
+  const updateDealerProfile = async (updatedFields) => {
     const updated = { ...currentDealer, ...updatedFields };
     setCurrentDealer(updated);
     setDealers(prev => prev.map(d => d.id === currentDealer.id ? updated : d));
+    try {
+      await dealerService.updateDealer(currentDealer.id || currentDealer.dealerCode, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer profile in DB:', e);
+    }
   };
 
   // Quotation Actions
@@ -1073,22 +1216,44 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const addDealer = (newDealer) => {
+  const addDealer = async (newDealer) => {
     setDealers(prev => [newDealer, ...prev]);
+    try {
+      await dealerService.createDealer(newDealer);
+    } catch (e) {
+      console.warn('[AppContext] Failed to create dealer in DB:', e);
+    }
   };
 
-  const updateDealer = (updatedDealer) => {
+  const updateDealer = async (updatedDealer) => {
     setDealers(prev => prev.map(d => d.id === updatedDealer.id ? { ...d, ...updatedDealer } : d));
     if (currentDealer?.id === updatedDealer.id) {
       setCurrentDealer(prev => ({ ...prev, ...updatedDealer }));
     }
+    try {
+      await dealerService.updateDealer(updatedDealer.id || updatedDealer.dealerCode, updatedDealer);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer in DB:', e);
+    }
   };
 
-  const toggleDealerStatus = (id) => {
-    setDealers(prev => prev.map(d => d.id === id ? { ...d, status: d.status === 'Active' ? 'Suspended' : 'Active' } : d));
+  const toggleDealerStatus = async (id) => {
+    let nextStatus = 'Active';
+    setDealers(prev => prev.map(d => {
+      if (d.id === id) {
+        nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
+        return { ...d, status: nextStatus };
+      }
+      return d;
+    }));
+    try {
+      await dealerService.updateDealer(id, { status: nextStatus });
+    } catch (e) {
+      console.warn('[AppContext] Failed to toggle dealer status in DB:', e);
+    }
   };
 
-  const updateDealerMarginCap = (id, newCap) => {
+  const updateDealerMarginCap = async (id, newCap) => {
     const numericCap = Number(newCap);
     setDealers(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
@@ -1098,12 +1263,22 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
     }
+    try {
+      await dealerService.updateDealer(id, { maxMarginCapPerKw: numericCap });
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer margin in DB:', e);
+    }
   };
 
-  const updateDealerPassword = (id, newPassword) => {
+  const updateDealerPassword = async (id, newPassword) => {
     setDealers(prev => prev.map(d => d.id === id ? { ...d, password: newPassword } : d));
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, password: newPassword }));
+    }
+    try {
+      await authService.updatePassword('dealer', id, newPassword);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer password in DB:', e);
     }
   };
 
@@ -1319,7 +1494,7 @@ const safeSetItem = (key, value) => {
     safeSetItem('sunvine_pricing_master', newMaster);
   };
 
-  const updatePricingPresets = (newPresets) => {
+  const updatePricingPresets = async (newPresets) => {
     const isDifferent = Object.keys(newPresets || {}).some(key => {
       if (key === 'lastSynced') return false;
       return String(newPresets[key]) !== String(pricingPresets[key]);
@@ -1334,6 +1509,11 @@ const safeSetItem = (key, value) => {
     };
     setPricingPresets(updated);
     safeSetItem('sunvine_pricing_presets', updated);
+    try {
+      await settingsService.savePricingPresets(updated);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync pricing presets to DB:', e);
+    }
     addNotification({
       title: 'Quotation Presets Updated',
       description: `Base Rate: ₹${Number(updated.baseRatePerKw).toLocaleString('en-IN')}/kW | Min Margin: ₹${Number(updated.minMarginPerKw).toLocaleString('en-IN')}/kW.`,
@@ -1342,7 +1522,7 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateTierMargins = (newTiers) => {
+  const updateTierMargins = async (newTiers) => {
     const isDifferent = Object.keys(newTiers || {}).some(tierKey => {
       const existing = tierMargins?.[tierKey];
       const updated = newTiers[tierKey];
@@ -1355,6 +1535,11 @@ const safeSetItem = (key, value) => {
     const updated = { ...tierMargins, ...newTiers };
     setTierMargins(updated);
     safeSetItem('sunvine_tier_margins', updated);
+    try {
+      await settingsService.savePricingPresets({ tierMargins: updated });
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync tier margins to DB:', e);
+    }
     addNotification({
       title: 'Dealer Tier Margins Updated',
       description: `Default margin thresholds updated for Diamond, Platinum, Gold & Silver dealer tiers.`,
@@ -1364,7 +1549,7 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateGovernanceSettings = (newSettings) => {
+  const updateGovernanceSettings = async (newSettings) => {
     const isDifferent = Object.keys(newSettings || {}).some(key => {
       return String(newSettings[key]) !== String(governanceSettings?.[key]);
     });
@@ -1373,6 +1558,11 @@ const safeSetItem = (key, value) => {
     const updated = { ...governanceSettings, ...newSettings };
     setGovernanceSettings(updated);
     safeSetItem('sunvine_governance_settings', updated);
+    try {
+      await settingsService.saveSystemSettings('governanceSettings', updated);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync governance settings to DB:', e);
+    }
 
     // If maxDealerMarginPerKW was updated, adjust any tier margin caps that exceed this national ceiling
     if (newSettings.maxDealerMarginPerKW) {
@@ -1667,7 +1857,9 @@ const safeSetItem = (key, value) => {
         designRecords,
         saveDesignRecord,
         // Customer File Timeline Progression
-        addCustomerFileTimelineEvent
+        addCustomerFileTimelineEvent,
+        // Solar Loan Partner Banks
+        solarBanks
       }}
     >
       {children}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authService } from '../../services/authService';
 
 export default function StaffLogin() {
   const { login, setAuthView, staffList } = useApp();
@@ -10,9 +11,9 @@ export default function StaffLogin() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    const cleanInput = identifier.trim().toLowerCase();
+    const cleanInput = identifier.trim();
     if (!cleanInput) {
       setError('Please enter your Mobile Number or Staff ID.');
       return;
@@ -22,51 +23,41 @@ export default function StaffLogin() {
       return;
     }
     setError('');
-
-    // Locate staff member by phone, ID, or email
-    const matchedStaff = (staffList || []).find((s) => {
-      const sPhone = String(s.phone || '').replace(/\D/g, '');
-      const sId = String(s.id || '').toLowerCase();
-      const sEmail = String(s.email || '').toLowerCase();
-      const inputDigits = cleanInput.replace(/\D/g, '');
-
-      return (
-        (inputDigits.length >= 10 && sPhone.endsWith(inputDigits)) ||
-        sId === cleanInput ||
-        sEmail === cleanInput
-      );
-    });
-
-    const expectedPassword = matchedStaff?.accessCode || matchedStaff?.password || 'dealer123';
-
-    if (matchedStaff) {
-      if (password !== expectedPassword && password !== 'dealer123' && password !== 'Sunvine@2026') {
-        setError('Incorrect password. Please contact Sunvine Operations Admin.');
-        return;
-      }
-      if (matchedStaff.status === 'Suspended') {
-        setError('Your staff account is currently suspended. Please contact Admin.');
-        return;
-      }
-    } else if (cleanInput === 'staff' && password === 'dealer123') {
-      // Demo fallback staff
-    } else {
-      setError('No registered staff member found with this Mobile Number or Staff ID.');
-      return;
-    }
-
     setLoading(true);
-    setTimeout(() => {
+
+    try {
+      const res = await authService.loginStaff(cleanInput, password);
+      if (!res.success) {
+        setError(res.error || 'Authentication failed. Please verify credentials.');
+        setLoading(false);
+        return;
+      }
+      login('staff', res.staff);
+    } catch (err) {
+      setError('Server authentication error. Please try again.');
+    } finally {
       setLoading(false);
-      login('staff', matchedStaff || staffList?.[0] || undefined);
-    }, 400);
+    }
   };
 
-  const handleQuickSelectStaff = (stf) => {
-    setIdentifier(stf.phone || stf.id);
-    setPassword(stf.accessCode || stf.password || 'dealer123');
+  const handleQuickSelectStaff = async (stf) => {
+    const idVal = stf.phone || stf.id;
+    setIdentifier(idVal);
+    setPassword('dealer123');
     setError('');
-    login('staff', stf);
+    setLoading(true);
+    try {
+      const res = await authService.loginStaff(idVal, 'dealer123');
+      if (res.success) {
+        login('staff', res.staff);
+      } else {
+        setError(res.error || 'Failed to authenticate selected staff member.');
+      }
+    } catch (err) {
+      setError('Authentication server error.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
