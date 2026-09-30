@@ -4,6 +4,7 @@ import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import { storageService } from '../../services/storageService';
 
 export default function StaffFiles() {
   const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
@@ -124,15 +125,31 @@ export default function StaffFiles() {
     addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
   };
 
-  const handleUploadDoc = (fileId, docKey, filename = 'document.pdf') => {
+  const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
     if (!file) return;
+
+    let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
+    let fileUrl = null;
+
+    if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
+      try {
+        const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
+        if (uploadRes?.success) {
+          filename = uploadRes.filename;
+          fileUrl = uploadRes.publicUrl;
+        }
+      } catch (err) {
+        console.warn('[StaffFiles] Direct upload fallback:', err);
+      }
+    }
 
     const updatedDocs = {
       ...file.documents,
       [docKey]: {
         uploaded: true,
         filename: filename || `${docKey}_uploaded.pdf`,
+        url: fileUrl,
         date: new Date().toISOString().split('T')[0]
       }
     };
@@ -143,7 +160,7 @@ export default function StaffFiles() {
       setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
     }
 
-    addToast(`Document uploaded: ${docKey} (Optional)`, 'success');
+    addToast(`Document uploaded: ${filename}`, 'success');
   };
 
   return (
@@ -779,10 +796,11 @@ export default function StaffFiles() {
                           <span>Upload (Optional)</span>
                           <input
                             type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const f = e.target.files?.[0];
-                              if (f) handleUploadDoc(selectedFileForDocs.id, doc.key, f.name);
+                              if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
                             }}
                           />
                         </label>

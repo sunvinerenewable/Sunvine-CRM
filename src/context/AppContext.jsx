@@ -908,6 +908,7 @@ const safeSetItem = (key, value) => {
     setAuthView('dealer_login');
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    authService.logout().catch(() => {});
   };
 
   // Staff and Customer File Actions

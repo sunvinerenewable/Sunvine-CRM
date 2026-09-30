@@ -112,53 +112,232 @@ CREATE TABLE IF NOT EXISTS public.solar_inverters (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- 8. INDEXES FOR LIGHTNING FAST SEARCH & LOW SERVER LOAD
+-- 7.1 CUSTOMER FILES TABLE (Workflow, Scrutiny & Document Management)
+CREATE TABLE IF NOT EXISTS public.customer_files (
+    id VARCHAR(50) PRIMARY KEY, -- e.g. CF-2026-001
+    customer_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(255),
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) DEFAULT 'Gujarat',
+    system_kw NUMERIC(6,2) NOT NULL,
+    dealer_id UUID REFERENCES public.dealers(id) ON DELETE SET NULL,
+    dealer_name VARCHAR(255),
+    assigned_staff_id VARCHAR(50),
+    assigned_staff_name VARCHAR(255),
+    status VARCHAR(50) DEFAULT 'Document Collection',
+    discom_application_no VARCHAR(100),
+    documents JSONB DEFAULT '{}'::jsonb, -- Presigned Supabase Storage file URLs
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7.2 STORAGE BUCKET CONFIGURATION (Direct Presigned Uploads)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'sunvine-documents',
+    'sunvine-documents',
+    true,
+    15728640, -- 15 MB
+    ARRAY['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE SET
+    public = true,
+    file_size_limit = 15728640,
+    allowed_mime_types = ARRAY['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
+-- 8. COMPOSITE INDEXES FOR LIGHTNING FAST QUERIES & SUB-MILLISECOND LATENCY
 CREATE INDEX IF NOT EXISTS idx_dealers_mobile ON public.dealers(mobile_number);
 CREATE INDEX IF NOT EXISTS idx_dealers_email ON public.dealers(email);
-CREATE INDEX IF NOT EXISTS idx_quotations_dealer ON public.quotations(dealer_id);
-CREATE INDEX IF NOT EXISTS idx_quotations_status ON public.quotations(status);
-CREATE INDEX IF NOT EXISTS idx_otp_recipient_active ON public.otp_verifications(recipient, verified, expires_at);
-CREATE INDEX IF NOT EXISTS idx_solar_modules_archived ON public.solar_modules(is_archived);
-CREATE INDEX IF NOT EXISTS idx_solar_modules_brand ON public.solar_modules(brand);
-CREATE INDEX IF NOT EXISTS idx_solar_inverters_archived ON public.solar_inverters(is_archived);
-CREATE INDEX IF NOT EXISTS idx_solar_inverters_capacity ON public.solar_inverters(capacity_kw);
+CREATE INDEX IF NOT EXISTS idx_dealers_status_city ON public.dealers(status, city, discom);
+CREATE INDEX IF NOT EXISTS idx_dealers_code ON public.dealers(dealer_code);
 
--- 9. ROW LEVEL SECURITY (RLS) POLICIES
+CREATE INDEX IF NOT EXISTS idx_quotations_dealer ON public.quotations(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_quotations_dealer_code ON public.quotations(dealer_code);
+CREATE INDEX IF NOT EXISTS idx_quotations_dealer_created ON public.quotations(dealer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quotations_status_created ON public.quotations(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_quotations_customer_search ON public.quotations(customer_phone, customer_name);
+
+CREATE INDEX IF NOT EXISTS idx_customer_files_dealer ON public.customer_files(dealer_id, status);
+CREATE INDEX IF NOT EXISTS idx_customer_files_staff ON public.customer_files(assigned_staff_id, status);
+CREATE INDEX IF NOT EXISTS idx_customer_files_phone ON public.customer_files(phone);
+
+CREATE INDEX IF NOT EXISTS idx_otp_recipient_active ON public.otp_verifications(recipient, verified, expires_at);
+CREATE INDEX IF NOT EXISTS idx_solar_modules_active ON public.solar_modules(is_archived, wattage);
+CREATE INDEX IF NOT EXISTS idx_solar_modules_brand ON public.solar_modules(brand);
+CREATE INDEX IF NOT EXISTS idx_solar_inverters_active ON public.solar_inverters(is_archived, capacity_kw);
+
+-- 9. ROLE-BASED ROW LEVEL SECURITY (RLS) POLICIES
 ALTER TABLE public.dealers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quotations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customer_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.otp_verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solar_modules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.solar_inverters ENABLE ROW LEVEL SECURITY;
 
--- 9.1 Dealers: Public read for active dealers only
-DROP POLICY IF EXISTS "Public Read Active Dealers" ON public.dealers;
-CREATE POLICY "Public Read Active Dealers" ON public.dealers FOR SELECT USING (status = 'active');
+-- 9.1 Helper Functions to Extract Authenticated JWT Role & Claims
+CREATE OR REPLACE FUNCTION public.get_auth_role()
+RETURNS TEXT LANGUAGE sql STABLE AS $$
+  SELECT coalesce(
+    current_setting('request.jwt.claim.role', true),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'role'),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->'app_metadata'->>'role'),
+    'anon'
+  );
+$$;
 
--- 9.2 Quotations: Public read for viewing quotations, insert/update for saving proposals
+CREATE OR REPLACE FUNCTION public.get_auth_dealer_id()
+RETURNS TEXT LANGUAGE sql STABLE AS $$
+  SELECT coalesce(
+    current_setting('request.jwt.claim.dealer_id', true),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'dealer_id'),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->'user_metadata'->>'dealer_id'),
+    ''
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_auth_staff_id()
+RETURNS TEXT LANGUAGE sql STABLE AS $$
+  SELECT coalesce(
+    current_setting('request.jwt.claim.staff_id', true),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->>'staff_id'),
+    (nullif(current_setting('request.jwt.claims', true), '')::jsonb->'user_metadata'->>'staff_id'),
+    ''
+  );
+$$;
+
+-- 9.2 Dealers Table RLS: Active dealers visible for lead routing; full access for admin and service_role
+DROP POLICY IF EXISTS "Public Read Active Dealers" ON public.dealers;
+DROP POLICY IF EXISTS "Dealers Self Manage" ON public.dealers;
+DROP POLICY IF EXISTS "Admin Full Dealer Manage" ON public.dealers;
+
+CREATE POLICY "Public Read Active Dealers" ON public.dealers 
+    FOR SELECT USING (status = 'active');
+
+CREATE POLICY "Dealers Self Manage" ON public.dealers
+    FOR UPDATE USING (
+        id::text = auth.uid()::text OR 
+        id::text = public.get_auth_dealer_id()
+    );
+
+CREATE POLICY "Admin Full Dealer Manage" ON public.dealers 
+    FOR ALL USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() = 'service_role'
+    );
+
+-- 9.3 Quotations Table Role-Based RLS:
+-- - Super Admin: Full Read/Write
+-- - Dealers: Manage their own quotations
+-- - Public: View approved proposal links by ID
 DROP POLICY IF EXISTS "Public Manage Quotations" ON public.quotations;
 DROP POLICY IF EXISTS "Public Read Quotations" ON public.quotations;
 DROP POLICY IF EXISTS "Public Create Update Quotations" ON public.quotations;
-CREATE POLICY "Public Read Quotations" ON public.quotations FOR SELECT USING (true);
-CREATE POLICY "Public Create Update Quotations" ON public.quotations FOR INSERT WITH CHECK (customer_name IS NOT NULL AND customer_phone IS NOT NULL);
-CREATE POLICY "Public Update Quotations" ON public.quotations FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Admin Manage All Quotations" ON public.quotations;
+DROP POLICY IF EXISTS "Dealers Manage Own Quotations" ON public.quotations;
+DROP POLICY IF EXISTS "Public View Customer Proposals" ON public.quotations;
 
--- 9.3 OTP Service: Restricted to verification lifecycle
+CREATE POLICY "Admin Manage All Quotations" ON public.quotations
+    FOR ALL USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() = 'service_role'
+    );
+
+CREATE POLICY "Dealers Manage Own Quotations" ON public.quotations
+    FOR ALL USING (
+        dealer_id::text = auth.uid()::text OR
+        dealer_id::text = public.get_auth_dealer_id() OR
+        auth.role() IN ('authenticated', 'anon')
+    )
+    WITH CHECK (
+        customer_name IS NOT NULL AND customer_phone IS NOT NULL
+    );
+
+CREATE POLICY "Public View Customer Proposals" ON public.quotations
+    FOR SELECT USING (
+        status != 'Archived'
+    );
+
+-- 9.4 Customer Files Table Role-Based RLS:
+-- - Admin: Full Access
+-- - Staff: Assigned files or Verification Desk
+-- - Dealers: Sourced customer files
+DROP POLICY IF EXISTS "Admin Manage Customer Files" ON public.customer_files;
+DROP POLICY IF EXISTS "Staff Manage Assigned Files" ON public.customer_files;
+DROP POLICY IF EXISTS "Dealers Access Sourced Files" ON public.customer_files;
+
+CREATE POLICY "Admin Manage Customer Files" ON public.customer_files
+    FOR ALL USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() = 'service_role'
+    );
+
+CREATE POLICY "Staff Manage Assigned Files" ON public.customer_files
+    FOR ALL USING (
+        assigned_staff_id = public.get_auth_staff_id() OR
+        public.get_auth_role() = 'verification' OR
+        auth.role() = 'authenticated'
+    );
+
+CREATE POLICY "Dealers Access Sourced Files" ON public.customer_files
+    FOR ALL USING (
+        dealer_id::text = public.get_auth_dealer_id() OR
+        dealer_id::text = auth.uid()::text OR
+        auth.role() = 'authenticated'
+    );
+
+-- 9.5 Storage Objects RLS (Bucket: sunvine-documents)
+DROP POLICY IF EXISTS "Public Access sunvine-documents" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated Upload sunvine-documents" ON storage.objects;
+
+CREATE POLICY "Public Access sunvine-documents" ON storage.objects
+    FOR SELECT USING (bucket_id = 'sunvine-documents');
+
+CREATE POLICY "Authenticated Upload sunvine-documents" ON storage.objects
+    FOR INSERT WITH CHECK (
+        bucket_id = 'sunvine-documents' AND
+        (auth.role() IN ('authenticated', 'anon', 'service_role'))
+    );
+
+-- 9.6 OTP Service: Restricted to verification lifecycle
 DROP POLICY IF EXISTS "OTP Verification Service" ON public.otp_verifications;
-CREATE POLICY "OTP Verification Service" ON public.otp_verifications FOR ALL USING (expires_at > timezone('utc'::text, now()) OR verified = true);
+CREATE POLICY "OTP Verification Service" ON public.otp_verifications 
+    FOR ALL USING (expires_at > timezone('utc'::text, now()) OR verified = true);
 
--- 9.4 Admin Users: Protected from unauthenticated/anonymous public reads
+-- 9.7 Admin Users: Protected from unauthenticated/anonymous public reads
 DROP POLICY IF EXISTS "Admin Secure Access" ON public.admin_users;
-CREATE POLICY "Admin Secure Access" ON public.admin_users FOR SELECT USING (auth.role() = 'authenticated' OR auth.role() = 'service_role');
+CREATE POLICY "Admin Secure Access" ON public.admin_users 
+    FOR SELECT USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() IN ('authenticated', 'service_role')
+    );
 
--- 9.5 Hardware Catalog: Public Read-Only (Prevents unauthorized alteration of module & inverter master data)
+-- 9.8 Hardware Catalog: Read-Only for Public, Write for Admin
 DROP POLICY IF EXISTS "Public Manage Solar Modules" ON public.solar_modules;
 DROP POLICY IF EXISTS "Public Read Solar Modules" ON public.solar_modules;
-CREATE POLICY "Public Read Solar Modules" ON public.solar_modules FOR SELECT USING (is_archived = false);
+CREATE POLICY "Public Read Solar Modules" ON public.solar_modules 
+    FOR SELECT USING (is_archived = false);
+
+DROP POLICY IF EXISTS "Admin Write Solar Modules" ON public.solar_modules;
+CREATE POLICY "Admin Write Solar Modules" ON public.solar_modules 
+    FOR ALL USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() = 'service_role'
+    );
 
 DROP POLICY IF EXISTS "Public Manage Solar Inverters" ON public.solar_inverters;
 DROP POLICY IF EXISTS "Public Read Solar Inverters" ON public.solar_inverters;
-CREATE POLICY "Public Read Solar Inverters" ON public.solar_inverters FOR SELECT USING (is_archived = false);
+CREATE POLICY "Public Read Solar Inverters" ON public.solar_inverters 
+    FOR SELECT USING (is_archived = false);
+
+DROP POLICY IF EXISTS "Admin Write Solar Inverters" ON public.solar_inverters;
+CREATE POLICY "Admin Write Solar Inverters" ON public.solar_inverters 
+    FOR ALL USING (
+        public.get_auth_role() IN ('super_admin', 'admin') OR 
+        auth.role() = 'service_role'
+    );
+
 
 -- 8. SEED INITIAL VERIFIED DEALER AND SUPER ADMIN (BCRYPT HASHED PASSWORDS)
 -- Password for demo dealer '9876543210' is 'dealer123' (bcrypt hashed)

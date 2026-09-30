@@ -33,7 +33,60 @@ function checkClientRateLimit(key, maxRequests = 5, windowMs = 15 * 60 * 1000) {
   return { allowed: true };
 }
 
+async function attemptApiLogin(payload) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // Receives HttpOnly cookie
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success) {
+      return { ok: true, data };
+    }
+    if (res.status === 429 || res.status === 401 || res.status === 400) {
+      return { ok: false, error: data?.error || 'Authentication failed' };
+    }
+  } catch (err) {
+    // API endpoint unreachable (e.g. static preview / local vite dev server); fall through to client/Supabase
+  }
+  return null;
+}
+
 export const authService = {
+  /**
+   * Super Administrator Logout (Clears HTTP-only cookie on server)
+   */
+  async logout() {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (e) {
+      // offline / client fallback
+    }
+  },
+
+  /**
+   * Verify Active Session via Server HTTP-only Cookie
+   */
+  async verifySession() {
+    try {
+      const res = await fetch('/api/auth/verify', {
+        method: 'GET',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      // offline / client fallback
+    }
+    return { authenticated: false };
+  },
+
   /**
    * Secure Super Administrator Login against Database with 10-Digit Mobile / Email Verification
    */
@@ -55,7 +108,20 @@ export const authService = {
       return { success: false, error: 'Master password cannot be empty.' };
     }
 
-    // Rate Limiting to prevent brute-force dictionary attacks
+    // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
+    const apiRes = await attemptApiLogin({
+      role: 'admin',
+      identifier: isMobile ? cleanNumber : cleanEmail,
+      password
+    });
+    if (apiRes) {
+      if (apiRes.ok && apiRes.data?.user) {
+        return { success: true, user: apiRes.data.user };
+      }
+      return { success: false, error: apiRes.error || 'Invalid credentials' };
+    }
+
+    // Rate Limiting to prevent brute-force dictionary attacks (client fallback)
     const rateCheck = checkClientRateLimit(`admin_${isMobile ? cleanNumber : cleanEmail}`, 5, 10 * 60 * 1000);
     if (!rateCheck.allowed) {
       return { success: false, error: rateCheck.message };
@@ -110,6 +176,19 @@ export const authService = {
 
     if (!password || password.trim().length === 0) {
       return { success: false, error: 'Password cannot be empty.' };
+    }
+
+    // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
+    const apiRes = await attemptApiLogin({
+      role: 'dealer',
+      identifier: cleanNumber,
+      password
+    });
+    if (apiRes) {
+      if (apiRes.ok && apiRes.data?.dealer) {
+        return { success: true, dealer: apiRes.data.dealer };
+      }
+      return { success: false, error: apiRes.error || 'Invalid credentials' };
     }
 
     // Rate Limiting to prevent brute-force dictionary attacks
@@ -176,6 +255,20 @@ export const authService = {
 
     if (!password || password.trim().length === 0) {
       return { success: false, error: 'Password cannot be empty.' };
+    }
+
+    // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
+    const staffApiRes = await attemptApiLogin({
+      role: 'staff',
+      identifier: cleanNumber,
+      password,
+      selectedRole
+    });
+    if (staffApiRes) {
+      if (staffApiRes.ok && staffApiRes.data?.staff) {
+        return { success: true, staff: staffApiRes.data.staff };
+      }
+      return { success: false, error: staffApiRes.error || 'Invalid credentials' };
     }
 
     // Rate Limiting to prevent brute-force dictionary attacks
