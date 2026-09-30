@@ -342,7 +342,8 @@ const safeSetItem = (key, value) => {
           dbPricing,
           dbBos,
           dbBanks,
-          dbLogs
+          dbLogs,
+          dbBomItems
         ] = await Promise.all([
           dealerService.getAllDealers(),
           staffService.getAllStaff(),
@@ -351,7 +352,8 @@ const safeSetItem = (key, value) => {
           settingsService.getPricingPresets(),
           settingsService.getBosPriceMatrix(),
           bankService.getAllSolarBanks(),
-          settingsService.getAuditLogs()
+          settingsService.getAuditLogs(),
+          hardwareService.getAllBomItems()
         ]);
 
         if (!isMounted) return;
@@ -382,6 +384,15 @@ const safeSetItem = (key, value) => {
           if (dbPricing.tierMargins) {
             setTierMargins(dbPricing.tierMargins);
           }
+          if (dbPricing.bomRates) {
+            setBomRates(prev => ({ ...prev, ...dbPricing.bomRates }));
+          }
+          if (dbPricing.capacityBomMatrix) {
+            setCapacityBomMatrix(prev => ({ ...prev, ...dbPricing.capacityBomMatrix }));
+          }
+          if (dbPricing.baseRates) {
+            setPricingMaster(prev => ({ ...prev, baseRates: dbPricing.baseRates }));
+          }
         }
         if (dbBos && dbBos.length > 0) {
           setPdfBosMatrix(dbBos);
@@ -391,6 +402,23 @@ const safeSetItem = (key, value) => {
         }
         if (dbLogs && dbLogs.length > 0) {
           setAuditLogs(dbLogs);
+        }
+        if (dbBomItems && dbBomItems.length > 0) {
+          setBomCatalog(prev => {
+            const mergedMap = new Map();
+            STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
+            dbBomItems.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
+            return Array.from(mergedMap.values());
+          });
+          setBomRates(prev => {
+            const next = { ...prev };
+            dbBomItems.forEach(it => {
+              if (it.defaultRate && !next[it.id]) {
+                next[it.id] = it.defaultRate;
+              }
+            });
+            return next;
+          });
         }
       } catch (err) {
         console.warn('[AppContext] Supabase master database sync fallback:', err);
@@ -438,13 +466,18 @@ const safeSetItem = (key, value) => {
     return (Array.isArray(parsed) && parsed.length > 0) ? parsed : PDF_BOS_PRICE_MATRIX;
   });
 
+  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync)
+  const [bomCatalog, setBomCatalog] = useState(() => {
+    return safeJsonParse('sunvine_bom_catalog', STANDARD_BOM_CATALOG);
+  });
+
   // Standard BOM Item Rates (Admin Configurable)
   const defaultBomRates = useMemo(() => {
-    return STANDARD_BOM_CATALOG.reduce((acc, item) => {
-      acc[item.id] = item.defaultRate;
+    return (bomCatalog || STANDARD_BOM_CATALOG).reduce((acc, item) => {
+      acc[item.id] = item.defaultRate || item.rate || 100;
       return acc;
     }, {});
-  }, []);
+  }, [bomCatalog]);
 
   const [bomRates, setBomRates] = useState(() => {
     if (!isDbUpToDate) return defaultBomRates;
@@ -736,6 +769,10 @@ const safeSetItem = (key, value) => {
   }, [bomRates]);
 
   useEffect(() => {
+    safeSetItem('sunvine_bom_catalog', bomCatalog);
+  }, [bomCatalog]);
+
+  useEffect(() => {
     safeSetItem('sunvine_capacity_bom', capacityBomMatrix);
   }, [capacityBomMatrix]);
 
@@ -798,6 +835,65 @@ const safeSetItem = (key, value) => {
       ...prev,
       [kwKey]: newPreset
     }));
+  };
+
+  const addBomItem = async (newItem) => {
+    const item = {
+      id: newItem.id || `bom_hw_${Date.now()}`,
+      category: newItem.category || 'structure',
+      name: (newItem.name || 'New Hardware Component').trim(),
+      description: newItem.description || '',
+      unit: newItem.unit || 'Nos',
+      defaultRate: Number(newItem.defaultRate || newItem.rate) || 100,
+      make: newItem.make || 'Approved Brand',
+      specs: newItem.specs || '',
+      gstRate: Number(newItem.gstRate !== undefined ? newItem.gstRate : 18),
+      isArchived: false,
+      isNew: true,
+      createdAt: Date.now()
+    };
+
+    setBomCatalog(prev => [item, ...(prev || []).filter(i => i.id !== item.id)]);
+    setBomRates(prev => ({ ...prev, [item.id]: item.defaultRate }));
+
+    // Persist directly to Supabase DB
+    await hardwareService.saveBomItem(item);
+
+    addNotification({
+      type: 'success',
+      icon: 'inventory_2',
+      title: 'BOM Hardware Item Added',
+      description: `Admin introduced ${item.name} (${item.make}) to master bill of materials.`,
+      audience: 'all'
+    });
+
+    return item;
+  };
+
+  const updateBomItem = async (itemId, updatedFields) => {
+    setBomCatalog(prev => prev.map(i => i.id === itemId ? { ...i, ...updatedFields } : i));
+    if (updatedFields.defaultRate !== undefined || updatedFields.rate !== undefined) {
+      const newRate = Number(updatedFields.defaultRate || updatedFields.rate) || 0;
+      setBomRates(prev => ({ ...prev, [itemId]: newRate }));
+    }
+    const current = (bomCatalog || []).find(i => i.id === itemId);
+    const merged = { ...current, ...updatedFields, id: itemId };
+    await hardwareService.saveBomItem(merged);
+  };
+
+  const deleteBomItem = async (itemId) => {
+    setBomCatalog(prev => prev.filter(i => i.id !== itemId));
+    setBomRates(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+    await hardwareService.deleteBomItem(itemId);
+  };
+
+  const archiveBomItem = async (itemId, isArchived) => {
+    setBomCatalog(prev => prev.map(i => i.id === itemId ? { ...i, isArchived } : i));
+    await hardwareService.archiveBomItem(itemId, isArchived);
   };
 
   const addNewModule = async (newModule) => {
@@ -880,7 +976,7 @@ const safeSetItem = (key, value) => {
   };
 
   const getResolvedBom = (capacityKW) => {
-    return resolveCapacityBom(capacityKW, capacityBomMatrix, bomRates);
+    return resolveCapacityBom(capacityKW, capacityBomMatrix, bomRates, bomCatalog);
   };
 
   // Auth Actions
@@ -1834,14 +1930,20 @@ const safeSetItem = (key, value) => {
         pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
         officialProfile: SUNVINE_OFFICIAL_PROFILE,
         // Standard BOM & BoS Engine
-        bomCatalog: STANDARD_BOM_CATALOG,
+        bomCatalog,
+        setBomCatalog,
         bomCategories: STANDARD_BOM_CATEGORIES,
         bomRates,
+        setBomRates,
         updateBomItemRate,
         capacityBomMatrix,
         updateCapacityBomItemQty,
         updateCapacityBomPreset,
         getResolvedBom,
+        addBomItem,
+        updateBomItem,
+        deleteBomItem,
+        archiveBomItem,
         // Dynamic Catalogs & 'NEW' Badge Tracking
         addNewModule,
         addNewInverter,

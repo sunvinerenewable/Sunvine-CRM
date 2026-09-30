@@ -362,7 +362,7 @@ export const DEFAULT_CAPACITY_BOM = {
  * If exact capacity exists in matrix, uses explicit preset.
  * Otherwise interpolates/extrapolates based on kW scaling.
  */
-export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_BOM, customRates = {}) {
+export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_BOM, customRates = {}, customCatalog = null) {
   const kw = parseFloat(capacityKW) || 3.3;
   const kwKey = kw.toFixed(1);
   const preset = customMatrix[kwKey] || customMatrix['3.3'];
@@ -370,12 +370,17 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
   // Ratio scaling if custom capacity
   const ratio = kw / (preset?.capacityKW || 3.3);
 
-  const resolvedItems = STANDARD_BOM_CATALOG.map((catItem) => {
-    const baseQty = preset?.items?.[catItem.id] ?? 0;
-    const finalQty = customMatrix[kwKey]
+  const activeCatalog = (Array.isArray(customCatalog) && customCatalog.length > 0)
+    ? customCatalog
+    : STANDARD_BOM_CATALOG;
+
+  const resolvedItems = activeCatalog.map((catItem) => {
+    const hasPresetQty = preset?.items?.[catItem.id] !== undefined;
+    const baseQty = hasPresetQty ? preset.items[catItem.id] : (catItem.defaultQty || (catItem.category === 'structure' ? 2 : 1));
+    const finalQty = customMatrix[kwKey] && hasPresetQty
       ? baseQty
       : Math.max(1, Math.round(baseQty * ratio));
-    const unitRate = customRates[catItem.id] ?? catItem.defaultRate;
+    const unitRate = customRates[catItem.id] ?? (catItem.defaultRate || catItem.rate || 100);
     const totalAmount = finalQty * unitRate;
 
     return {
@@ -386,7 +391,8 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
     };
   });
 
-  const categoryTotals = STANDARD_BOM_CATEGORIES.map((cat) => {
+  const categoriesList = STANDARD_BOM_CATEGORIES;
+  const categoryTotals = categoriesList.map((cat) => {
     const items = resolvedItems.filter((i) => i.category === cat.id);
     const sum = items.reduce((acc, i) => acc + i.totalAmount, 0);
     return {
@@ -396,13 +402,34 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
     };
   });
 
+  // Also include any custom category items
+  const standardCatIds = new Set(categoriesList.map(c => c.id));
+  const customCategories = [];
+  resolvedItems.forEach(it => {
+    if (it.category && !standardCatIds.has(it.category)) {
+      let existing = customCategories.find(c => c.id === it.category);
+      if (!existing) {
+        existing = {
+          id: it.category,
+          name: it.category.charAt(0).toUpperCase() + it.category.slice(1),
+          icon: 'category',
+          items: [],
+          total: 0
+        };
+        customCategories.push(existing);
+      }
+      existing.items.push(it);
+      existing.total += it.totalAmount;
+    }
+  });
+
   const totalBoSCost = resolvedItems.reduce((acc, i) => acc + i.totalAmount, 0);
 
   return {
     capacityKW: kw,
     structureHeight: preset?.structureHeight || '6/8 Standard',
     items: resolvedItems,
-    categoryTotals,
+    categoryTotals: [...categoryTotals, ...customCategories],
     totalBoSCost
   };
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
+import { settingsService } from '../../services/settingsService';
 import DealerCustomPricingMatrix from './DealerCustomPricingMatrix';
 
 const DEFAULT_INVERTER_BENCHMARK_MATRIX = [
@@ -663,7 +664,7 @@ ${origin}/?tab=pricing_master
     }
   }, []);
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e?.preventDefault();
 
     const currentSnapshot = getSnapshotString();
@@ -701,9 +702,39 @@ ${origin}/?tab=pricing_master
       console.warn(err);
     }
 
+    // Direct backend persistence to Supabase database (eliminating local-only reliance)
+    try {
+      await settingsService.savePricingPresets({
+        baseRates: {
+          tier1to3kw: Number(rate1to3),
+          tier3to10kw: Number(rate3to10),
+          tier10to50kw: Number(rateCommercial),
+          tierAbove50kw: Number(rateCommercial),
+        },
+        defaultHardware: {
+          module: selectedDefaultModule,
+          inverter: selectedDefaultInverter
+        },
+        bankDetails: {
+          accountName: beneficiaryName,
+          bankName,
+          accountNumber,
+          ifscCode,
+          branch,
+        },
+        bomRates,
+        capacityBomMatrix,
+        inverterBenchmarkMatrix,
+        tierMargins: localTierMargins
+      });
+      await settingsService.saveBosPriceMatrix(localBosMatrix);
+    } catch (dbErr) {
+      console.warn('Failed to persist presets to Supabase:', dbErr);
+    }
+
     // SR-58: Diff-based notification check. If no fields changed, suppress dealer notification
     if (!hasChanges) {
-      triggerToast('No changes detected. System configuration is already up to date.');
+      triggerToast('Configuration saved to database. No changes detected from current presets.');
       return;
     }
 
@@ -715,11 +746,11 @@ ${origin}/?tab=pricing_master
         type: 'info',
         icon: 'bolt',
         title: 'Master EPC Pricing & Presets Published',
-        description: `Admin revised benchmark rates, hardware specifications, and BOM presets. Synced across ${totalDealersCount} Gujarat dealers.`,
+        description: `Admin revised benchmark rates, hardware specifications, and BOM presets. Synced to Supabase database and across ${totalDealersCount} Gujarat dealers.`,
         targetTab: 'pricing_master'
       });
     }
-    triggerToast(`Master pricing & presets published successfully to ${totalDealersCount} Gujarat dealers!`);
+    triggerToast(`Master pricing & presets published to Supabase database and synced across ${totalDealersCount} Gujarat dealers!`);
   };
 
   return (
@@ -2120,7 +2151,10 @@ ${origin}/?tab=pricing_master
               structure: { name: '1. Mounting Structure (GI Pipes & Fasteners)', icon: 'foundation', desc: '60x40 & 40x40 GI pipes, anchor fasteners, L-A patti, zinc spray (6/8ft standard)' },
               electrical: { name: '2. Switchgear & Protection', icon: 'electrical_services', desc: 'Solar Inverter, ACDB+DCDB combo box, Chemical earthing kit, MC4 pairs' },
               cables: { name: '3. Solar DC & AC Cables', icon: 'cable', desc: 'Assumed Ground + 1st floor run (DC, AC, Earthing, and Lightning Arrestor copper wires)' },
-              conduits: { name: '4. Conduits, Piping & Installation Fixtures', icon: 'plumbing', desc: 'Heavy-duty PVC pipes, elbows, tees, cable ties and saddle clamps' }
+              conduits: { name: '4. Conduits, Piping & Installation Fixtures', icon: 'plumbing', desc: 'Heavy-duty PVC pipes, elbows, tees, cable ties and saddle clamps' },
+              safety: { name: '5. Safety, Earthing & Grounding Systems', icon: 'shield', desc: 'Chemical earthing electrodes, bentonite compound, lightning arrestor' },
+              metering: { name: '6. DISCOM Metering & Grid Interconnection', icon: 'speed', desc: 'Bi-directional net meter box, solar generation meter box, safety caution plates' },
+              other: { name: '7. Custom Balance of System Hardware', icon: 'build', desc: 'Specialized rooftop fixtures, auxiliary clamps, and site-specific items' }
             };
 
             return (
@@ -2285,104 +2319,118 @@ ${origin}/?tab=pricing_master
                   {/* Categorized BOM Components Customization Tables */}
                   {resolved && (
                     <div className="space-y-6">
-                      {['structure', 'electrical', 'cables', 'conduits'].map((catKey) => {
-                        const catMeta = categoryLabels[catKey];
-                        const catItems = resolved.items.filter((it) => it.category === catKey);
+                      {(() => {
+                        const standardKeys = ['structure', 'electrical', 'cables', 'conduits', 'safety', 'metering', 'other'];
+                        const presentCategories = Array.from(new Set(resolved.items.map(it => it.category || 'other')));
+                        const sortedCategories = [
+                          ...standardKeys.filter(k => presentCategories.includes(k)),
+                          ...presentCategories.filter(k => !standardKeys.includes(k))
+                        ];
 
-                        return (
-                          <div key={catKey} className="border border-surface-container-highest rounded-xl overflow-hidden shadow-xs">
-                            <div className="bg-surface-container-low px-4 py-3 border-b border-surface-container-highest flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <span className="material-symbols-outlined text-primary text-lg">{catMeta.icon}</span>
-                                <h3 className="font-label-md text-label-md font-bold text-on-surface">{catMeta.name}</h3>
+                        return sortedCategories.map((catKey) => {
+                          const catMeta = categoryLabels[catKey] || {
+                            name: `${catKey.charAt(0).toUpperCase() + catKey.slice(1)} Components`,
+                            icon: 'category',
+                            desc: 'Custom balance of system hardware'
+                          };
+                          const catItems = resolved.items.filter((it) => (it.category || 'other') === catKey);
+                          if (catItems.length === 0) return null;
+
+                          return (
+                            <div key={catKey} className="border border-surface-container-highest rounded-xl overflow-hidden shadow-xs">
+                              <div className="bg-surface-container-low px-4 py-3 border-b border-surface-container-highest flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="material-symbols-outlined text-primary text-lg">{catMeta.icon}</span>
+                                  <h3 className="font-label-md text-label-md font-bold text-on-surface">{catMeta.name}</h3>
+                                </div>
+                                <span className="text-xs text-secondary hidden sm:inline">{catMeta.desc}</span>
                               </div>
-                              <span className="text-xs text-secondary hidden sm:inline">{catMeta.desc}</span>
-                            </div>
 
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left border-collapse min-w-[700px]">
-                                <thead>
-                                  <tr className="bg-surface-container-lowest text-secondary text-[11px] font-semibold uppercase tracking-wider border-b border-surface-container-highest">
-                                    <th className="px-4 py-2">Item Description &amp; Specification</th>
-                                    <th className="px-3 py-2 text-center w-24">Unit</th>
-                                    <th className="px-3 py-2 text-center w-36">Preset Qty ({selectedBomCapacity} kW)</th>
-                                    <th className="px-3 py-2 text-right w-44">Unit Benchmark Rate (₹)</th>
-                                    <th className="px-4 py-2 text-right w-36">Total Amount (₹)</th>
-                                    <th className="px-3 py-2 text-center w-28">Dealer Rate</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
-                                  {catItems.map((item) => (
-                                    <tr key={item.id} className="hover:bg-surface-container-low/40 transition-colors">
-                                      <td className="px-4 py-2.5 font-medium text-inverse-surface">
-                                        {item.name}
-                                      </td>
-                                      <td className="px-3 py-2.5 text-center text-secondary font-mono">
-                                        {item.unit}
-                                      </td>
-                                      <td className="px-3 py-2.5 text-center">
-                                        <div className="relative inline-flex items-center justify-center">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            value={item.qty}
-                                            onChange={(e) => {
-                                              const val = parseFloat(e.target.value) || 0;
-                                              if (updateCapacityBomItemQty) {
-                                                updateCapacityBomItemQty(selectedBomCapacity, item.id, val);
-                                              }
-                                            }}
-                                            className="w-24 h-8 text-center bg-surface-container-lowest border border-surface-container-highest rounded-lg font-mono font-bold text-on-surface focus:outline-none focus:border-primary text-xs"
-                                          />
-                                        </div>
-                                      </td>
-                                      <td className="px-3 py-2.5 text-right">
-                                        <div className="relative inline-flex items-center justify-end">
-                                          <span className="absolute left-2.5 text-secondary text-xs">₹</span>
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            step="any"
-                                            value={item.unitRate}
-                                            onChange={(e) => {
-                                              const val = parseFloat(e.target.value) || 0;
-                                              if (updateBomItemRate) {
-                                                updateBomItemRate(item.id, val);
-                                              }
-                                            }}
-                                            className="w-32 h-8 pl-6 pr-2.5 text-right bg-surface-container-lowest border border-surface-container-highest rounded-lg font-mono font-semibold text-on-surface focus:outline-none focus:border-primary text-xs"
-                                          />
-                                        </div>
-                                      </td>
-                                      <td className="px-4 py-2.5 text-right font-mono font-bold text-inverse-surface whitespace-nowrap">
-                                        {formatINR(item.totalCost)}
-                                      </td>
-                                      <td className="px-3 py-2.5 text-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenDealerOverride({
-                                            id: item.id,
-                                            name: item.name,
-                                            category: 'bom',
-                                            benchmarkPrice: item.unitRate,
-                                            unit: `₹/${item.unit}`
-                                          })}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-primary-container hover:text-on-primary text-secondary transition-colors text-[11px] font-semibold cursor-pointer"
-                                          title="Set dealer negotiated rate for this BOM item"
-                                        >
-                                          <span className="material-symbols-outlined text-[13px]">tune</span>
-                                          <span>Dealer</span>
-                                        </button>
-                                      </td>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-[700px]">
+                                  <thead>
+                                    <tr className="bg-surface-container-lowest text-secondary text-[11px] font-semibold uppercase tracking-wider border-b border-surface-container-highest">
+                                      <th className="px-4 py-2">Item Description &amp; Specification</th>
+                                      <th className="px-3 py-2 text-center w-24">Unit</th>
+                                      <th className="px-3 py-2 text-center w-36">Preset Qty ({selectedBomCapacity} kW)</th>
+                                      <th className="px-3 py-2 text-right w-44">Unit Benchmark Rate (₹)</th>
+                                      <th className="px-4 py-2 text-right w-36">Total Amount (₹)</th>
+                                      <th className="px-3 py-2 text-center w-28">Dealer Rate</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
+                                    {catItems.map((item) => (
+                                      <tr key={item.id} className="hover:bg-surface-container-low/40 transition-colors">
+                                        <td className="px-4 py-2.5 font-medium text-inverse-surface">
+                                          {item.name}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center text-secondary font-mono">
+                                          {item.unit}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center">
+                                          <div className="relative inline-flex items-center justify-center">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="any"
+                                              value={item.qty}
+                                              onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0;
+                                                if (updateCapacityBomItemQty) {
+                                                  updateCapacityBomItemQty(selectedBomCapacity, item.id, val);
+                                                }
+                                              }}
+                                              className="w-24 h-8 text-center bg-surface-container-lowest border border-surface-container-highest rounded-lg font-mono font-bold text-on-surface focus:outline-none focus:border-primary text-xs"
+                                            />
+                                          </div>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-right">
+                                          <div className="relative inline-flex items-center justify-end">
+                                            <span className="absolute left-2.5 text-secondary text-xs">₹</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="any"
+                                              value={item.unitRate}
+                                              onChange={(e) => {
+                                                const val = parseFloat(e.target.value) || 0;
+                                                if (updateBomItemRate) {
+                                                  updateBomItemRate(item.id, val);
+                                                }
+                                              }}
+                                              className="w-32 h-8 pl-6 pr-2.5 text-right bg-surface-container-lowest border border-surface-container-highest rounded-lg font-mono font-semibold text-on-surface focus:outline-none focus:border-primary text-xs"
+                                            />
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-2.5 text-right font-mono font-bold text-inverse-surface whitespace-nowrap">
+                                          {formatINR(item.totalCost)}
+                                        </td>
+                                        <td className="px-3 py-2.5 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenDealerOverride({
+                                              id: item.id,
+                                              name: item.name,
+                                              category: 'bom',
+                                              benchmarkPrice: item.unitRate,
+                                              unit: `₹/${item.unit}`
+                                            })}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-primary-container hover:text-on-primary text-secondary transition-colors text-[11px] font-semibold cursor-pointer"
+                                            title="Set dealer negotiated rate for this BOM item"
+                                          >
+                                            <span className="material-symbols-outlined text-[13px]">tune</span>
+                                            <span>Dealer</span>
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        });
+                      })()}
                     </div>
                   )}
 

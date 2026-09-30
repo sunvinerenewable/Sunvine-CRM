@@ -1,8 +1,10 @@
 import { supabase } from '../lib/supabase';
+import { MASTER_DOCUMENTATION_POLICIES } from '../data/documentationPolicies';
 
 export const settingsService = {
   /**
-   * Fetch Master System Settings (Company Profile, Bank Details, Terms, Tax, Governance)
+   * Fetch Master System Settings (Company Profile, Bank Details, Terms, Tax, Governance, Documentation Policies)
+   * Stored and retrieved directly from persistent Supabase backend database
    */
   async getSystemSettings() {
     try {
@@ -14,13 +16,24 @@ export const settingsService = {
 
       if (error || !data) {
         console.warn('[settingsService] Fallback reading system settings:', error?.message);
-        return null;
+        return {
+          companyProfile: {},
+          bankDetails: {},
+          termsAndWarranties: {},
+          documentPolicies: MASTER_DOCUMENTATION_POLICIES,
+          statutoryTaxes: {},
+          governanceSettings: {}
+        };
       }
+
+      const terms = data.terms_and_warranties || {};
+      const documentPolicies = terms.documentPolicies || terms.policies || data.document_policies || MASTER_DOCUMENTATION_POLICIES;
 
       return {
         companyProfile: data.company_profile || {},
         bankDetails: data.bank_details || {},
-        termsAndWarranties: data.terms_and_warranties || {},
+        termsAndWarranties: terms,
+        documentPolicies,
         statutoryTaxes: data.statutory_taxes || {},
         governanceSettings: data.governance_settings || {}
       };
@@ -31,34 +44,56 @@ export const settingsService = {
   },
 
   /**
-   * Save / Update a specific section in system_settings
+   * Save / Update a specific section in system_settings directly in Supabase
    */
   async saveSystemSettings(sectionKey, sectionData) {
-    const colMap = {
-      companyProfile: 'company_profile',
-      bankDetails: 'bank_details',
-      termsAndWarranties: 'terms_and_warranties',
-      statutoryTaxes: 'statutory_taxes',
-      governanceSettings: 'governance_settings'
-    };
-
-    const dbCol = colMap[sectionKey] || sectionKey;
-
     try {
+      if (sectionKey === 'documentPolicies') {
+        const { data: curr } = await supabase
+          .from('system_settings')
+          .select('terms_and_warranties')
+          .eq('id', 'global_settings')
+          .single();
+        const tw = curr?.terms_and_warranties || {};
+        tw.documentPolicies = sectionData;
+        const { data, error } = await supabase
+          .from('system_settings')
+          .update({
+            terms_and_warranties: tw,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', 'global_settings')
+          .select();
+
+        if (error) return { success: false, error: error.message };
+        return { success: true, data: data?.[0] };
+      }
+
+      const colMap = {
+        companyProfile: 'company_profile',
+        bankDetails: 'bank_details',
+        termsAndWarranties: 'terms_and_warranties',
+        statutoryTaxes: 'statutory_taxes',
+        governanceSettings: 'governance_settings'
+      };
+
+      const dbCol = colMap[sectionKey] || sectionKey;
+
       const { data, error } = await supabase
         .from('system_settings')
         .update({
           [dbCol]: sectionData,
           updated_at: new Date().toISOString()
         })
-        .eq('id', 'global_settings');
+        .eq('id', 'global_settings')
+        .select();
 
       if (error) {
         console.warn('[settingsService] Update warning:', error.message);
         return { success: false, error: error.message };
       }
 
-      return { success: true, data };
+      return { success: true, data: data?.[0] };
     } catch (err) {
       console.error('[settingsService] Update error:', err);
       return { success: false, error: err.message };
@@ -66,7 +101,7 @@ export const settingsService = {
   },
 
   /**
-   * Fetch Pricing Presets & Tier Margins from Database
+   * Fetch Pricing Presets, Tier Margins & BOM Presets from Supabase Database
    */
   async getPricingPresets() {
     try {
@@ -80,13 +115,19 @@ export const settingsService = {
         return null;
       }
 
+      const tierMarginsObj = data.tier_margins || {};
+
       return {
         baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
         subsidyCap: Number(data.subsidy_cap) || 78000,
         minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
         enforceMinMargin: data.enforce_min_margin !== false,
         lastSynced: data.last_synced_by ? `Synced by ${data.last_synced_by}` : 'Synced with Database',
-        tierMargins: data.tier_margins || null
+        tierMargins: tierMarginsObj.tiers || tierMarginsObj,
+        bomRates: tierMarginsObj.bomRates || null,
+        capacityBomMatrix: tierMarginsObj.capacityBomMatrix || null,
+        inverterBenchmarkMatrix: tierMarginsObj.inverterBenchmarkMatrix || null,
+        baseRates: tierMarginsObj.baseRates || null
       };
     } catch (err) {
       console.error('[settingsService] Get pricing error:', err);
@@ -95,28 +136,80 @@ export const settingsService = {
   },
 
   /**
-   * Save Pricing Presets to Database
+   * Save Pricing Presets directly to Supabase Database
    */
   async savePricingPresets(presets) {
     try {
-      const payload = {
-        updated_at: new Date().toISOString()
+      // Fetch current tier_margins JSON to preserve sub-objects
+      const { data: curr } = await supabase
+        .from('pricing_presets')
+        .select('tier_margins')
+        .eq('id', 'global_default')
+        .maybeSingle();
+
+      const existingTierMargins = curr?.tier_margins || {};
+
+      const updatedTierMargins = {
+        ...existingTierMargins,
+        tiers: presets.tierMargins || existingTierMargins.tiers || existingTierMargins
       };
+
+      if (presets.bomRates !== undefined) updatedTierMargins.bomRates = presets.bomRates;
+      if (presets.capacityBomMatrix !== undefined) updatedTierMargins.capacityBomMatrix = presets.capacityBomMatrix;
+      if (presets.inverterBenchmarkMatrix !== undefined) updatedTierMargins.inverterBenchmarkMatrix = presets.inverterBenchmarkMatrix;
+      if (presets.baseRates !== undefined) updatedTierMargins.baseRates = presets.baseRates;
+
+      const payload = {
+        updated_at: new Date().toISOString(),
+        tier_margins: updatedTierMargins
+      };
+
       if (presets.baseRatePerKw !== undefined) payload.base_rate_per_kw = Number(presets.baseRatePerKw);
       if (presets.subsidyCap !== undefined) payload.subsidy_cap = Number(presets.subsidyCap);
       if (presets.minMarginPerKw !== undefined) payload.min_margin_per_kw = Number(presets.minMarginPerKw);
       if (presets.enforceMinMargin !== undefined) payload.enforce_min_margin = Boolean(presets.enforceMinMargin);
-      if (presets.tierMargins !== undefined) payload.tier_margins = presets.tierMargins;
       if (presets.updatedBy !== undefined) payload.last_synced_by = presets.updatedBy;
 
       const { data, error } = await supabase
         .from('pricing_presets')
         .update(payload)
-        .eq('id', 'global_default');
+        .eq('id', 'global_default')
+        .select();
 
       if (error) {
         return { success: false, error: error.message };
       }
+      return { success: true, data: data?.[0] };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Save BOS Price Matrix to Supabase Database
+   */
+  async saveBosPriceMatrix(matrixRows) {
+    if (!Array.isArray(matrixRows) || matrixRows.length === 0) return { success: true };
+    try {
+      const payloads = matrixRows.map(r => ({
+        capacity_kw: Number(r.capacityKW),
+        no_of_modules: Number(r.noOfModules),
+        inverter_capacity_kw: Number(r.inverterCapacityKW) || r.inverterCapacityKW,
+        adani_bifi_price: Number(r.adaniBiFiPrice) || 0,
+        aps_bifi_price: Number(r.apsBiFiPrice) || 0,
+        rayzone_price: Number(r.rayzonePrice) || 0,
+        topcon585_capacity_kw: Number(r.topcon585CapacityKW) || 0,
+        waaree_585_price: Number(r.waaree585Price) || 0,
+        topcon600_capacity_kw: Number(r.topcon600CapacityKW) || 0,
+        aps_topcon_600_price: Number(r.apsTopcon600Price) || 0
+      }));
+
+      const { data, error } = await supabase
+        .from('bos_pricing_matrix')
+        .upsert(payloads, { onConflict: 'capacity_kw' })
+        .select();
+
+      if (error) return { success: false, error: error.message };
       return { success: true, data };
     } catch (err) {
       return { success: false, error: err.message };
