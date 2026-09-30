@@ -257,8 +257,12 @@ const safeSetItem = (key, value) => {
   const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
   const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(false);
 
-  // Live Supabase Hardware Sync (SR-45)
+  // Determine if running in public proposal viewer mode
+  const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
+
+  // Live Supabase Hardware Sync (Demand-driven: skips on public viewer and unauthenticated boot)
   useEffect(() => {
+    if (isPublicProposal || !isAuthenticated) return;
     let isMounted = true;
     const loadHardwareFromSupabase = async () => {
       setIsHardwareDbSyncing(true);
@@ -291,14 +295,15 @@ const safeSetItem = (key, value) => {
 
     loadHardwareFromSupabase();
     return () => { isMounted = false; };
-  }, []);
+  }, [isAuthenticated, isPublicProposal]);
 
-  // Live Supabase Quotations Hydration (reconciled with local cache)
+  // Live Supabase Quotations Hydration (Demand-driven: skips on public viewer and unauthenticated boot)
   useEffect(() => {
+    if (isPublicProposal || !isAuthenticated) return;
     let isMounted = true;
     const loadQuotationsFromSupabase = async () => {
       try {
-        const dbQuotations = await quotationService.getAllQuotations();
+        const dbQuotations = await quotationService.getAllQuotations(100);
         if (isMounted && Array.isArray(dbQuotations) && dbQuotations.length > 0) {
           setQuotations(prev => {
             const remoteMap = new Map(dbQuotations.map(q => [q.id, q]));
@@ -318,7 +323,7 @@ const safeSetItem = (key, value) => {
 
     loadQuotationsFromSupabase();
     return () => { isMounted = false; };
-  }, []);
+  }, [isAuthenticated, isPublicProposal]);
 
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {

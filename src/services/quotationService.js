@@ -4,12 +4,13 @@ export const quotationService = {
   /**
    * Fetch all quotations (with RLS)
    */
-  async getAllQuotations() {
+  async getAllQuotations(limit = 100) {
     try {
       const { data, error } = await supabase
         .from('quotations')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
       if (error) {
         console.warn('Supabase quotation fetch notice:', error.message);
@@ -29,31 +30,80 @@ export const quotationService = {
   },
 
   /**
+   * Helper: Get local quotation by ID from localStorage
+   */
+  getLocalQuotationById(id) {
+    if (typeof window === 'undefined' || !id) return null;
+    try {
+      const cleanId = String(id).trim().toLowerCase();
+      // 1. Check main quotation ledger
+      const local = localStorage.getItem('sunvine_quotations');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find(q =>
+            String(q.id || '').trim().toLowerCase() === cleanId ||
+            String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+            String(q.quotationNo || '').trim().toLowerCase() === cleanId
+          );
+          if (found) return found;
+        }
+      }
+      // 2. Check active draft / recently generated quote
+      for (const key of ['sunvine_active_draft_quote', 'sunvine_preview_quotation', 'sunvine_last_quote']) {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed && (
+            String(parsed.id || '').trim().toLowerCase() === cleanId ||
+            String(parsed.quoteId || '').trim().toLowerCase() === cleanId
+          )) {
+            return parsed;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  },
+
+  /**
    * Fetch single quotation by ID (supports public proposal sharing)
    */
   async getQuotationById(id) {
     if (!id) return null;
     const cleanId = String(id).trim();
+
+    // 1. Instant check: local storage
+    const local = this.getLocalQuotationById(cleanId);
+    if (local) return local;
+
     try {
-      const { data, error } = await supabase
+      const fetchPromise = supabase
         .from('quotations')
         .select('*')
         .eq('id', cleanId)
         .maybeSingle();
 
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase request timeout')), 1200)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
       if (error) {
         console.warn('Supabase fetch quotation by ID notice:', error.message);
-        return null;
+        return this.getLocalQuotationById(cleanId);
       }
-      if (!data) return null;
+      if (!data) {
+        return this.getLocalQuotationById(cleanId);
+      }
 
       if (data.quote_payload && typeof data.quote_payload === 'object') {
         return { ...data.quote_payload, ...data, id: data.id };
       }
       return data;
     } catch (err) {
-      console.error('getQuotationById error:', err);
-      return null;
+      return this.getLocalQuotationById(cleanId);
     }
   },
 
@@ -86,6 +136,24 @@ export const quotationService = {
     };
 
     try {
+      // Instant local cache write
+      if (typeof window !== 'undefined') {
+        try {
+          const local = localStorage.getItem('sunvine_quotations');
+          const list = local ? JSON.parse(local) : [];
+          if (Array.isArray(list)) {
+            const idx = list.findIndex(q => q.id === quote.id);
+            if (idx >= 0) {
+              list[idx] = { ...list[idx], ...quote };
+            } else {
+              list.unshift(quote);
+            }
+            localStorage.setItem('sunvine_quotations', JSON.stringify(list));
+          }
+          localStorage.setItem('sunvine_last_quote', JSON.stringify(quote));
+        } catch (_) {}
+      }
+
       // Try upserting full quotation with fallback if quote_payload column is not yet migrated
       let { data, error } = await supabase
         .from('quotations')

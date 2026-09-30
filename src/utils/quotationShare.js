@@ -1,4 +1,3 @@
-import html2pdf from 'html2pdf.js';
 import { quotationService } from '../services/quotationService';
 
 // Clean customer phone number to Indian 10-digit format with country code 91
@@ -11,10 +10,52 @@ export function cleanCustomerPhone(phoneStr) {
   return '919825012345';
 }
 
-// Generate online link for customer proposal
-export function getPublicProposalUrl(quoteId) {
+// Encode compact quotation payload for portable instant URL loading
+export function encodeQuotationPayload(quote) {
+  if (!quote || typeof quote !== 'object') return '';
+  try {
+    const compact = {
+      id: quote.id,
+      date: quote.date,
+      customerName: quote.customerName,
+      customerPhone: quote.customerPhone,
+      city: quote.city || quote.location,
+      state: quote.state,
+      discom: quote.discom,
+      systemCapacityKW: quote.systemCapacityKW || quote.capacityKW || quote.capacity,
+      solarModule: quote.solarModule,
+      inverterType: quote.inverterType,
+      structureType: quote.structureType,
+      projectType: quote.projectType,
+      grandTotalCustomer: quote.grandTotalCustomer || quote.totalAmount,
+      subsidyAmount: quote.subsidyAmount,
+      netPayable: quote.netPayable,
+      baseRatePerKW: quote.baseRatePerKW,
+      dealerMarginPerKW: quote.dealerMarginPerKW,
+      dealerName: quote.dealerName,
+      isDirectCompanyQuote: quote.isDirectCompanyQuote,
+      bomItems: quote.bomItems,
+      bomTotals: quote.bomTotals
+    };
+    const json = JSON.stringify(compact);
+    return btoa(unescape(encodeURIComponent(json)));
+  } catch (_) {
+    return '';
+  }
+}
+
+// Generate online link for customer proposal with instant portable payload
+export function getPublicProposalUrl(quoteOrId) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
-  return `${origin}/?view=quote&id=${encodeURIComponent(quoteId || 'SV-2026-Q801')}`;
+  if (typeof quoteOrId === 'object' && quoteOrId !== null) {
+    const id = quoteOrId.id || 'SV-2026-Q801';
+    const dataEncoded = encodeQuotationPayload(quoteOrId);
+    if (dataEncoded) {
+      return `${origin}/?view=quote&id=${encodeURIComponent(id)}&data=${encodeURIComponent(dataEncoded)}`;
+    }
+    return `${origin}/?view=quote&id=${encodeURIComponent(id)}`;
+  }
+  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || 'SV-2026-Q801')}`;
 }
 
 // Generate the official proposal WhatsApp message
@@ -30,7 +71,7 @@ export function buildProposalWhatsAppMessage(quote) {
   const moduleInfo = quote.solarModule || quote.moduleType || '600 WP TOPCon Mono Bifacial Panel';
   const invInfo = quote.inverterCapacity || '125 KW Grid-Tied Inverter';
   const date = quote.date || new Date().toLocaleDateString('en-GB');
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
+  const publicUrl = getPublicProposalUrl(quote);
 
   return `*☀️ SUNVINE RENEWABLE ENERGY - SOLAR EPC PROPOSAL*
 
@@ -53,7 +94,7 @@ Greetings from *Sunvine Renewable Energy*! We are pleased to share your customiz
 Your official 4-page turnkey proposal document with Bill of Materials (BOM), Technical Specifications, and Commercial Terms has been generated.
 
 🔗 *View / Download Proposal Online:*
-${origin}/?view=quote&id=${encodeURIComponent(quoteId)}
+${publicUrl}
 
 📞 *Sunvine Helpline:* +91 80000 50580
 📧 *Email:* sunvinerenewable@gmail.com
@@ -75,11 +116,14 @@ export function openWhatsAppChat(quote, customPhone = null) {
   window.open(url, '_blank');
 }
 
-// Generate actual PDF Blob from element using html2pdf
+// Generate actual PDF Blob from element using html2pdf (lazy loaded on demand)
 export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801') {
   if (!element) return null;
 
   try {
+    const html2pdfModule = await import('html2pdf.js');
+    const html2pdf = html2pdfModule.default || html2pdfModule;
+
     const opt = {
       margin: 0,
       filename: `Sunvine_Proposal_${quoteId}.pdf`,

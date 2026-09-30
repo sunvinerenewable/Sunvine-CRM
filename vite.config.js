@@ -9,8 +9,19 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        globPatterns: ['**/*.{css,html,ico,png,svg,woff,woff2}', '**/index*.js'],
         runtimeCaching: [
+          {
+            urlPattern: /\.(?:js|mjs)$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'sunvine-dynamic-chunks',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 30
+              }
+            }
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
