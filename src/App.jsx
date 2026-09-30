@@ -210,7 +210,7 @@ function MainApp() {
       <UpdateNotificationPopup />
 
       {/* Main Content Area */}
-      <main className={`md:pl-64 pt-16 pb-24 md:pb-8 transition-all w-full min-w-0 max-w-full ${activeTab === 'preview_quote' ? 'overflow-visible' : 'overflow-x-clip'}`}>
+      <main className={`md:pl-64 pt-16 pb-6 md:pb-8 transition-all w-full min-w-0 max-w-full ${activeTab === 'preview_quote' ? 'overflow-visible' : 'overflow-x-clip'}`}>
         {activeTab === 'preview_quote' ? (
           <div className="w-full min-w-0">
             {renderView()}
