@@ -8,7 +8,8 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     addCustomerFileTimelineEvent,
     updateCustomerFile,
     role,
-    currentStaff
+    currentStaff,
+    applicationStages
   } = useApp();
   const { addToast } = useToast();
 
@@ -20,18 +21,22 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
   if (!file) return null;
 
-  const stages = systemSettings?.fileLifecycle?.stages || [
-    { id: 'LEAD_SOURCED', label: 'Lead Sourced' },
-    { id: 'SITE_SURVEY', label: 'Site Feasibility & Survey' },
-    { id: 'QUOTATION_ACCEPTED', label: 'Quotation Accepted' },
-    { id: 'DISCOM_APPLICATION', label: 'DISCOM Net-Meter Application' },
-    { id: 'FEASIBILITY_APPROVAL', label: 'Technical Feasibility Approved' },
-    { id: 'PLANT_INSTALLATION', label: 'Solar Hardware Installation' },
-    { id: 'CEI_INSPECTION', label: 'Safety & CEI Inspection' },
-    { id: 'NET_METER_SYNC', label: 'Net-Meter Grid Energization' },
-    { id: 'SUBSIDY_CLAIM', label: 'PM Surya Ghar DBT Claim' },
-    { id: 'HANDOVER_COMPLETED', label: 'Commissioned & Handed Over' }
-  ];
+  const stages = (applicationStages && applicationStages.length > 0)
+    ? applicationStages
+    : (systemSettings?.fileLifecycle?.stagesDetailed && systemSettings.fileLifecycle.stagesDetailed.length > 0)
+      ? systemSettings.fileLifecycle.stagesDetailed
+      : [
+          { id: 'LEAD_SOURCED', label: 'Lead Sourced' },
+          { id: 'SITE_SURVEY', label: 'Site Feasibility & Survey' },
+          { id: 'QUOTATION_ACCEPTED', label: 'Quotation Accepted' },
+          { id: 'DISCOM_APPLICATION', label: 'DISCOM Net-Meter Application' },
+          { id: 'FEASIBILITY_APPROVAL', label: 'Technical Feasibility Approved' },
+          { id: 'PLANT_INSTALLATION', label: 'Solar Hardware Installation' },
+          { id: 'CEI_INSPECTION', label: 'Safety & CEI Inspection' },
+          { id: 'NET_METER_SYNC', label: 'Net-Meter Grid Energization' },
+          { id: 'SUBSIDY_CLAIM', label: 'PM Surya Ghar DBT Claim' },
+          { id: 'HANDOVER_COMPLETED', label: 'Commissioned & Handed Over' }
+        ];
 
   const statuses = systemSettings?.fileLifecycle?.statuses || [
     'In Progress',
@@ -411,7 +416,13 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                         <div className="min-w-0">
                           <p className="font-semibold text-on-surface truncate">{doc.label}</p>
                           <p className="text-[11px] text-secondary">
-                            {isUploaded ? `Uploaded: ${docInfo?.filename || 'verified.pdf'}` : 'Pending optional upload'}
+                            {isUploaded ? (
+                              <span className="font-mono text-primary break-all select-all font-medium">
+                                Uploaded: {docInfo?.filename || 'verified.pdf'}
+                              </span>
+                            ) : (
+                              'Pending optional upload'
+                            )}
                           </p>
                         </div>
                       </div>

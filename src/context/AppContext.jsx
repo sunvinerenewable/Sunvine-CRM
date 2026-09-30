@@ -27,7 +27,9 @@ import {
 } from '../data/systemSettingsDefaults';
 import {
   DEFAULT_REQUIRED_DOCUMENTS,
-  APPLICATION_CATEGORIES
+  APPLICATION_CATEGORIES,
+  DEFAULT_PIPELINE_STAGES,
+  isDocMandatoryForCategory
 } from '../data/defaultRequiredDocuments';
 import {
   calculateStaffPerformance,
@@ -69,6 +71,7 @@ const TAB_TO_PATH = {
   admin_create_quote: '/admin/new-quotation',
   preview_quote: '/preview-quotation',
   my_quotes: '/my-quotations',
+  my_applications: '/my-applications',
   profile: '/settings',
   dealer_settings: '/settings',
   admin_dashboard: '/admin',
@@ -638,6 +641,17 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     safeSetItem('sunvine_required_documents', requiredDocuments);
   }, [requiredDocuments]);
+
+  // Master Dynamic Application / Pipeline Stages State
+  const [applicationStages, setApplicationStages] = useState(() => {
+    const raw = safeJsonParse('sunvine_application_stages', null);
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    return systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES;
+  });
+
+  useEffect(() => {
+    safeSetItem('sunvine_application_stages', applicationStages);
+  }, [applicationStages]);
 
   // Immutable Audit Activity Ledger
   const [auditLogs, setAuditLogs] = useState(() => {
@@ -1463,6 +1477,54 @@ const safeSetItem = (key, value) => {
     updateSystemSettings('requiredDocuments', DEFAULT_REQUIRED_DOCUMENTS);
   };
 
+  // Application Stages Management Handlers
+  const addApplicationStage = (stageData) => {
+    const newStage = {
+      id: stageData.id ? stageData.id.trim() : `STAGE_${Date.now().toString().slice(-4)}`,
+      label: stageData.label.trim(),
+      description: stageData.description?.trim() || '',
+      mandatory: stageData.mandatory !== undefined ? stageData.mandatory : true,
+      order: stageData.order || (applicationStages.length + 1)
+    };
+    const nextList = [...applicationStages, newStage];
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+    return newStage;
+  };
+
+  const updateApplicationStage = (stageId, updates) => {
+    const nextList = applicationStages.map(s => s.id === stageId ? { ...s, ...updates } : s);
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+  };
+
+  const deleteApplicationStage = (stageId) => {
+    const nextList = applicationStages.filter(s => s.id !== stageId);
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+  };
+
+  const resetApplicationStages = () => {
+    setApplicationStages(DEFAULT_PIPELINE_STAGES);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: DEFAULT_PIPELINE_STAGES,
+      stages: DEFAULT_PIPELINE_STAGES.map(s => s.label)
+    });
+  };
+
   const updateDealerPricing = (id, pricingConfig) => {
     setDealers(prev => {
       const updated = prev.map(d => {
@@ -2046,6 +2108,13 @@ const safeSetItem = (key, value) => {
         deleteRequiredDocument,
         resetRequiredDocuments,
         applicationCategories: APPLICATION_CATEGORIES,
+        isDocMandatoryForCategory,
+        // Master Dynamic Application Stages
+        applicationStages,
+        addApplicationStage,
+        updateApplicationStage,
+        deleteApplicationStage,
+        resetApplicationStages,
         // Immutable Audit Activity Ledger
         auditLogs,
         logActivity,

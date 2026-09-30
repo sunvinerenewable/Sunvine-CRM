@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useLoading } from '../../context/LoadingContext';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
-import { DEFAULT_REQUIRED_DOCUMENTS } from '../../data/defaultRequiredDocuments';
+import { DEFAULT_REQUIRED_DOCUMENTS, isDocMandatoryForCategory } from '../../data/defaultRequiredDocuments';
 
 export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSuccess }) {
   const {
@@ -14,7 +14,8 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     updateQuotation,
     addNotification,
     logActivity,
-    requiredDocuments
+    requiredDocuments,
+    setActiveTab
   } = useApp();
   const { showLoader, hideLoader } = useLoading();
 
@@ -199,7 +200,7 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
         icon: 'how_to_reg',
         title: `Order Booked — Customer File #${fileId} Created`,
         description: `Dispatched ${customerName} (${capacityKw} kW) to operations queue for DISCOM verification.`,
-        targetTab: 'dealer_files'
+        targetTab: 'my_applications'
       });
     }
 
@@ -214,6 +215,9 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
 
       if (onSuccess) {
         onSuccess(fileId);
+      }
+      if (setActiveTab) {
+        setActiveTab('my_applications');
       }
       onClose();
     } finally {
@@ -422,7 +426,7 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {activeDocRequirements.map((doc) => {
                 const uploaded = documents[doc.key];
-                const isMandatory = Boolean(doc.mandatory);
+                const isMandatory = isDocMandatoryForCategory(doc, applicationCategory);
                 return (
                   <div
                     key={doc.id || doc.key}
@@ -458,15 +462,19 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
                     </div>
 
                     {uploaded ? (
-                      <div className="pt-1.5 border-t border-surface-container space-y-1">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-primary truncate font-mono text-[10px] max-w-[170px]">
-                            {uploaded.filename}
-                          </span>
+                      <div className="pt-2 border-t border-surface-container space-y-1.5">
+                        <div className="flex items-start justify-between gap-2 bg-surface-container/60 p-2 rounded-lg border border-primary/25">
+                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                            <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">draft</span>
+                            <span className="text-primary font-mono text-[11px] font-semibold break-all leading-tight select-all">
+                              {uploaded.filename}
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleRemoveDoc(doc.key)}
-                            className="text-error hover:underline text-[10px] font-semibold cursor-pointer shrink-0 ml-1"
+                            className="text-error hover:text-error/80 text-[10px] font-bold cursor-pointer shrink-0 px-1.5 py-0.5 rounded hover:bg-error/10 transition-colors"
+                            title="Remove uploaded document"
                           >
                             Remove
                           </button>

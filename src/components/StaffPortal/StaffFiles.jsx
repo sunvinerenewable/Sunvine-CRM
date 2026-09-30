@@ -790,7 +790,7 @@ export default function StaffFiles() {
                         </span>
                       </div>
                       {isUp && (
-                        <p className="text-[11px] text-secondary mt-1 truncate">{dData?.filename}</p>
+                        <p className="text-[11px] font-mono text-primary mt-1 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">{dData?.filename}</p>
                       )}
                     </div>
 

@@ -63,18 +63,28 @@ export default function MyQuotations() {
             Browse, search, edit, view PDF, and dispatch client proposals across your territory.
           </p>
         </div>
-        <button
-          onClick={() => {
-            if (clearEditingQuotation) clearEditingQuotation();
-            if (clearActiveDraftQuote) clearActiveDraftQuote();
-            setActiveTab('create_quote');
-          }}
-          className="self-start sm:self-auto flex items-center gap-space-xs bg-primary-container hover:bg-primary text-on-primary px-space-md py-space-sm rounded-lg shadow-sm font-label-md transition-all active:scale-95"
-          type="button"
-        >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          <span>Create New Quotation</span>
-        </button>
+        <div className="self-start sm:self-auto flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('my_applications')}
+            className="flex items-center gap-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface px-space-md py-space-sm rounded-lg shadow-xs font-label-md transition-all cursor-pointer"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-[18px]">assignment</span>
+            <span>Track Applications</span>
+          </button>
+          <button
+            onClick={() => {
+              if (clearEditingQuotation) clearEditingQuotation();
+              if (clearActiveDraftQuote) clearActiveDraftQuote();
+              setActiveTab('create_quote');
+            }}
+            className="flex items-center gap-space-xs bg-primary-container hover:bg-primary text-on-primary px-space-md py-space-sm rounded-lg shadow-sm font-label-md transition-all active:scale-95 cursor-pointer"
+            type="button"
+          >
+            <span className="material-symbols-outlined text-[20px]">add</span>
+            <span>Create New Quotation</span>
+          </button>
+        </div>
       </section>
 
       {/* Filter & Search Toolbar */}

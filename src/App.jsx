@@ -21,6 +21,7 @@ import QuotationPreview from './components/DealerPortal/QuotationPreview';
 import MyQuotations from './components/DealerPortal/MyQuotations';
 import DealerProfile from './components/DealerPortal/DealerProfile';
 import DealerSettings from './components/DealerPortal/DealerSettings';
+import MyApplications from './components/DealerPortal/MyApplications';
 
 // Staff Portal Views
 import StaffDashboard from './components/StaffPortal/StaffDashboard';
@@ -172,6 +173,8 @@ function MainApp() {
         return <CreateQuotation />;
       case 'my_quotes':
         return <MyQuotations />;
+      case 'my_applications':
+        return <MyApplications />;
       case 'dealer_performance':
         return <BusinessPerformance />;
       case 'lead_generation':

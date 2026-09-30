@@ -23,7 +23,7 @@ export default function Navigation() {
   const mobileNotificationRef = useRef(null);
 
   const handleMenuClick = (tabId) => {
-    if (tabId === 'create_quote' || tabId === 'dashboard' || tabId === 'my_quotes') {
+    if (tabId === 'create_quote' || tabId === 'dashboard' || tabId === 'my_quotes' || tabId === 'my_applications') {
       if (clearEditingQuotation) clearEditingQuotation();
       if (tabId === 'create_quote' && clearActiveDraftQuote) clearActiveDraftQuote();
     }
@@ -67,6 +67,7 @@ export default function Navigation() {
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Dashboard', icon: 'home' },
     { id: 'create_quote', label: 'New Quotation', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'my_quotes', label: 'My Quotations', mobileLabel: 'My Quotes', icon: 'folder_open' },
+    { id: 'my_applications', label: 'My Applications', mobileLabel: 'Applications', icon: 'assignment' },
     { id: 'dealer_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
     { id: 'docs', label: 'Agreements & Docs', mobileLabel: 'Docs', icon: 'description' },
