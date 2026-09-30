@@ -20,14 +20,37 @@ if (typeof setInterval !== 'undefined') {
 }
 
 /**
- * Check rate limit for an action
+ * Check if an identifier is currently rate-limited (without incrementing)
  * @param {string} identifier - Client IP or User ID
- * @param {object} options - { maxAttempts: 5, windowMs: 15 * 60 * 1000 }
+ * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000 }
+ * @returns {object} { blocked: boolean, remaining: number, resetSeconds: number }
+ */
+export function isRateLimited(identifier, options = {}) {
+  const maxAttempts = options.maxAttempts || 20;
+  const windowMs = options.windowMs || 5 * 60 * 1000; // 5 mins default
+  const now = Date.now();
+
+  const record = tracker.get(identifier);
+  if (!record || now > record.resetAt) {
+    return { blocked: false, remaining: maxAttempts, resetSeconds: 0, totalAttempts: 0 };
+  }
+
+  const blocked = record.count >= maxAttempts;
+  const remaining = Math.max(0, maxAttempts - record.count);
+  const resetSeconds = Math.ceil((record.resetAt - now) / 1000);
+
+  return { blocked, remaining, resetSeconds, totalAttempts: record.count };
+}
+
+/**
+ * Record a failed authentication attempt
+ * @param {string} identifier - Client IP or User ID
+ * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000 }
  * @returns {object} { allowed: boolean, remaining: number, resetSeconds: number }
  */
-export function checkRateLimit(identifier, options = {}) {
-  const maxAttempts = options.maxAttempts || 5;
-  const windowMs = options.windowMs || 15 * 60 * 1000; // 15 mins default
+export function recordFailedAttempt(identifier, options = {}) {
+  const maxAttempts = options.maxAttempts || 20;
+  const windowMs = options.windowMs || 5 * 60 * 1000;
   const now = Date.now();
 
   let record = tracker.get(identifier);
@@ -46,6 +69,27 @@ export function checkRateLimit(identifier, options = {}) {
     resetSeconds,
     totalAttempts: record.count
   };
+}
+
+/**
+ * Check rate limit for an action
+ * If options.increment === false, only checks status without recording attempt.
+ * @param {string} identifier - Client IP or User ID
+ * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000, increment: boolean }
+ * @returns {object} { allowed: boolean, remaining: number, resetSeconds: number }
+ */
+export function checkRateLimit(identifier, options = {}) {
+  if (options.increment === false) {
+    const status = isRateLimited(identifier, options);
+    return {
+      allowed: !status.blocked,
+      remaining: status.remaining,
+      resetSeconds: status.resetSeconds,
+      totalAttempts: status.totalAttempts
+    };
+  }
+
+  return recordFailedAttempt(identifier, options);
 }
 
 /**
