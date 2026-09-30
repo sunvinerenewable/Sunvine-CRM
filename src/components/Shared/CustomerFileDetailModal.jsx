@@ -87,7 +87,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-['Space_Grotesk'] font-bold text-lg sm:text-xl truncate">
+                <h3 className="font-heading font-bold text-lg sm:text-xl truncate">
                   {file.customerName || 'Customer File'}
                 </h3>
                 <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-surface-container-high text-secondary">
@@ -197,7 +197,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               {/* Add Milestone Form */}
               <form onSubmit={handleAddMilestone} className="p-4 rounded-xl bg-surface-container-low/50 border border-surface-container-high space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-['Space_Grotesk'] font-bold text-xs uppercase tracking-wider text-secondary">
+                  <span className="font-heading font-bold text-xs uppercase tracking-wider text-secondary">
                     Record New Lifecycle Progress
                   </span>
                   <span className="text-[11px] text-secondary">Actor: {role === 'admin' ? 'Super Admin' : currentStaff?.name || 'Staff'}</span>
@@ -260,7 +260,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
               {/* Chronological Timeline List */}
               <div className="space-y-4">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface">
+                <h4 className="font-heading font-bold text-sm text-on-surface">
                   Chronological File History
                 </h4>
 
@@ -277,7 +277,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
                         <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-primary/40 transition-colors shadow-xs">
                           <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                            <span className="font-bold text-on-surface font-['Space_Grotesk']">
+                            <span className="font-bold text-on-surface font-heading">
                               {item.title || item.stage}
                             </span>
                             <span className="font-mono text-[11px] text-secondary">
@@ -320,7 +320,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     <span className="material-symbols-outlined text-[18px]">badge</span>
                     Assigned Sales Staff Member
                   </div>
-                  <p className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                  <p className="font-heading font-bold text-base text-on-surface">
                     {file.staffName || 'Unassigned Staff'}
                   </p>
                   <p className="text-xs text-secondary font-mono">
@@ -337,7 +337,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     <span className="material-symbols-outlined text-[18px]">storefront</span>
                     Originating Dealer Partner
                   </div>
-                  <p className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                  <p className="font-heading font-bold text-base text-on-surface">
                     {file.dealerName || (file.sourceType === 'DIRECT_STAFF' ? 'Direct Staff Sourced (No Dealer)' : 'Unassigned')}
                   </p>
                   <p className="text-xs text-secondary font-mono">
@@ -351,7 +351,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
               {/* Finance Profile Deep Dive */}
               <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high space-y-3">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface flex items-center gap-2">
+                <h4 className="font-heading font-bold text-sm text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
                   Customer Payment &amp; Financing Arrangement
                 </h4>

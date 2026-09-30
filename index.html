@@ -37,22 +37,14 @@
     <meta name="twitter:description" content="High-precision solar telemetry &amp; dealer quotation engine." />
     <meta name="twitter:image" content="/pwa-512x512.png" />
 
-    <!-- Instant Local Webfont Preloading (Eliminates FOUT & External Network Render-Blocking) -->
-    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
-
-    <!-- CDN Font Preconnections & Non-Blocking Fallback -->
+    <!-- Authoritative Typography Preconnections & Stylesheets -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" media="print" onload="this.media='all'">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" media="print" onload="this.media='all'">
-    <noscript>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block">
-    </noscript>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" rel="stylesheet" />
 
     <style>
-      /* Instant Local Typography Faces (Eliminates Raw Font Flash on Load) */
+      /* Local Typography Fallback Definitions */
       @font-face {
         font-family: 'Inter';
         font-style: normal;
@@ -64,9 +56,17 @@
       @font-face {
         font-family: 'Space Grotesk';
         font-style: normal;
-        font-weight: 500 700;
+        font-weight: 100 900;
         font-display: swap;
-        src: url('/fonts/space-grotesk-latin.woff2') format('woff2');
+        src: local('Space Grotesk'), url('/fonts/space-grotesk-latin.woff2') format('woff2');
+      }
+
+      @font-face {
+        font-family: 'Space_Grotesk';
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: local('Space Grotesk'), url('/fonts/space-grotesk-latin.woff2') format('woff2');
       }
 
       /* Local Material Symbols Fallback */

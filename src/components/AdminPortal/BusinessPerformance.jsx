@@ -65,7 +65,7 @@ export default function BusinessPerformance() {
             <span>&bull;</span>
             <span className="text-primary font-bold">Gujarat Ledger Live</span>
           </div>
-          <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
             Performance &amp; Attribution Intelligence
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
@@ -159,7 +159,7 @@ export default function BusinessPerformance() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">badge</span>
-                <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                <h3 className="font-heading font-bold text-base text-on-surface">
                   Sales Staff Performance Leaderboard
                 </h3>
               </div>
@@ -214,7 +214,7 @@ export default function BusinessPerformance() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">storefront</span>
-                <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                <h3 className="font-heading font-bold text-base text-on-surface">
                   Top Active Gujarat Dealer Partners
                 </h3>
               </div>
@@ -276,7 +276,7 @@ export default function BusinessPerformance() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[22px]">badge</span>
-              <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
                 Sales Staff Productivity &amp; Attribution Matrix
               </h3>
             </div>
@@ -349,7 +349,7 @@ export default function BusinessPerformance() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[22px]">storefront</span>
-              <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
                 Gujarat Authorized Dealer Directory &amp; Volume Tracking
               </h3>
             </div>
@@ -434,7 +434,7 @@ export default function BusinessPerformance() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Cash vs Loan Share */}
             <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-              <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface flex items-center gap-2">
+              <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">pie_chart</span>
                 Financing Share Distribution
               </h3>
@@ -474,7 +474,7 @@ export default function BusinessPerformance() {
 
             {/* Bank-wise Breakdown */}
             <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-              <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface flex items-center gap-2">
+              <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">account_balance</span>
                 Gujarat Partner Banks Volume
               </h3>
@@ -501,7 +501,7 @@ export default function BusinessPerformance() {
         <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-6">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[22px]">filter_alt</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
+            <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
               End-to-End Quotation to Subsidy Disbursal Funnel
             </h3>
           </div>
@@ -541,7 +541,7 @@ export default function BusinessPerformance() {
                   {selectedStaffDetail.name.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-['Space_Grotesk'] font-bold text-lg">{selectedStaffDetail.name}</h3>
+                  <h3 className="font-heading font-bold text-lg">{selectedStaffDetail.name}</h3>
                   <p className="text-xs text-secondary font-mono">{selectedStaffDetail.id} &bull; {selectedStaffDetail.role}</p>
                 </div>
               </div>
@@ -574,7 +574,7 @@ export default function BusinessPerformance() {
             </div>
 
             <div className="space-y-2 text-xs">
-              <span className="font-['Space_Grotesk'] font-bold text-on-surface block">Associated Dealers in Territory</span>
+              <span className="font-heading font-bold text-on-surface block">Associated Dealers in Territory</span>
               <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
                 {(selectedStaffDetail.dealersList || []).map(d => (
                   <div key={d.id} className="flex items-center justify-between p-2 rounded bg-surface-container-low/40">
@@ -607,7 +607,7 @@ export default function BusinessPerformance() {
           <div className="bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container-high w-full max-w-2xl p-6 text-on-surface space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
               <div>
-                <h3 className="font-['Space_Grotesk'] font-bold text-lg">{selectedDealerDetail.firmName}</h3>
+                <h3 className="font-heading font-bold text-lg">{selectedDealerDetail.firmName}</h3>
                 <p className="text-xs text-secondary font-mono">{selectedDealerDetail.id} &bull; {selectedDealerDetail.city}, Gujarat</p>
               </div>
               <button
@@ -639,7 +639,7 @@ export default function BusinessPerformance() {
             </div>
 
             <div className="space-y-2 text-xs">
-              <span className="font-['Space_Grotesk'] font-bold text-on-surface block">Customer Files Sourced</span>
+              <span className="font-heading font-bold text-on-surface block">Customer Files Sourced</span>
               <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                 {(selectedDealerDetail.filesList || []).length === 0 ? (
                   <p className="text-secondary text-xs">No active customer files sourced by this dealer yet.</p>

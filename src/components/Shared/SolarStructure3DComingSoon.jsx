@@ -82,7 +82,7 @@ export default function SolarStructure3DComingSoon({
               <span>Upcoming Feature &bull; Version 2.5 Roadmap</span>
             </div>
 
-            <h1 className="font-['Space_Grotesk'] text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
+            <h1 className="font-heading text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
               3D Realistic Rooftop &amp; Structure Twin Engine
             </h1>
 
