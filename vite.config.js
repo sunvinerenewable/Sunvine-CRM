@@ -43,6 +43,8 @@ export default defineConfig({
       },
       includeAssets: [
         'favicon.ico',
+        'sunvine-logo.png',
+        'sunvine-logo-darkmode.png',
         'sunvine_logo_transparent.png',
         'sunvine_logo_white.png',
         'pwa-192x192.png',
