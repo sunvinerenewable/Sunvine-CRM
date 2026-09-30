@@ -413,28 +413,28 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
 // =====================================================================
 
 export const FIELD_BOM_MASTER_CATALOG = [
-  { id: 'gi_pipe_40x40', name: '40*40 Hot Dip GI Pipe', category: 'structure', unit: 'NOS', defaultRate: 1420, gstRate: 18 },
-  { id: 'gi_pipe_60x40', name: '60*40 Hot Dip GI Pipe', category: 'structure', unit: 'NOS', defaultRate: 1785, gstRate: 18 },
-  { id: 'stud_12x2m', name: 'STUD 12*2MTR (Threaded Stud)', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
-  { id: 'ms_angels', name: 'MS Angles (Structural Bracing)', category: 'structure', unit: 'NOS', defaultRate: 35, gstRate: 18 },
-  { id: 'fastner', name: 'Fastener Anchor Bolts (M10/M12)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
-  { id: 'ms_j_bolt', name: 'MS J-Bolt (40*40)', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
-  { id: 'mc4_connector', name: 'MC4 Solar Connectors (M+F Pair)', category: 'electrical', unit: 'NOS', defaultRate: 35, gstRate: 5 },
-  { id: 'pvc_pipe_25mm', name: '25mm Heavy PVC Conduit Pipe', category: 'conduits', unit: 'NOS', defaultRate: 45, gstRate: 18 },
-  { id: 'pvc_tee_25mm', name: 'PVC Tee 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 5, gstRate: 18 },
-  { id: 'pvc_elbow_25mm', name: 'PVC Elbow 25mm Polycab', category: 'conduits', unit: 'PSC', defaultRate: 6, gstRate: 18 },
-  { id: 'shadel_clamp', name: 'Shadel / Saddle Clamps', category: 'conduits', unit: 'PKT', defaultRate: 120, gstRate: 18 },
-  { id: 'acdb_dcdb_combo', name: 'ASG ACDB / DCDB Combo (1kW - 6kW)', category: 'electrical', unit: 'SET', defaultRate: 1650, gstRate: 18 },
-  { id: 'dc_wire_4sqmm', name: 'DC 4 Sq.mm 1-Core Red/Black (EN Type)', category: 'cables', unit: 'MTR', defaultRate: 60, gstRate: 18 },
-  { id: 'ac_wire_4sqmm', name: 'AC Cable 4 Sq.mm Copper (Red/Black)', category: 'cables', unit: 'MTR', defaultRate: 58, gstRate: 18 },
-  { id: 'la_cable', name: 'LA Cable 1-Core 16 Sq.mm (Down Conductor)', category: 'cables', unit: 'MTR', defaultRate: 20, gstRate: 18 },
-  { id: 'earthing_cable', name: 'Earthing Cable 4 Sq.mm (Reputed Make)', category: 'cables', unit: 'MTR', defaultRate: 35, gstRate: 18 },
-  { id: 'earthing_kit', name: 'Chemical Earthing Kit (Electrode + BFC)', category: 'electrical', unit: 'NOS', defaultRate: 650, gstRate: 18 },
-  { id: 'foundation_bag', name: 'RCC Foundation Bag / Grouting', category: 'structure', unit: 'NOS', defaultRate: 120, gstRate: 18 },
-  { id: 'walkway', name: 'Rooftop Safety Walkway Set', category: 'structure', unit: 'SET', defaultRate: 420, gstRate: 18 },
-  { id: 'zinc_spray', name: 'Zinc Spray Can (200ml Anti-Rust)', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
-  { id: 'nut_washer', name: 'SS Nut & Washers (Grade 8.8)', category: 'structure', unit: 'NOS', defaultRate: 2.50, gstRate: 18 },
-  { id: 'transportation', name: 'Transportation & Doorstep Freight', category: 'logistics', unit: 'SET', defaultRate: 1000, gstRate: 0 }
+  { id: 'gi_pipe_40x40', name: '40*40 Hot Dip GI Pipe', make: 'Fortune / Jindal (HDGI)', category: 'structure', unit: 'NOS', defaultRate: 1420, gstRate: 18 },
+  { id: 'gi_pipe_60x40', name: '60*40 Hot Dip GI Pipe', make: 'Fortune / Jindal (HDGI)', category: 'structure', unit: 'NOS', defaultRate: 1785, gstRate: 18 },
+  { id: 'stud_12x2m', name: 'STUD 12*2MTR (Threaded Stud)', make: 'Grade 8.8 / Reputed', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
+  { id: 'ms_angels', name: 'MS Angles (Structural Bracing)', make: 'Tata / Jindal', category: 'structure', unit: 'NOS', defaultRate: 35, gstRate: 18 },
+  { id: 'fastner', name: 'Fastener Anchor Bolts (M10/M12)', make: 'Hilti / Fischer / Reputed', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
+  { id: 'ms_j_bolt', name: 'MS J-Bolt (40*40)', make: 'HDGI Standard', category: 'structure', unit: 'NOS', defaultRate: 15, gstRate: 18 },
+  { id: 'mc4_connector', name: 'MC4 Solar Connectors (M+F Pair)', make: 'Staubli / Multi-Contact', category: 'electrical', unit: 'NOS', defaultRate: 35, gstRate: 5 },
+  { id: 'pvc_pipe_25mm', name: '25mm Heavy PVC Conduit Pipe', make: 'Polycab / Precision', category: 'conduits', unit: 'NOS', defaultRate: 45, gstRate: 18 },
+  { id: 'pvc_tee_25mm', name: 'PVC Tee 25mm Polycab', make: 'Polycab', category: 'conduits', unit: 'PSC', defaultRate: 5, gstRate: 18 },
+  { id: 'pvc_elbow_25mm', name: 'PVC Elbow 25mm Polycab', make: 'Polycab', category: 'conduits', unit: 'PSC', defaultRate: 6, gstRate: 18 },
+  { id: 'shadel_clamp', name: 'Shadel / Saddle Clamps', make: 'Heavy Duty GI', category: 'conduits', unit: 'PKT', defaultRate: 120, gstRate: 18 },
+  { id: 'acdb_dcdb_combo', name: 'ASG ACDB / DCDB Combo (1kW - 6kW)', make: 'ASG / L&T / Schneider', category: 'electrical', unit: 'SET', defaultRate: 1650, gstRate: 18 },
+  { id: 'dc_wire_4sqmm', name: 'DC 4 Sq.mm 1-Core Red/Black (EN Type)', make: 'Polycab / RR Kabel (EN 50618)', category: 'cables', unit: 'MTR', defaultRate: 60, gstRate: 18 },
+  { id: 'ac_wire_4sqmm', name: 'AC Cable 4 Sq.mm Copper (Red/Black)', make: 'Polycab / Havells / RR Kabel', category: 'cables', unit: 'MTR', defaultRate: 58, gstRate: 18 },
+  { id: 'la_cable', name: 'LA Cable 1-Core 16 Sq.mm (Down Conductor)', make: 'Polycab / Vasundhara (ISI)', category: 'cables', unit: 'MTR', defaultRate: 20, gstRate: 18 },
+  { id: 'earthing_cable', name: 'Earthing Cable 4 Sq.mm (Reputed Make)', make: 'Polycab / RR Kabel', category: 'cables', unit: 'MTR', defaultRate: 35, gstRate: 18 },
+  { id: 'earthing_kit', name: 'Chemical Earthing Kit (Electrode + BFC)', make: 'Vasundhara / Chemical Gel (IS 3043)', category: 'electrical', unit: 'NOS', defaultRate: 650, gstRate: 18 },
+  { id: 'foundation_bag', name: 'RCC Foundation Bag / Grouting', make: 'UltraTech / Standard', category: 'structure', unit: 'NOS', defaultRate: 120, gstRate: 18 },
+  { id: 'walkway', name: 'Rooftop Safety Walkway Set', make: 'Sunvine / FRP Heavy Duty', category: 'structure', unit: 'SET', defaultRate: 420, gstRate: 18 },
+  { id: 'zinc_spray', name: 'Zinc Spray Can (200ml Anti-Rust)', make: '3M / Rust-Oleum', category: 'structure', unit: 'NOS', defaultRate: 140, gstRate: 18 },
+  { id: 'nut_washer', name: 'SS Nut & Washers (Grade 8.8)', make: 'SS 304 / Grade 8.8', category: 'structure', unit: 'NOS', defaultRate: 2.50, gstRate: 18 },
+  { id: 'transportation', name: 'Transportation & Doorstep Freight', make: 'Doorstep Insured Logistics', category: 'logistics', unit: 'SET', defaultRate: 1000, gstRate: 0 }
 ];
 
 export function generateFieldBOM({
@@ -457,6 +457,7 @@ export function generateFieldBOM({
   const panelItem = {
     id: 'solar_panel',
     name: `SOLAR PANEL (${panelBrand.toUpperCase()} ${panelWatt}WP X ${panelQuantity} PANEL)`,
+    make: panelBrand ? `${panelBrand} / Tier-1` : 'Waaree Energies / Tier-1',
     category: 'panel',
     unit: 'NOS',
     qty: panelQuantity,
@@ -472,6 +473,7 @@ export function generateFieldBOM({
   const inverterItem = {
     id: 'solar_inverter',
     name: `SOLAR INVERTER (${(inverterBrand || inverterModel).toUpperCase()} ${inverterCapacityKw || kw}KW)`,
+    make: inverterBrand || inverterModel || 'Sunvine Solaryaan',
     category: 'inverter',
     unit: 'NOS',
     qty: invQty,
@@ -482,31 +484,31 @@ export function generateFieldBOM({
     isMajorEquipment: true
   };
 
-  // 2. Standard Materials & BOS calibrated to panel count (MC4 = 5% GST, other BOS = 18% GST)
+  // 2. Standard Materials & BOS calibrated to panel count
   const pCount = Math.max(1, panelQuantity);
   const bosItems = [
-    { id: 'gi_pipe_40x40', name: '40*40 HOT DIP PIPE', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.gi_pipe_40x40 || 1420, gstRate: 18 },
-    { id: 'gi_pipe_60x40', name: '60*40 HOT DIP GIPIPE', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.67)), rate: safeRates.gi_pipe_60x40 || 1785, gstRate: 18 },
-    { id: 'stud_12x2m', name: 'STUD 12*2MTR', category: 'structure', unit: 'NOS', qty: Math.max(1, Math.round(pCount * 0.33)), rate: safeRates.stud_12x2m || 140, gstRate: 18 },
-    { id: 'ms_angels', name: 'MS ANGLES', category: 'structure', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.33)), rate: safeRates.ms_angels || 35, gstRate: 18 },
-    { id: 'fastner', name: 'ANCHOR FASTENER', category: 'structure', unit: 'NOS', qty: Math.max(8, Math.round(pCount * 2.67)), rate: safeRates.fastner || 15, gstRate: 18 },
-    { id: 'ms_j_bolt', name: 'MS J-BOLT (40*40)', category: 'structure', unit: 'NOS', qty: Math.max(12, pCount * 4), rate: safeRates.ms_j_bolt || 15, gstRate: 18 },
-    { id: 'mc4_connector', name: 'MC4 CONNECTOR', category: 'electrical', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.33)), rate: safeRates.mc4_connector || 35, gstRate: 5 },
-    { id: 'pvc_pipe_25mm', name: 'PVC PIPE 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(6, Math.round(pCount * 1.67)), rate: safeRates.pvc_pipe_25mm || 45, gstRate: 18 },
-    { id: 'pvc_tee_25mm', name: 'POLYCAB PVC TEE 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.17)), rate: safeRates.pvc_tee_25mm || 5, gstRate: 18 },
-    { id: 'pvc_elbow_25mm', name: 'POLYCAB PVC ELBOW 25MM', category: 'conduits', unit: 'NOS', qty: Math.max(12, Math.round(pCount * 4.17)), rate: safeRates.pvc_elbow_25mm || 6, gstRate: 18 },
-    { id: 'shadel_clamp', name: 'SADDLE CLAMP', category: 'conduits', unit: 'PKT', qty: 1, rate: safeRates.shadel_clamp || 120, gstRate: 18 },
-    { id: 'acdb_dcdb_combo', name: 'ASG ACDB-DCDB 1KW - 6KW', category: 'electrical', unit: 'SET', qty: 1, rate: safeRates.acdb_dcdb_combo || 1650, gstRate: 18 },
-    { id: 'dc_wire_4sqmm', name: 'DC 4 SQMM 1 CORE RED/BLACK EN TYPE', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 8.33)), rate: safeRates.dc_wire_4sqmm || 60, gstRate: 18 },
-    { id: 'ac_wire_4sqmm', name: 'AC CABLE 4SQ MM', category: 'cables', unit: 'MTR', qty: Math.max(10, Math.round(pCount * 1.67)), rate: safeRates.ac_wire_4sqmm || 58, gstRate: 18 },
-    { id: 'la_cable', name: 'LA CABLE', category: 'cables', unit: 'MTR', qty: 25, rate: safeRates.la_cable || 20, gstRate: 18 },
-    { id: 'earthing_cable', name: 'EARTHING CABLE 4SQ MM (REPUTED MAKE)', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 6.67)), rate: safeRates.earthing_cable || 35, gstRate: 18 },
-    { id: 'earthing_kit', name: 'EARTHING KIT', category: 'electrical', unit: 'SET', qty: Math.max(1, kw > 5 ? 2 : 1), rate: safeRates.earthing_kit || 650, gstRate: 18 },
-    { id: 'foundation_bag', name: 'FOUNDATION BAG', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.foundation_bag || 120, gstRate: 18 },
-    { id: 'walkway', name: 'WALKWAY', category: 'structure', unit: 'NOS', qty: 0, rate: safeRates.walkway || 420, gstRate: 18 },
-    { id: 'zinc_spray', name: 'ZINC SPRAY (200ML)', category: 'structure', unit: 'NOS', qty: 1, rate: safeRates.zinc_spray || 140, gstRate: 18 },
-    { id: 'nut_washer', name: 'NUT WASHER', category: 'structure', unit: 'NOS', qty: Math.max(16, pCount * 4), rate: safeRates.nut_washer || 2.50, gstRate: 18 },
-    { id: 'transportation', name: 'TRANSPORTATION', category: 'logistics', unit: 'NOS', qty: 1, rate: safeRates.transportation || 1000, gstRate: 0 }
+    { id: 'gi_pipe_40x40', name: '40*40 HOT DIP PIPE', make: 'Fortune / Jindal (HDGI)', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.gi_pipe_40x40 || 1420, gstRate: 18 },
+    { id: 'gi_pipe_60x40', name: '60*40 HOT DIP GIPIPE', make: 'Fortune / Jindal (HDGI)', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.67)), rate: safeRates.gi_pipe_60x40 || 1785, gstRate: 18 },
+    { id: 'stud_12x2m', name: 'STUD 12*2MTR', make: 'Grade 8.8 / Reputed', category: 'structure', unit: 'NOS', qty: Math.max(1, Math.round(pCount * 0.33)), rate: safeRates.stud_12x2m || 140, gstRate: 18 },
+    { id: 'ms_angels', name: 'MS ANGLES', make: 'Tata / Jindal', category: 'structure', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.33)), rate: safeRates.ms_angels || 35, gstRate: 18 },
+    { id: 'fastner', name: 'ANCHOR FASTENER', make: 'Hilti / Fischer / Reputed', category: 'structure', unit: 'NOS', qty: Math.max(8, Math.round(pCount * 2.67)), rate: safeRates.fastner || 15, gstRate: 18 },
+    { id: 'ms_j_bolt', name: 'MS J-BOLT (40*40)', make: 'HDGI Standard', category: 'structure', unit: 'NOS', qty: Math.max(12, pCount * 4), rate: safeRates.ms_j_bolt || 15, gstRate: 18 },
+    { id: 'mc4_connector', name: 'MC4 CONNECTOR', make: 'Staubli / Multi-Contact', category: 'electrical', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.33)), rate: safeRates.mc4_connector || 35, gstRate: 5 },
+    { id: 'pvc_pipe_25mm', name: 'PVC PIPE 25MM', make: 'Polycab / Precision', category: 'conduits', unit: 'NOS', qty: Math.max(6, Math.round(pCount * 1.67)), rate: safeRates.pvc_pipe_25mm || 45, gstRate: 18 },
+    { id: 'pvc_tee_25mm', name: 'POLYCAB PVC TEE 25MM', make: 'Polycab', category: 'conduits', unit: 'NOS', qty: Math.max(4, Math.round(pCount * 1.17)), rate: safeRates.pvc_tee_25mm || 5, gstRate: 18 },
+    { id: 'pvc_elbow_25mm', name: 'POLYCAB PVC ELBOW 25MM', make: 'Polycab', category: 'conduits', unit: 'NOS', qty: Math.max(12, Math.round(pCount * 4.17)), rate: safeRates.pvc_elbow_25mm || 6, gstRate: 18 },
+    { id: 'shadel_clamp', name: 'SADDLE CLAMP', make: 'Heavy Duty GI', category: 'conduits', unit: 'PKT', qty: 1, rate: safeRates.shadel_clamp || 120, gstRate: 18 },
+    { id: 'acdb_dcdb_combo', name: 'ASG ACDB-DCDB 1KW - 6KW', make: 'ASG / L&T / Schneider', category: 'electrical', unit: 'SET', qty: 1, rate: safeRates.acdb_dcdb_combo || 1650, gstRate: 18 },
+    { id: 'dc_wire_4sqmm', name: 'DC 4 SQMM 1 CORE RED/BLACK EN TYPE', make: 'Polycab / RR Kabel (EN 50618)', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 8.33)), rate: safeRates.dc_wire_4sqmm || 60, gstRate: 18 },
+    { id: 'ac_wire_4sqmm', name: 'AC CABLE 4SQ MM', make: 'Polycab / Havells / RR Kabel', category: 'cables', unit: 'MTR', qty: Math.max(10, Math.round(pCount * 1.67)), rate: safeRates.ac_wire_4sqmm || 58, gstRate: 18 },
+    { id: 'la_cable', name: 'LA CABLE', make: 'Polycab / Vasundhara (ISI)', category: 'cables', unit: 'MTR', qty: 25, rate: safeRates.la_cable || 20, gstRate: 18 },
+    { id: 'earthing_cable', name: 'EARTHING CABLE 4SQ MM (REPUTED MAKE)', make: 'Polycab / RR Kabel', category: 'cables', unit: 'MTR', qty: Math.max(30, Math.round(pCount * 6.67)), rate: safeRates.earthing_cable || 35, gstRate: 18 },
+    { id: 'earthing_kit', name: 'EARTHING KIT', make: 'Vasundhara / Chemical Gel (IS 3043)', category: 'electrical', unit: 'SET', qty: Math.max(1, kw > 5 ? 2 : 1), rate: safeRates.earthing_kit || 650, gstRate: 18 },
+    { id: 'foundation_bag', name: 'FOUNDATION BAG', make: 'UltraTech / Standard', category: 'structure', unit: 'NOS', qty: Math.max(2, Math.round(pCount * 0.5)), rate: safeRates.foundation_bag || 120, gstRate: 18 },
+    { id: 'walkway', name: 'WALKWAY', make: 'Sunvine / FRP Standard', category: 'structure', unit: 'NOS', qty: 0, rate: safeRates.walkway || 420, gstRate: 18 },
+    { id: 'zinc_spray', name: 'ZINC SPRAY (200ML)', make: '3M / Rust-Oleum', category: 'structure', unit: 'NOS', qty: 1, rate: safeRates.zinc_spray || 140, gstRate: 18 },
+    { id: 'nut_washer', name: 'NUT WASHER', make: 'SS 304 / Grade 8.8', category: 'structure', unit: 'NOS', qty: Math.max(16, pCount * 4), rate: safeRates.nut_washer || 2.50, gstRate: 18 },
+    { id: 'transportation', name: 'TRANSPORTATION', make: 'Doorstep Insured Logistics', category: 'logistics', unit: 'NOS', qty: 1, rate: safeRates.transportation || 1000, gstRate: 0 }
   ];
 
   return [
