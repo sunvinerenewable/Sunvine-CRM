@@ -29,7 +29,13 @@ export default function AdminSettings() {
     updateGovernanceSettings,
     systemSettings,
     updateSystemSettings,
-    setActiveTab: setActiveTabGlobal
+    setActiveTab: setActiveTabGlobal,
+    requiredDocuments,
+    addRequiredDocument,
+    updateRequiredDocument,
+    deleteRequiredDocument,
+    resetRequiredDocuments,
+    applicationCategories
   } = useApp();
   const [activeTab, setActiveTab] = useState('governance');
   const [saved, setSaved] = useState(false);
@@ -76,6 +82,20 @@ export default function AdminSettings() {
     label: '',
     description: '',
     mandatory: true
+  });
+
+  // Dynamic Document Upload Management State
+  const [docCategoryFilter, setDocCategoryFilter] = useState('all');
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [docForm, setDocForm] = useState({
+    label: '',
+    description: '',
+    icon: 'description',
+    categories: ['residential'],
+    mandatory: true,
+    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
+    captureMode: 'both'
   });
 
   // Policy editor state
@@ -260,6 +280,77 @@ export default function AdminSettings() {
     setEditingStage(null);
   };
 
+  // Dynamic Required Documents Master Handlers
+  const handleOpenAddDoc = () => {
+    setEditingDoc(null);
+    setDocForm({
+      label: '',
+      description: '',
+      icon: 'description',
+      categories: ['residential'],
+      mandatory: true,
+      allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: 'both'
+    });
+    setShowDocModal(true);
+  };
+
+  const handleOpenEditDoc = (doc) => {
+    setEditingDoc(doc);
+    setDocForm({
+      label: doc.label || '',
+      description: doc.description || '',
+      icon: doc.icon || 'description',
+      categories: doc.categories || ['residential'],
+      mandatory: Boolean(doc.mandatory),
+      allowedExtensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: doc.captureMode || 'both'
+    });
+    setShowDocModal(true);
+  };
+
+  const handleSaveDocForm = (e) => {
+    e.preventDefault();
+    if (!docForm.label.trim()) return;
+
+    if (editingDoc) {
+      updateRequiredDocument(editingDoc.id, {
+        label: docForm.label.trim(),
+        description: docForm.description.trim(),
+        icon: docForm.icon || 'description',
+        categories: docForm.categories,
+        mandatory: docForm.mandatory,
+        allowedExtensions: docForm.allowedExtensions,
+        captureMode: docForm.captureMode
+      });
+    } else {
+      addRequiredDocument({
+        id: `doc-${Date.now()}`,
+        key: `doc_${docForm.label.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`,
+        label: docForm.label.trim(),
+        description: docForm.description.trim(),
+        icon: docForm.icon || 'description',
+        categories: docForm.categories,
+        mandatory: docForm.mandatory,
+        allowedExtensions: docForm.allowedExtensions,
+        captureMode: docForm.captureMode
+      });
+    }
+
+    setShowDocModal(false);
+    setEditingDoc(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleToggleDocCategory = (catId) => {
+    setDocForm(prev => {
+      const exists = prev.categories.includes(catId);
+      const next = exists ? prev.categories.filter(c => c !== catId) : [...prev.categories, catId];
+      return { ...prev, categories: next.length > 0 ? next : ['residential'] };
+    });
+  };
+
   return (
     <div className="flex flex-col w-full gap-6">
       {/* 1. BREADCRUMBS, HEADER & SYSTEM INTEGRITY BAR */}
@@ -407,6 +498,18 @@ export default function AdminSettings() {
             <span className="material-symbols-outlined text-[17px]">description</span>
             <span>6. Document Policies</span>
             {activeTab === 'policies' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'documents'
+                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
+                : 'text-secondary hover:text-on-surface'
+              }`}
+          >
+            <span className="material-symbols-outlined text-[17px]">folder_managed</span>
+            <span>7. Document Upload Master</span>
+            {activeTab === 'documents' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
           </button>
         </div>
 
@@ -892,7 +995,306 @@ export default function AdminSettings() {
             </form>
           </div>
         )}
+
+        {/* Tab Content 7: Dynamic Document Upload Master */}
+        {activeTab === 'documents' && (
+          <div className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-surface-container-high">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[22px]">folder_managed</span>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    Customer Application Document Upload Master
+                  </h3>
+                </div>
+                <p className="text-xs text-secondary mt-1">
+                  Dynamically manage required uploads for customer applications. Map documents to categories (Residential, Commercial, Common Meters) and define mandatory vs optional gates.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={resetRequiredDocuments}
+                  className="px-3 py-2 rounded-xl border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Reset to default Gujarat DISCOM checklist"
+                >
+                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                  <span>Reset Defaults</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddDoc}
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-bold flex items-center gap-1.5 hover:bg-primary/90 transition-all shadow-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  <span>Add Document</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {[
+                { id: 'all', label: 'All Document Requirements', count: (requiredDocuments || []).length },
+                { id: 'residential', label: 'Residential Rooftop', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('residential')).length },
+                { id: 'commercial', label: 'Commercial & Industrial', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('commercial')).length },
+                { id: 'common_meter', label: 'Common Meter / Society', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('common_meter')).length }
+              ].map((pill) => (
+                <button
+                  key={pill.id}
+                  type="button"
+                  onClick={() => setDocCategoryFilter(pill.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    docCategoryFilter === pill.id
+                      ? 'bg-primary text-on-primary shadow-xs'
+                      : 'bg-surface-container-low text-secondary hover:text-on-surface border border-surface-container-high'
+                  }`}
+                >
+                  <span>{pill.label}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    docCategoryFilter === pill.id ? 'bg-black/20 text-white' : 'bg-surface-container text-secondary'
+                  }`}>
+                    {pill.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Document Cards Grid (Preserving Card-Based UI) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(requiredDocuments || [])
+                .filter(doc => docCategoryFilter === 'all' || (doc.categories || []).includes(docCategoryFilter))
+                .map((doc) => {
+                  const isMandatory = Boolean(doc.mandatory);
+                  return (
+                    <div
+                      key={doc.id}
+                      className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high hover:border-primary/40 transition-colors flex flex-col justify-between gap-3 shadow-xs"
+                    >
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+                              <span className="material-symbols-outlined text-[20px]">{doc.icon || 'description'}</span>
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-xs text-on-surface truncate">{doc.label}</h4>
+                              <span className="text-[10px] font-mono text-secondary block">Key: {doc.key}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => updateRequiredDocument(doc.id, { mandatory: !isMandatory })}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors shrink-0 ${
+                              isMandatory
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : 'bg-surface-container-high text-secondary border border-surface-container-highest'
+                            }`}
+                            title="Click to toggle Mandatory vs Optional"
+                          >
+                            {isMandatory ? 'Mandatory' : 'Optional'}
+                          </button>
+                        </div>
+
+                        <p className="text-xs text-secondary leading-relaxed line-clamp-2">
+                          {doc.description || 'Customer document upload requirement'}
+                        </p>
+
+                        {/* Mapped Categories */}
+                        <div className="flex flex-wrap items-center gap-1 pt-1">
+                          {(doc.categories || []).map(cat => (
+                            <span
+                              key={cat}
+                              className="px-2 py-0.5 rounded bg-surface-container-highest text-[10px] font-medium text-secondary capitalize"
+                            >
+                              {cat === 'common_meter' ? 'Common Meter' : cat}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Card Actions */}
+                      <div className="flex items-center justify-between pt-2 border-t border-surface-container text-xs">
+                        <span className="text-[10px] text-secondary flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">
+                            {doc.captureMode === 'video' ? 'videocam' : doc.captureMode === 'image' ? 'photo_camera' : 'add_photo_alternate'}
+                          </span>
+                          <span>{doc.captureMode === 'both' ? 'Camera & File' : doc.captureMode === 'video' ? 'Video' : 'Photo'}</span>
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditDoc(doc)}
+                            className="p-1 rounded text-secondary hover:text-primary transition-colors cursor-pointer"
+                            title="Edit Document Requirement"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteRequiredDocument(doc.id)}
+                            className="p-1 rounded text-secondary hover:text-error transition-colors cursor-pointer"
+                            title="Remove Document Requirement"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Modal: Add / Edit Required Document Requirement */}
+      {showDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-xl">folder_managed</span>
+                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
+                  {editingDoc ? 'Edit Document Requirement' : 'Add New Document Requirement'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDocModal(false)}
+                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDocForm} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Document Title / Label *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Electricity / Light Bill"
+                  value={docForm.label}
+                  onChange={(e) => setDocForm({ ...docForm, label: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Description / Guidance</label>
+                <textarea
+                  rows="2"
+                  placeholder="Instructions for customer or technician regarding this upload..."
+                  value={docForm.description}
+                  onChange={(e) => setDocForm({ ...docForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary text-on-surface"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Material Icon</label>
+                  <select
+                    value={docForm.icon}
+                    onChange={(e) => setDocForm({ ...docForm, icon: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
+                  >
+                    <option value="electric_bolt">electric_bolt (Bills)</option>
+                    <option value="badge">badge (Aadhaar / ID)</option>
+                    <option value="credit_card">credit_card (PAN Card)</option>
+                    <option value="home_work">home_work (Property Tax)</option>
+                    <option value="solar_power">solar_power (Rooftop Photo)</option>
+                    <option value="speed">speed (Meter Photo)</option>
+                    <option value="receipt_long">receipt_long (GST Certificate)</option>
+                    <option value="domain">domain (Society NOC)</option>
+                    <option value="person">person (Passport Photo)</option>
+                    <option value="description">description (General Document)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Direct Capture Mode</label>
+                  <select
+                    value={docForm.captureMode}
+                    onChange={(e) => setDocForm({ ...docForm, captureMode: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
+                  >
+                    <option value="both">Both Photo &amp; File Upload</option>
+                    <option value="image">Camera Photo Capture</option>
+                    <option value="video">Camera Video Recording</option>
+                    <option value="file">File Upload Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Application Categories Mapping */}
+              <div>
+                <label className="block font-semibold mb-2">Map to Application Categories *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: 'residential', label: 'Residential', icon: 'home' },
+                    { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
+                    { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
+                  ].map(cat => {
+                    const isChecked = docForm.categories.includes(cat.id);
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => handleToggleDocCategory(cat.id)}
+                        className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-colors text-left ${
+                          isChecked
+                            ? 'bg-primary/10 border-primary text-primary font-bold'
+                            : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-base">{cat.icon}</span>
+                        <span className="text-xs">{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mandatory Gate Toggle */}
+              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-on-surface block">Mandatory Upload Gate</span>
+                  <span className="text-[11px] text-secondary">
+                    Marking this mandatory flags incomplete applications during DISCOM verification.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={docForm.mandatory}
+                  onChange={(e) => setDocForm({ ...docForm, mandatory: e.target.checked })}
+                  className="rounded text-primary focus:ring-primary w-5 h-5 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setShowDocModal(false)}
+                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-on-primary font-bold hover:bg-primary/90 transition-all cursor-pointer shadow-sm"
+                >
+                  {editingDoc ? 'Update Requirement' : 'Add Requirement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Add / Edit Partner Bank (SR-64) */}
       {showBankModal && (

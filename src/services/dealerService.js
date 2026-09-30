@@ -127,5 +127,27 @@ export const dealerService = {
       console.error('[dealerService] Error updating dealer:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Delete dealer from database
+   */
+  async deleteDealer(dealerCodeOrId) {
+    if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
+    try {
+      const { error } = await supabase
+        .from('dealers')
+        .delete()
+        .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
+
+      if (error) {
+        console.warn('[dealerService] Delete dealer warning:', error.message);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[dealerService] Delete dealer exception:', err);
+      return { success: false, error: err.message };
+    }
   }
 };

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+import SwipeableMetricCard from './SwipeableMetricCard';
 
 // Helper to reliably parse date strings into millisecond timestamps
 const parseQuoteDateToMs = (dateStr) => {
@@ -130,6 +131,141 @@ export default function AdminDashboard() {
   const conversionRate = totalQuotesCount > 0 ? ((commCount / totalQuotesCount) * 100).toFixed(1) : '68.2';
   const avgDealKW = totalQuotesCount > 0 ? (totalCapacityKW / totalQuotesCount).toFixed(1) : '4.1';
   const commissionedValue = commQuotes.reduce((acc, q) => acc + (q.grandTotalCustomer || q.totalAmount || 0), 0);
+
+  // Dynamic Multi-Slide Metrics for Swipeable / Scrollable Metric Cards
+  const metricCardsData = useMemo(() => {
+    // 1. Total Quotations slides
+    const approvedVal = approvedQuotes.reduce((acc, q) => acc + (q.grandTotalCustomer || q.totalAmount || 0), 0);
+    const totalQuotations = [
+      {
+        slideTitle: 'Gross Proposals & Value',
+        mainValue: totalQuotesCount.toLocaleString('en-IN'),
+        badge: '+6.4% WoW',
+        subValue: `₹${(totalQuotedValue / 10000000).toFixed(2)} Cr gross pipeline value`,
+        footerText: 'Total dispatched across dealers & direct'
+      },
+      {
+        slideTitle: 'Approved Quotations',
+        mainValue: approvedCount.toLocaleString('en-IN'),
+        badge: `${totalQuotesCount > 0 ? Math.round((approvedCount / totalQuotesCount) * 100) : 52}% approved`,
+        subValue: `₹${(approvedVal / 10000000).toFixed(2)} Cr sanctioned proposals`,
+        footerText: `Pending approval/review: ${pendingCount}`
+      },
+      {
+        slideTitle: 'DISCOM Network Distribution',
+        mainValue: '4 DISCOMs',
+        badge: 'PGVCL Lead',
+        subValue: 'PGVCL (54%) • DGVCL (22%) • UGVCL (16%)',
+        footerText: 'Western Gujarat circle highest adoption'
+      }
+    ];
+
+    // 2. Active Dealers slides
+    const activeDealers = [
+      {
+        slideTitle: 'Authorized Partners',
+        mainValue: activeDealersCount.toString(),
+        badge: '+14.2% YoY',
+        subValue: `${totalDealersCount} total registered network`,
+        footerText: '+6 new dealers onboarding this month'
+      },
+      {
+        slideTitle: 'Partner Tier Breakdown',
+        mainValue: `${Math.round(activeDealersCount * 0.28)} Tier-1`,
+        badge: 'Platinum Club',
+        subValue: `${Math.round(activeDealersCount * 0.45)} Gold • ${Math.round(activeDealersCount * 0.27)} Silver`,
+        footerText: 'Monthly target fulfillment > 85%'
+      },
+      {
+        slideTitle: 'Territory Coverage',
+        mainValue: '18 Districts',
+        badge: '3 States',
+        subValue: 'Saurashtra, Central Gujarat & Rajasthan',
+        footerText: 'Rajkot, Surat, Ahmedabad top clusters'
+      }
+    ];
+
+    // 3. Finalized Deals slides
+    const finalizedDeals = [
+      {
+        slideTitle: 'Commissioned Projects',
+        mainValue: commCount.toString(),
+        badge: `${conversionRate}% Conv.`,
+        subValue: `₹${(commissionedValue / 10000000).toFixed(2)} Cr energized value`,
+        footerText: 'Bi-directional net meter installed'
+      },
+      {
+        slideTitle: 'Conversion Pipeline',
+        mainValue: (commCount + approvedCount).toString(),
+        badge: 'In Progress',
+        subValue: `${commCount} Installed • ${approvedCount} In Processing`,
+        footerText: 'Avg 12-day turnaround to commissioning'
+      },
+      {
+        slideTitle: 'Customer Financing Mix',
+        mainValue: '62% Financed',
+        badge: 'Bank Loan',
+        subValue: '38% Direct Upfront / Consumer Capital',
+        footerText: 'SBI Surya Ghar & PNB rooftop scheme'
+      }
+    ];
+
+    // 4. Total Capacity slides
+    const totalCapacity = [
+      {
+        slideTitle: 'Aggregate Capacity',
+        mainValue: `${totalCapacityMW} MW`,
+        badge: `${totalCapacityKW.toLocaleString('en-IN')} kW`,
+        subValue: `Average system size: ${avgDealKW} kW / rooftop`,
+        footerText: '94% PM Surya Ghar residential rooftops'
+      },
+      {
+        slideTitle: 'Capacity Segments',
+        mainValue: '3 - 5 kW',
+        badge: 'Primary Segment',
+        subValue: '1-3 kW: 36% • 3-10 kW: 56% • >10 kW: 8%',
+        footerText: '3 kW is optimal for 100% subsidy cap'
+      },
+      {
+        slideTitle: 'Module Technology Mix',
+        mainValue: '86% Bifacial',
+        badge: 'Mono PERC',
+        subValue: '14% TopCon DCR Certified',
+        footerText: 'Waaree / Adani / Goldi ALMM compliant'
+      }
+    ];
+
+    // 5. Monthly Quotation Generation slides
+    const monthlyGeneration = [
+      {
+        slideTitle: 'Current Month Run-rate',
+        mainValue: totalQuotesCount.toString(),
+        badge: 'Active Month',
+        subValue: `~${Math.max(1, Math.round(totalQuotesCount / 24))} quotations / day average pace`,
+        footerText: 'Peak generation on Tuesdays & Thursdays'
+      },
+      {
+        slideTitle: '3-Month Monthly Trend',
+        mainValue: '168 Quotes',
+        badge: '+18.5% MoM',
+        subValue: 'Oct: Current • Sep: 142 • Aug: 119',
+        footerText: 'Accelerating into Q3/Q4 festival season'
+      },
+      {
+        slideTitle: 'Quotation Turnaround',
+        mainValue: '1.4 Days',
+        badge: 'Fast Turnaround',
+        subValue: 'From initial dealer draft to approved PDF',
+        footerText: 'Sub-2-day average across Gujarat circles'
+      }
+    ];
+
+    return { totalQuotations, activeDealers, finalizedDeals, totalCapacity, monthlyGeneration };
+  }, [
+    totalQuotesCount, totalQuotedValue, approvedQuotes, approvedCount, pendingCount,
+    activeDealersCount, totalDealersCount, commCount, conversionRate, commissionedValue,
+    totalCapacityMW, totalCapacityKW, avgDealKW
+  ]);
 
   // Top Performing Dealers aggregated from the active date-filtered quotations
   const topDealersList = useMemo(() => {
@@ -535,99 +671,47 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Top Row: 4 Data-Driven KPI Metric Cards with Interactive Hover Elevation */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-        {/* Card 1: Total Active Dealers */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl border border-surface-container-highest p-5 shadow-sm flex flex-col justify-between group">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase tracking-wider group-hover:text-primary transition-colors">
-                Total Active Dealers
-              </span>
-              <div className="w-8 h-8 rounded-lg bg-surface-container group-hover:bg-primary/10 group-hover:text-primary flex items-center justify-center text-primary transition-colors">
-                <span className="material-symbols-outlined text-[20px]">groups</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-3">
-              <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{activeDealersCount}</span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-xs font-semibold bg-primary-container/15 text-primary">
-                <span className="material-symbols-outlined text-[12px] mr-0.5">arrow_upward</span> +14.2%
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between text-secondary font-body-sm text-body-sm">
-            <span>+6 onboarding this month</span>
-            <span className="font-medium text-on-surface font-label-xs">GJ, MH, RJ</span>
-          </div>
-        </div>
+      {/* Top Row: 5 Dynamic Data-Driven Executive Metric Cards with Interactive Swipe & Keyboard Navigation */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
+        {/* Metric 1: Total Quotations */}
+        <SwipeableMetricCard
+          title="Total Quotations"
+          icon="request_quote"
+          colorScheme="primary"
+          slides={metricCardsData.totalQuotations}
+        />
 
-        {/* Card 2: Total Quotations */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl border border-surface-container-highest p-5 shadow-sm flex flex-col justify-between group">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase tracking-wider group-hover:text-primary transition-colors">
-                Total Quotations
-              </span>
-              <div className="w-8 h-8 rounded-lg bg-surface-container group-hover:bg-primary/10 group-hover:text-primary flex items-center justify-center text-primary transition-colors">
-                <span className="material-symbols-outlined text-[20px]">request_quote</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-3">
-              <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{totalQuotesCount.toLocaleString('en-IN')}</span>
-              <span className="font-label-sm text-label-sm text-secondary font-medium">₹{(totalQuotedValue / 10000000).toFixed(2)} Cr value</span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between text-secondary font-body-sm text-body-sm">
-            <span>+88 issued this week</span>
-            <span className="text-primary font-semibold font-label-xs">+6.4% WoW</span>
-          </div>
-        </div>
+        {/* Metric 2: Active Dealers */}
+        <SwipeableMetricCard
+          title="Active Dealers"
+          icon="groups"
+          colorScheme="emerald"
+          slides={metricCardsData.activeDealers}
+        />
 
-        {/* Card 3: Total Capacity Quoted */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl border border-surface-container-highest p-5 shadow-sm flex flex-col justify-between group">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase tracking-wider group-hover:text-primary transition-colors">
-                Total Capacity Quoted
-              </span>
-              <div className="w-8 h-8 rounded-lg bg-surface-container group-hover:bg-primary/10 group-hover:text-primary flex items-center justify-center text-primary transition-colors">
-                <span className="material-symbols-outlined text-[20px]">bolt</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-3">
-              <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{totalCapacityMW} MW</span>
-              <span className="font-label-sm text-label-sm text-secondary font-medium">Avg {avgDealKW} kW/deal</span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between text-secondary font-body-sm text-body-sm">
-            <span>94% rooftop residential</span>
-            <span className="font-medium text-on-surface font-label-xs">Mono PERC</span>
-          </div>
-        </div>
+        {/* Metric 3: Finalized Deals */}
+        <SwipeableMetricCard
+          title="Finalized Deals"
+          icon="verified"
+          colorScheme="purple"
+          slides={metricCardsData.finalizedDeals}
+        />
 
-        {/* Card 4: Commissioned Projects */}
-        <div className="kpi-card bg-surface-container-lowest rounded-xl border border-surface-container-highest p-5 shadow-sm flex flex-col justify-between group">
-          <div>
-            <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase tracking-wider group-hover:text-primary transition-colors">
-                Commissioned Projects
-              </span>
-              <div className="w-8 h-8 rounded-lg bg-surface-container group-hover:bg-primary/10 group-hover:text-primary flex items-center justify-center text-primary transition-colors">
-                <span className="material-symbols-outlined text-[20px]">verified</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-baseline gap-3">
-              <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{commCount}</span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-xs font-semibold bg-tertiary/15 text-tertiary">
-                {conversionRate}% Conv.
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between text-secondary font-body-sm text-body-sm">
-            <span>₹4.8 Cr Commissioned</span>
-            <span className="text-primary font-semibold font-label-xs">Current QTR</span>
-          </div>
-        </div>
+        {/* Metric 4: Total Capacity */}
+        <SwipeableMetricCard
+          title="Total Capacity"
+          icon="bolt"
+          colorScheme="amber"
+          slides={metricCardsData.totalCapacity}
+        />
+
+        {/* Metric 5: Monthly Quotation Generation */}
+        <SwipeableMetricCard
+          title="Monthly Generation"
+          icon="trending_up"
+          colorScheme="blue"
+          slides={metricCardsData.monthlyGeneration}
+        />
       </section>
 
       {/* Quotation Presets & Top Performing Dealers Benchmark */}

@@ -137,5 +137,27 @@ export const staffService = {
       console.error('[staffService] Update staff password error:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Delete staff member from database
+   */
+  async deleteStaff(staffId) {
+    if (!staffId) return { success: false, error: 'Staff ID is required.' };
+    try {
+      const { error } = await supabase
+        .from('staff_users')
+        .delete()
+        .eq('id', staffId);
+
+      if (error) {
+        console.warn('[staffService] Delete staff warning:', error.message);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[staffService] Delete staff exception:', err);
+      return { success: false, error: err.message };
+    }
   }
 };

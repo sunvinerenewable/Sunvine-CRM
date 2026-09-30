@@ -26,6 +26,10 @@ import {
   INITIAL_AUDIT_LOGS
 } from '../data/systemSettingsDefaults';
 import {
+  DEFAULT_REQUIRED_DOCUMENTS,
+  APPLICATION_CATEGORIES
+} from '../data/defaultRequiredDocuments';
+import {
   calculateStaffPerformance,
   calculateDealerPerformance,
   calculateOverallBusinessMetrics
@@ -624,6 +628,17 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_system_settings', DEFAULT_SYSTEM_SETTINGS);
   });
 
+  // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
+  const [requiredDocuments, setRequiredDocuments] = useState(() => {
+    const raw = safeJsonParse('sunvine_required_documents', null);
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    return systemSettings?.requiredDocuments || DEFAULT_REQUIRED_DOCUMENTS;
+  });
+
+  useEffect(() => {
+    safeSetItem('sunvine_required_documents', requiredDocuments);
+  }, [requiredDocuments]);
+
   // Immutable Audit Activity Ledger
   const [auditLogs, setAuditLogs] = useState(() => {
     return safeJsonParse('sunvine_audit_logs', INITIAL_AUDIT_LOGS);
@@ -1038,6 +1053,21 @@ const safeSetItem = (key, value) => {
     }
   };
 
+  const deleteStaff = async (staffId) => {
+    setStaffList(prev => prev.filter(s => s.id !== staffId));
+    try {
+      await staffService.deleteStaff(staffId);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete staff in DB:', e);
+    }
+    logActivity({
+      action: 'DELETE_STAFF',
+      module: 'STAFF_MANAGEMENT',
+      recordId: staffId,
+      details: `Admin deleted staff member ${staffId} from organization register.`
+    });
+  };
+
   const addCustomerFile = async (newFile) => {
     setCustomerFiles(prev => [newFile, ...prev]);
     // Also update staff totalFiles and pipelineKw
@@ -1377,6 +1407,60 @@ const safeSetItem = (key, value) => {
     } catch (e) {
       console.warn('[AppContext] Failed to update dealer password in DB:', e);
     }
+  };
+
+  const deleteDealer = async (id) => {
+    setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
+    if (currentDealer?.id === id) {
+      setCurrentDealer(INITIAL_DEALERS[0]);
+    }
+    try {
+      await dealerService.deleteDealer(id);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete dealer in DB:', e);
+    }
+    logActivity({
+      action: 'DELETE_DEALER',
+      module: 'DEALER_MANAGEMENT',
+      recordId: id,
+      details: `Admin deleted dealer partner ${id} from network register.`
+    });
+  };
+
+  // Dynamic Required Documents Management Methods
+  const addRequiredDocument = async (newDoc) => {
+    const docEntry = {
+      id: newDoc.id || `doc-${Date.now()}`,
+      key: newDoc.key || `doc_${Date.now()}`,
+      label: (newDoc.label || 'New Document').trim(),
+      description: (newDoc.description || '').trim(),
+      icon: newDoc.icon || 'description',
+      categories: Array.isArray(newDoc.categories) && newDoc.categories.length > 0 ? newDoc.categories : ['residential'],
+      mandatory: Boolean(newDoc.mandatory),
+      allowedExtensions: newDoc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: newDoc.captureMode || 'both'
+    };
+    const nextList = [...requiredDocuments, docEntry];
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+    return docEntry;
+  };
+
+  const updateRequiredDocument = async (docId, updates) => {
+    const nextList = requiredDocuments.map(d => d.id === docId ? { ...d, ...updates } : d);
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+  };
+
+  const deleteRequiredDocument = async (docId) => {
+    const nextList = requiredDocuments.filter(d => d.id !== docId);
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+  };
+
+  const resetRequiredDocuments = () => {
+    setRequiredDocuments(DEFAULT_REQUIRED_DOCUMENTS);
+    updateSystemSettings('requiredDocuments', DEFAULT_REQUIRED_DOCUMENTS);
   };
 
   const updateDealerPricing = (id, pricingConfig) => {
@@ -1866,6 +1950,7 @@ const safeSetItem = (key, value) => {
         addStaff,
         updateStaff,
         updateStaffPassword,
+        deleteStaff,
         addCustomerFile,
         updateCustomerFile,
         updateFileStatus,
@@ -1887,6 +1972,7 @@ const safeSetItem = (key, value) => {
         dealers,
         addDealer,
         updateDealer,
+        deleteDealer,
         toggleDealerStatus,
         updateDealerMarginCap,
         updateDealerPassword,
@@ -1953,6 +2039,13 @@ const safeSetItem = (key, value) => {
         // Master System Settings & Policies
         systemSettings,
         updateSystemSettings,
+        // Dynamic Required Documents Management
+        requiredDocuments,
+        addRequiredDocument,
+        updateRequiredDocument,
+        deleteRequiredDocument,
+        resetRequiredDocuments,
+        applicationCategories: APPLICATION_CATEGORIES,
         // Immutable Audit Activity Ledger
         auditLogs,
         logActivity,

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLoading } from '../../context/LoadingContext';
+import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
+import { DEFAULT_REQUIRED_DOCUMENTS } from '../../data/defaultRequiredDocuments';
 
 export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSuccess }) {
   const {
@@ -10,7 +13,8 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     addCustomerFile,
     updateQuotation,
     addNotification,
-    logActivity
+    logActivity,
+    requiredDocuments
   } = useApp();
   const { showLoader, hideLoader } = useLoading();
 
@@ -40,33 +44,73 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
   const [roofType, setRoofType] = useState('RCC Flat Terrace (Standard)');
   const [internalNotes, setInternalNotes] = useState(quotation.notes || 'Order booked from approved quotation. Ready for DISCOM net-meter verification.');
 
-  // Documents state (strictly non-blocking/optional)
-  const [documents, setDocuments] = useState({
-    lightBill: null,
-    aadhaar: null,
-    pan: null,
-    propertyTax: null,
-    passportPhoto: null
-  });
+  // Application category state (Residential, Commercial, Common Meter)
+  const [applicationCategory, setApplicationCategory] = useState(
+    quotation.category || quotation.projectType?.toLowerCase().includes('comm') ? 'commercial' : 'residential'
+  );
 
-  const handleFileUpload = (docKey, file) => {
+  // Documents state with compression metadata
+  const [documents, setDocuments] = useState({});
+  const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+
+  // Dynamic document requirements mapped to selected category
+  const activeDocRequirements = useMemo(() => {
+    const list = requiredDocuments && requiredDocuments.length > 0 ? requiredDocuments : DEFAULT_REQUIRED_DOCUMENTS;
+    return list.filter(d => (d.categories || []).includes(applicationCategory));
+  }, [requiredDocuments, applicationCategory]);
+
+  const handleFileUpload = async (docKey, file) => {
     if (!file) return;
+    try {
+      const optimized = await compressMedia(file);
+      setDocuments(prev => ({
+        ...prev,
+        [docKey]: {
+          filename: optimized.file?.name || file.name,
+          size: optimized.compressedFormatted || formatFileSize(file.size),
+          originalSize: optimized.originalFormatted || formatFileSize(file.size),
+          reduction: optimized.reduction || '0%',
+          dataUrl: optimized.dataUrl || optimized.posterDataUrl,
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        }
+      }));
+    } catch (e) {
+      setDocuments(prev => ({
+        ...prev,
+        [docKey]: {
+          filename: file.name,
+          size: formatFileSize(file.size),
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        }
+      }));
+    }
+  };
+
+  const handleCameraCapture = (stats) => {
+    if (!cameraTargetDoc || !stats) return;
     setDocuments(prev => ({
       ...prev,
-      [docKey]: {
-        filename: file.name,
-        size: `${(file.size / 1024).toFixed(1)} KB`,
+      [cameraTargetDoc.key]: {
+        filename: stats.file?.name || `${cameraTargetDoc.key}_camera.jpg`,
+        size: stats.compressedFormatted,
+        originalSize: stats.originalFormatted,
+        reduction: stats.reduction,
+        dataUrl: stats.dataUrl || stats.posterDataUrl,
         uploaded: true,
         date: new Date().toISOString().split('T')[0]
       }
     }));
+    setCameraTargetDoc(null);
   };
 
   const handleRemoveDoc = (docKey) => {
-    setDocuments(prev => ({
-      ...prev,
-      [docKey]: null
-    }));
+    setDocuments(prev => {
+      const next = { ...prev };
+      delete next[docKey];
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -176,14 +220,6 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
       hideLoader();
     }
   };
-
-  const docItems = [
-    { key: 'lightBill', label: 'Electricity / Light Bill', desc: 'Latest bill copy (within 2 months)', icon: 'electric_bolt' },
-    { key: 'aadhaar', label: 'Aadhaar Card (KYC)', desc: 'Front & Back UIDAI copy', icon: 'badge' },
-    { key: 'pan', label: 'Customer PAN Card', desc: 'Required for DBT & DISCOM', icon: 'credit_card' },
-    { key: 'propertyTax', label: 'Property Tax / Index-2', desc: 'Proof of premises ownership', icon: 'home' },
-    { key: 'passportPhoto', label: 'Passport Size Photo', desc: 'Customer applicant photograph', icon: 'person' },
-  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
@@ -342,66 +378,133 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
             </div>
           </div>
 
-          {/* Section B: Non-Blocking Document Attachments */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-label-sm text-xs font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-primary text-base">folder_open</span>
-                B. Document Attachments
-              </h4>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-container-high text-secondary font-semibold">
-                Strictly Optional (Can be uploaded later)
+          {/* Section B: Dynamic Document Checklist with Direct Camera Capture & Client-Side Compression */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="font-label-sm text-xs font-bold text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-base">folder_open</span>
+                  B. Document Checklist (Dynamic Category Mapping)
+                </h4>
+                <p className="text-[11px] text-secondary">
+                  Checklist automatically adjusts based on customer category. Direct camera capture and on-device compression enabled.
+                </p>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-container-high text-secondary font-semibold whitespace-nowrap">
+                Non-Blocking (Strictly Optional)
               </span>
             </div>
 
+            {/* Application Category Switcher */}
+            <div className="grid grid-cols-3 gap-2 p-1.5 bg-surface-container-low rounded-xl border border-surface-container-high">
+              {[
+                { id: 'residential', label: 'Residential', icon: 'home' },
+                { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
+                { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setApplicationCategory(cat.id)}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    applicationCategory === cat.id
+                      ? 'bg-primary text-on-primary shadow-xs'
+                      : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">{cat.icon}</span>
+                  <span className="truncate">{cat.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Dynamic Card-Based UI for Document Uploads */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {docItems.map((doc) => {
+              {activeDocRequirements.map((doc) => {
                 const uploaded = documents[doc.key];
+                const isMandatory = Boolean(doc.mandatory);
                 return (
                   <div
-                    key={doc.key}
+                    key={doc.id || doc.key}
                     className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs transition-colors ${
                       uploaded
                         ? 'bg-primary-container/10 border-primary/40'
+                        : isMandatory
+                        ? 'bg-surface-container-low border-amber-500/30'
                         : 'bg-surface-container-low border-surface-container-high/70'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-lg">{doc.icon}</span>
-                        <div>
-                          <span className="font-bold text-on-surface block text-[11px]">{doc.label}</span>
-                          <span className="text-[10px] text-secondary block">{doc.desc}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-primary text-lg shrink-0">
+                          {doc.icon || 'description'}
+                        </span>
+                        <div className="min-w-0">
+                          <span className="font-bold text-on-surface block text-[11px] truncate">{doc.label}</span>
+                          <span className="text-[10px] text-secondary block truncate">{doc.description || doc.desc}</span>
                         </div>
                       </div>
-                      {uploaded ? (
-                        <span className="material-symbols-outlined text-primary text-base shrink-0">check_circle</span>
-                      ) : (
-                        <span className="text-[10px] text-secondary shrink-0">Optional</span>
-                      )}
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
+                          uploaded
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : isMandatory
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-surface-container text-secondary'
+                        }`}
+                      >
+                        {uploaded ? 'Ready' : isMandatory ? 'Mandatory' : 'Optional'}
+                      </span>
                     </div>
 
                     {uploaded ? (
-                      <div className="flex items-center justify-between pt-1 border-t border-surface-container text-[11px]">
-                        <span className="text-primary truncate font-mono text-[10px]">{uploaded.filename}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDoc(doc.key)}
-                          className="text-error hover:underline text-[10px] font-semibold cursor-pointer shrink-0 ml-1"
-                        >
-                          Remove
-                        </button>
+                      <div className="pt-1.5 border-t border-surface-container space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-primary truncate font-mono text-[10px] max-w-[170px]">
+                            {uploaded.filename}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDoc(doc.key)}
+                            className="text-error hover:underline text-[10px] font-semibold cursor-pointer shrink-0 ml-1"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        {uploaded.reduction && uploaded.reduction !== '0%' && (
+                          <div className="text-[9px] text-emerald-400 font-medium flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[11px]">bolt</span>
+                            <span>{uploaded.originalSize} → {uploaded.size} ({uploaded.reduction} saved)</span>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <label className="w-full mt-1 py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface text-[11px] font-semibold text-center cursor-pointer transition-colors block border border-surface-container-highest">
-                        <span>Upload File</span>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          className="hidden"
-                          onChange={(e) => handleFileUpload(doc.key, e.target.files?.[0])}
-                        />
-                      </label>
+                      <div className="grid grid-cols-2 gap-1.5 mt-1">
+                        {/* Direct Camera Capture Button */}
+                        <button
+                          type="button"
+                          onClick={() => setCameraTargetDoc(doc)}
+                          className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest"
+                          title="Open Camera to capture photo or record video"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {doc.captureMode === 'video' ? 'videocam' : 'photo_camera'}
+                          </span>
+                          <span>Camera</span>
+                        </button>
+
+                        {/* File Upload Button */}
+                        <label className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest">
+                          <span className="material-symbols-outlined text-[14px]">upload_file</span>
+                          <span>File</span>
+                          <input
+                            type="file"
+                            accept={doc.allowedExtensions?.join(',') || '.pdf,.jpg,.jpeg,.png,.mp4'}
+                            className="hidden"
+                            onChange={(e) => handleFileUpload(doc.key, e.target.files?.[0])}
+                          />
+                        </label>
+                      </div>
                     )}
                   </div>
                 );
@@ -443,6 +546,17 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
           </div>
         </form>
       </div>
+
+      {/* Direct Camera Capture Modal */}
+      {cameraTargetDoc && (
+        <CameraCaptureModal
+          isOpen={Boolean(cameraTargetDoc)}
+          onClose={() => setCameraTargetDoc(null)}
+          onCapture={handleCameraCapture}
+          mode={cameraTargetDoc.captureMode === 'video' ? 'video' : 'photo'}
+          documentLabel={cameraTargetDoc.label}
+        />
+      )}
     </div>
   );
 }
