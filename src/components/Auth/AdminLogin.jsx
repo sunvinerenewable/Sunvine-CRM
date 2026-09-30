@@ -4,8 +4,8 @@ import { authService } from '../../services/authService';
 
 export default function AdminLogin() {
   const { login, setAuthView } = useApp();
-  const [email, setEmail] = useState('admin@sunvinerenewable.com');
-  const [password, setPassword] = useState('1234567890123456');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -14,18 +14,23 @@ export default function AdminLogin() {
     if (e) e.preventDefault();
     setError('');
 
-    if (!email || !email.includes('@')) {
-      setError('Please provide an authorized corporate email.');
+    const cleanNumber = mobileNumber.replace(/\D/g, '').slice(-10);
+    if (cleanNumber.length !== 10) {
+      setError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    if (!/^[6-9]/.test(cleanNumber)) {
+      setError('Mobile number must start with 6, 7, 8, or 9 (Valid Indian telecom series).');
       return;
     }
     if (!password || password.trim().length === 0) {
-      setError('Invalid executive master password.');
+      setError('Please enter your administrator password.');
       return;
     }
 
     setLoading(true);
     try {
-      const res = await authService.loginAdmin(email, password);
+      const res = await authService.loginAdmin(cleanNumber, password);
       if (!res.success) {
         setError(res.error || 'Invalid administrator credentials.');
         setLoading(false);
@@ -54,6 +59,8 @@ export default function AdminLogin() {
               <img
                 alt="Sunvine Renewable Energy corporate logo"
                 className="h-9 w-auto object-contain brightness-110 drop-shadow-sm cursor-pointer"
+                width="160"
+                height="40"
                 src="/sunvine_logo_white.png"
                 onClick={() => setAuthView('dealer_login')}
               />
@@ -140,6 +147,8 @@ export default function AdminLogin() {
           <img
             alt="Sunvine Renewable Logo"
             className="h-8 w-auto object-contain cursor-pointer"
+            width="148"
+            height="32"
             src="/sunvine_logo_transparent.png"
             onClick={() => setAuthView('dealer_login')}
           />
@@ -170,71 +179,73 @@ export default function AdminLogin() {
             <div className="pt-5 mb-4">
               <h2 className="font-headline-lg text-2xl sm:text-headline-lg text-[#0F1B2E]">Admin Sign In</h2>
               <p className="font-body-md text-xs sm:text-body-md text-secondary mt-1">
-                Enter authorized credentials to access national pricing and dealer operations.
+                Enter authorized mobile credentials to access national pricing and dealer operations.
               </p>
-            </div>
-
-            {/* Dedicated Credentials Info Helper */}
-            <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-on-surface">
-                <span className="material-symbols-outlined text-primary text-base">verified_user</span>
-                <span><strong>ID:</strong> admin@sunvinerenewable.com</span>
-                <span className="hidden sm:inline text-secondary">•</span>
-                <span><strong>OTP:</strong> 123456</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('admin@sunvinerenewable.com');
-                  setPassword('1234567890123456');
-                  setOtp(['1', '2', '3', '4', '5', '6']);
-                }}
-                className="text-[11px] font-bold text-primary hover:underline cursor-pointer self-start sm:self-auto"
-              >
-                Autofill Credentials
-              </button>
             </div>
 
             {/* Sign-in Form */}
             <form className="space-y-4 sm:space-y-5" onSubmit={handleAdminSubmit}>
-              {/* Email Input */}
+              {/* Mobile Number Input */}
               <div className="space-y-1.5">
-                <label className="block font-label-md text-label-md text-on-surface">Official Executive Email / Admin ID</label>
-                <div className="relative flex items-center">
-                  <span className="material-symbols-outlined absolute left-3 text-secondary text-[20px] pointer-events-none">badge</span>
-                  <input
-                    className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest border border-surface-container-highest rounded-lg font-body-md text-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-colors"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleAdminSubmit(e); }}
-                  />
-                  <div className="absolute right-3 flex items-center text-primary-container" title="Verified Corporate Identity">
-                    <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                <label className="block font-label-md text-label-md text-on-surface font-semibold" htmlFor="admin-mobile">
+                  Admin Registered Mobile Number
+                </label>
+                <div className="flex rounded-lg bg-surface-container-lowest border border-surface-container-highest shadow-xs focus-within:ring-2 focus-within:ring-primary-container focus-within:border-transparent transition-all">
+                  <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-container-low rounded-l-lg select-none border-r border-surface-container-highest">
+                    <span className="text-sm leading-none">🇮🇳</span>
+                    <span className="font-label-md text-xs text-on-surface font-medium">+91</span>
                   </div>
+                  <input
+                    id="admin-mobile"
+                    className="w-full h-10 px-3 bg-transparent font-body-md text-body-md text-on-surface focus:outline-none placeholder:text-secondary min-w-0"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    placeholder="Enter 10-digit mobile number"
+                    value={mobileNumber}
+                    onChange={(e) => {
+                      setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10));
+                      if (error) setError('');
+                    }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAdminSubmit(e); }}
+                    required
+                  />
+                  {mobileNumber.length === 10 && /^[6-9]/.test(mobileNumber) && (
+                    <div className="flex items-center pr-3 text-primary-container" title="Valid Format">
+                      <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Password Input */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="block font-label-md text-label-md text-on-surface">Master Executive Password</label>
-                  <a className="font-label-xs text-label-xs text-tertiary hover:underline cursor-pointer" onClick={() => alert('Security reset protocol triggered.')}>
-                    Reset via IT Security
-                  </a>
+                  <label className="block font-label-md text-label-md text-on-surface font-semibold" htmlFor="admin-password">
+                    Master Executive Password
+                  </label>
+                  <span className="font-label-xs text-xs text-secondary">
+                    Managed by IT Security
+                  </span>
                 </div>
                 <div className="relative flex items-center">
                   <span className="material-symbols-outlined absolute left-3 text-secondary text-[20px] pointer-events-none">key</span>
                   <input
+                    id="admin-password"
                     className="w-full h-10 pl-10 pr-10 bg-surface-container-lowest border border-surface-container-highest rounded-lg font-body-md text-body-md text-on-surface tracking-widest focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-colors"
                     type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter admin password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError('');
+                    }}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleAdminSubmit(e); }}
+                    required
                   />
                   <button
                     aria-label="Toggle password visibility"
-                    className="absolute right-3 flex items-center text-secondary hover:text-on-surface transition-colors"
+                    className="absolute right-3 flex items-center text-secondary hover:text-on-surface transition-colors cursor-pointer"
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                   >

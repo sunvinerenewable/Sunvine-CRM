@@ -201,7 +201,6 @@ export const settingsService = {
       const { data, error } = await supabase
         .from('audit_logs')
         .select('*')
-        .order('timestamp', { ascending: false })
         .limit(limit);
 
       if (error || !data) return [];

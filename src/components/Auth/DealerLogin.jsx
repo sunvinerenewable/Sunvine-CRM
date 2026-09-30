@@ -4,8 +4,8 @@ import { authService } from '../../services/authService';
 
 export default function DealerLogin() {
   const { login, setAuthView } = useApp();
-  const [mobileNumber, setMobileNumber] = useState('9810000000');
-  const [password, setPassword] = useState('dealer123');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
@@ -19,7 +19,7 @@ export default function DealerLogin() {
       return;
     }
     if (!/^[6-9]/.test(cleanNumber)) {
-      setError('Mobile number must start with 6, 7, 8, or 9.');
+      setError('Mobile number must start with 6, 7, 8, or 9 (Valid Indian telecom series).');
       return;
     }
     if (!password || password.trim().length === 0) {
@@ -56,6 +56,8 @@ export default function DealerLogin() {
             <img
               alt="Sunvine Renewable Logo"
               className="h-8 w-auto object-contain"
+              width="148"
+              height="32"
               src="/sunvine_logo_transparent.png"
             />
           </div>
@@ -219,7 +221,7 @@ export default function DealerLogin() {
 
             {/* Submit Primary Button */}
             <button
-              className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all"
+              className="w-full h-11 mt-1 rounded-lg bg-primary hover:bg-[#1f5100] text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
               type="submit"
               disabled={loading}
             >
@@ -328,6 +330,8 @@ export default function DealerLogin() {
                   <img
                     alt="Sunvine Renewable Energy Logo"
                     className="h-9 lg:h-10 w-auto object-contain brightness-110 drop-shadow-sm"
+                    width="160"
+                    height="40"
                     src="/sunvine_logo_white.png"
                   />
                 </div>
@@ -528,7 +532,7 @@ export default function DealerLogin() {
 
                 {/* Primary Submit Button */}
                 <button
-                  className="w-full h-10 bg-primary-container hover:bg-primary text-on-primary font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  className="w-full h-10 bg-primary hover:bg-[#1f5100] text-white font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                   id="submit-btn"
                   type="submit"
                   disabled={loading}
