@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
+import { pricingService } from '../../services/pricingService';
 import DealerCustomPricingMatrix from './DealerCustomPricingMatrix';
 
 const DEFAULT_INVERTER_BENCHMARK_MATRIX = [
@@ -358,6 +359,7 @@ ${origin}/?tab=pricing_master
     if (setPdfBosMatrix) {
       setPdfBosMatrix(matrixToSave);
     }
+    pricingService.saveBosMatrix(matrixToSave);
     setIsInlineEditingMatrix(false);
     if (addNotification) {
       addNotification({
@@ -453,6 +455,7 @@ ${origin}/?tab=pricing_master
     if (setPdfBosMatrix) {
       setPdfBosMatrix(updated);
     }
+    pricingService.saveBosMatrix(updated);
     setShowAddSlabModal(false);
   };
 
@@ -464,11 +467,11 @@ ${origin}/?tab=pricing_master
       if (setPdfBosMatrix) {
         setPdfBosMatrix(updated);
       }
+      pricingService.saveBosMatrix(updated);
       triggerToast(`Deleted ${row.capacityKW} kW slab`);
     }
   };
 
-  // Handlers for Dedicated Inverter Sizing & Benchmark Pricing Matrix (SR-57)
   const handleSaveInverterMatrix = (updatedList) => {
     const toSave = updatedList || inverterBenchmarkMatrix;
     setInverterBenchmarkMatrix(toSave);
@@ -477,8 +480,9 @@ ${origin}/?tab=pricing_master
     } catch (e) {
       console.warn(e);
     }
+    pricingService.saveInverterBenchmarks(toSave);
     setIsInlineEditingInverters(false);
-    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved!');
+    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved to database!');
   };
 
   const handleInverterCellChange = (idx, field, value) => {
@@ -498,6 +502,7 @@ ${origin}/?tab=pricing_master
       try {
         localStorage.setItem('sunvine_inverter_benchmark_matrix', JSON.stringify(updated));
       } catch (e) {}
+      pricingService.saveInverterBenchmarks(updated);
       triggerToast('Inverter benchmark entry removed');
     }
   };

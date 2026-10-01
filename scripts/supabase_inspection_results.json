@@ -1,0 +1,122 @@
+{
+  "quotations": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "dealers": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "staff": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "pricing_master": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "pricing_presets": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "hardware_master": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "modules": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "inverters": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "structures": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "bom_catalog": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "bom_rates": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "capacity_bom_matrix": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "bos_matrix": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "pdf_bos_matrix": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "tier_margins": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "dealer_pricing": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "dealer_product_rates": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "inverter_benchmarks": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "audit_logs": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "leads": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "customer_files": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "users": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "profiles": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  },
+  "governance_settings": {
+    "status": "error_or_not_found",
+    "message": "TypeError: fetch failed",
+    "code": ""
+  }
+}

@@ -156,15 +156,16 @@ export default function DealerDashboard() {
   const recentQuotes = (quotations && quotations.length > 0)
     ? quotations.slice(0, 5).map(q => ({
         ...q,
-        capacity: q.systemCapacityKW ? `${q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
-        type: q.projectType || q.type || 'Mono Perc • Residential',
+        customerName: q.customer_name || q.customerName || 'Customer',
+        capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
+        type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
         amount: typeof q.amount === 'string' 
           ? q.amount 
-          : '₹\u00A0' + (q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
-        subsidy: q.subsidyAmount ? `₹\u00A0${Number(q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : (q.subsidy || 'Subsidy Eligible'),
+          : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
+        subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
         status: q.status || 'Active / Sent',
         statusClass: q.statusClass || 'bg-primary/15 text-primary',
-        location: q.location || (q.city ? `${q.city}, ${q.state || 'Gujarat'}` : 'Rajkot, Gujarat')
+        location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat')
       }))
     : [];
 

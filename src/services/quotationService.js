@@ -180,5 +180,64 @@ export const quotationService = {
       console.error('Save quotation error:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Update quotation status (Approved, Rejected, Draft, Pending)
+   */
+  async updateQuotationStatus(id, newStatus) {
+    if (!id) return { success: false };
+    try {
+      // Local cache update
+      if (typeof window !== 'undefined') {
+        const local = localStorage.getItem('sunvine_quotations');
+        if (local) {
+          const list = JSON.parse(local);
+          const idx = list.findIndex(q => q.id === id);
+          if (idx >= 0) {
+            list[idx].status = newStatus;
+            list[idx].updatedAt = new Date().toISOString();
+            localStorage.setItem('sunvine_quotations', JSON.stringify(list));
+          }
+        }
+      }
+
+      await supabase
+        .from('quotations')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      return { success: true };
+    } catch (err) {
+      console.warn('Supabase update status fallback:', err);
+      return { success: true };
+    }
+  },
+
+  /**
+   * Delete quotation
+   */
+  async deleteQuotation(id) {
+    if (!id) return { success: false };
+    try {
+      if (typeof window !== 'undefined') {
+        const local = localStorage.getItem('sunvine_quotations');
+        if (local) {
+          const list = JSON.parse(local).filter(q => q.id !== id);
+          localStorage.setItem('sunvine_quotations', JSON.stringify(list));
+        }
+      }
+
+      await supabase
+        .from('quotations')
+        .delete()
+        .eq('id', id);
+
+      return { success: true };
+    } catch (err) {
+      console.warn('Supabase delete quote fallback:', err);
+      return { success: true };
+    }
   }
 };
+

@@ -33,6 +33,12 @@ import {
 import { hardwareService } from '../services/hardwareService';
 import { quotationService } from '../services/quotationService';
 import { pricingService } from '../services/pricingService';
+import { customerFileService } from '../services/customerFileService';
+import { staffService } from '../services/staffService';
+import { systemSettingsService } from '../services/systemSettingsService';
+import { auditLogService } from '../services/auditLogService';
+import { dealerService } from '../services/dealerService';
+import { supabase } from '../lib/supabase';
 import { generateFieldBOM } from '../data/standardBomData';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
@@ -260,70 +266,143 @@ const safeSetItem = (key, value) => {
   // Determine if running in public proposal viewer mode
   const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
 
-  // Live Supabase Hardware Sync (Demand-driven: skips on public viewer and unauthenticated boot)
+  // Live Universal Database Hydration (Async startup from Supabase PostgreSQL)
   useEffect(() => {
-    if (isPublicProposal || !isAuthenticated) return;
     let isMounted = true;
-    const loadHardwareFromSupabase = async () => {
-      setIsHardwareDbSyncing(true);
+    const hydrateAllFromSupabase = async () => {
       try {
-        const [dbModules, dbInverters] = await Promise.all([
+        setIsHardwareDbSyncing(true);
+        const [
+          dbModules,
+          dbInverters,
+          dbPresets,
+          dbBos,
+          dbBenchmarks,
+          dbTiers,
+          dbDealers,
+          dbQuotations,
+          dbFiles,
+          dbStaff,
+          dbSettings,
+          dbLogs,
+          dbNotifs
+        ] = await Promise.allSettled([
           hardwareService.getAllModules(),
-          hardwareService.getAllInverters()
+          hardwareService.getAllInverters(),
+          pricingService.getPricingPresets(),
+          pricingService.getBosMatrix(),
+          pricingService.getInverterBenchmarks(),
+          pricingService.getTierMargins(),
+          dealerService.getAllDealers(),
+          quotationService.getAllQuotations(100),
+          customerFileService.getAllCustomerFiles(),
+          staffService.getAllStaff(),
+          systemSettingsService.getSystemSettings(),
+          auditLogService.getAuditLogs(100),
+          auditLogService.getNotifications()
         ]);
 
-        if (isMounted) {
-          if (dbModules && Array.isArray(dbModules) && dbModules.length > 0) {
-            setModulesList(dbModules);
-            setIsHardwareDbConnected(true);
-          } else {
-            // Seed Supabase if tables are newly created and empty
-            hardwareService.seedInitialHardwareIfEmpty(DEFAULT_MODULES, DEFAULT_INVERTERS);
-          }
+        if (!isMounted) return;
 
-          if (dbInverters && Array.isArray(dbInverters) && dbInverters.length > 0) {
-            setInvertersList(dbInverters);
-            setIsHardwareDbConnected(true);
-          }
+        if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
+          setModulesList(dbModules.value);
+          setIsHardwareDbConnected(true);
+        }
+        if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
+          setInvertersList(dbInverters.value);
+          setIsHardwareDbConnected(true);
+        }
+        if (dbPresets.status === 'fulfilled' && dbPresets.value) {
+          setPricingPresets(dbPresets.value);
+        }
+        if (dbBos.status === 'fulfilled' && Array.isArray(dbBos.value) && dbBos.value.length > 0) {
+          setPdfBosMatrix(dbBos.value);
+        }
+        if (dbBenchmarks.status === 'fulfilled' && Array.isArray(dbBenchmarks.value) && dbBenchmarks.value.length > 0) {
+          setInverterBenchmarkMatrix(dbBenchmarks.value);
+        }
+        if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
+          setTierMargins(dbTiers.value);
+        }
+        if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value) && dbDealers.value.length > 0) {
+          setDealers(dbDealers.value);
+        }
+        if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
+          setQuotations(dbQuotations.value);
+        }
+        if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value) && dbFiles.value.length > 0) {
+          setCustomerFiles(dbFiles.value);
+        }
+        if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value) && dbStaff.value.length > 0) {
+          setStaffList(dbStaff.value);
+        }
+        if (dbSettings.status === 'fulfilled' && dbSettings.value) {
+          setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
+        }
+        if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value) && dbLogs.value.length > 0) {
+          setAuditLogs(dbLogs.value);
+        }
+        if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value) && dbNotifs.value.length > 0) {
+          setNotifications(dbNotifs.value);
         }
       } catch (err) {
-        console.warn('[AppContext] Supabase hardware sync fallback to local cache:', err);
+        console.warn('[AppContext] Supabase live hydration fallback to local cache:', err);
       } finally {
         if (isMounted) setIsHardwareDbSyncing(false);
       }
     };
 
-    loadHardwareFromSupabase();
+    hydrateAllFromSupabase();
     return () => { isMounted = false; };
-  }, [isAuthenticated, isPublicProposal]);
+  }, []);
 
-  // Live Supabase Quotations Hydration (Demand-driven: skips on public viewer and unauthenticated boot)
+  // Real-time Supabase Database Subscriptions across all major tables
   useEffect(() => {
-    if (isPublicProposal || !isAuthenticated) return;
-    let isMounted = true;
-    const loadQuotationsFromSupabase = async () => {
-      try {
-        const dbQuotations = await quotationService.getAllQuotations(100);
-        if (isMounted && Array.isArray(dbQuotations) && dbQuotations.length > 0) {
-          setQuotations(prev => {
-            const remoteMap = new Map(dbQuotations.map(q => [q.id, q]));
-            const merged = [...dbQuotations];
-            (prev || []).forEach(localQ => {
-              if (localQ && localQ.id && !remoteMap.has(localQ.id)) {
-                merged.push(localQ);
-              }
-            });
-            return merged;
-          });
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const row = payload.new;
+          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
+          setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
+        } else if (payload.eventType === 'UPDATE') {
+          const row = payload.new;
+          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
+          setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
+        } else if (payload.eventType === 'DELETE') {
+          setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
-      } catch (err) {
-        console.warn('[AppContext] Supabase quotation sync fallback to local cache:', err);
-      }
-    };
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealers' }, (payload) => {
+        dealerService.getAllDealers().then(data => { if (data) setDealers(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, () => {
+        customerFileService.getAllCustomerFiles().then(data => { if (data) setCustomerFiles(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
+        hardwareService.getAllModules().then(data => { if (data) setModulesList(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
+        hardwareService.getAllInverters().then(data => { if (data) setInvertersList(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pricing_presets' }, () => {
+        pricingService.getPricingPresets().then(data => { if (data) setPricingPresets(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bos_pricing_matrix' }, () => {
+        pricingService.getBosMatrix().then(data => { if (data) setPdfBosMatrix(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
+        pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
+      })
+      .subscribe();
 
-    loadQuotationsFromSupabase();
-    return () => { isMounted = false; };
-  }, [isAuthenticated, isPublicProposal]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
@@ -360,6 +439,20 @@ const safeSetItem = (key, value) => {
     if (!isDbUpToDate) return PDF_BOS_PRICE_MATRIX;
     const parsed = safeJsonParse('sunvine_bos_price_matrix', PDF_BOS_PRICE_MATRIX);
     return (Array.isArray(parsed) && parsed.length > 0) ? parsed : PDF_BOS_PRICE_MATRIX;
+  });
+
+  // Dedicated Inverter Sizing & Benchmark Pricing Matrix
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
+    return safeJsonParse('sunvine_inverter_benchmark_matrix', [
+      { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
+      { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
+      { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
+      { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
+      { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
+      { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
+      { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
+      { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
+    ]);
   });
 
   // Standard BOM Item Rates (Admin Configurable)
@@ -453,17 +546,14 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_seen_catalog_items', []);
   });
 
-  // Quotations List (All in Gujarat)
+  // Quotations List (Live Supabase Database)
   const [quotations, setQuotations] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_QUOTATIONS;
-    const parsed = safeJsonParse('sunvine_quotations', INITIAL_QUOTATIONS);
-    return (Array.isArray(parsed) && parsed.length >= 3) ? parsed : INITIAL_QUOTATIONS;
+    return safeJsonParse('sunvine_quotations', []);
   });
 
   // Active quotation loaded in 4-Page Preview
   const [previewQuotation, setPreviewQuotation] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_QUOTATIONS[0];
-    return safeJsonParse('sunvine_preview_quotation', INITIAL_QUOTATIONS[0]);
+    return safeJsonParse('sunvine_preview_quotation', null);
   });
 
   // Active quotation loaded for Editing in CreateQuotation
@@ -837,6 +927,7 @@ const safeSetItem = (key, value) => {
   // Staff and Customer File Actions
   const addStaff = (newStaff) => {
     setStaffList(prev => [newStaff, ...prev]);
+    staffService.saveStaff(newStaff);
   };
 
   const updateStaff = (staffId, updatedFields) => {
@@ -844,14 +935,17 @@ const safeSetItem = (key, value) => {
     if (currentStaff?.id === staffId) {
       setCurrentStaff(prev => ({ ...prev, ...updatedFields }));
     }
+    staffService.saveStaff({ id: staffId, ...updatedFields });
   };
 
   const updateStaffPassword = (staffId, newPassword) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, password: newPassword } : s));
+    staffService.saveStaff({ id: staffId, password: newPassword });
   };
 
   const addCustomerFile = (newFile) => {
     setCustomerFiles(prev => [newFile, ...prev]);
+    customerFileService.saveCustomerFile(newFile);
     // Also update staff totalFiles and pipelineKw
     if (newFile.staffId) {
       setStaffList(prev => prev.map(s => s.id === newFile.staffId ? {
@@ -1080,6 +1174,7 @@ const safeSetItem = (key, value) => {
 
   const addDealer = (newDealer) => {
     setDealers(prev => [newDealer, ...prev]);
+    dealerService.saveDealer(newDealer);
   };
 
   const updateDealer = (updatedDealer) => {
@@ -1087,10 +1182,19 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === updatedDealer.id) {
       setCurrentDealer(prev => ({ ...prev, ...updatedDealer }));
     }
+    dealerService.saveDealer(updatedDealer);
   };
 
   const toggleDealerStatus = (id) => {
-    setDealers(prev => prev.map(d => d.id === id ? { ...d, status: d.status === 'Active' ? 'Suspended' : 'Active' } : d));
+    setDealers(prev => prev.map(d => {
+      if (d.id === id) {
+        const nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
+        const updated = { ...d, status: nextStatus };
+        dealerService.saveDealer(updated);
+        return updated;
+      }
+      return d;
+    }));
   };
 
   const updateDealerMarginCap = (id, newCap) => {
@@ -1339,6 +1443,7 @@ const safeSetItem = (key, value) => {
     };
     setPricingPresets(updated);
     safeSetItem('sunvine_pricing_presets', updated);
+    pricingService.savePricingPresets(updated);
     addNotification({
       title: 'Quotation Presets Updated',
       description: `Base Rate: ₹${Number(updated.baseRatePerKw).toLocaleString('en-IN')}/kW | Min Margin: ₹${Number(updated.minMarginPerKw).toLocaleString('en-IN')}/kW.`,
@@ -1360,6 +1465,7 @@ const safeSetItem = (key, value) => {
     const updated = { ...tierMargins, ...newTiers };
     setTierMargins(updated);
     safeSetItem('sunvine_tier_margins', updated);
+    pricingService.saveTierMargins(updated);
     addNotification({
       title: 'Dealer Tier Margins Updated',
       description: `Default margin thresholds updated for Diamond, Platinum, Gold & Silver dealer tiers.`,
@@ -1645,6 +1751,8 @@ const safeSetItem = (key, value) => {
         dismissedNotifIds,
         pdfBosMatrix,
         setPdfBosMatrix,
+        inverterBenchmarkMatrix,
+        setInverterBenchmarkMatrix,
         pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
         officialProfile: SUNVINE_OFFICIAL_PROFILE,
         // Standard BOM & BoS Engine
