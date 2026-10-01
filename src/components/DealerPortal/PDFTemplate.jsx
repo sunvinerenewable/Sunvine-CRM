@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { resolveCapacityBom } from '../../data/standardBomData';
+import { calculateSubsidy } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -24,12 +25,12 @@ export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverte
 
   // 1. Solar PV Modules
   if (itemId.includes('panel') || itemId.includes('module') || category === 'panel' || itemName.includes('solar panel') || itemName.includes('pv module')) {
-    return effectiveModuleMake ? `${effectiveModuleMake} / Tier-1` : 'Waaree / Tier-1';
+    return effectiveModuleMake ? `${effectiveModuleMake} / Tier-1` : 'Tier-1 Certified Bifacial';
   }
 
   // 2. Solar Inverters
   if (itemId.includes('inverter') || category === 'inverter' || itemName.includes('inverter')) {
-    return effectiveInverterMake ? `${effectiveInverterMake} / Reputed` : 'Sunvine Solaryaan';
+    return effectiveInverterMake ? `${effectiveInverterMake} / Reputed` : 'MNRE Approved Grid-Tied';
   }
 
   // 3. Electrical Switchgear (ACDB / DCDB)
@@ -155,12 +156,18 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
   // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
   const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
-  const baseBeforeGst = quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
-  const gstAmount = quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+
+  const isInterState = quotation.isInterState || (String(quotation.customerState || quotation.state || 'Gujarat').trim().toLowerCase() !== 'gujarat');
+  const bomTotals = quotation.bomTotals || quotation.quote_payload?.bomTotals;
+  const baseBeforeGst = bomTotals?.totalTaxableBase || quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
+  const gstAmount = bomTotals?.totalGstAmount || quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+  const cgstAmount = bomTotals?.cgstTotal !== undefined ? bomTotals.cgstTotal : (isInterState ? 0 : Math.round(gstAmount / 2));
+  const sgstAmount = bomTotals?.sgstTotal !== undefined ? bomTotals.sgstTotal : (isInterState ? 0 : gstAmount - cgstAmount);
+  const igstAmount = bomTotals?.igstTotal !== undefined ? bomTotals.igstTotal : (isInterState ? gstAmount : 0);
 
   const subsidyAmount = quotation.subsidyAmount !== undefined 
     ? quotation.subsidyAmount 
-    : (projectType === 'Commercial' ? 0 : (resolvedCapKW <= 1 ? 30000 : resolvedCapKW <= 2 ? 60000 : 78000));
+    : calculateSubsidy(resolvedCapKW, projectType);
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
   // Line item breakdown
@@ -259,7 +266,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
               <div className="text-xs font-black text-[#0B2545] uppercase mt-0.5">{customerName}</div>
               <div className="text-[11px] text-gray-700 mt-0.5">
                 <span>Site: {location || `${city}, Gujarat`}</span>
-                {customerPhone && <span className="ml-2 font-mono">| Tel: {customerPhone}</span>}
+                {customerPhone && <span className="ml-2 font-mono">| Mo: {customerPhone}</span>}
               </div>
               <div className="text-[10px] text-[#2E7D32] font-bold mt-0.5">
                 Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central DBT)'}
@@ -365,16 +372,42 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                   <td className="py-1.5 px-3 text-right font-mono font-bold text-xs">{formatINR(baseBeforeGst)}</td>
                 </tr>
 
-                {/* Composite GST 13.8% */}
-                <tr className="bg-emerald-50/40 text-emerald-950 font-bold border-t border-emerald-200">
-                  <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Statutory GST</span>
-                      <span>COMPOSITE GST @ 13.8% (70% GOODS @ 12% + 30% SERVICES @ 18%) :</span>
-                    </div>
-                  </td>
-                  <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(gstAmount)}</td>
-                </tr>
+                {/* Statutory GST Split (CGST + SGST for intra-state Gujarat / IGST for inter-state) */}
+                {isInterState ? (
+                  <tr className="bg-emerald-50/40 text-emerald-950 font-bold border-t border-emerald-200">
+                    <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Inter-State GST</span>
+                        <span>INTEGRATED GST (IGST) :</span>
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(igstAmount)}</td>
+                  </tr>
+                ) : (
+                  <>
+                    <tr className="bg-emerald-50/20 text-emerald-950 font-semibold border-t border-emerald-200">
+                      <td colSpan={3} className="py-1 px-3 text-right text-[10px] border-r border-slate-300">
+                        <span className="text-gray-600">CENTRAL GST (CGST) :</span>
+                      </td>
+                      <td className="py-1 px-3 text-right font-mono font-semibold text-xs text-emerald-900">{formatINR(cgstAmount)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/20 text-emerald-950 font-semibold border-t border-emerald-100">
+                      <td colSpan={3} className="py-1 px-3 text-right text-[10px] border-r border-slate-300">
+                        <span className="text-gray-600">STATE GST (SGST / GUJARAT) :</span>
+                      </td>
+                      <td className="py-1 px-3 text-right font-mono font-semibold text-xs text-emerald-900">{formatINR(sgstAmount)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/50 text-emerald-950 font-bold border-t border-emerald-200">
+                      <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Total Tax</span>
+                          <span>TOTAL STATUTORY GST (CGST + SGST) :</span>
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(gstAmount)}</td>
+                    </tr>
+                  </>
+                )}
 
                 {/* Gross Turnkey Price */}
                 <tr className="bg-[#0B2545] text-white font-black text-xs">
