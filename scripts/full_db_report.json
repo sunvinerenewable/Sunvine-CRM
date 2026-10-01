@@ -66,7 +66,7 @@
         "email": "admin@sunvinerenewable.com",
         "full_name": "Super Admin Desk",
         "role": "super_admin",
-        "password_hash": "$2a$10$A5hxTFl0oxAMAuKtpTrNLe/n8HEULeFU14nSOWGAWjuKn5RO3Qz4i",
+        "password_hash": "[REDACTED_DEMO_HASH]",
         "two_factor_enabled": true,
         "last_login": null,
         "created_at": "2026-09-19T19:21:07.001Z"
@@ -191,7 +191,7 @@
         "contact_person": "Rajesh Kumar",
         "mobile_number": "9876543210",
         "email": "rajesh@sunlinesolar.in",
-        "password_hash": "$2a$10$zFohdEcKx7PiTLL2.bqckeJhDt9KYh9MEbkp.0CqnPQkhE/2Sl7iK",
+        "password_hash": "[REDACTED_DEMO_HASH]",
         "state": "Gujarat",
         "city": "Ahmedabad",
         "discom": "UGVCL",

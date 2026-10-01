@@ -538,7 +538,10 @@ DECLARE
     v_hash TEXT;
     v_id UUID;
 BEGIN
-    v_hash := crypt(COALESCE(p_password, 'dealer123'), gen_salt('bf', 10));
+    IF p_password IS NULL OR TRIM(p_password) = '' THEN
+        RAISE EXCEPTION 'Password cannot be empty';
+    END IF;
+    v_hash := crypt(p_password, gen_salt('bf', 10));
     
     INSERT INTO public.dealers (
         dealer_code, firm_name, contact_person, mobile_number, email,
@@ -580,7 +583,10 @@ AS $$
 DECLARE
     v_hash TEXT;
 BEGIN
-    v_hash := crypt(COALESCE(p_password, 'dealer123'), gen_salt('bf', 10));
+    IF p_password IS NULL OR TRIM(p_password) = '' THEN
+        RAISE EXCEPTION 'Password cannot be empty';
+    END IF;
+    v_hash := crypt(p_password, gen_salt('bf', 10));
 
     INSERT INTO public.staff_users (
         id, name, role, phone, email, password_hash, zone, city, department, status

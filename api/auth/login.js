@@ -89,8 +89,8 @@ export default async function handler(req, res) {
     if (cleanRole === 'admin') {
       const isEmail = cleanIdentifier.includes('@');
       const { data, error } = await db
-        .from('admin_users')
-        .select('id, email, full_name, role, password_hash, status')
+        .from('admin_accounts')
+        .select('id, email, full_name, role, password_hash')
         .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier)
         .maybeSingle();
 
@@ -118,7 +118,7 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Invalid mobile number.' });
       }
       const { data, error } = await db
-        .from('dealers')
+        .from('dealer_accounts')
         .select('id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw')
         .eq('mobile_number', cleanMobile)
         .maybeSingle();
@@ -159,8 +159,8 @@ export default async function handler(req, res) {
       }
       const { data, error } = await db
         .from('staff_accounts')
-        .select('id, name, mobile_number, role, department, city, zone, status, password_hash')
-        .eq('mobile_number', cleanMobile)
+        .select('id, name, phone, role, department, city, zone, status, password_hash')
+        .eq('phone', cleanMobile)
         .maybeSingle();
 
       if (error || !data) {

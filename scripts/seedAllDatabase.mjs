@@ -113,7 +113,8 @@ async function seed() {
   // 3. Sync Staff Users (with bcrypt password hashes)
   console.log('3. Syncing Staff Users with Bcrypt Hashing...');
   for (const stf of DEFAULT_STAFF) {
-    const rawPass = stf.accessCode || stf.password || 'dealer123';
+    const rawPass = stf.accessCode || stf.password;
+    if (!rawPass) continue;
     await client.query(`
       INSERT INTO public.staff_users (
         id, name, role, phone, email, password_hash, zone, city, department,
@@ -158,9 +159,8 @@ async function seed() {
   }
   console.log('   ✓ Staff Users synced to database.');
 
-  // 4. Sync Dealers (Seed 550 Gujarat Dealers in batches)
+  // 4. Sync Dealers (Seed Gujarat Dealers in batches)
   console.log(`4. Syncing ${GUJARAT_DEALERS.length} Gujarat Dealers to database with Bcrypt Hashing...`);
-  // Ensure default demo dealer 9810000000 and 9876543210 are included
   const sampleDealers = GUJARAT_DEALERS;
   const batchSize = 50;
   for (let i = 0; i < sampleDealers.length; i += batchSize) {
@@ -169,7 +169,8 @@ async function seed() {
       const cleanPhone = String(d.mobile || d.mobileNumber || '').replace(/\D/g, '').slice(-10);
       if (!cleanPhone || cleanPhone.length !== 10) continue;
       const dealerCode = d.dealerCode || d.id || `SV-DLR-${String(i).padStart(4, '0')}`;
-      const rawPass = d.password || 'dealer123';
+      const rawPass = d.password;
+      if (!rawPass) continue;
       const tier = d.tier || 'Gold EPC';
       const maxMargin = Number(d.maxMarginCapPerKw || (tier.toLowerCase().includes('diamond') ? 8000 : tier.toLowerCase().includes('platinum') ? 7000 : 6000));
 
@@ -370,10 +371,10 @@ async function seed() {
         updated_at = NOW();
     `, [
       q.id,
-      q.dealerCode || 'SV-DLR-0104',
-      q.dealerName || 'Sunline Solar Solutions',
+      q.dealerCode || 'SV-DLR-0001',
+      q.dealerName || 'Gujarat Solar Partner',
       q.customerName || 'Customer',
-      q.customerPhone || '9876543210',
+      q.customerPhone || '9825100000',
       q.city || 'Ahmedabad',
       q.state || 'Gujarat',
       Number(q.systemCapacityKW || q.capacityKW || 5.0),

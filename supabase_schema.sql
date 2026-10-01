@@ -339,59 +339,9 @@ CREATE POLICY "Admin Write Solar Inverters" ON public.solar_inverters
     );
 
 
--- 8. SEED INITIAL VERIFIED DEALER AND SUPER ADMIN (BCRYPT HASHED PASSWORDS)
--- Password for demo dealer '9876543210' is 'dealer123' (bcrypt hashed)
--- Password for admin 'admin@sunvinerenewable.com' is '1234567890123456' (bcrypt hashed)
-INSERT INTO public.dealers (dealer_code, firm_name, contact_person, mobile_number, email, password_hash, state, city, discom, status)
-VALUES 
-(
-    'SV-DLR-0104',
-    'Sunline Solar Solutions',
-    'Rajesh Kumar',
-    '9876543210',
-    'rajesh@sunlinesolar.in',
-    crypt('dealer123', gen_salt('bf', 10)),
-    'Gujarat',
-    'Ahmedabad',
-    'UGVCL',
-    'active'
-)
-ON CONFLICT (mobile_number) DO NOTHING;
+-- 8. INITIAL SEED DATA
+-- (Demo credentials removed for security. Use scripts/createAccount.mjs for provisioning real accounts.)
 
-INSERT INTO public.admin_users (email, full_name, role, password_hash, two_factor_enabled)
-VALUES
-(
-    'admin@sunvinerenewable.com',
-    'Super Admin Desk',
-    'super_admin',
-    crypt('1234567890123456', gen_salt('bf', 10)),
-    true
-)
-ON CONFLICT (email) DO NOTHING;
-
--- Seed Sample Quotation
-INSERT INTO public.quotations (
-    id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state,
-    system_capacity_kw, base_cost, dealer_margin, total_amount, subsidy_amount, net_payable,
-    annual_generation_kwh, status
-) VALUES (
-    'SV-2026-Q801',
-    'SV-DLR-0104',
-    'Sunline Solar Solutions',
-    'Anand Sharma',
-    '9876543210',
-    'Ahmedabad',
-    'Gujarat',
-    5.00,
-    275000,
-    20000,
-    295000,
-    78000,
-    217000,
-    7500,
-    'Approved'
-)
-ON CONFLICT (id) DO NOTHING;
 
 -- Seed Approved Solar PV Modules Master Catalog
 INSERT INTO public.solar_modules (

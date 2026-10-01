@@ -68,7 +68,7 @@ export const staffService = {
         p_role: staff.role || 'Solar Field Executive',
         p_phone: cleanPhone,
         p_email: staff.email || `${cleanPhone}@sunvine.in`,
-        p_password: staff.password || staff.accessCode || 'dealer123',
+        p_password: staff.password || staff.accessCode || '',
         p_zone: staff.zone || 'Gujarat',
         p_city: staff.city || 'Ahmedabad',
         p_department: staff.department || 'Sales'

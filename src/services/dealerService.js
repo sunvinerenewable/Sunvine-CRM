@@ -74,7 +74,7 @@ export const dealerService = {
         p_contact_person: dealer.contactPerson || 'Authorized Partner',
         p_mobile: cleanPhone,
         p_email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
-        p_password: dealer.password || dealer.accessCode || 'dealer123',
+        p_password: dealer.password || dealer.accessCode || '',
         p_city: dealer.city || 'Ahmedabad',
         p_state: dealer.state || 'Gujarat',
         p_discom: dealer.discom || 'UGVCL',
