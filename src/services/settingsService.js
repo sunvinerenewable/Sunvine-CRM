@@ -192,21 +192,23 @@ export const settingsService = {
     if (!Array.isArray(matrixRows) || matrixRows.length === 0) return { success: true };
     try {
       const payloads = matrixRows.map(r => ({
+        id: r.id || `bos-${String(r.capacityKW).replace('.', '_')}`,
         capacity_kw: Number(r.capacityKW),
         no_of_modules: Number(r.noOfModules),
-        inverter_capacity_kw: Number(r.inverterCapacityKW) || r.inverterCapacityKW,
+        inverter_capacity_kw: String(r.inverterCapacityKW || r.capacityKW),
         adani_bifi_price: Number(r.adaniBiFiPrice) || 0,
         aps_bifi_price: Number(r.apsBiFiPrice) || 0,
         rayzone_price: Number(r.rayzonePrice) || 0,
         topcon585_capacity_kw: Number(r.topcon585CapacityKW) || 0,
         waaree_585_price: Number(r.waaree585Price) || 0,
         topcon600_capacity_kw: Number(r.topcon600CapacityKW) || 0,
-        aps_topcon_600_price: Number(r.apsTopcon600Price) || 0
+        aps_topcon_600_price: Number(r.apsTopcon600Price) || 0,
+        updated_at: new Date().toISOString()
       }));
 
       const { data, error } = await supabase
         .from('bos_pricing_matrix')
-        .upsert(payloads, { onConflict: 'capacity_kw' })
+        .upsert(payloads, { onConflict: 'id' })
         .select();
 
       if (error) return { success: false, error: error.message };

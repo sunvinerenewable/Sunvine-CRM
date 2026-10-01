@@ -69,6 +69,7 @@ export const DEFAULT_GOVERNANCE_SETTINGS = {
 const AppContext = createContext();
 
 const TAB_TO_PATH = {
+  // Dealer & Common
   dashboard: '/dashboard',
   create_quote: '/new-quotation',
   admin_create_quote: '/admin/new-quotation',
@@ -77,50 +78,68 @@ const TAB_TO_PATH = {
   my_applications: '/my-applications',
   profile: '/settings',
   dealer_settings: '/settings',
+  dealer_performance: '/dealer/performance',
+  lead_generation: '/leads',
+  docs: '/documentation',
+
+  // Admin
   admin_dashboard: '/admin',
+  admin_performance: '/admin/performance',
   dealers_mgmt: '/admin/dealers',
   staff_mgmt: '/admin/staff',
   pricing_master: '/admin/pricing',
   hardware_master: '/admin/hardware',
   all_quotes: '/admin/quotations',
   admin_settings: '/admin/settings',
-  admin_performance: '/admin/performance',
   admin_reports: '/admin/reports',
   admin_audit: '/admin/audit-logs',
   admin_docs: '/admin/documentation',
+
+  // Staff
   staff_dashboard: '/staff',
   staff_files: '/staff/files',
+  staff_pricing: '/staff/pricing',
   staff_performance: '/staff/performance',
   staff_new_lead: '/staff/new-lead',
   staff_map: '/staff/map',
-  dealer_performance: '/dealer/performance',
-  lead_generation: '/leads',
-  docs: '/documentation'
+  verification_desk: '/staff/verification',
+  staff_verification: '/staff/verification'
 };
 
 const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   acc[path] = tab;
   return acc;
 }, {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
   '/profile': 'dealer_settings',
   '/admin/new-quotation': 'create_quote',
-  '/staff': 'staff_dashboard'
+  '/admin/dashboard': 'admin_dashboard',
+  '/staff': 'staff_dashboard',
+  '/staff/dashboard': 'staff_dashboard',
+  '/staff/pricing': 'staff_pricing',
+  '/staff/files': 'staff_files',
+  '/staff/verification': 'verification_desk',
+  '/staff/new-quotation': 'create_quote',
+  '/admin/quotations': 'all_quotes'
 });
 
 const getInitialTabFromUrl = () => {
   if (typeof window === 'undefined') return 'dashboard';
-  const pathname = window.location.pathname;
+  const pathname = window.location.pathname.replace(/\/$/, '') || '/';
   if (pathname === '/profile') {
     window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
     return 'dealer_settings';
+  }
+  const matched = PATH_TO_TAB[pathname];
+  if (matched) {
+    return matched === 'profile' ? 'dealer_settings' : matched;
   }
   if (pathname === '/' || pathname === '') {
     const saved = localStorage.getItem('sunvine_tab');
     return saved === 'profile' ? 'dealer_settings' : saved || 'dashboard';
   }
-  const matched = PATH_TO_TAB[pathname];
-  if (matched === 'profile') return 'dealer_settings';
-  return matched || localStorage.getItem('sunvine_tab') || 'dashboard';
+  return localStorage.getItem('sunvine_tab') || 'dashboard';
 };
 
 export const AppProvider = ({ children }) => {
@@ -139,13 +158,32 @@ export const AppProvider = ({ children }) => {
   const setActiveTab = (newTab, replace = false) => {
     const effectiveTab = newTab === 'profile' ? 'dealer_settings' : newTab;
     setActiveTabState(effectiveTab);
+    safeSetItem('sunvine_tab', effectiveTab);
+
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
-      const targetPath = (role === 'admin' && (effectiveTab === 'create_quote' || effectiveTab === 'admin_create_quote'))
-        ? '/admin/new-quotation'
-        : (TAB_TO_PATH[effectiveTab] || '/dashboard');
+
+      let targetPath = TAB_TO_PATH[effectiveTab];
+      if (role === 'admin') {
+        if (effectiveTab === 'create_quote' || effectiveTab === 'admin_create_quote') {
+          targetPath = '/admin/new-quotation';
+        }
+      } else if (role === 'staff') {
+        if (effectiveTab === 'create_quote') {
+          targetPath = '/staff/new-quotation';
+        } else if (effectiveTab === 'pricing_master' || effectiveTab === 'staff_pricing') {
+          targetPath = '/staff/pricing';
+        }
+      }
+
+      if (!targetPath) {
+        if (role === 'admin') targetPath = '/admin';
+        else if (role === 'staff') targetPath = '/staff';
+        else targetPath = '/dashboard';
+      }
+
       if (window.location.pathname !== targetPath) {
         if (replace) {
           window.history.replaceState({ tab: effectiveTab }, '', targetPath);
@@ -160,7 +198,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const handlePopState = () => {
       if (typeof window !== 'undefined') {
-        const path = window.location.pathname;
+        const path = window.location.pathname.replace(/\/$/, '') || '/';
         if (path === '/profile') {
           window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
           setActiveTabState('dealer_settings');
@@ -189,12 +227,22 @@ export const AppProvider = ({ children }) => {
         setActiveTabState('dealer_settings');
         return;
       }
-      const targetPath = TAB_TO_PATH[activeTab] || '/dashboard';
-      if (window.location.pathname !== targetPath && window.location.pathname === '/') {
+      let targetPath = TAB_TO_PATH[activeTab];
+      if (role === 'admin' && (activeTab === 'create_quote' || activeTab === 'admin_create_quote')) {
+        targetPath = '/admin/new-quotation';
+      } else if (role === 'staff' && activeTab === 'create_quote') {
+        targetPath = '/staff/new-quotation';
+      } else if (role === 'staff' && (activeTab === 'pricing_master' || activeTab === 'staff_pricing')) {
+        targetPath = '/staff/pricing';
+      } else if (!targetPath) {
+        targetPath = role === 'admin' ? '/admin' : (role === 'staff' ? '/staff' : '/dashboard');
+      }
+
+      if (window.location.pathname !== targetPath && (window.location.pathname === '/' || window.location.pathname === '')) {
         window.history.replaceState({ tab: activeTab }, '', targetPath);
       }
     }
-  }, [isAuthenticated, activeTab]);
+  }, [isAuthenticated, activeTab, role]);
   
 // Safe storage parser and serializer
 const safeJsonParse = (key, fallback) => {
@@ -406,6 +454,12 @@ const safeSetItem = (key, value) => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
         pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_custom_pricing' }, () => {
+        pricingService.getTierMargins().then(data => { if (data) setTierMargins(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
+        hardwareService.getAllBomItems().then(data => { if (data && data.length > 0) setBomCatalog(data); });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
         auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });

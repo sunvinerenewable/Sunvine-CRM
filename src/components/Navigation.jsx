@@ -422,34 +422,6 @@ export default function Navigation() {
             </button>
           </div>
 
-          {/* User Profile Summary Card */}
-          <div className="p-3.5 mx-3 mt-3 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3 shrink-0">
-            <img
-              src={currentDealer?.avatar || '/dealer_avatar.jpg'}
-              alt="User Avatar"
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/40 shrink-0"
-            />
-            <div className="flex flex-col min-w-0 flex-1">
-              <span className="text-xs font-bold text-white truncate leading-tight">
-                {role === 'admin'
-                  ? 'System Administrator'
-                  : role === 'staff'
-                  ? currentStaff?.name || 'Solar Executive'
-                  : currentDealer?.firmName || 'Partner Dealer'}
-              </span>
-              <span className="text-[11px] text-white/60 truncate leading-tight mt-0.5">
-                {role === 'admin'
-                  ? 'admin@sunvine.in'
-                  : role === 'staff'
-                  ? currentStaff?.phone || 'Field Sales'
-                  : currentDealer?.contactPerson || 'Authorized Partner'}
-              </span>
-              <div className="flex items-center gap-1.5 mt-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="text-[10px] font-mono text-emerald-400 font-medium">Online & Synced</span>
-              </div>
-            </div>
-          </div>
 
           {/* All Navigation Links (Zero Horizontal Overflow, Smooth Touch Targets) */}
           <nav className="flex flex-col mt-2 flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide py-1 px-2 space-y-0.5">
@@ -489,36 +461,7 @@ export default function Navigation() {
           </nav>
         </div>
 
-        {/* Drawer Footer Actions */}
-        <div className="p-3 border-t border-white/10 bg-[#0A1120] space-y-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
-              setMobileOpen(false);
-            }}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-white/80 hover:bg-white/5 hover:text-white active:scale-98 transition-all cursor-pointer min-h-[44px]"
-          >
-            <span className="material-symbols-outlined text-[18px]">settings</span>
-            <span>{role === 'admin' ? 'Master Governance' : 'Account Settings'}</span>
-          </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setMobileOpen(false);
-              logout();
-            }}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 active:scale-98 transition-all cursor-pointer min-h-[44px]"
-          >
-            <span className="material-symbols-outlined text-[18px]">logout</span>
-            <span>Sign Out</span>
-          </button>
-
-          <div className="pt-2 text-center text-[10px] text-white/40 font-mono">
-            Sunvine Solar Portal • v2.2.1
-          </div>
-        </div>
       </aside>
     </>
   );

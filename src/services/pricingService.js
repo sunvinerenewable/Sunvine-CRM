@@ -153,6 +153,19 @@ export const pricingService = {
     }
   },
 
+  async deleteBosSlab(capacityKwOrId) {
+    try {
+      if (typeof capacityKwOrId === 'number' || !isNaN(Number(capacityKwOrId))) {
+        await supabase.from('bos_pricing_matrix').delete().eq('capacity_kw', Number(capacityKwOrId));
+      } else {
+        await supabase.from('bos_pricing_matrix').delete().eq('id', capacityKwOrId);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
   // ==========================================
   // 3. INVERTER BENCHMARKS MATRIX
   // ==========================================
@@ -217,6 +230,19 @@ export const pricingService = {
       return { success: true, data };
     } catch (err) {
       return { success: true, localOnly: true, data: benchmarks };
+    }
+  },
+
+  async deleteInverterBenchmark(idOrCapacity) {
+    try {
+      if (typeof idOrCapacity === 'number' || !isNaN(Number(idOrCapacity))) {
+        await supabase.from('inverter_benchmark_matrix').delete().eq('capacity_kw', Number(idOrCapacity));
+      } else {
+        await supabase.from('inverter_benchmark_matrix').delete().eq('id', idOrCapacity);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   },
 
@@ -387,6 +413,21 @@ export const pricingService = {
       const cached = JSON.parse(localStorage.getItem(DEALER_PRICING_KEY) || '{}');
       cached[dealerId] = pricingData;
       localStorage.setItem(DEALER_PRICING_KEY, JSON.stringify(cached));
+    } catch (_) {}
+
+    try {
+      const targetIdentifier = dealerCode || dealerId;
+      const { error } = await supabase
+        .from('dealer_accounts')
+        .update({
+          pricing_config: pricingData,
+          updated_at: new Date().toISOString()
+        })
+        .or(`dealer_code.eq.${targetIdentifier},id.eq.${targetIdentifier}`);
+
+      if (error) {
+        console.warn('Supabase save dealer pricing notice:', error.message);
+      }
       return { success: true, data: pricingData };
     } catch (err) {
       return { success: true, localOnly: true, data: pricingData };
