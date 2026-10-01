@@ -21,10 +21,23 @@ const DEFAULT_GOVERNANCE_SETTINGS = {
 
 const { Client } = pg;
 
+// SECURITY: Never hardcode DB credentials. Set DATABASE_URL in your .env file.
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error(
+    'FATAL: DATABASE_URL environment variable is not set.\n' +
+    'Add it to your .env file:\n' +
+    '  DATABASE_URL=postgresql://postgres.<project>:<password>@<host>:5432/postgres\n' +
+    'Then run: node scripts/seedAllDatabase.mjs'
+  );
+  process.exit(1);
+}
+
 const client = new Client({
-  connectionString: 'postgresql://postgres.wyberzvcyrjipjqpotwe:' + encodeURIComponent('Ge@286296sumit') + '@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+  connectionString: DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+
 
 async function seed() {
   await client.connect();
