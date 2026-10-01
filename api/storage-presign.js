@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import { getClientIp, checkRateLimit } from './_lib/rateLimiter.js';
+import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://wyberzvcyrjipjqpotwe.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_XzbS-fQMtSGf2LjFO40yzw_LtT98nG6';
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
 
   // Rate limiting against automated storage flood attacks
   const clientIp = getClientIp(req);
-  const rateLimit = checkRateLimit(`storage_${clientIp}`, { maxAttempts: 20, windowMs: 15 * 60 * 1000 });
+  const rateLimit = await checkDistributedRateLimit(`storage_${clientIp}`, { maxAttempts: 30, windowMs: 15 * 60 * 1000 });
   if (!rateLimit.allowed) {
     return res.status(429).json({ error: 'Upload rate limit exceeded. Please wait a few moments.' });
   }

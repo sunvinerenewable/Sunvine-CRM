@@ -1,5 +1,5 @@
 import { verifyJwt } from './_lib/jwt.js';
-import { checkRateLimit, recordFailedAttempt, getClientIp } from './_lib/rateLimiter.js';
+import { checkDistributedRateLimit, getClientIp } from './_lib/rateLimiter.js';
 
 /**
  * POST /api/ai-analyze
@@ -35,9 +35,9 @@ export default async function handler(req, res) {
   const jwtResult = verifyJwt(cookies.sunvine_auth_token);
   if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
 
-  // ── Rate limit: 20 AI calls / 10 min per IP ────────────────────────────
+  // ── Distributed Rate limit: 20 AI calls / 10 min per IP (Upstash Redis) ─
   const ip = getClientIp(req);
-  const rateCheck = checkRateLimit(ip, { maxAttempts: 20, windowMs: 10 * 60 * 1000, increment: false });
+  const rateCheck = await checkDistributedRateLimit(`ai_${ip}`, { maxAttempts: 20, windowMs: 10 * 60 * 1000 });
   if (!rateCheck.allowed) {
     return res.status(429).json({ error: 'Too many AI requests. Please wait and try again.' });
   }
