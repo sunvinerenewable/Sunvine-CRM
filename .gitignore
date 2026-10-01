@@ -42,3 +42,7 @@ AUDIT_REPORT_V2.md
 .env.local
 .env.*.local
 DATABASE_URL
+
+# Rollout runs and database dumps
+rollout-run/
+backups/
