@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
-import { getClientIp, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
+import { getClientIp, checkRateLimit, checkDistributedRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
 
 /**
  * /api/quotations — consolidated quotation resource handler
@@ -30,8 +30,9 @@ function parseCookies(cookieHeader = '') {
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !serviceKey) throw new Error('SUPABASE_URL and key are required.');
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl) throw new Error('[FATAL] SUPABASE_URL env var is required.');
+  if (!serviceKey) throw new Error('[FATAL] SUPABASE_SERVICE_ROLE_KEY env var is required. Never fall back to the anon key for financial operations.');
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
@@ -140,7 +141,19 @@ async function handleSave(req, res, jwt, db) {
     }
   }
 
-  // ── Load dealer tier margin cap from DB ────────────────────────────────
+  // ── Load pricing presets & dealer tier margin cap from DB ───────────────
+  let supplierState = 'Gujarat';
+  let peakSunHours = 1440;
+  try {
+    const { data: presetData } = await db
+      .from('pricing_presets')
+      .select('supplier_state, peak_sun_hours_per_year')
+      .eq('id', 'global_default')
+      .maybeSingle();
+    if (presetData?.supplier_state) supplierState = presetData.supplier_state;
+    if (presetData?.peak_sun_hours_per_year) peakSunHours = Number(presetData.peak_sun_hours_per_year) || 1440;
+  } catch (_) {}
+
   let maxMarginCapPerKw = 6000; // default
   if (effectiveDealerId) {
     const { data: dealerData } = await db
@@ -176,7 +189,7 @@ async function handleSave(req, res, jwt, db) {
     };
   });
 
-  const isInterState = String(body.customer_state || 'Gujarat').toLowerCase() !== 'gujarat';
+  const isInterState = String(body.customer_state || supplierState).trim().toLowerCase() !== supplierState.trim().toLowerCase();
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState);
 
   // Margin validation and capping
@@ -252,8 +265,8 @@ async function handleSave(req, res, jwt, db) {
     total_amount: totalAmount,
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
-    annual_generation_kwh: Math.round(kw * 1440),
-    status: isNew ? 'Draft' : undefined, // don't overwrite status on update
+    annual_generation_kwh: Math.round(kw * peakSunHours),
+    ...(isNew && { status: 'Draft' }),
     quote_payload: quotePayload,
     updated_at: new Date().toISOString()
   };
@@ -408,7 +421,7 @@ async function handleGet(req, res, jwt, db) {
 
   const { data, error } = await db
     .from('quotations')
-    .select('*')
+    .select('id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, base_cost, dealer_margin, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, quote_payload, created_at, updated_at')
     .eq('id', id)
     .maybeSingle();
 
@@ -444,7 +457,7 @@ export default async function handler(req, res) {
 
   // Rate limit
   const ip = getClientIp(req);
-  const rateCheck = checkRateLimit(ip, { maxAttempts: 60, windowMs: 60 * 1000, increment: false });
+  const rateCheck = await checkDistributedRateLimit(ip, { maxAttempts: 60, windowMs: 60 * 1000 });
   if (!rateCheck.allowed) return res.status(429).json({ error: 'Too many requests.' });
 
   if (req.method === 'GET') {

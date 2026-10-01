@@ -70,12 +70,8 @@ export function verifyPassword(password, storedHash) {
     }
   }
 
-  // 3. Fallback constant-time comparison for mock/demo hashes
-  try {
-    const a = Buffer.from(crypto.createHash('sha256').update(password).digest('hex'));
-    const b = Buffer.from(crypto.createHash('sha256').update(storedHash).digest('hex'));
-    return crypto.timingSafeEqual(a, b);
-  } catch (_) {
-    return false;
-  }
+  // 3. Unrecognised hash format — reject. SHA-256 and plain-text hashes are NOT
+  // acceptable password storage formats. Force re-hash via update_user_password RPC.
+  console.warn('[security] verifyPassword: unrecognised hash format — returning false. Hash must be pbkdf2$... or $2a$...');
+  return false;
 }

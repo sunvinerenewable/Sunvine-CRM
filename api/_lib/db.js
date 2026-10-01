@@ -42,10 +42,8 @@ export function ensureEnvLoaded() {
     }
   }
 
-  // Ensure JWT secret is present for signing session tokens
-  if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-  }
+  // JWT_SECRET is intentionally NOT set here.
+  // api/_lib/jwt.js enforces its presence at call-time and throws if missing.
 }
 
 // Automatically ensure env is loaded upon import
@@ -75,9 +73,8 @@ export async function query(sql, params = []) {
 export function getSupabaseServiceClient() {
   ensureEnvLoaded();
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !serviceKey) {
-    throw new Error('[FATAL] Supabase URL and key env vars are required.');
-  }
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url) throw new Error('[FATAL] SUPABASE_URL env var is required for the service client.');
+  if (!serviceKey) throw new Error('[FATAL] SUPABASE_SERVICE_ROLE_KEY env var is required. Never fall back to the anon key for server-side operations.');
   return createClient(url, serviceKey, { auth: { persistSession: false } });
 }

@@ -54,8 +54,6 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: 'AI service temporarily unavailable.' });
   }
 
-  recordFailedAttempt(ip, { maxAttempts: 20, windowMs: 10 * 60 * 1000 });
-
   try {
     const { mimeType, base64Data } = parseDataUrl(imageDataUrl);
 
@@ -94,9 +92,18 @@ export default async function handler(req, res) {
     if (!jsonMatch) return res.status(502).json({ error: 'AI response unparseable. Try again.' });
 
     const result = JSON.parse(jsonMatch[0]);
-    return res.status(200).json({ success: true, ...result });
+    // Only return known safe fields — never spread arbitrary AI response into client
+    return res.status(200).json({
+      success: true,
+      polygons: result.polygons ?? [],
+      estimatedRoofAreaSqm: result.estimatedRoofAreaSqm ?? null,
+      usableAreaSqm: result.usableAreaSqm ?? null,
+      confidence: result.confidence ?? null,
+      obstructions: result.obstructions ?? []
+    });
 
   } catch (err) {
+    recordFailedAttempt(ip, { maxAttempts: 20, windowMs: 10 * 60 * 1000 });
     console.error('[ai-analyze] Error:', err.message);
     return res.status(500).json({ error: 'AI analysis failed. Please try again.' });
   }

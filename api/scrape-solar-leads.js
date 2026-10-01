@@ -1,16 +1,43 @@
+import crypto from 'crypto';
+import { verifyJwt } from './_lib/jwt.js';
+
 // Vercel Serverless Function to Scrape Live Solar Companies & Leads by Area/Keyword
 export default async function handler(req, res) {
   // Set CORS headers
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  const origin = req.headers.origin || '';
+  const allowedOrigins = [
+    'https://dealer-portal-quotation-two.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ];
+  if (allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
+  res.setHeader('Vary', 'Origin');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
+  }
+
+  // ── Auth check ────────────────────────────────────────────────────────────
+  const cookies = (req.headers.cookie || '').split(';').reduce((acc, c) => {
+    const [k, ...v] = c.split('=');
+    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
+    return acc;
+  }, {});
+  const jwtResult = verifyJwt(cookies.sunvine_auth_token);
+  if (!jwtResult.valid) {
+    return res.status(401).json({ error: 'Authentication required.' });
   }
 
   try {
@@ -102,7 +129,7 @@ export default async function handler(req, res) {
             }
 
             leads.push({
-              id: `SCRAPE-${Date.now()}-${leads.length}`,
+              id: `SCRAPE-${crypto.randomUUID()}`,
               name: cleanName,
               category: category,
               type: type,
