@@ -30,8 +30,8 @@ function parseCookies(cookieHeader = '') {
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !serviceKey) throw new Error('SUPABASE_URL and key are required.');
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 

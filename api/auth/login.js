@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from '../_lib/rateLimiter.js';
 import { verifyPassword } from '../_lib/security.js';
 import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
@@ -16,11 +17,10 @@ import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
  */
 
 function getSupabaseServiceClient() {
-  const { createClient } = await import('@supabase/supabase-js');
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !serviceKey) {
-    throw new Error('[FATAL] SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars are required.');
+    throw new Error('[FATAL] Supabase URL and key env vars are required.');
   }
   return createClient(url, serviceKey, { auth: { persistSession: false } });
 }
