@@ -383,8 +383,11 @@ const safeSetItem = (key, value) => {
           setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealers' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, (payload) => {
         dealerService.getAllDealers().then(data => { if (data) setDealers(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
+        staffService.getAllStaff().then(data => { if (data) setStaffList(data); });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, () => {
         customerFileService.getAllCustomerFiles().then(data => { if (data) setCustomerFiles(data); });

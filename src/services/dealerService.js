@@ -9,7 +9,7 @@ export const dealerService = {
   async getAllDealers() {
     try {
       const { data, error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .select('*')
         .order('dealer_code', { ascending: true });
 
@@ -98,7 +98,7 @@ export const dealerService = {
           max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
           updated_at: new Date().toISOString()
         };
-        await supabase.from('dealers').upsert([payload], { onConflict: 'dealer_code' });
+        await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
       }
 
       return { success: true, id: data?.id || dealerCode };
@@ -147,7 +147,7 @@ export const dealerService = {
 
     try {
       const { data, error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .update(updatePayload)
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
 
@@ -170,7 +170,7 @@ export const dealerService = {
     if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
     try {
       const { error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .delete()
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
 

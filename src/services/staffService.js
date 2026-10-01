@@ -9,7 +9,7 @@ export const staffService = {
   async getAllStaff() {
     try {
       const { data, error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .select('*')
         .order('id', { ascending: true });
 
@@ -88,7 +88,7 @@ export const staffService = {
           status: staff.status || 'Active',
           updated_at: new Date().toISOString()
         };
-        await supabase.from('staff_users').upsert([payload], { onConflict: 'id' });
+        await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
       }
 
       return { success: true, id: staffId };
@@ -132,7 +132,7 @@ export const staffService = {
 
     try {
       const { data, error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .update(payload)
         .eq('id', staffId);
 
@@ -177,7 +177,7 @@ export const staffService = {
     if (!staffId) return { success: false, error: 'Staff ID is required.' };
     try {
       const { error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .delete()
         .eq('id', staffId);
 
