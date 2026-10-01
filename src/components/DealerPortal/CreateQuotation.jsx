@@ -2502,29 +2502,6 @@ export default function CreateQuotation() {
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.3</span>
             </div>
 
-            {/* Input Field for Rate per kW */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold" htmlFor="ratePerKw">
-                  Rate per kW (₹)
-                </label>
-                <span className="text-[11px] text-secondary shrink-0">Benchmark: ₹62k–₹68k</span>
-              </div>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-headline-sm text-headline-sm text-secondary select-none">₹</span>
-                <input
-                  className="w-full h-11 pl-9 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-headline-sm text-headline-sm outline-none shadow-sm border border-surface-container-high focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all font-bold"
-                  id="ratePerKw"
-                  max="120000"
-                  min="30000"
-                  step="1000"
-                  type="number"
-                  value={ratePerKw}
-                  onChange={(e) => setRatePerKw(Number(e.target.value) || 0)}
-                />
-              </div>
-            </div>
-
             {/* Highlighted Auto-Calculated Summary Box */}
             <div className="mt-1 rounded-xl bg-[#F0FDF4] p-5 shadow-xs flex flex-col gap-3.5 relative overflow-hidden border-2 border-[#6CBF3D]">
               <div className="flex items-center justify-between">

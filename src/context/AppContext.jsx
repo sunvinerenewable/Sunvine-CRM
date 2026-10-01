@@ -1835,11 +1835,12 @@ const safeSetItem = (key, value) => {
         const currentBomRates = { ...(currentCfg.customBomRates || {}) };
         const productDetails = { ...(currentCfg.productDetails || {}) };
 
-        currentProductRates[productId] = numRate;
-
-        if (productMeta.name) {
-          currentProductRates[productMeta.name] = numRate;
+        // Clean up legacy duplicate name key if it was previously set
+        if (productMeta.name && productMeta.name !== productId) {
+          delete currentProductRates[productMeta.name];
         }
+
+        currentProductRates[productId] = numRate;
 
         if (productMeta.category === 'bom') {
           currentBomRates[productId] = numRate;
@@ -1917,7 +1918,6 @@ const safeSetItem = (key, value) => {
           customBomRates: currentBomRates,
           productDetails
         };
-
         return {
           ...d,
           pricingConfig: updatedConfig

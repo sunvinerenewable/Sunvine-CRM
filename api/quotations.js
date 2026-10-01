@@ -421,6 +421,25 @@ async function handleGet(req, res, jwt, db) {
   return res.status(200).json({ success: true, quotation: data });
 }
 
+async function handleDelete(req, res, jwt, db) {
+  const { role, dealer_id } = jwt;
+  const id = req.query?.id || req.body?.id;
+  if (!id) return res.status(400).json({ error: 'id parameter is required.' });
+
+  // Direct SQL hard delete from database table
+  let query = db.from('quotations').delete().eq('id', id);
+  if (role === 'dealer') {
+    query = query.eq('dealer_id', dealer_id);
+  }
+
+  const { error } = await query;
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  return res.status(200).json({ success: true, message: 'Quotation permanently deleted from database.' });
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   // CORS preflight
@@ -458,7 +477,12 @@ export default async function handler(req, res) {
     const action = req.body?.action;
     if (action === 'save') return handleSave(req, res, jwt, db);
     if (action === 'status') return handleStatus(req, res, jwt, db);
-    return res.status(400).json({ error: 'Unknown action. Use save or status.' });
+    if (action === 'delete') return handleDelete(req, res, jwt, db);
+    return res.status(400).json({ error: 'Unknown action. Use save, status, or delete.' });
+  }
+
+  if (req.method === 'DELETE') {
+    return handleDelete(req, res, jwt, db);
   }
 
   return res.status(405).json({ error: 'Method Not Allowed.' });
