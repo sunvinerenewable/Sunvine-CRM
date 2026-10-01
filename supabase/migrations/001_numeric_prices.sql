@@ -36,13 +36,25 @@ END $$;
 
 -- ── solar_inverters ──────────────────────────────────────────────────────────
 ALTER TABLE public.solar_inverters
+  ADD COLUMN IF NOT EXISTS base_price VARCHAR(50),
   ADD COLUMN IF NOT EXISTS base_price_inr NUMERIC(12,2);
 
+-- Backfill from inverter_benchmark_matrix by matching capacity_kw
+UPDATE public.solar_inverters i
+SET 
+  base_price_inr = bm.benchmark_price,
+  base_price = '₹ ' || to_char(bm.benchmark_price, 'FM999,999,999.00')
+FROM public.inverter_benchmark_matrix bm
+WHERE i.capacity_kw = bm.capacity_kw
+  AND (i.base_price_inr IS NULL OR i.base_price IS NULL);
+
+-- Fallback regex backfill for any rows with base_price string but missing base_price_inr
 UPDATE public.solar_inverters
 SET base_price_inr = (
   regexp_replace(base_price, '[^0-9.]', '', 'g')::NUMERIC
 )
 WHERE base_price_inr IS NULL
+  AND base_price IS NOT NULL
   AND base_price ~ '[0-9]+\.?[0-9]*';
 
 DO $$
