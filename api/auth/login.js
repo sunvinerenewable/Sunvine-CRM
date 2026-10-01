@@ -2,8 +2,10 @@ import { checkRateLimit, resetRateLimit, getClientIp } from '../_lib/rateLimiter
 import { verifyPassword } from '../_lib/security.js';
 import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
 
-// Authorized Target Credentials
-const AUTHORIZED_MOBILE = '6352454247';
+// Authorized Target Credentials (Company Support & Master Testing Lines)
+const AUTHORIZED_MOBILES = ['8000050580', '6352454247', '9428099881', '9876543210'];
+const isAuthorizedMobile = (num) => AUTHORIZED_MOBILES.includes(num);
+
 const CREDENTIAL_HASHES = {
   admin: 'pbkdf2$100000$6b12a8ef68bc22c9183495821c97a82b$ec52a420b70d10c22fa49d685ad2f7ca164e22976b7e682d2c18ba5ea5d8d80f83861ea55333fecb893a774ea6d7407cb7f7cf3475971168f126da39634e9e04', // admin123
   dealer: 'pbkdf2$100000$7d3910c2a8fb31d4e082195f20b4112e$32d43cb856ad8d6bf96a60e0a58adfa31cb7f603c4cf7e7216a9a3b610c49eb3544c015b67d5ae138240f90e98033a39e802330a1bf64c92257d76b10702d733', // dealer123
@@ -42,7 +44,7 @@ export default async function handler(req, res) {
     const cleanInput = String(identifier).trim();
     const cleanMobile = cleanInput.replace(/\D/g, '').slice(-10);
     const isEmail = cleanInput.includes('@');
-    const isAdminIdentifier = cleanInput.toLowerCase() === 'admin' || cleanInput === 'admin@sunvinerenewable.com' || cleanMobile === AUTHORIZED_MOBILE;
+    const isAdminIdentifier = cleanInput.toLowerCase() === 'admin' || cleanInput === 'admin@sunvinerenewable.com' || isAuthorizedMobile(cleanMobile);
 
     if (!isEmail && !isAdminIdentifier && cleanMobile.length !== 10) {
       return res.status(400).json({
@@ -54,13 +56,13 @@ export default async function handler(req, res) {
     let userPayload = null;
 
     // Direct check against configured credentials or fallback hashes
-    if (cleanMobile === AUTHORIZED_MOBILE || isAdminIdentifier) {
-      if (role === 'admin' && (password === 'admin123' || password === '1234567890123456' || verifyPassword(password, CREDENTIAL_HASHES.admin))) {
+    if (isAuthorizedMobile(cleanMobile) || isAdminIdentifier) {
+      if (role === 'admin' && (password === 'admin123' || verifyPassword(password, CREDENTIAL_HASHES.admin))) {
         authSuccess = true;
         userPayload = {
           id: 'adm-001',
           role: 'admin',
-          mobile: '6352454247',
+          mobile: cleanMobile || '8000050580',
           fullName: 'Super Administrator',
           name: 'Super Administrator',
           email: 'admin@sunvinerenewable.com'
@@ -68,13 +70,13 @@ export default async function handler(req, res) {
       } else if (role === 'dealer' && (password === 'dealer123' || verifyPassword(password, CREDENTIAL_HASHES.dealer))) {
         authSuccess = true;
         userPayload = {
-          id: 'DLR-RAJ-001',
-          uuid: 'dlr-6352454247',
+          id: 'SV-DLR-0001',
+          uuid: `dlr-${cleanMobile || '8000050580'}`,
           dealerCode: 'SV-DLR-0001',
           role: 'dealer',
-          mobile: '6352454247',
-          mobileNumber: '6352454247',
-          firmName: 'Rajkot Solar Tech',
+          mobile: cleanMobile || '8000050580',
+          mobileNumber: cleanMobile || '8000050580',
+          firmName: 'Sunvine Authorized Solar Partner',
           contactPerson: 'Authorized Partner',
           city: 'Rajkot',
           state: 'Gujarat',
@@ -85,28 +87,28 @@ export default async function handler(req, res) {
         const isVerificationSelected = effectiveStaffRole === 'verification';
         const isSalesSelected = effectiveStaffRole === 'sales';
 
-        if (isVerificationSelected && (password === 'verify123' || password === 'desk123')) {
+        if (isVerificationSelected && password === 'verify123') {
           authSuccess = true;
           userPayload = {
             id: 'STF-003',
             role: 'staff',
             department: 'verification',
-            mobile: '6352454247',
-            phone: '6352454247',
+            mobile: cleanMobile || '8000050580',
+            phone: cleanMobile || '8000050580',
             name: 'Field Verification Officer',
             desk: 'Gujarat Discom Verification Desk',
             city: 'Surat',
             zone: 'Surat & South Gujarat (DGVCL)',
             status: 'Active'
           };
-        } else if (isSalesSelected && (password === 'staff123' || password === 'sales123' || verifyPassword(password, CREDENTIAL_HASHES.staff_sales))) {
+        } else if (isSalesSelected && (password === 'staff123' || verifyPassword(password, CREDENTIAL_HASHES.staff_sales))) {
           authSuccess = true;
           userPayload = {
             id: 'STF-001',
             role: 'staff',
             department: 'sales',
-            mobile: '6352454247',
-            phone: '6352454247',
+            mobile: cleanMobile || '8000050580',
+            phone: cleanMobile || '8000050580',
             name: 'Solar Sales Executive',
             zone: 'Ahmedabad & Gandhinagar',
             status: 'Active'
@@ -115,7 +117,7 @@ export default async function handler(req, res) {
           return res.status(403).json({
             error: 'Role Mismatch: Verification Desk selected but Salesperson credentials entered.'
           });
-        } else if (isSalesSelected && (password === 'verify123' || password === 'desk123')) {
+        } else if (isSalesSelected && password === 'verify123') {
           return res.status(403).json({
             error: 'Role Mismatch: Salesperson selected but Verification Desk credentials entered.'
           });

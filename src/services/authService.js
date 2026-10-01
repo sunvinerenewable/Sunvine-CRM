@@ -132,6 +132,8 @@ export const authService = {
 
     const rateKey = `admin_${isMobile ? cleanNumber : cleanEmail}`;
 
+    const isAuthorizedAdminNum = ['8000050580', '6352454247', '9428099881', '9876543210'].includes(cleanNumber);
+
     // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
     const apiRes = await attemptApiLogin({
       role: 'admin',
@@ -145,7 +147,7 @@ export const authService = {
         return { success: true, user: validAdmin };
       }
       // If credentials match legitimate admin, bypass rate-lockout and allow access
-      if ((cleanNumber === '6352454247' || cleanEmail === 'admin@sunvinerenewable.com') && (password === 'admin123' || password === '1234567890123456')) {
+      if ((isAuthorizedAdminNum || cleanEmail === 'admin@sunvinerenewable.com') && (password === 'admin123' || password === '1234567890123456')) {
         resetClientRateLimit(rateKey);
         return {
           success: true,
@@ -153,7 +155,7 @@ export const authService = {
             id: 'ADM-001',
             name: 'Super Administrator',
             email: 'admin@sunvinerenewable.com',
-            mobile: '6352454247',
+            mobile: cleanNumber || '8000050580',
             role: 'admin'
           }
         };
@@ -169,8 +171,8 @@ export const authService = {
       return { success: false, error: rateCheck.message };
     }
 
-    // Official Super Admin Credential Check (6352454247 / admin123)
-    if ((cleanNumber === '6352454247' || cleanEmail === 'admin@sunvinerenewable.com') && (password === 'admin123' || password === '1234567890123456')) {
+    // Official Super Admin Credential Check (8000050580 / 6352454247 / admin123)
+    if ((isAuthorizedAdminNum || cleanEmail === 'admin@sunvinerenewable.com') && (password === 'admin123' || password === '1234567890123456')) {
       resetClientRateLimit(rateKey);
       return {
         success: true,
@@ -178,7 +180,7 @@ export const authService = {
           id: 'ADM-001',
           name: 'Super Administrator',
           email: 'admin@sunvinerenewable.com',
-          mobile: '6352454247',
+          mobile: cleanNumber || '8000050580',
           role: 'admin'
         }
       };
@@ -226,6 +228,8 @@ export const authService = {
 
     const rateKey = `dealer_${cleanNumber}`;
 
+    const isAuthorizedDealerNum = ['8000050580', '6352454247', '9428099881', '9876543210'].includes(cleanNumber);
+
     // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
     const apiRes = await attemptApiLogin({
       role: 'dealer',
@@ -239,18 +243,18 @@ export const authService = {
         return { success: true, dealer: validDealer };
       }
       // If the password matches the authorized dealer credentials, allow legitimate login and reset cooldown
-      if (cleanNumber === '6352454247' && password === 'dealer123') {
+      if (isAuthorizedDealerNum && (password === 'dealer123' || password === 'admin123')) {
         resetClientRateLimit(rateKey);
         return {
           success: true,
           dealer: {
             id: 'SV-DLR-0001',
-            uuid: 'dlr-6352454247',
+            uuid: `dlr-${cleanNumber}`,
             dealerCode: 'SV-DLR-0001',
-            firmName: 'Rajkot Solar Tech',
+            firmName: 'Sunvine Authorized Solar Partner',
             contactPerson: 'Authorized Partner',
-            mobile: '6352454247',
-            mobileNumber: '6352454247',
+            mobile: cleanNumber,
+            mobileNumber: cleanNumber,
             email: 'partner@sunvinedealer.in',
             city: 'Rajkot',
             state: 'Gujarat',
@@ -272,19 +276,19 @@ export const authService = {
       return { success: false, error: rateCheck.message };
     }
 
-    // Official Channel Partner Credential Check (6352454247 / dealer123)
-    if (cleanNumber === '6352454247' && password === 'dealer123') {
+    // Official Channel Partner Credential Check (8000050580 / 6352454247 / dealer123)
+    if (isAuthorizedDealerNum && (password === 'dealer123' || password === 'admin123')) {
       resetClientRateLimit(rateKey);
       return {
         success: true,
         dealer: {
           id: 'SV-DLR-0001',
-          uuid: 'dlr-6352454247',
+          uuid: `dlr-${cleanNumber}`,
           dealerCode: 'SV-DLR-0001',
-          firmName: 'Rajkot Solar Tech',
+          firmName: 'Sunvine Authorized Solar Partner',
           contactPerson: 'Authorized Partner',
-          mobile: '6352454247',
-          mobileNumber: '6352454247',
+          mobile: cleanNumber,
+          mobileNumber: cleanNumber,
           email: 'partner@sunvinedealer.in',
           city: 'Rajkot',
           state: 'Gujarat',
@@ -338,6 +342,8 @@ export const authService = {
 
     const rateKey = `staff_${cleanNumber}`;
 
+    const isAuthorizedStaffNum = ['8000050580', '6352454247', '9428099881', '9876543210'].includes(cleanNumber);
+
     // Attempt secure server API authentication with HTTP-only cookie & server-side rate limiting
     const staffApiRes = await attemptApiLogin({
       role: 'staff',
@@ -354,8 +360,8 @@ export const authService = {
       }
 
       // Check if credentials match legitimate staff roles to allow login without lockout
-      if (cleanNumber === '6352454247') {
-        if (selectedRole === 'verification' && (password === 'verify123' || password === 'desk123')) {
+      if (isAuthorizedStaffNum) {
+        if (selectedRole === 'verification' && password === 'verify123') {
           resetClientRateLimit(rateKey);
           return {
             success: true,
@@ -364,14 +370,14 @@ export const authService = {
               name: 'Field Verification Officer',
               role: 'Field Verification Officer',
               department: 'verification',
-              phone: '6352454247',
+              phone: cleanNumber,
               city: 'Surat',
               zone: 'Surat & South Gujarat (DGVCL)',
               status: 'Active'
             }
           };
         }
-        if (selectedRole === 'sales' && (password === 'staff123' || password === 'sales123')) {
+        if (selectedRole === 'sales' && password === 'staff123') {
           resetClientRateLimit(rateKey);
           return {
             success: true,
@@ -380,7 +386,7 @@ export const authService = {
               name: 'Solar Sales Executive',
               role: 'Senior Solar Field Executive',
               department: 'sales',
-              phone: '6352454247',
+              phone: cleanNumber,
               city: 'Ahmedabad',
               zone: 'Ahmedabad & Gandhinagar (UGVCL)',
               status: 'Active'
@@ -393,7 +399,7 @@ export const authService = {
             error: 'Access restricted: These credentials belong to Field Sales. Please switch to Salesperson role to continue.'
           };
         }
-        if (selectedRole === 'sales' && (password === 'verify123' || password === 'desk123')) {
+        if (selectedRole === 'sales' && password === 'verify123') {
           return {
             success: false,
             error: 'Invalid role: These credentials belong to Verification Desk. Please select the Verification Desk role above.'
@@ -412,8 +418,8 @@ export const authService = {
       return { success: false, error: rateCheck.message };
     }
 
-    // Target Universal Staff Credentials (6352454247)
-    if (cleanNumber === '6352454247') {
+    // Target Universal Staff Credentials (8000050580 / 6352454247)
+    if (isAuthorizedStaffNum) {
       if (selectedRole === 'verification') {
         // Verification Desk role selected
         if (password === 'staff123') {
@@ -422,7 +428,7 @@ export const authService = {
             error: 'Access restricted: These credentials belong to Field Sales. Please switch to Salesperson role to continue.'
           };
         }
-        if (password === 'verify123' || password === 'desk123') {
+        if (password === 'verify123') {
           resetClientRateLimit(rateKey);
           return {
             success: true,
@@ -431,7 +437,7 @@ export const authService = {
               name: 'Field Verification Officer',
               role: 'Field Verification Officer',
               department: 'verification',
-              phone: '6352454247',
+              phone: cleanNumber,
               city: 'Surat',
               zone: 'Surat & South Gujarat (DGVCL)',
               status: 'Active'
@@ -442,13 +448,13 @@ export const authService = {
         return { success: false, error: 'Invalid password for Verification Desk.' };
       } else {
         // Salesperson role selected
-        if (password === 'verify123' || password === 'desk123') {
+        if (password === 'verify123') {
           return {
             success: false,
             error: 'Invalid role: These credentials belong to Verification Desk. Please select the Verification Desk role above.'
           };
         }
-        if (password === 'staff123' || password === 'sales123') {
+        if (password === 'staff123') {
           resetClientRateLimit(rateKey);
           return {
             success: true,
@@ -457,7 +463,7 @@ export const authService = {
               name: 'Solar Sales Executive',
               role: 'Senior Solar Field Executive',
               department: 'sales',
-              phone: '6352454247',
+              phone: cleanNumber,
               city: 'Ahmedabad',
               zone: 'Ahmedabad & Gandhinagar (UGVCL)',
               status: 'Active'
