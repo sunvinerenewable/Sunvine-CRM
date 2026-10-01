@@ -23,7 +23,7 @@ export default function Navigation() {
   const mobileNotificationRef = useRef(null);
 
   const handleMenuClick = (tabId) => {
-    if (tabId === 'create_quote' || tabId === 'dashboard' || tabId === 'my_quotes') {
+    if (tabId === 'create_quote' || tabId === 'dashboard' || tabId === 'my_quotes' || tabId === 'my_applications') {
       if (clearEditingQuotation) clearEditingQuotation();
       if (tabId === 'create_quote' && clearActiveDraftQuote) clearActiveDraftQuote();
     }
@@ -46,10 +46,28 @@ export default function Navigation() {
     };
   }, [dropdownOpen]);
 
+  // Lock body scroll and listen for Escape key when mobile navigation drawer is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') setMobileOpen(false);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [mobileOpen]);
+
   const dealerMenu = [
     { id: 'dashboard', label: 'Dashboard', mobileLabel: 'Dashboard', icon: 'home' },
     { id: 'create_quote', label: 'New Quotation', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'my_quotes', label: 'My Quotations', mobileLabel: 'My Quotes', icon: 'folder_open' },
+    { id: 'my_applications', label: 'My Applications', mobileLabel: 'Applications', icon: 'assignment' },
     { id: 'dealer_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
     { id: 'docs', label: 'Agreements & Docs', mobileLabel: 'Docs', icon: 'description' },
@@ -272,25 +290,38 @@ export default function Navigation() {
       </header>
 
       {/* ========================================================
-          MOBILE TOP BAR: Exact Stitch Design (26_78314a1fb43e40518984de1bee26f24b_3__Dealer_Dashboard__Mobile_.html)
+          MOBILE TOP BAR: With Responsive Hamburger Menu Trigger
           ======================================================== */}
-      <header className="no-print fixed top-0 left-0 right-0 w-full z-40 bg-surface/90 backdrop-blur-xl border-b border-surface-container-high md:hidden h-16 px-3.5 flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
+      <header className="no-print fixed top-0 left-0 right-0 w-full z-40 bg-surface/90 backdrop-blur-xl border-b border-surface-container-high md:hidden h-16 px-3 flex items-center justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
         <div className="flex items-center gap-2 min-w-0">
+          {/* Hamburger Menu Button */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation menu"
+            className="w-10 h-10 -ml-1 flex items-center justify-center rounded-xl text-on-surface hover:bg-surface-container-high active:scale-95 transition-all cursor-pointer shrink-0"
+          >
+            <span className="material-symbols-outlined text-[24px]">menu</span>
+          </button>
+
           <img
             alt="Brand logo"
             className="h-7 sm:h-8 w-auto object-contain cursor-pointer shrink-0"
             src="/sunvine_logo_transparent.png"
-            onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : 'dashboard')}
+            onClick={() => {
+              handleMenuClick(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard');
+            }}
           />
           <div className="flex flex-col min-w-0">
             <span className="font-headline-sm text-sm font-bold text-on-surface leading-tight tracking-tight truncate">
               Sunvine
             </span>
             <span className="font-label-xs text-[10px] text-secondary leading-tight tracking-wider uppercase font-semibold truncate">
-              {role === 'admin' ? 'Admin Console' : 'Dealer Portal'}
+              {role === 'admin' ? 'Admin Console' : role === 'staff' ? (isVerificationStaff ? 'Verification Desk' : 'Staff Portal') : 'Dealer Portal'}
             </span>
           </div>
         </div>
+
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Mobile Notification Bell */}
           <div className="relative" ref={mobileNotificationRef}>
@@ -313,8 +344,11 @@ export default function Navigation() {
           </div>
 
           <div
-            onClick={() => setActiveTab(role === 'admin' ? 'admin_settings' : 'dealer_settings')}
+            onClick={() => {
+              handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
+            }}
             className="relative flex items-center justify-center p-0.5 rounded-full ring-1 ring-primary/40 cursor-pointer"
+            title="Profile & Settings"
           >
             <img
               alt="Profile"
@@ -342,31 +376,150 @@ export default function Navigation() {
       />
 
       {/* ========================================================
-          MOBILE BOTTOM TAB BAR: Exact Stitch Design (26_78314a1fb43e40518984de1bee26f24b_3__Dealer_Dashboard__Mobile_.html)
+          MOBILE SLIDE-OUT SIDEBAR DRAWER (Replaces Bottom Navigation Bar)
           ======================================================== */}
-      <nav className="no-print fixed bottom-0 left-0 right-0 w-full z-50 bg-surface/95 backdrop-blur-xl border-t border-surface-container-high shadow-[0_-2px_12px_rgba(0,0,0,0.05)] md:hidden pb-[max(0px,env(safe-area-inset-bottom))]">
-        {/* Scrollable tab bar — supports up to 6 admin tabs without clipping (SR-17) */}
-        <div className="flex items-center h-16 px-1 w-full overflow-x-auto overflow-y-hidden scrollbar-hide">
-          {menuItems.map((item) => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleMenuClick(item.id)}
-                className={`flex flex-col items-center justify-center shrink-0 flex-1 min-w-[52px] max-w-[72px] min-h-[44px] py-1 px-0.5 gap-0.5 rounded-lg transition-colors overflow-hidden ${isActive ? 'text-primary font-semibold' : 'text-secondary hover:text-on-surface'
+      {/* Backdrop with Fade Transition */}
+      <div
+        className={`fixed inset-0 z-50 bg-black/70 backdrop-blur-xs transition-opacity duration-300 md:hidden ${
+          mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden={!mobileOpen}
+      />
+
+      {/* Slide-out Sidebar Panel */}
+      <aside
+        className={`no-print fixed top-0 bottom-0 left-0 w-[290px] max-w-[85vw] h-full z-50 bg-on-secondary-fixed text-white shadow-2xl flex flex-col justify-between transition-transform duration-300 ease-in-out md:hidden select-none ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        aria-label="Mobile Navigation Drawer"
+      >
+        <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+          {/* Drawer Brand Header with Close Button */}
+          <div className="h-16 px-4 flex items-center justify-between border-b border-white/10 shrink-0 bg-[#0A1120]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                alt="Sunvine Logo"
+                className="h-7 w-auto object-contain cursor-pointer"
+                src="/sunvine_logo_white.png"
+                onClick={() => {
+                  handleMenuClick(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard');
+                  setMobileOpen(false);
+                }}
+              />
+              <span className="text-[10px] font-semibold text-secondary-fixed-dim uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 border border-white/10 shrink-0">
+                {role === 'admin' ? 'Admin' : role === 'staff' ? 'Staff' : 'Dealer'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close navigation menu"
+              className="w-10 h-10 flex items-center justify-center rounded-xl text-white/80 hover:text-white hover:bg-white/10 active:scale-95 transition-all cursor-pointer shrink-0"
+            >
+              <span className="material-symbols-outlined text-[22px]">close</span>
+            </button>
+          </div>
+
+          {/* User Profile Summary Card */}
+          <div className="p-3.5 mx-3 mt-3 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3 shrink-0">
+            <img
+              src={currentDealer?.avatar || '/dealer_avatar.jpg'}
+              alt="User Avatar"
+              className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/40 shrink-0"
+            />
+            <div className="flex flex-col min-w-0 flex-1">
+              <span className="text-xs font-bold text-white truncate leading-tight">
+                {role === 'admin'
+                  ? 'System Administrator'
+                  : role === 'staff'
+                  ? currentStaff?.name || 'Solar Executive'
+                  : currentDealer?.firmName || 'Partner Dealer'}
+              </span>
+              <span className="text-[11px] text-white/60 truncate leading-tight mt-0.5">
+                {role === 'admin'
+                  ? 'admin@sunvine.in'
+                  : role === 'staff'
+                  ? currentStaff?.phone || 'Field Sales'
+                  : currentDealer?.contactPerson || 'Authorized Partner'}
+              </span>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-[10px] font-mono text-emerald-400 font-medium">Online & Synced</span>
+              </div>
+            </div>
+          </div>
+
+          {/* All Navigation Links (Zero Horizontal Overflow, Smooth Touch Targets) */}
+          <nav className="flex flex-col mt-2 flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide py-1 px-2 space-y-0.5">
+            <div className="px-3 py-1.5 text-[10px] uppercase font-bold tracking-widest text-white/40">
+              Menu Navigation
+            </div>
+            {menuItems.map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    handleMenuClick(item.id);
+                    setMobileOpen(false);
+                  }}
+                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all text-left cursor-pointer min-h-[44px] w-full min-w-0 ${
+                    isActive
+                      ? 'bg-gradient-to-r from-emerald-600/30 to-teal-500/15 border-l-4 border-emerald-400 text-white font-semibold shadow-xs'
+                      : 'text-secondary-fixed-dim hover:bg-white/5 hover:text-white'
                   }`}
-              >
-                <span className="material-symbols-outlined text-[20px] sm:text-[22px] shrink-0" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-                  {item.icon}
-                </span>
-                <span className="text-[9px] sm:text-[10px] font-medium leading-none text-center w-full truncate">
-                  {item.mobileLabel}
-                </span>
-              </button>
-            );
-          })}
+                >
+                  <span
+                    className={`material-symbols-outlined text-[20px] shrink-0 ${
+                      isActive ? 'text-emerald-400' : 'text-white/60'
+                    }`}
+                    style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-xs truncate flex-1 min-w-0">{item.label}</span>
+                  {isActive && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
         </div>
-      </nav>
+
+        {/* Drawer Footer Actions */}
+        <div className="p-3 border-t border-white/10 bg-[#0A1120] space-y-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
+              setMobileOpen(false);
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium text-white/80 hover:bg-white/5 hover:text-white active:scale-98 transition-all cursor-pointer min-h-[44px]"
+          >
+            <span className="material-symbols-outlined text-[18px]">settings</span>
+            <span>{role === 'admin' ? 'Master Governance' : 'Account Settings'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMobileOpen(false);
+              logout();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-500/10 active:scale-98 transition-all cursor-pointer min-h-[44px]"
+          >
+            <span className="material-symbols-outlined text-[18px]">logout</span>
+            <span>Sign Out</span>
+          </button>
+
+          <div className="pt-2 text-center text-[10px] text-white/40 font-mono">
+            Sunvine Solar Portal • v2.2.1
+          </div>
+        </div>
+      </aside>
     </>
   );
 }

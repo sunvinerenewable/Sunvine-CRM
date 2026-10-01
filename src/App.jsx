@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from 'react';
 import ErrorBoundary from './components/Shared/ErrorBoundary';
 import { ToastProvider } from './components/Shared/Toast';
+import { LoadingProvider } from './context/LoadingContext';
+import GlobalActionLoader from './components/Shared/GlobalActionLoader';
 import { PortalSkeleton } from './components/Shared/ViewSkeleton';
 
 // Detect whether current session is requesting the standalone public quotation viewer
@@ -39,18 +41,20 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <ToastProvider>
-        {isPublic ? (
-          <Suspense fallback={null}>
-            <PublicQuotationView publicQuoteId={publicQuoteId} />
-          </Suspense>
-        ) : (
-          <Suspense fallback={<PortalSkeleton />}>
-            <PortalApp />
-          </Suspense>
-        )}
-      </ToastProvider>
+      <LoadingProvider>
+        <ToastProvider>
+          {isPublic ? (
+            <Suspense fallback={null}>
+              <PublicQuotationView publicQuoteId={publicQuoteId} />
+            </Suspense>
+          ) : (
+            <Suspense fallback={<PortalSkeleton />}>
+              <PortalApp />
+            </Suspense>
+          )}
+          <GlobalActionLoader />
+        </ToastProvider>
+      </LoadingProvider>
     </ErrorBoundary>
   );
 }
-

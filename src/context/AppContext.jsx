@@ -26,6 +26,12 @@ import {
   INITIAL_AUDIT_LOGS
 } from '../data/systemSettingsDefaults';
 import {
+  DEFAULT_REQUIRED_DOCUMENTS,
+  APPLICATION_CATEGORIES,
+  DEFAULT_PIPELINE_STAGES,
+  isDocMandatoryForCategory
+} from '../data/defaultRequiredDocuments';
+import {
   calculateStaffPerformance,
   calculateDealerPerformance,
   calculateOverallBusinessMetrics
@@ -38,6 +44,9 @@ import { staffService } from '../services/staffService';
 import { systemSettingsService } from '../services/systemSettingsService';
 import { auditLogService } from '../services/auditLogService';
 import { dealerService } from '../services/dealerService';
+import { bankService } from '../services/bankService';
+import { settingsService } from '../services/settingsService';
+import { authService } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import { generateFieldBOM } from '../data/standardBomData';
 
@@ -65,6 +74,7 @@ const TAB_TO_PATH = {
   admin_create_quote: '/admin/new-quotation',
   preview_quote: '/preview-quotation',
   my_quotes: '/my-quotations',
+  my_applications: '/my-applications',
   profile: '/settings',
   dealer_settings: '/settings',
   admin_dashboard: '/admin',
@@ -404,6 +414,109 @@ const safeSetItem = (key, value) => {
     };
   }, []);
 
+  // Solar Loan Partner Banks (Database Connected)
+  const [solarBanks, setSolarBanks] = useState([]);
+
+  // Live Supabase Master Database Hydration on Mount
+  useEffect(() => {
+    let isMounted = true;
+    const hydrateMasterDataFromDatabase = async () => {
+      try {
+        const [
+          dbDealers,
+          dbStaff,
+          dbFiles,
+          dbSettings,
+          dbPricing,
+          dbBos,
+          dbBanks,
+          dbLogs,
+          dbBomItems
+        ] = await Promise.all([
+          dealerService.getAllDealers(),
+          staffService.getAllStaff(),
+          customerFileService.getAllCustomerFiles(),
+          settingsService.getSystemSettings(),
+          settingsService.getPricingPresets(),
+          settingsService.getBosPriceMatrix(),
+          bankService.getAllSolarBanks(),
+          settingsService.getAuditLogs(),
+          hardwareService.getAllBomItems()
+        ]);
+
+        if (!isMounted) return;
+
+        if (dbDealers && dbDealers.length > 0) {
+          setDealers(ensureDealerAttribution(dbDealers));
+        }
+        if (dbStaff && dbStaff.length > 0) {
+          setStaffList(dbStaff);
+        }
+        if (dbFiles && dbFiles.length > 0) {
+          setCustomerFiles(ensureCustomerFileAttribution(dbFiles));
+        }
+        if (dbSettings) {
+          setSystemSettings(prev => ({ ...prev, ...dbSettings }));
+          if (dbSettings.governanceSettings) {
+            setGovernanceSettings(dbSettings.governanceSettings);
+          }
+        }
+        if (dbPricing) {
+          setPricingPresets(prev => ({
+            ...prev,
+            baseRatePerKw: dbPricing.baseRatePerKw || prev.baseRatePerKw,
+            subsidyCap: dbPricing.subsidyCap || prev.subsidyCap,
+            minMarginPerKw: dbPricing.minMarginPerKw || prev.minMarginPerKw,
+            lastSynced: dbPricing.lastSynced || prev.lastSynced
+          }));
+          if (dbPricing.tierMargins) {
+            setTierMargins(dbPricing.tierMargins);
+          }
+          if (dbPricing.bomRates) {
+            setBomRates(prev => ({ ...prev, ...dbPricing.bomRates }));
+          }
+          if (dbPricing.capacityBomMatrix) {
+            setCapacityBomMatrix(prev => ({ ...prev, ...dbPricing.capacityBomMatrix }));
+          }
+          if (dbPricing.baseRates) {
+            setPricingMaster(prev => ({ ...prev, baseRates: dbPricing.baseRates }));
+          }
+        }
+        if (dbBos && dbBos.length > 0) {
+          setPdfBosMatrix(dbBos);
+        }
+        if (dbBanks && dbBanks.length > 0) {
+          setSolarBanks(dbBanks);
+        }
+        if (dbLogs && dbLogs.length > 0) {
+          setAuditLogs(dbLogs);
+        }
+        if (dbBomItems && dbBomItems.length > 0) {
+          setBomCatalog(prev => {
+            const mergedMap = new Map();
+            STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
+            dbBomItems.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
+            return Array.from(mergedMap.values());
+          });
+          setBomRates(prev => {
+            const next = { ...prev };
+            dbBomItems.forEach(it => {
+              if (it.defaultRate && !next[it.id]) {
+                next[it.id] = it.defaultRate;
+              }
+            });
+            return next;
+          });
+        }
+      } catch (err) {
+        console.warn('[AppContext] Supabase master database sync fallback:', err);
+      }
+    };
+
+    hydrateMasterDataFromDatabase();
+    return () => { isMounted = false; };
+  }, []);
+
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
       if (!d) return d;
@@ -455,13 +568,18 @@ const safeSetItem = (key, value) => {
     ]);
   });
 
+  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync)
+  const [bomCatalog, setBomCatalog] = useState(() => {
+    return safeJsonParse('sunvine_bom_catalog', STANDARD_BOM_CATALOG);
+  });
+
   // Standard BOM Item Rates (Admin Configurable)
   const defaultBomRates = useMemo(() => {
-    return STANDARD_BOM_CATALOG.reduce((acc, item) => {
-      acc[item.id] = item.defaultRate;
+    return (bomCatalog || STANDARD_BOM_CATALOG).reduce((acc, item) => {
+      acc[item.id] = item.defaultRate || item.rate || 100;
       return acc;
     }, {});
-  }, []);
+  }, [bomCatalog]);
 
   const [bomRates, setBomRates] = useState(() => {
     if (!isDbUpToDate) return defaultBomRates;
@@ -604,6 +722,28 @@ const safeSetItem = (key, value) => {
   const [systemSettings, setSystemSettings] = useState(() => {
     return safeJsonParse('sunvine_system_settings', DEFAULT_SYSTEM_SETTINGS);
   });
+
+  // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
+  const [requiredDocuments, setRequiredDocuments] = useState(() => {
+    const raw = safeJsonParse('sunvine_required_documents', null);
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    return systemSettings?.requiredDocuments || DEFAULT_REQUIRED_DOCUMENTS;
+  });
+
+  useEffect(() => {
+    safeSetItem('sunvine_required_documents', requiredDocuments);
+  }, [requiredDocuments]);
+
+  // Master Dynamic Application / Pipeline Stages State
+  const [applicationStages, setApplicationStages] = useState(() => {
+    const raw = safeJsonParse('sunvine_application_stages', null);
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    return systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES;
+  });
+
+  useEffect(() => {
+    safeSetItem('sunvine_application_stages', applicationStages);
+  }, [applicationStages]);
 
   // Immutable Audit Activity Ledger
   const [auditLogs, setAuditLogs] = useState(() => {
@@ -750,6 +890,10 @@ const safeSetItem = (key, value) => {
   }, [bomRates]);
 
   useEffect(() => {
+    safeSetItem('sunvine_bom_catalog', bomCatalog);
+  }, [bomCatalog]);
+
+  useEffect(() => {
     safeSetItem('sunvine_capacity_bom', capacityBomMatrix);
   }, [capacityBomMatrix]);
 
@@ -812,6 +956,65 @@ const safeSetItem = (key, value) => {
       ...prev,
       [kwKey]: newPreset
     }));
+  };
+
+  const addBomItem = async (newItem) => {
+    const item = {
+      id: newItem.id || `bom_hw_${Date.now()}`,
+      category: newItem.category || 'structure',
+      name: (newItem.name || 'New Hardware Component').trim(),
+      description: newItem.description || '',
+      unit: newItem.unit || 'Nos',
+      defaultRate: Number(newItem.defaultRate || newItem.rate) || 100,
+      make: newItem.make || 'Approved Brand',
+      specs: newItem.specs || '',
+      gstRate: Number(newItem.gstRate !== undefined ? newItem.gstRate : 18),
+      isArchived: false,
+      isNew: true,
+      createdAt: Date.now()
+    };
+
+    setBomCatalog(prev => [item, ...(prev || []).filter(i => i.id !== item.id)]);
+    setBomRates(prev => ({ ...prev, [item.id]: item.defaultRate }));
+
+    // Persist directly to Supabase DB
+    await hardwareService.saveBomItem(item);
+
+    addNotification({
+      type: 'success',
+      icon: 'inventory_2',
+      title: 'BOM Hardware Item Added',
+      description: `Admin introduced ${item.name} (${item.make}) to master bill of materials.`,
+      audience: 'all'
+    });
+
+    return item;
+  };
+
+  const updateBomItem = async (itemId, updatedFields) => {
+    setBomCatalog(prev => prev.map(i => i.id === itemId ? { ...i, ...updatedFields } : i));
+    if (updatedFields.defaultRate !== undefined || updatedFields.rate !== undefined) {
+      const newRate = Number(updatedFields.defaultRate || updatedFields.rate) || 0;
+      setBomRates(prev => ({ ...prev, [itemId]: newRate }));
+    }
+    const current = (bomCatalog || []).find(i => i.id === itemId);
+    const merged = { ...current, ...updatedFields, id: itemId };
+    await hardwareService.saveBomItem(merged);
+  };
+
+  const deleteBomItem = async (itemId) => {
+    setBomCatalog(prev => prev.filter(i => i.id !== itemId));
+    setBomRates(prev => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
+    });
+    await hardwareService.deleteBomItem(itemId);
+  };
+
+  const archiveBomItem = async (itemId, isArchived) => {
+    setBomCatalog(prev => prev.map(i => i.id === itemId ? { ...i, isArchived } : i));
+    await hardwareService.archiveBomItem(itemId, isArchived);
   };
 
   const addNewModule = async (newModule) => {
@@ -894,7 +1097,7 @@ const safeSetItem = (key, value) => {
   };
 
   const getResolvedBom = (capacityKW) => {
-    return resolveCapacityBom(capacityKW, capacityBomMatrix, bomRates);
+    return resolveCapacityBom(capacityKW, capacityBomMatrix, bomRates, bomCatalog);
   };
 
   // Auth Actions
@@ -922,28 +1125,56 @@ const safeSetItem = (key, value) => {
     setAuthView('dealer_login');
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    authService.logout().catch(() => {});
   };
 
   // Staff and Customer File Actions
-  const addStaff = (newStaff) => {
+  const addStaff = async (newStaff) => {
     setStaffList(prev => [newStaff, ...prev]);
-    staffService.saveStaff(newStaff);
+    try {
+      await staffService.createStaff(newStaff);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync staff to DB:', e);
+    }
   };
 
-  const updateStaff = (staffId, updatedFields) => {
+  const updateStaff = async (staffId, updatedFields) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, ...updatedFields } : s));
     if (currentStaff?.id === staffId) {
       setCurrentStaff(prev => ({ ...prev, ...updatedFields }));
     }
-    staffService.saveStaff({ id: staffId, ...updatedFields });
+    try {
+      await staffService.updateStaff(staffId, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update staff in DB:', e);
+    }
   };
 
-  const updateStaffPassword = (staffId, newPassword) => {
+  const updateStaffPassword = async (staffId, newPassword) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, password: newPassword } : s));
-    staffService.saveStaff({ id: staffId, password: newPassword });
+    try {
+      await staffService.updateStaffPassword(staffId, newPassword);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update staff password in DB:', e);
+    }
   };
 
-  const addCustomerFile = (newFile) => {
+  const deleteStaff = async (staffId) => {
+    setStaffList(prev => prev.filter(s => s.id !== staffId));
+    try {
+      await staffService.deleteStaff(staffId);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete staff in DB:', e);
+    }
+    logActivity({
+      action: 'DELETE_STAFF',
+      module: 'STAFF_MANAGEMENT',
+      recordId: staffId,
+      details: `Admin deleted staff member ${staffId} from organization register.`
+    });
+  };
+
+  const addCustomerFile = async (newFile) => {
     setCustomerFiles(prev => [newFile, ...prev]);
     customerFileService.saveCustomerFile(newFile);
     // Also update staff totalFiles and pipelineKw
@@ -953,6 +1184,11 @@ const safeSetItem = (key, value) => {
         totalFiles: (s.totalFiles || 0) + 1,
         pipelineKw: Number(((s.pipelineKw || 0) + (newFile.solarSystemKw || 0)).toFixed(1))
       } : s));
+    }
+    try {
+      await customerFileService.saveCustomerFile(newFile);
+    } catch (e) {
+      console.warn('[AppContext] Failed to save customer file to DB:', e);
     }
   };
 
@@ -973,12 +1209,15 @@ const safeSetItem = (key, value) => {
       status: 'VERIFIED'
     };
     setAuditLogs(prev => [newLog, ...(prev || [])]);
+    settingsService.logActivity(newLog);
   };
 
-  const updateSystemSettings = (section, updates) => {
+  const updateSystemSettings = async (section, updates) => {
+    let updatedSectionData = null;
     setSystemSettings(prev => {
       const currentSection = prev?.[section] || {};
       const updatedSection = { ...currentSection, ...updates };
+      updatedSectionData = updatedSection;
       const updated = {
         ...prev,
         [section]: updatedSection
@@ -986,6 +1225,14 @@ const safeSetItem = (key, value) => {
       safeSetItem('sunvine_system_settings', updated);
       return updated;
     });
+
+    if (updatedSectionData) {
+      try {
+        await settingsService.saveSystemSettings(section, updatedSectionData);
+      } catch (e) {
+        console.warn('[AppContext] Failed to sync system settings to DB:', e);
+      }
+    }
 
     logActivity({
       action: 'UPDATE_SYSTEM_SETTINGS',
@@ -1033,7 +1280,7 @@ const safeSetItem = (key, value) => {
     return newRecord;
   };
 
-  const addCustomerFileTimelineEvent = (fileId, event) => {
+  const addCustomerFileTimelineEvent = async (fileId, event) => {
     const timestamp = new Date().toISOString();
     const newMilestone = {
       id: event.id || `TL-${Date.now()}`,
@@ -1047,19 +1294,30 @@ const safeSetItem = (key, value) => {
       notes: event.notes || ''
     };
 
+    let targetUpdatedFile = null;
     setCustomerFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const updatedTimeline = [...(f.timeline || []), newMilestone];
-      return {
+      targetUpdatedFile = {
         ...f,
         currentStage: event.stage || f.currentStage,
+        stage: event.stage || f.stage,
         status: event.status || f.status,
         isCompleted: event.isCompleted !== undefined ? event.isCompleted : f.isCompleted,
         isFailed: event.isFailed !== undefined ? event.isFailed : f.isFailed,
         failureReason: event.failureReason || f.failureReason,
         timeline: updatedTimeline
       };
+      return targetUpdatedFile;
     }));
+
+    if (targetUpdatedFile) {
+      try {
+        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+      } catch (e) {
+        console.warn('[AppContext] Failed to update file timeline in DB:', e);
+      }
+    }
 
     logActivity({
       action: 'ADD_FILE_TIMELINE_EVENT',
@@ -1070,8 +1328,13 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateCustomerFile = (fileId, updatedFields) => {
+  const updateCustomerFile = async (fileId, updatedFields) => {
     setCustomerFiles(prev => prev.map(f => f.id === fileId ? { ...f, ...updatedFields } : f));
+    try {
+      await customerFileService.updateCustomerFile(fileId, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update customer file in DB:', e);
+    }
     logActivity({
       action: 'UPDATE_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
@@ -1081,7 +1344,8 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateFileStatus = (fileId, nextStatus, notes = '') => {
+  const updateFileStatus = async (fileId, nextStatus, notes = '') => {
+    let targetUpdatedFile = null;
     setCustomerFiles(prev => prev.map(f => {
       if (f.id !== fileId) return f;
       const updatedTimeline = [
@@ -1098,13 +1362,22 @@ const safeSetItem = (key, value) => {
           notes: notes || `Status changed from ${f.status} to ${nextStatus}`
         }
       ];
-      return {
+      targetUpdatedFile = {
         ...f,
         status: nextStatus,
         isCompleted: nextStatus === 'Subsidized' || nextStatus === 'Completed',
         timeline: updatedTimeline
       };
+      return targetUpdatedFile;
     }));
+
+    if (targetUpdatedFile) {
+      try {
+        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+      } catch (e) {
+        console.warn('[AppContext] Failed to update file status in DB:', e);
+      }
+    }
 
     logActivity({
       action: 'UPDATE_FILE_STATUS',
@@ -1115,10 +1388,15 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateDealerProfile = (updatedFields) => {
+  const updateDealerProfile = async (updatedFields) => {
     const updated = { ...currentDealer, ...updatedFields };
     setCurrentDealer(updated);
     setDealers(prev => prev.map(d => d.id === currentDealer.id ? updated : d));
+    try {
+      await dealerService.updateDealer(currentDealer.id || currentDealer.dealerCode, updatedFields);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer profile in DB:', e);
+    }
   };
 
   // Quotation Actions
@@ -1172,32 +1450,44 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const addDealer = (newDealer) => {
+  const addDealer = async (newDealer) => {
     setDealers(prev => [newDealer, ...prev]);
-    dealerService.saveDealer(newDealer);
+    try {
+      await dealerService.createDealer(newDealer);
+    } catch (e) {
+      console.warn('[AppContext] Failed to create dealer in DB:', e);
+    }
   };
 
-  const updateDealer = (updatedDealer) => {
+  const updateDealer = async (updatedDealer) => {
     setDealers(prev => prev.map(d => d.id === updatedDealer.id ? { ...d, ...updatedDealer } : d));
     if (currentDealer?.id === updatedDealer.id) {
       setCurrentDealer(prev => ({ ...prev, ...updatedDealer }));
     }
-    dealerService.saveDealer(updatedDealer);
+    try {
+      await dealerService.updateDealer(updatedDealer.id || updatedDealer.dealerCode, updatedDealer);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer in DB:', e);
+    }
   };
 
-  const toggleDealerStatus = (id) => {
+  const toggleDealerStatus = async (id) => {
+    let nextStatus = 'Active';
     setDealers(prev => prev.map(d => {
       if (d.id === id) {
-        const nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
-        const updated = { ...d, status: nextStatus };
-        dealerService.saveDealer(updated);
-        return updated;
+        nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
+        return { ...d, status: nextStatus };
       }
       return d;
     }));
+    try {
+      await dealerService.updateDealer(id, { status: nextStatus });
+    } catch (e) {
+      console.warn('[AppContext] Failed to toggle dealer status in DB:', e);
+    }
   };
 
-  const updateDealerMarginCap = (id, newCap) => {
+  const updateDealerMarginCap = async (id, newCap) => {
     const numericCap = Number(newCap);
     setDealers(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
@@ -1207,13 +1497,125 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
     }
+    try {
+      await dealerService.updateDealer(id, { maxMarginCapPerKw: numericCap });
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer margin in DB:', e);
+    }
   };
 
-  const updateDealerPassword = (id, newPassword) => {
+  const updateDealerPassword = async (id, newPassword) => {
     setDealers(prev => prev.map(d => d.id === id ? { ...d, password: newPassword } : d));
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, password: newPassword }));
     }
+    try {
+      await authService.updatePassword('dealer', id, newPassword);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update dealer password in DB:', e);
+    }
+  };
+
+  const deleteDealer = async (id) => {
+    setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
+    if (currentDealer?.id === id) {
+      setCurrentDealer(INITIAL_DEALERS[0]);
+    }
+    try {
+      await dealerService.deleteDealer(id);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete dealer in DB:', e);
+    }
+    logActivity({
+      action: 'DELETE_DEALER',
+      module: 'DEALER_MANAGEMENT',
+      recordId: id,
+      details: `Admin deleted dealer partner ${id} from network register.`
+    });
+  };
+
+  // Dynamic Required Documents Management Methods
+  const addRequiredDocument = async (newDoc) => {
+    const docEntry = {
+      id: newDoc.id || `doc-${Date.now()}`,
+      key: newDoc.key || `doc_${Date.now()}`,
+      label: (newDoc.label || 'New Document').trim(),
+      description: (newDoc.description || '').trim(),
+      icon: newDoc.icon || 'description',
+      categories: Array.isArray(newDoc.categories) && newDoc.categories.length > 0 ? newDoc.categories : ['residential'],
+      mandatory: Boolean(newDoc.mandatory),
+      allowedExtensions: newDoc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: newDoc.captureMode || 'both'
+    };
+    const nextList = [...requiredDocuments, docEntry];
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+    return docEntry;
+  };
+
+  const updateRequiredDocument = async (docId, updates) => {
+    const nextList = requiredDocuments.map(d => d.id === docId ? { ...d, ...updates } : d);
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+  };
+
+  const deleteRequiredDocument = async (docId) => {
+    const nextList = requiredDocuments.filter(d => d.id !== docId);
+    setRequiredDocuments(nextList);
+    updateSystemSettings('requiredDocuments', nextList);
+  };
+
+  const resetRequiredDocuments = () => {
+    setRequiredDocuments(DEFAULT_REQUIRED_DOCUMENTS);
+    updateSystemSettings('requiredDocuments', DEFAULT_REQUIRED_DOCUMENTS);
+  };
+
+  // Application Stages Management Handlers
+  const addApplicationStage = (stageData) => {
+    const newStage = {
+      id: stageData.id ? stageData.id.trim() : `STAGE_${Date.now().toString().slice(-4)}`,
+      label: stageData.label.trim(),
+      description: stageData.description?.trim() || '',
+      mandatory: stageData.mandatory !== undefined ? stageData.mandatory : true,
+      order: stageData.order || (applicationStages.length + 1)
+    };
+    const nextList = [...applicationStages, newStage];
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+    return newStage;
+  };
+
+  const updateApplicationStage = (stageId, updates) => {
+    const nextList = applicationStages.map(s => s.id === stageId ? { ...s, ...updates } : s);
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+  };
+
+  const deleteApplicationStage = (stageId) => {
+    const nextList = applicationStages.filter(s => s.id !== stageId);
+    setApplicationStages(nextList);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: nextList,
+      stages: nextList.map(s => s.label)
+    });
+  };
+
+  const resetApplicationStages = () => {
+    setApplicationStages(DEFAULT_PIPELINE_STAGES);
+    updateSystemSettings('fileLifecycle', {
+      ...systemSettings?.fileLifecycle,
+      stagesDetailed: DEFAULT_PIPELINE_STAGES,
+      stages: DEFAULT_PIPELINE_STAGES.map(s => s.label)
+    });
   };
 
   const updateDealerPricing = (id, pricingConfig) => {
@@ -1428,7 +1830,7 @@ const safeSetItem = (key, value) => {
     safeSetItem('sunvine_pricing_master', newMaster);
   };
 
-  const updatePricingPresets = (newPresets) => {
+  const updatePricingPresets = async (newPresets) => {
     const isDifferent = Object.keys(newPresets || {}).some(key => {
       if (key === 'lastSynced') return false;
       return String(newPresets[key]) !== String(pricingPresets[key]);
@@ -1444,6 +1846,11 @@ const safeSetItem = (key, value) => {
     setPricingPresets(updated);
     safeSetItem('sunvine_pricing_presets', updated);
     pricingService.savePricingPresets(updated);
+    try {
+      await settingsService.savePricingPresets(updated);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync pricing presets to DB:', e);
+    }
     addNotification({
       title: 'Quotation Presets Updated',
       description: `Base Rate: ₹${Number(updated.baseRatePerKw).toLocaleString('en-IN')}/kW | Min Margin: ₹${Number(updated.minMarginPerKw).toLocaleString('en-IN')}/kW.`,
@@ -1452,7 +1859,7 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateTierMargins = (newTiers) => {
+  const updateTierMargins = async (newTiers) => {
     const isDifferent = Object.keys(newTiers || {}).some(tierKey => {
       const existing = tierMargins?.[tierKey];
       const updated = newTiers[tierKey];
@@ -1466,6 +1873,11 @@ const safeSetItem = (key, value) => {
     setTierMargins(updated);
     safeSetItem('sunvine_tier_margins', updated);
     pricingService.saveTierMargins(updated);
+    try {
+      await settingsService.savePricingPresets({ tierMargins: updated });
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync tier margins to DB:', e);
+    }
     addNotification({
       title: 'Dealer Tier Margins Updated',
       description: `Default margin thresholds updated for Diamond, Platinum, Gold & Silver dealer tiers.`,
@@ -1475,7 +1887,7 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const updateGovernanceSettings = (newSettings) => {
+  const updateGovernanceSettings = async (newSettings) => {
     const isDifferent = Object.keys(newSettings || {}).some(key => {
       return String(newSettings[key]) !== String(governanceSettings?.[key]);
     });
@@ -1484,6 +1896,11 @@ const safeSetItem = (key, value) => {
     const updated = { ...governanceSettings, ...newSettings };
     setGovernanceSettings(updated);
     safeSetItem('sunvine_governance_settings', updated);
+    try {
+      await settingsService.saveSystemSettings('governanceSettings', updated);
+    } catch (e) {
+      console.warn('[AppContext] Failed to sync governance settings to DB:', e);
+    }
 
     // If maxDealerMarginPerKW was updated, adjust any tier margin caps that exceed this national ceiling
     if (newSettings.maxDealerMarginPerKW) {
@@ -1690,6 +2107,7 @@ const safeSetItem = (key, value) => {
         addStaff,
         updateStaff,
         updateStaffPassword,
+        deleteStaff,
         addCustomerFile,
         updateCustomerFile,
         updateFileStatus,
@@ -1711,6 +2129,7 @@ const safeSetItem = (key, value) => {
         dealers,
         addDealer,
         updateDealer,
+        deleteDealer,
         toggleDealerStatus,
         updateDealerMarginCap,
         updateDealerPassword,
@@ -1756,14 +2175,20 @@ const safeSetItem = (key, value) => {
         pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
         officialProfile: SUNVINE_OFFICIAL_PROFILE,
         // Standard BOM & BoS Engine
-        bomCatalog: STANDARD_BOM_CATALOG,
+        bomCatalog,
+        setBomCatalog,
         bomCategories: STANDARD_BOM_CATEGORIES,
         bomRates,
+        setBomRates,
         updateBomItemRate,
         capacityBomMatrix,
         updateCapacityBomItemQty,
         updateCapacityBomPreset,
         getResolvedBom,
+        addBomItem,
+        updateBomItem,
+        deleteBomItem,
+        archiveBomItem,
         // Dynamic Catalogs & 'NEW' Badge Tracking
         addNewModule,
         addNewInverter,
@@ -1773,6 +2198,20 @@ const safeSetItem = (key, value) => {
         // Master System Settings & Policies
         systemSettings,
         updateSystemSettings,
+        // Dynamic Required Documents Management
+        requiredDocuments,
+        addRequiredDocument,
+        updateRequiredDocument,
+        deleteRequiredDocument,
+        resetRequiredDocuments,
+        applicationCategories: APPLICATION_CATEGORIES,
+        isDocMandatoryForCategory,
+        // Master Dynamic Application Stages
+        applicationStages,
+        addApplicationStage,
+        updateApplicationStage,
+        deleteApplicationStage,
+        resetApplicationStages,
         // Immutable Audit Activity Ledger
         auditLogs,
         logActivity,
@@ -1780,7 +2219,9 @@ const safeSetItem = (key, value) => {
         designRecords,
         saveDesignRecord,
         // Customer File Timeline Progression
-        addCustomerFileTimelineEvent
+        addCustomerFileTimelineEvent,
+        // Solar Loan Partner Banks
+        solarBanks
       }}
     >
       {children}

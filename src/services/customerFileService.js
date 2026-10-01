@@ -3,6 +3,9 @@ import { supabase } from '../lib/supabase';
 const CUSTOMER_FILES_KEY = 'sunvine_customer_files';
 
 export const customerFileService = {
+  /**
+   * Fetch all customer files from Supabase, fallback to localStorage
+   */
   async getAllCustomerFiles() {
     try {
       const { data, error } = await supabase
@@ -10,36 +13,43 @@ export const customerFileService = {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        const mapped = data.map(row => ({
-          id: row.id,
-          customerName: row.customer_name,
-          phone: row.phone,
-          address: row.address,
-          city: row.city,
-          discom: row.discom,
-          consumerNo: row.consumer_no,
-          sanctionedLoadKw: Number(row.sanctioned_load_kw),
-          solarSystemKw: Number(row.solar_system_kw),
-          roofType: row.roof_type,
-          sourceType: row.source_type,
-          dealerId: row.dealer_id,
-          dealerName: row.dealer_name,
-          staffId: row.staff_id,
-          staffName: row.staff_name,
-          financeType: row.finance_type,
-          loanBank: row.loan_bank,
-          stage: row.stage,
-          status: row.status,
-          documents: row.documents || [],
-          timeline: row.timeline || [],
-          createdAt: row.created_at
+      if (error) {
+        console.warn('[customerFileService] Fetch warning:', error.message);
+      }
+
+      if (data && data.length > 0) {
+        const mapped = data.map(f => ({
+          id: f.id,
+          customerName: f.customer_name,
+          phone: f.phone,
+          address: f.address,
+          city: f.city,
+          discom: f.discom,
+          consumerNo: f.consumer_no,
+          sanctionedLoadKw: Number(f.sanctioned_load_kw) || 0,
+          solarSystemKw: Number(f.solar_system_kw) || 0,
+          roofType: f.roof_type,
+          sourceType: f.source_type,
+          dealerId: f.dealer_id,
+          dealerName: f.dealer_name,
+          staffId: f.staff_id,
+          staffName: f.staff_name,
+          financeType: f.finance_type,
+          loanBank: f.loan_bank,
+          loanAccountNo: f.loan_account_no,
+          stage: f.stage,
+          currentStage: f.stage,
+          status: f.status,
+          documents: f.documents || [],
+          timeline: f.timeline || [],
+          createdAt: f.created_at,
+          updatedAt: f.updated_at
         }));
-        localStorage.setItem(CUSTOMER_FILES_KEY, JSON.stringify(mapped));
+        try { localStorage.setItem(CUSTOMER_FILES_KEY, JSON.stringify(mapped)); } catch (_) {}
         return mapped;
       }
     } catch (err) {
-      console.warn('Supabase fetch customer files fallback:', err);
+      console.warn('[customerFileService] Fetch exception:', err);
     }
 
     try {
@@ -50,49 +60,97 @@ export const customerFileService = {
     }
   },
 
+  /**
+   * Save / Upsert customer file to Supabase
+   */
   async saveCustomerFile(file) {
     if (!file || !file.id) return { success: false, error: 'File ID required' };
 
-    try {
-      const payload = {
-        id: file.id,
-        customer_name: file.customerName || 'Valued Customer',
-        phone: file.phone || '',
-        address: file.address || '',
-        city: file.city || 'Ahmedabad',
-        discom: file.discom || 'UGVCL',
-        consumer_no: file.consumerNo || '',
-        sanctioned_load_kw: Number(file.sanctionedLoadKw) || 5.0,
-        solar_system_kw: Number(file.solarSystemKw) || 5.0,
-        roof_type: file.roofType || 'RCC Flat Terrace',
-        source_type: file.sourceType || 'DEALER',
-        dealer_id: file.dealerId || null,
-        dealer_name: file.dealerName || null,
-        staff_id: file.staffId || null,
-        staff_name: file.staffName || null,
-        finance_type: file.financeType || 'CASH',
-        loan_bank: file.loanBank || null,
-        stage: file.stage || 'Lead',
-        status: file.status || 'Sourced',
-        documents: file.documents || [],
-        timeline: file.timeline || [],
-        updated_at: new Date().toISOString()
-      };
+    const payload = {
+      id: file.id,
+      customer_name: file.customerName || file.customer_name || 'Customer',
+      phone: file.phone || '',
+      address: file.address || '',
+      city: file.city || 'Ahmedabad',
+      discom: file.discom || 'UGVCL',
+      consumer_no: file.consumerNo || file.consumer_no || '',
+      sanctioned_load_kw: Number(file.sanctionedLoadKw || file.sanctioned_load_kw) || 6.0,
+      solar_system_kw: Number(file.solarSystemKw || file.solar_system_kw) || 5.0,
+      roof_type: file.roofType || file.roof_type || 'Flat RCC',
+      source_type: file.sourceType || file.source_type || 'DIRECT_STAFF',
+      dealer_id: file.dealerId || file.dealer_id || null,
+      dealer_name: file.dealerName || file.dealer_name || null,
+      staff_id: file.staffId || file.staff_id || 'STF-001',
+      staff_name: file.staffName || file.staff_name || 'Jayesh Patel',
+      finance_type: file.financeType || file.finance_type || 'CASH',
+      loan_bank: file.loanBank || file.loan_bank || null,
+      loan_account_no: file.loanAccountNo || file.loan_account_no || null,
+      stage: file.stage || file.currentStage || 'Registration',
+      status: file.status || 'Active',
+      documents: file.documents || [],
+      timeline: file.timeline || [],
+      updated_at: new Date().toISOString()
+    };
 
+    try {
       const { data, error } = await supabase
         .from('customer_files')
-        .upsert([payload], { onConflict: 'id' });
+        .upsert([payload], { onConflict: 'id' })
+        .select();
 
       if (error) {
-        console.warn('Supabase save customer file notice:', error.message);
+        console.warn('[customerFileService] Save warning:', error.message);
         return { success: true, localOnly: true, data: file };
       }
+
       return { success: true, data };
     } catch (err) {
+      console.error('[customerFileService] Save error:', err);
       return { success: true, localOnly: true, data: file };
     }
   },
 
+  /**
+   * Update customer file status or timeline in Supabase
+   */
+  async updateCustomerFile(fileId, updates) {
+    if (!fileId) return { success: false, error: 'File ID required' };
+
+    const payload = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.stage !== undefined || updates.currentStage !== undefined) {
+      payload.stage = updates.stage || updates.currentStage;
+    }
+    if (updates.timeline !== undefined) payload.timeline = updates.timeline;
+    if (updates.documents !== undefined) payload.documents = updates.documents;
+    if (updates.loanBank !== undefined) payload.loan_bank = updates.loanBank;
+    if (updates.loanAccountNo !== undefined) payload.loan_account_no = updates.loanAccountNo;
+    if (updates.financeType !== undefined) payload.finance_type = updates.financeType;
+
+    try {
+      const { data, error } = await supabase
+        .from('customer_files')
+        .update(payload)
+        .eq('id', fileId);
+
+      if (error) {
+        console.warn('[customerFileService] Update warning:', error.message);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, data };
+    } catch (err) {
+      console.error('[customerFileService] Update error:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Delete customer file from database
+   */
   async deleteCustomerFile(fileId) {
     if (!fileId) return { success: false };
     try {

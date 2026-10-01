@@ -1,24 +1,27 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authService } from '../../services/authService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function DealerLogin() {
-  const { login, setAuthView, dealers } = useApp();
-  const [mobileNumber, setMobileNumber] = useState('9810000000');
-  const [password, setPassword] = useState('dealer123');
+  const { login, setAuthView } = useApp();
+  const { showLoader, hideLoader } = useLoading();
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    const cleanNumber = mobileNumber.replace(/\D/g, '');
+    const cleanNumber = mobileNumber.replace(/\D/g, '').slice(-10);
     if (cleanNumber.length !== 10) {
       setError('Please enter a valid 10-digit mobile number.');
       return;
     }
     if (!/^[6-9]/.test(cleanNumber)) {
-      setError('Mobile number must start with 6, 7, 8, or 9.');
+      setError('Mobile number must start with 6, 7, 8, or 9 (Valid Indian telecom series).');
       return;
     }
     if (!password || password.trim().length === 0) {
@@ -26,36 +29,24 @@ export default function DealerLogin() {
       return;
     }
     setError('');
-
-    // Locate dealer in Gujarat network by phone number
-    const matchedDealer = (dealers || []).find((d) => {
-      const dClean = String(d.mobile || '').replace(/\D/g, '');
-      return dClean.endsWith(cleanNumber);
-    });
-
-    const expectedPassword = matchedDealer?.password || 'dealer123';
-
-    if (matchedDealer) {
-      if (password !== expectedPassword) {
-        setError('Incorrect password. Please contact Sunvine Admin to reset your credentials.');
-        return;
-      }
-      if (matchedDealer.status === 'Suspended') {
-        setError('Your dealer account is currently suspended. Please contact Sunvine Operations.');
-        return;
-      }
-    } else if (cleanNumber === '9876543210' && password === 'dealer123') {
-      // Demo fallback dealer
-    } else {
-      setError('No registered dealer found with this mobile number. Contact Sunvine Admin to get access.');
-      return;
-    }
-
     setLoading(true);
-    setTimeout(() => {
+    showLoader('Authenticating Dealer Portal...');
+
+    try {
+      const res = await authService.loginDealer(cleanNumber, password);
+      if (!res.success) {
+        setError(res.error || 'Authentication failed. Please verify credentials.');
+        setLoading(false);
+        hideLoader();
+        return;
+      }
+      login('dealer', res.dealer);
+    } catch (err) {
+      setError('Server authentication error. Please try again.');
+    } finally {
       setLoading(false);
-      login('dealer', matchedDealer || undefined);
-    }, 400);
+      hideLoader();
+    }
   };
 
   return (
@@ -70,6 +61,8 @@ export default function DealerLogin() {
             <img
               alt="Sunvine Renewable Logo"
               className="h-8 w-auto object-contain"
+              width="148"
+              height="32"
               src="/sunvine_logo_transparent.png"
             />
           </div>
@@ -233,7 +226,7 @@ export default function DealerLogin() {
 
             {/* Submit Primary Button */}
             <button
-              className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all"
+              className="w-full h-11 mt-1 rounded-lg bg-primary hover:bg-[#1f5100] text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
               type="submit"
               disabled={loading}
             >
@@ -342,6 +335,8 @@ export default function DealerLogin() {
                   <img
                     alt="Sunvine Renewable Energy Logo"
                     className="h-9 lg:h-10 w-auto object-contain brightness-110 drop-shadow-sm"
+                    width="160"
+                    height="40"
                     src="/sunvine_logo_white.png"
                   />
                 </div>
@@ -542,7 +537,7 @@ export default function DealerLogin() {
 
                 {/* Primary Submit Button */}
                 <button
-                  className="w-full h-10 bg-primary-container hover:bg-primary text-on-primary font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  className="w-full h-10 bg-primary hover:bg-[#1f5100] text-white font-label-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
                   id="submit-btn"
                   type="submit"
                   disabled={loading}

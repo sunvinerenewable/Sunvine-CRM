@@ -4,10 +4,13 @@ import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import { storageService } from '../../services/storageService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function StaffFiles() {
   const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
   const { addToast } = useToast();
+  const { showLoader, hideLoader } = useLoading();
 
   const [statusFilter, setStatusFilter] = useState('all');
   const [financeFilter, setFinanceFilter] = useState('all'); // 'all', 'CASH', 'LOAN'
@@ -79,71 +82,97 @@ export default function StaffFiles() {
       return;
     }
 
-    const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
-    const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
-    const newFile = {
-      id: newFileId,
-      customerName: newCustName.trim(),
-      phone: newCustPhone.trim(),
-      address: newCustAddress.trim() || 'Gujarat, India',
-      discom: newCustDiscom,
-      consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
-      sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
-      solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
-      roofType: 'RCC Terrace',
-      staffId: currentStaff?.id || 'STF-001',
-      staffName: currentStaff?.name || 'Sales Officer',
-      sourceType: newCustSourceType,
-      source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',
-      dealerId: matchedDealer ? matchedDealer.id : null,
-      dealerName: matchedDealer ? (matchedDealer.firmName || matchedDealer.name) : null,
-      financeType: newCustFinanceType,
-      paymentMode: newCustFinanceType,
-      loanBank: newCustFinanceType === 'LOAN' ? newCustLoanBank : null,
-      loanRefNo: newCustFinanceType === 'LOAN' ? newCustLoanRef.trim() : null,
-      createdDate: new Date().toISOString().split('T')[0],
-      status: 'Sourced',
-      currentStage: 'LEAD_SOURCED',
-      applicationNo: 'Draft Pending',
-      documents: {
-        aadhaar: { uploaded: false, filename: null, date: null },
-        lightBill: { uploaded: false, filename: null, date: null },
-        meterPhoto: { uploaded: false, filename: null, date: null },
-        sitePhoto: { uploaded: false, filename: null, date: null },
-        bankPassbook: { uploaded: false, filename: null, date: null }
-      }
-    };
+    showLoader('Registering new customer file...');
+    try {
+      const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
+      const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const newFile = {
+        id: newFileId,
+        customerName: newCustName.trim(),
+        phone: newCustPhone.trim(),
+        address: newCustAddress.trim() || 'Gujarat, India',
+        discom: newCustDiscom,
+        consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
+        sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+        solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+        roofType: 'RCC Terrace',
+        staffId: currentStaff?.id || 'STF-001',
+        staffName: currentStaff?.name || 'Sales Officer',
+        sourceType: newCustSourceType,
+        source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',
+        dealerId: matchedDealer ? matchedDealer.id : null,
+        dealerName: matchedDealer ? (matchedDealer.firmName || matchedDealer.name) : null,
+        financeType: newCustFinanceType,
+        paymentMode: newCustFinanceType,
+        loanBank: newCustFinanceType === 'LOAN' ? newCustLoanBank : null,
+        loanRefNo: newCustFinanceType === 'LOAN' ? newCustLoanRef.trim() : null,
+        createdDate: new Date().toISOString().split('T')[0],
+        status: 'Sourced',
+        currentStage: 'LEAD_SOURCED',
+        applicationNo: 'Draft Pending',
+        documents: {
+          aadhaar: { uploaded: false, filename: null, date: null },
+          lightBill: { uploaded: false, filename: null, date: null },
+          meterPhoto: { uploaded: false, filename: null, date: null },
+          sitePhoto: { uploaded: false, filename: null, date: null },
+          bankPassbook: { uploaded: false, filename: null, date: null }
+        }
+      };
 
-    addCustomerFile(newFile);
-    setShowAddFileModal(false);
-    setNewCustName('');
-    setNewCustPhone('');
-    setNewCustAddress('');
-    setNewCustConsumerNo('');
-    setNewCustLoanRef('');
-    addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
+      addCustomerFile(newFile);
+      setShowAddFileModal(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustAddress('');
+      setNewCustConsumerNo('');
+      setNewCustLoanRef('');
+      addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
+    } finally {
+      hideLoader();
+    }
   };
 
-  const handleUploadDoc = (fileId, docKey, filename = 'document.pdf') => {
+  const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
     if (!file) return;
 
-    const updatedDocs = {
-      ...file.documents,
-      [docKey]: {
-        uploaded: true,
-        filename: filename || `${docKey}_uploaded.pdf`,
-        date: new Date().toISOString().split('T')[0]
+    let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
+    let fileUrl = null;
+
+    showLoader('Securing document in vault...');
+    try {
+      if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
+        try {
+          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
+          if (uploadRes?.success) {
+            filename = uploadRes.filename;
+            fileUrl = uploadRes.publicUrl;
+          }
+        } catch (err) {
+          console.warn('[StaffFiles] Direct upload fallback:', err);
+        }
       }
-    };
 
-    updateCustomerFile(fileId, { documents: updatedDocs });
+      const updatedDocs = {
+        ...file.documents,
+        [docKey]: {
+          uploaded: true,
+          filename: filename || `${docKey}_uploaded.pdf`,
+          url: fileUrl,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
 
-    if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
-      setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+      updateCustomerFile(fileId, { documents: updatedDocs });
+
+      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+      }
+
+      addToast(`Document uploaded: ${filename}`, 'success');
+    } finally {
+      hideLoader();
     }
-
-    addToast(`Document uploaded: ${docKey} (Optional)`, 'success');
   };
 
   return (
@@ -761,7 +790,7 @@ export default function StaffFiles() {
                         </span>
                       </div>
                       {isUp && (
-                        <p className="text-[11px] text-secondary mt-1 truncate">{dData?.filename}</p>
+                        <p className="text-[11px] font-mono text-primary mt-1 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">{dData?.filename}</p>
                       )}
                     </div>
 
@@ -779,10 +808,11 @@ export default function StaffFiles() {
                           <span>Upload (Optional)</span>
                           <input
                             type="file"
+                            accept=".pdf,.jpg,.jpeg,.png,.webp"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const f = e.target.files?.[0];
-                              if (f) handleUploadDoc(selectedFileForDocs.id, doc.key, f.name);
+                              if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
                             }}
                           />
                         </label>

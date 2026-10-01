@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+import ConvertQuotationModal from '../DealerPortal/ConvertQuotationModal';
 
 export default function AllQuotations() {
-  const { quotations, setPreviewQuotation, setActiveTab, dealers, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
+  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -12,6 +13,7 @@ export default function AllQuotations() {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
   const [selectedAuditQuote, setSelectedAuditQuote] = useState(null);
+  const [convertingQuote, setConvertingQuote] = useState(null);
   const [viewMode, setViewMode] = useTableViewMode('admin_all_quotations');
 
   // Top Filter Controls (SR-18)
@@ -135,17 +137,43 @@ export default function AllQuotations() {
     ).slice(0, 25);
   }, [dealers, dealerSearchQuery]);
 
-  // Filter quotes
-  const filteredQuotes = allQuotes.filter(q => {
-    const term = searchTerm.toLowerCase();
-    const matchSearch = (q.quoteNumber && q.quoteNumber.toLowerCase().includes(term)) ||
-                        (q.id && q.id.toLowerCase().includes(term)) ||
-                        (q.customerName && q.customerName.toLowerCase().includes(term)) ||
-                        (q.dealerName && q.dealerName.toLowerCase().includes(term)) ||
-                        (q.dealerId && q.dealerId.toLowerCase().includes(term)) ||
-                        (q.city && q.city.toLowerCase().includes(term));
+  const getQuotationOwnership = (q) => {
+    const matchedDealer = (dealers || []).find(d => d.id === q.dealerId || d.dealerCode === q.dealerId || d.firmName === q.dealerName);
+    const dealerName = q.dealerName || matchedDealer?.firmName || 'Gujarat Solar Tech';
+    const dealerId = q.dealerId || matchedDealer?.id || 'SV-DLR-0001';
+    const staffName = q.staffName || q.assignedStaffName || matchedDealer?.assignedStaffName || 'Jayesh Patel';
+    const staffId = q.staffId || q.assignedStaffId || matchedDealer?.assignedStaffId || 'STF-001';
+    return { dealerName, dealerId, staffName, staffId };
+  };
 
-    if (!matchSearch) return false;
+  // Filter quotes with comprehensive multi-attribute search
+  const filteredQuotes = allQuotes.filter(q => {
+    const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
+    const kw = parseFloat(q.systemCapacityKW || q.capacity || 0);
+    const totalAmt = q.grandTotalCustomer || q.totalAmount || q.amount || 0;
+    const discount = q.discountPercent || q.customDiscountPercent || q.discountAmount || 0;
+
+    const term = searchTerm.toLowerCase().trim();
+    if (term) {
+      const cleanTerm = term.replace(/\s+/g, '');
+      const matchSearch =
+        (q.quoteNumber && q.quoteNumber.toLowerCase().includes(term)) ||
+        (q.id && q.id.toLowerCase().includes(term)) ||
+        (q.customerName && q.customerName.toLowerCase().includes(term)) ||
+        (dealerName && dealerName.toLowerCase().includes(term)) ||
+        (dealerId && dealerId.toLowerCase().includes(term)) ||
+        (staffName && staffName.toLowerCase().includes(term)) ||
+        (staffId && staffId.toLowerCase().includes(term)) ||
+        (q.city && q.city.toLowerCase().includes(term)) ||
+        (q.discom && q.discom.toLowerCase().includes(term)) ||
+        `${kw}kw`.includes(cleanTerm) ||
+        `${kw}` === term ||
+        `${discount}%`.includes(term) ||
+        `${discount}` === term ||
+        `${totalAmt}`.includes(term);
+
+      if (!matchSearch) return false;
+    }
 
     const statusLower = (q.status || '').toLowerCase();
     if (activeTabFilter === 'approved' && !statusLower.includes('approved') && !statusLower.includes('active') && !statusLower.includes('sent')) return false;
@@ -797,11 +825,11 @@ export default function AllQuotations() {
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-64 sm:w-80 flex items-center">
+            <div className="relative w-64 sm:w-96 flex items-center">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[18px] pointer-events-none select-none">search</span>
               <input
                 className="w-full h-9 bg-[#FFFFFF] border border-[#E4E7EB] rounded-lg pl-9 pr-3 text-xs text-[#1B1F23] placeholder-gray-400 focus:outline-none focus:border-[#6CBF3D] focus:ring-2 focus:ring-[#6CBF3D]/20 transition-all font-body-sm"
-                placeholder="Search Quote #, Customer, Dealer, City..."
+                placeholder="Global Search: Customer, Quote #, kW, Staff, Dealer, Discount, Amount..."
                 type="text"
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
@@ -837,8 +865,8 @@ export default function AllQuotations() {
                   const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                   const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
                   const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
-                  const isFlagged = marginPerKw > 6000;
                   const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
+                  const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
                   return (
                     <div key={q.id || idx} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
@@ -861,8 +889,8 @@ export default function AllQuotations() {
                         </span>
                       </div>
 
-                      {/* Customer & Dealer */}
-                      <div className="flex flex-col gap-1.5 pt-1 text-xs">
+                      {/* Customer & Ownership Mapping */}
+                      <div className="flex flex-col gap-2 pt-1 text-xs">
                         <div className="flex items-start justify-between gap-2">
                           <span className="text-secondary shrink-0">Customer:</span>
                           <div className="text-right min-w-0">
@@ -871,11 +899,19 @@ export default function AllQuotations() {
                           </div>
                         </div>
 
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-secondary shrink-0">Dealer:</span>
-                          <div className="text-right min-w-0">
-                            <span className="font-medium text-on-surface truncate block">{q.dealerName || 'Gujarat Solar Tech'}</span>
-                            <span className="text-[10px] text-secondary font-mono">{q.dealerId || '#SV-DLR-0842'}</span>
+                        {/* Ownership Mapping Card Badge */}
+                        <div className="p-2 rounded-lg bg-[#F6F8F7] border border-[#E4E7EB] space-y-1 text-xs">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-secondary flex items-center gap-1 truncate">
+                              <span className="material-symbols-outlined text-[13px] text-primary shrink-0">badge</span>
+                              <strong className="text-on-surface truncate">{staffName}</strong>
+                              <span className="text-[10px] text-secondary">({staffId})</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] text-secondary">
+                            <span className="material-symbols-outlined text-[13px] shrink-0">storefront</span>
+                            <span className="truncate">{dealerName}</span>
+                            <span className="font-mono text-[10px]">({dealerId})</span>
                           </div>
                         </div>
                       </div>
@@ -914,25 +950,33 @@ export default function AllQuotations() {
                         </div>
                       </div>
 
-                      {/* Footer Actions */}
+                      {/* Footer Actions: PDF, Audit, and Convert to Customer */}
                       <div className="flex items-center justify-between pt-2 border-t border-[#F1F4F9]">
                         <span className="text-[11px] text-secondary">{q.date || '24 Oct 2025'}</span>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setConvertingQuote(q)}
+                            className="px-2 py-1 text-xs font-bold rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 flex items-center gap-1 transition-colors cursor-pointer border border-emerald-500/30"
+                            title="Convert Quotation to Customer Record"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">person_add</span>
+                            <span>Convert</span>
+                          </button>
                           <button
                             onClick={() => handleViewPdf(q)}
-                            className="px-2.5 py-1 text-xs rounded border border-[#E4E7EB] hover:border-primary text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
+                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-primary text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
                             title="View Customer PDF"
                           >
-                            <span className="material-symbols-outlined text-[15px]">picture_as_pdf</span>
+                            <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
                             <span>PDF</span>
                           </button>
                           <button
                             onClick={() => setSelectedAuditQuote(q)}
-                            className="px-2.5 py-1 text-xs rounded border border-[#E4E7EB] hover:border-[#256676] text-secondary hover:text-[#256676] flex items-center gap-1 transition-colors cursor-pointer"
+                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-[#256676] text-secondary hover:text-[#256676] flex items-center gap-1 transition-colors cursor-pointer"
                             title="Margin Audit Sheet"
                           >
-                            <span className="material-symbols-outlined text-[15px]">shield</span>
-                            <span>Audit</span>
+                            <span className="material-symbols-outlined text-[14px]">shield</span>
                           </button>
                         </div>
                       </div>
@@ -949,7 +993,7 @@ export default function AllQuotations() {
               <tr className="bg-[#0F1B2E] text-white font-label-sm text-xs">
                 <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">Quote Ref</th>
                 <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">Date</th>
-                <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">Issuing Dealer / Firm</th>
+                <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">Ownership &amp; Dealer</th>
                 <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">Customer / Enterprise</th>
                 <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px]">System Size &amp; Type</th>
                 <th className="py-3.5 px-4 font-semibold tracking-wider uppercase text-[11px] text-right">Base Price</th>
@@ -968,6 +1012,7 @@ export default function AllQuotations() {
                 const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
                 const isFlagged = marginPerKw > 6000;
                 const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
+                const ownership = getQuotationOwnership(q);
 
                 return (
                   <tr key={q.id || idx} className="bg-white hover:bg-[#F0F4F2] transition-colors">
@@ -983,9 +1028,17 @@ export default function AllQuotations() {
                       {q.date || '24 Oct 2025'}
                     </td>
                     <td className="py-3.5 px-4">
-                      <div className="font-medium text-on-surface">{q.dealerName || 'Gujarat Solar Tech'}</div>
-                      <div className="text-[11px] text-secondary font-mono flex items-center gap-1">
-                        <span>{q.dealerId || '#SV-DLR-0842'}</span> • <span>{q.city || 'Rajkot'}, GJ</span>
+                      <div className="font-medium text-on-surface flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[15px] text-primary">storefront</span>
+                        <span>{ownership.dealerName}</span>
+                      </div>
+                      <div className="text-[11px] text-secondary font-mono flex items-center gap-1 mt-0.5">
+                        <span>{ownership.dealerId}</span>
+                        {q.city && <span>• {q.city}</span>}
+                      </div>
+                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                        <span className="material-symbols-outlined text-[11px]">badge</span>
+                        <span>Staff: {ownership.staffName}</span>
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
@@ -1030,10 +1083,18 @@ export default function AllQuotations() {
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setConvertingQuote(q)}
+                          className="px-2 py-1 text-xs font-bold rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 flex items-center gap-1 transition-colors cursor-pointer border border-emerald-500/30"
+                          title="Convert Quotation to Customer Record"
+                        >
+                          <span className="material-symbols-outlined text-xs">person_add</span>
+                          <span>Convert</span>
+                        </button>
                         <button
                           onClick={() => handleViewPdf(q)}
-                          className="p-1.5 hover:bg-surface-container-high rounded text-secondary hover:text-on-surface"
+                          className="p-1.5 hover:bg-surface-container-high rounded text-secondary hover:text-on-surface cursor-pointer"
                           title="View Customer PDF"
                         >
                           <span className="material-symbols-outlined text-sm">picture_as_pdf</span>
@@ -1279,6 +1340,19 @@ export default function AllQuotations() {
           </div>
         );
       })()}
+
+      {/* LEAD-TO-CUSTOMER CONVERSION MODAL */}
+      {convertingQuote && (
+        <ConvertQuotationModal
+          quotation={convertingQuote}
+          isOpen={!!convertingQuote}
+          onClose={() => setConvertingQuote(null)}
+          onSuccess={(newCust) => {
+            setConvertingQuote(null);
+            if (refreshQuotations) refreshQuotations();
+          }}
+        />
+      )}
     </div>
   );
 }

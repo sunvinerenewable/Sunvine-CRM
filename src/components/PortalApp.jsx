@@ -17,6 +17,7 @@ const DealerDashboard = lazy(() => import('./DealerPortal/DealerDashboard'));
 const CreateQuotation = lazy(() => import('./DealerPortal/CreateQuotation'));
 const QuotationPreview = lazy(() => import('./DealerPortal/QuotationPreview'));
 const MyQuotations = lazy(() => import('./DealerPortal/MyQuotations'));
+const MyApplications = lazy(() => import('./DealerPortal/MyApplications'));
 const DealerSettings = lazy(() => import('./DealerPortal/DealerSettings'));
 
 // Top-Level Lazy-Loaded Staff Portal Views
@@ -168,6 +169,8 @@ function PortalContent() {
         return <CreateQuotation />;
       case 'my_quotes':
         return <MyQuotations />;
+      case 'my_applications':
+        return <MyApplications />;
       case 'dealer_performance':
         return <BusinessPerformance />;
       case 'lead_generation':

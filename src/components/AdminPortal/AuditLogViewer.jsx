@@ -60,7 +60,7 @@ export default function AuditLogViewer() {
             <span>&bull;</span>
             <span className="text-primary font-bold">Immutable Append-Only Audit Trail</span>
           </div>
-          <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
             Enterprise Audit Logs &amp; Activity Trail
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
@@ -131,7 +131,7 @@ export default function AuditLogViewer() {
         <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[20px]">history</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface">
+            <h3 className="font-heading font-bold text-sm text-on-surface">
               Audit Event Ledger ({filteredLogs.length} Events)
             </h3>
           </div>
@@ -203,7 +203,7 @@ export default function AuditLogViewer() {
             <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[22px]">verified_user</span>
-                <h3 className="font-['Space_Grotesk'] font-bold text-base">Audit Record Verification</h3>
+                <h3 className="font-heading font-bold text-base">Audit Record Verification</h3>
               </div>
               <button
                 type="button"

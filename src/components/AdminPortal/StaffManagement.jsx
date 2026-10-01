@@ -13,6 +13,7 @@ export default function StaffManagement() {
     addStaff,
     updateStaff,
     updateStaffPassword,
+    deleteStaff,
     addCustomerFile,
     updateCustomerFile,
     updateFileStatus
@@ -36,10 +37,64 @@ export default function StaffManagement() {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showBankModal, setShowBankModal] = useState(false);
 
-  // Staff Credentials Modal
+  // Staff Credentials & User Management State
   const [selectedStaffForCreds, setSelectedStaffForCreds] = useState(null);
+  const [editStaffName, setEditStaffName] = useState('');
+  const [editStaffPhone, setEditStaffPhone] = useState('');
+  const [editStaffEmail, setEditStaffEmail] = useState('');
+  const [editStaffRole, setEditStaffRole] = useState('Field Sales Executive');
+  const [editStaffZone, setEditStaffZone] = useState('');
   const [editStaffPassword, setEditStaffPassword] = useState('');
   const [showStaffPassword, setShowStaffPassword] = useState(false);
+  const [staffToDelete, setStaffToDelete] = useState(null);
+
+  const handleOpenStaffCreds = (member) => {
+    setSelectedStaffForCreds(member);
+    setEditStaffName(member.name || '');
+    setEditStaffPhone(member.phone || '');
+    setEditStaffEmail(member.email || '');
+    setEditStaffRole(member.role || 'Field Sales Executive');
+    setEditStaffZone(member.zone || '');
+    setEditStaffPassword(member.password || 'Sunvine@2026');
+    setShowStaffPassword(false);
+  };
+
+  const handleSaveStaffCredentials = (e) => {
+    if (e) e.preventDefault();
+    if (!selectedStaffForCreds) return;
+    if (!editStaffName.trim() || !editStaffPhone.trim()) {
+      addToast('Name and Mobile Number are required.', 'error');
+      return;
+    }
+    const updated = {
+      name: editStaffName.trim(),
+      phone: editStaffPhone.trim(),
+      email: editStaffEmail.trim(),
+      role: editStaffRole,
+      zone: editStaffZone,
+      password: editStaffPassword.trim() || 'Sunvine@2026'
+    };
+    if (updateStaff) {
+      updateStaff(selectedStaffForCreds.id, updated);
+    }
+    if (updateStaffPassword && editStaffPassword.trim()) {
+      updateStaffPassword(selectedStaffForCreds.id, editStaffPassword.trim());
+    }
+    addToast(`Staff credentials & profile updated for ${editStaffName}!`, 'success');
+    setSelectedStaffForCreds(null);
+  };
+
+  const handleConfirmDeleteStaff = () => {
+    if (!staffToDelete) return;
+    if (deleteStaff) {
+      deleteStaff(staffToDelete.id);
+    }
+    addToast(`Staff member "${staffToDelete.name}" (${staffToDelete.id}) deleted.`, 'info');
+    setStaffToDelete(null);
+    if (selectedStaffForCreds?.id === staffToDelete.id) {
+      setSelectedStaffForCreds(null);
+    }
+  };
 
   // New Staff Form State
   const [newStaffName, setNewStaffName] = useState('');
@@ -555,16 +610,22 @@ export default function StaffManagement() {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => {
-                            setSelectedStaffForCreds(member);
-                            setEditStaffPassword(member.password || 'Sunvine@2026');
-                          }}
-                          className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
-                          title="Manage Password & Credentials"
-                        >
-                          <span className="material-symbols-outlined text-[16px] text-amber-500">key</span>
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleOpenStaffCreds(member)}
+                            className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
+                            title="Manage Profile & Credentials"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-amber-500">edit_square</span>
+                          </button>
+                          <button
+                            onClick={() => setStaffToDelete(member)}
+                            className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
+                            title="Delete Staff Member"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-3 space-y-1.5 text-xs text-slate-600">
@@ -733,22 +794,86 @@ export default function StaffManagement() {
           <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900">
             <div className="flex items-center justify-between border-b border-[#E4E7EB] pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500">key</span>
-                <span>Manage Staff Credentials - {selectedStaffForCreds.name}</span>
+                <span className="material-symbols-outlined text-amber-500">manage_accounts</span>
+                <span>Manage Staff Profile &amp; Credentials</span>
               </h3>
               <button onClick={() => setSelectedStaffForCreds(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1">
-                <div className="text-slate-500">Staff ID: <strong className="text-slate-900 font-mono">{selectedStaffForCreds.id}</strong></div>
-                <div className="text-slate-500">Login Mobile: <strong className="text-emerald-700 font-bold">{selectedStaffForCreds.phone}</strong></div>
+            <form onSubmit={handleSaveStaffCredentials} className="space-y-3 text-xs">
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between">
+                <div>
+                  <span className="text-slate-500 text-[11px]">System Staff ID:</span>
+                  <span className="ml-1.5 font-bold font-mono text-slate-900">{selectedStaffForCreds.id}</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                  {selectedStaffForCreds.status || 'Active'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editStaffName}
+                    onChange={e => setEditStaffName(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile / Login ID *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editStaffPhone}
+                    onChange={e => setEditStaffPhone(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={editStaffEmail}
+                    onChange={e => setEditStaffEmail(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Role / Designation</label>
+                  <select
+                    value={editStaffRole}
+                    onChange={e => setEditStaffRole(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Field Sales Executive">Field Sales Executive</option>
+                    <option value="Verification Desk Executive">Verification Desk Executive</option>
+                    <option value="Regional Area Manager">Regional Area Manager</option>
+                    <option value="Senior Technical Auditor">Senior Technical Auditor</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Change Account Password</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Territory / Zone</label>
+                <input
+                  type="text"
+                  value={editStaffZone}
+                  onChange={e => setEditStaffZone(e.target.value)}
+                  placeholder="e.g. Rajkot &amp; Saurashtra (PGVCL)"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Portal Login Password</label>
                 <div className="relative">
                   <input
                     type={showStaffPassword ? 'text' : 'password'}
@@ -759,7 +884,7 @@ export default function StaffManagement() {
                   <button
                     type="button"
                     onClick={() => setShowStaffPassword(!showStaffPassword)}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700"
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[16px]">
                       {showStaffPassword ? 'visibility_off' : 'visibility'}
@@ -768,39 +893,84 @@ export default function StaffManagement() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
+              <div className="flex items-center gap-2 pt-1 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setEditStaffPassword('Sunvine@2026')}
-                  className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 rounded border border-slate-200 text-[11px] text-slate-700 font-medium"
+                  className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 rounded border border-slate-200 text-[11px] text-slate-700 font-medium cursor-pointer"
                 >
                   Reset to Sunvine@2026
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCopyCredentials(selectedStaffForCreds)}
-                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto"
+                  onClick={() => handleCopyCredentials({ ...selectedStaffForCreds, phone: editStaffPhone, password: editStaffPassword })}
+                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 rounded text-[11px] font-semibold flex items-center gap-1 ml-auto cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[14px]">share</span>
                   <span>Share on WhatsApp</span>
                 </button>
               </div>
-            </div>
 
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#E4E7EB]">
+              <div className="flex items-center justify-between pt-4 border-t border-[#E4E7EB]">
+                <button
+                  type="button"
+                  onClick={() => setStaffToDelete(selectedStaffForCreds)}
+                  className="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs flex items-center gap-1 border border-red-200 cursor-pointer transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">delete</span>
+                  <span>Delete Staff</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStaffForCreds(null)}
+                    className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg cursor-pointer shadow-sm flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE STAFF MODAL */}
+      {staffToDelete && (
+        <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-red-200 rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 text-slate-900 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">warning</span>
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-base text-slate-900">Delete Staff Member?</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Are you sure you want to delete <strong className="text-slate-900">{staffToDelete.name}</strong> ({staffToDelete.id})? Their portal access will be immediately terminated.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setSelectedStaffForCreds(null)}
-                className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
+                onClick={() => setStaffToDelete(null)}
+                className="px-4 py-2 rounded-lg border border-[#E4E7EB] text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
-                Close
+                Cancel
               </button>
               <button
                 type="button"
-                onClick={handleSaveStaffPassword}
-                className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg cursor-pointer shadow-sm"
+                onClick={handleConfirmDeleteStaff}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1"
               >
-                Save New Password
+                <span className="material-symbols-outlined text-sm">delete_forever</span>
+                <span>Confirm Delete</span>
               </button>
             </div>
           </div>
