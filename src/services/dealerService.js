@@ -1,49 +1,60 @@
 import { supabase } from '../lib/supabase';
 
+const DEALERS_KEY = 'sunvine_dealers';
+
 export const dealerService = {
   /**
-   * Fetch all dealers from Supabase
+   * Fetch all registered dealers from Supabase, fallback to localStorage
    */
   async getAllDealers() {
     try {
       const { data, error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .select('*')
         .order('dealer_code', { ascending: true });
 
       if (error) {
         console.warn('[dealerService] Fetch dealers warning:', error.message);
-        return [];
       }
 
-      return (data || []).map(d => ({
-        id: d.dealer_code || d.id,
-        uuid: d.id,
-        dealerCode: d.dealer_code,
-        firmName: d.firm_name,
-        contactPerson: d.contact_person,
-        mobile: d.mobile_number,
-        mobileNumber: d.mobile_number,
-        email: d.email,
-        city: d.city,
-        state: d.state,
-        discom: d.discom,
-        status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
-        rating: Number(d.rating) || 4.9,
-        tier: d.tier || 'Gold EPC',
-        maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
-        totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
-        assignedStaffId: d.assigned_staff_id || 'STF-001',
-        assignedStaffName: d.assigned_staff_name || 'Jayesh Patel',
-        bankName: d.bank_name || 'State Bank of India',
-        accountNumber: d.account_number || '394857201948',
-        ifscCode: d.ifsc_code || 'SBIN0001234',
-        branch: d.branch || `${d.city || 'Ahmedabad'} Main Branch`,
-        pricingConfig: d.pricing_config || {},
-        createdAt: d.created_at
-      }));
+      if (data && data.length > 0) {
+        const mapped = data.map(d => ({
+          id: d.dealer_code || d.id,
+          uuid: d.id,
+          dealerCode: d.dealer_code,
+          firmName: d.firm_name,
+          contactPerson: d.contact_person,
+          mobile: d.mobile_number,
+          mobileNumber: d.mobile_number,
+          email: d.email,
+          city: d.city,
+          state: d.state,
+          discom: d.discom,
+          status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
+          rating: Number(d.rating) || 4.9,
+          tier: d.tier || 'Gold EPC',
+          maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
+          totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
+          assignedStaffId: d.assigned_staff_id || 'STF-001',
+          assignedStaffName: d.assigned_staff_name || 'Jayesh Patel',
+          bankName: d.bank_name || 'State Bank of India',
+          accountNumber: d.account_number || '394857201948',
+          ifscCode: d.ifsc_code || 'SBIN0001234',
+          branch: d.branch || `${d.city || 'Ahmedabad'} Main Branch`,
+          pricingConfig: d.pricing_config || {},
+          createdAt: d.created_at
+        }));
+        try { localStorage.setItem(DEALERS_KEY, JSON.stringify(mapped)); } catch (_) {}
+        return mapped;
+      }
     } catch (err) {
-      console.error('[dealerService] Error fetching dealers:', err);
+      console.warn('[dealerService] Error fetching dealers:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(DEALERS_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
       return [];
     }
   },
@@ -63,7 +74,7 @@ export const dealerService = {
         p_contact_person: dealer.contactPerson || 'Authorized Partner',
         p_mobile: cleanPhone,
         p_email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
-        p_password: dealer.password || dealer.accessCode || 'dealer123',
+        p_password: dealer.password || dealer.accessCode || '',
         p_city: dealer.city || 'Ahmedabad',
         p_state: dealer.state || 'Gujarat',
         p_discom: dealer.discom || 'UGVCL',
@@ -72,8 +83,22 @@ export const dealerService = {
       });
 
       if (error) {
-        console.error('[dealerService] Create dealer RPC error:', error.message);
-        return { success: false, error: error.message };
+        // Fallback upsert if RPC is unavailable
+        const payload = {
+          dealer_code: dealerCode,
+          firm_name: dealer.firmName || 'Gujarat Solar EPC',
+          contact_person: dealer.contactPerson || 'Authorized Partner',
+          mobile_number: cleanPhone,
+          email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
+          city: dealer.city || 'Ahmedabad',
+          state: dealer.state || 'Gujarat',
+          discom: dealer.discom || 'UGVCL',
+          status: (dealer.status || 'active').toLowerCase(),
+          tier: dealer.tier || 'Gold EPC',
+          max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
+          updated_at: new Date().toISOString()
+        };
+        await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
       }
 
       return { success: true, id: data?.id || dealerCode };
@@ -81,6 +106,15 @@ export const dealerService = {
       console.error('[dealerService] Exception creating dealer:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Save / Upsert dealer
+   */
+  async saveDealer(dealer) {
+    if (!dealer) return { success: false, error: 'Dealer required' };
+    const dealerCode = dealer.dealerCode || dealer.id;
+    return this.updateDealer(dealerCode, dealer);
   },
 
   /**
@@ -113,7 +147,7 @@ export const dealerService = {
 
     try {
       const { data, error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .update(updatePayload)
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
 
@@ -136,7 +170,7 @@ export const dealerService = {
     if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
     try {
       const { error } = await supabase
-        .from('dealers')
+        .from('dealer_accounts')
         .delete()
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
 

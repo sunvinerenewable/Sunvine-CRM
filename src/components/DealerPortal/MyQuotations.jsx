@@ -23,19 +23,20 @@ export default function MyQuotations() {
     setActiveTab('preview_quote');
   };
 
-  // Harmonized quotation list matching DealerDashboard schema
+  // Harmonized quotation list matching live database schema
   const quotesList = (quotations && quotations.length > 0 ? quotations : []).map(q => ({
     ...q,
-    capacity: q.systemCapacityKW ? `${q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
-    type: q.projectType || q.type || 'Mono Perc • Residential',
+    customerName: q.customer_name || q.customerName || 'Customer',
+    capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
+    type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
     amount: typeof q.amount === 'string'
       ? q.amount
-      : '₹\u00A0' + (q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
-    subsidy: q.subsidyAmount ? `₹\u00A0${Number(q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : (q.subsidy || 'Subsidy Eligible'),
+      : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
+    subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
     status: q.status || 'Active / Sent',
     statusClass: q.statusClass || 'bg-primary/15 text-primary',
-    location: q.location || (q.city ? `${q.city}, ${q.state || 'Gujarat'}` : 'Rajkot, Gujarat'),
-    date: q.date || 'Today'
+    location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat'),
+    date: q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today')
   }));
 
   const filteredQuotes = quotesList.filter(q => {

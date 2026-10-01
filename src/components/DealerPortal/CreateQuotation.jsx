@@ -12,6 +12,8 @@ import {
   calculateFieldBOMTotals,
   FIELD_BOM_MASTER_CATALOG
 } from '../../data/standardBomData';
+import { calculateSubsidy as calcSharedSubsidy, calcEMI as calcSharedEMI } from '../../shared/pricing/calculations';
+
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -697,16 +699,8 @@ export default function CreateQuotation() {
   const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
   const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
 
-  // PM Surya Ghar Central DBT Subsidy Formula
-  const calculateSubsidy = (capacity, type) => {
-    if (type === 'Commercial') return 0;
-    const maxSubsidy = pricingPresets?.subsidyCap || 78000;
-    if (capacity <= 1) return Math.min(30000, maxSubsidy);
-    if (capacity <= 2) return Math.min(60000, maxSubsidy);
-    return maxSubsidy;
-  };
-
-  const subsidy = calculateSubsidy(kw, projectType);
+  // PM Surya Ghar Central DBT Subsidy Formula (Canonical Shared Engine)
+  const subsidy = calcSharedSubsidy(kw, projectType, pricingPresets?.subsidyCap || 78000);
   const finalPayable = Math.max(0, totalCost - subsidy);
   const annualGenerationUnits = Math.round(kw * 1440);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
@@ -716,16 +710,10 @@ export default function CreateQuotation() {
   const paybackPercent = Math.min(100, Math.round((parseFloat(paybackYears) / 10) * 100));
   const breakEvenYear = new Date().getFullYear() + Math.ceil(parseFloat(paybackYears));
  
-  // Solar Bank Loan Estimated Monthly EMI (Issue SR-64)
+  // Solar Bank Loan Estimated Monthly EMI (Canonical Shared Engine - Issue SR-64)
   const estimatedMonthlyEmi = useMemo(() => {
     if (financeType !== 'LOAN') return 0;
-    const principal = Math.max(0, finalPayable);
-    if (principal <= 0) return 0;
-    const annualRate = 8.5; // Benchmark solar interest rate p.a.
-    const monthlyRate = annualRate / (12 * 100);
-    const totalMonths = (Number(loanTenureYears) || 5) * 12;
-    const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1);
-    return Math.round(emi);
+    return calcSharedEMI(finalPayable, 8.5, loanTenureYears);
   }, [financeType, finalPayable, loanTenureYears]);
 
   // Multi-brand comparison package calculator (Waaree vs APS vs Adani)

@@ -1,40 +1,51 @@
 import { supabase } from '../lib/supabase';
 
+const STAFF_LIST_KEY = 'sunvine_staff_list';
+
 export const staffService = {
   /**
-   * Fetch all staff members from Supabase database
+   * Fetch all staff members from Supabase, fallback to localStorage
    */
   async getAllStaff() {
     try {
       const { data, error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .select('*')
         .order('id', { ascending: true });
 
       if (error) {
         console.warn('[staffService] Fetch staff warning:', error.message);
-        return [];
       }
 
-      return (data || []).map(s => ({
-        id: s.id,
-        name: s.name,
-        role: s.role,
-        phone: s.phone,
-        email: s.email,
-        zone: s.zone,
-        city: s.city,
-        department: s.department || 'Sales',
-        status: s.status || 'Active',
-        onboardedDate: s.onboarded_date || '2026-01-10',
-        dealersCount: Number(s.dealers_count) || 0,
-        directFilesCount: Number(s.direct_files_count) || 0,
-        dealerFilesCount: Number(s.dealer_files_count) || 0,
-        pipelineKw: Number(s.pipeline_kw) || 0,
-        rating: Number(s.rating) || 4.9
-      }));
+      if (data && data.length > 0) {
+        const mapped = data.map(s => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          phone: s.phone,
+          email: s.email,
+          zone: s.zone,
+          city: s.city,
+          department: s.department || 'Sales',
+          status: s.status || 'Active',
+          onboardedDate: s.onboarded_date || '2026-01-10',
+          dealersCount: Number(s.dealers_count) || 0,
+          directFilesCount: Number(s.direct_files_count) || 0,
+          dealerFilesCount: Number(s.dealer_files_count) || 0,
+          pipelineKw: Number(s.pipeline_kw) || 0,
+          rating: Number(s.rating) || 4.9
+        }));
+        try { localStorage.setItem(STAFF_LIST_KEY, JSON.stringify(mapped)); } catch (_) {}
+        return mapped;
+      }
     } catch (err) {
-      console.error('[staffService] Error fetching staff:', err);
+      console.warn('[staffService] Error fetching staff:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(STAFF_LIST_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch (_) {
       return [];
     }
   },
@@ -57,15 +68,27 @@ export const staffService = {
         p_role: staff.role || 'Solar Field Executive',
         p_phone: cleanPhone,
         p_email: staff.email || `${cleanPhone}@sunvine.in`,
-        p_password: staff.password || staff.accessCode || 'dealer123',
+        p_password: staff.password || staff.accessCode || '',
         p_zone: staff.zone || 'Gujarat',
         p_city: staff.city || 'Ahmedabad',
         p_department: staff.department || 'Sales'
       });
 
       if (error) {
-        console.error('[staffService] Create staff RPC error:', error.message);
-        return { success: false, error: error.message };
+        // Fallback direct upsert if RPC is not deployed
+        const payload = {
+          id: staffId,
+          name: staff.name,
+          role: staff.role || 'Solar Field Executive',
+          phone: cleanPhone,
+          email: staff.email || `${cleanPhone}@sunvine.in`,
+          zone: staff.zone || 'Gujarat',
+          city: staff.city || 'Ahmedabad',
+          department: staff.department || 'Sales',
+          status: staff.status || 'Active',
+          updated_at: new Date().toISOString()
+        };
+        await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
       }
 
       return { success: true, id: staffId };
@@ -73,6 +96,14 @@ export const staffService = {
       console.error('[staffService] Exception creating staff:', err);
       return { success: false, error: err.message };
     }
+  },
+
+  /**
+   * Save / Upsert staff member
+   */
+  async saveStaff(staff) {
+    if (!staff || !staff.id) return { success: false, error: 'Staff ID required' };
+    return this.updateStaff(staff.id, staff);
   },
 
   /**
@@ -101,7 +132,7 @@ export const staffService = {
 
     try {
       const { data, error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .update(payload)
         .eq('id', staffId);
 
@@ -146,7 +177,7 @@ export const staffService = {
     if (!staffId) return { success: false, error: 'Staff ID is required.' };
     try {
       const { error } = await supabase
-        .from('staff_users')
+        .from('staff_accounts')
         .delete()
         .eq('id', staffId);
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
+import { pricingService } from '../../services/pricingService';
 import { settingsService } from '../../services/settingsService';
 import DealerCustomPricingMatrix from './DealerCustomPricingMatrix';
 
@@ -60,6 +61,7 @@ export default function PricingMaster() {
   });
 
   const [toastMessage, setToastMessage] = useState('');
+  const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
   const totalDealersCount = dealers?.length || 550;
 
   // Local state for BOS Matrix editing
@@ -359,6 +361,7 @@ ${origin}/?tab=pricing_master
     if (setPdfBosMatrix) {
       setPdfBosMatrix(matrixToSave);
     }
+    pricingService.saveBosMatrix(matrixToSave);
     setIsInlineEditingMatrix(false);
     if (addNotification) {
       addNotification({
@@ -454,10 +457,11 @@ ${origin}/?tab=pricing_master
     if (setPdfBosMatrix) {
       setPdfBosMatrix(updated);
     }
+    pricingService.saveBosMatrix(updated);
     setShowAddSlabModal(false);
   };
 
-  const handleDeleteSlab = (index) => {
+  const handleDeleteSlab = async (index) => {
     const row = localBosMatrix[index];
     if (window.confirm(`Are you sure you want to delete the ${row.capacityKW} kW pricing slab?`)) {
       const updated = localBosMatrix.filter((_, i) => i !== index);
@@ -465,11 +469,12 @@ ${origin}/?tab=pricing_master
       if (setPdfBosMatrix) {
         setPdfBosMatrix(updated);
       }
-      triggerToast(`Deleted ${row.capacityKW} kW slab`);
+      pricingService.saveBosMatrix(updated);
+      await pricingService.deleteBosSlab(row.capacityKW);
+      triggerToast(`Deleted ${row.capacityKW} kW slab from database`);
     }
   };
 
-  // Handlers for Dedicated Inverter Sizing & Benchmark Pricing Matrix (SR-57)
   const handleSaveInverterMatrix = (updatedList) => {
     const toSave = updatedList || inverterBenchmarkMatrix;
     setInverterBenchmarkMatrix(toSave);
@@ -478,8 +483,9 @@ ${origin}/?tab=pricing_master
     } catch (e) {
       console.warn(e);
     }
+    pricingService.saveInverterBenchmarks(toSave);
     setIsInlineEditingInverters(false);
-    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved!');
+    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved to database!');
   };
 
   const handleInverterCellChange = (idx, field, value) => {
@@ -491,7 +497,7 @@ ${origin}/?tab=pricing_master
     setInverterBenchmarkMatrix(updated);
   };
 
-  const handleDeleteInverterBenchmark = (idx) => {
+  const handleDeleteInverterBenchmark = async (idx) => {
     const item = inverterBenchmarkMatrix[idx];
     if (window.confirm(`Delete ${item.capacityKW} kW inverter benchmark entry?`)) {
       const updated = inverterBenchmarkMatrix.filter((_, i) => i !== idx);
@@ -499,7 +505,9 @@ ${origin}/?tab=pricing_master
       try {
         localStorage.setItem('sunvine_inverter_benchmark_matrix', JSON.stringify(updated));
       } catch (e) {}
-      triggerToast('Inverter benchmark entry removed');
+      pricingService.saveInverterBenchmarks(updated);
+      await pricingService.deleteInverterBenchmark(item.capacityKW);
+      triggerToast('Inverter benchmark entry removed from database');
     }
   };
 
@@ -808,117 +816,294 @@ ${origin}/?tab=pricing_master
         </div>
       </div>
 
-      {/* Navigation Tabs Bar with Active Highlighting */}
-      <div className="flex items-center gap-2 border-b border-surface-container-highest mt-4 overflow-x-auto no-scrollbar pb-0.5 max-w-full">
-        <button
-          type="button"
-          onClick={() => handleTabChange('base')}
-          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-            activeTab === 'base'
-              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
-              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">payments</span>
-          <span>Base Pricing &amp; Subsidy Slabs</span>
-          {activeTab === 'base' ? (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
-              Active
-            </span>
-          ) : (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
-              BOS &amp; Slabs
-            </span>
-          )}
-        </button>
+      {/* Navigation Tabs Bar — Mobile Dropdown (sm:hidden) & Desktop Segmented Tabs (hidden sm:grid) */}
+      <div className="mt-4">
+        {/* Mobile Custom Animated Dropdown Popover */}
+        <div className="sm:hidden relative">
+          <label className="block text-[11px] font-bold text-secondary uppercase tracking-wider mb-1.5">
+            Select Pricing Section
+          </label>
+          
+          {/* Dropdown Trigger Button */}
+          <button
+            type="button"
+            onClick={() => setMobileDropdownOpen((prev) => !prev)}
+            className={`w-full flex items-center justify-between p-3 rounded-2xl bg-surface-container-lowest border transition-all duration-200 cursor-pointer shadow-xs ${
+              mobileDropdownOpen
+                ? 'border-primary ring-2 ring-primary/20 shadow-md'
+                : 'border-surface-container-high hover:border-primary/40'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-xs">
+                <span className="material-symbols-outlined text-[22px] leading-none flex items-center justify-center select-none">
+                  {activeTab === 'base' && 'payments'}
+                  {activeTab === 'modules' && 'solar_power'}
+                  {activeTab === 'bom' && 'inventory_2'}
+                  {activeTab === 'bank' && 'account_balance'}
+                  {activeTab === 'dealer_custom' && 'tune'}
+                </span>
+              </div>
+              <div className="flex flex-col text-left min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-on-surface truncate">
+                    {activeTab === 'base' && 'Base Pricing & Subsidy Slabs'}
+                    {activeTab === 'modules' && 'Modules & Inverters Master'}
+                    {activeTab === 'bom' && 'Default Bill of Material (BOM)'}
+                    {activeTab === 'bank' && 'Company Bank Details & Terms'}
+                    {activeTab === 'dealer_custom' && 'Dealer Custom Pricing Matrix'}
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-primary text-surface-container-lowest font-bold shrink-0">
+                    Active
+                  </span>
+                </div>
+                <span className="text-[11px] text-secondary truncate">
+                  {activeTab === 'base' && 'Official BOS Matrix & Subsidy Rates'}
+                  {activeTab === 'modules' && `${(modulesList?.length || 8) + (invertersList?.length || 6)} Hardware Items Catalog`}
+                  {activeTab === 'bom' && `${pdfBomSpecs?.length || 8} Slabs Capacity Presets`}
+                  {activeTab === 'bank' && 'Payment Terms & Bank Info'}
+                  {activeTab === 'dealer_custom' && `${totalDealersCount} Dealers Custom Margins`}
+                </span>
+              </div>
+            </div>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 ${
+              mobileDropdownOpen 
+                ? 'rotate-180 text-primary bg-primary/15' 
+                : 'text-secondary bg-surface-container-low hover:bg-surface-container'
+            }`}>
+              <span className="material-symbols-outlined text-[20px] leading-none select-none flex items-center justify-center">expand_more</span>
+            </div>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleTabChange('modules')}
-          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-            activeTab === 'modules'
-              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
-              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">solar_power</span>
-          <span>Modules &amp; Inverters Master</span>
-          {activeTab === 'modules' ? (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
-              Active
-            </span>
-          ) : (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
-              {(modulesList?.length || 8) + (invertersList?.length || 6)} Items
-            </span>
-          )}
-        </button>
+          {/* Animated Dropdown Menu Popover */}
+          {mobileDropdownOpen && (
+            <>
+              {/* Invisible Backdrop to close on click outside */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setMobileDropdownOpen(false)}
+              />
 
-        <button
-          type="button"
-          onClick={() => handleTabChange('bom')}
-          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-            activeTab === 'bom'
-              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
-              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-          <span>Default Bill of Material (BOM)</span>
-          {activeTab === 'bom' ? (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
-              Active
-            </span>
-          ) : (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
-              {pdfBomSpecs?.length || 8} Slabs
-            </span>
-          )}
-        </button>
+              <div className="absolute top-full left-0 right-0 mt-2 z-50 p-1.5 bg-surface-container-lowest border border-surface-container-high rounded-2xl shadow-2xl space-y-1 animate-in fade-in zoom-in-95 duration-200">
+                {[
+                  {
+                    id: 'base',
+                    icon: 'payments',
+                    title: 'Base Pricing & Subsidy Slabs',
+                    subtitle: 'Official BOS Matrix & Subsidy Rates',
+                    badge: 'BOS Slabs'
+                  },
+                  {
+                    id: 'modules',
+                    icon: 'solar_power',
+                    title: 'Modules & Inverters Master',
+                    subtitle: `${(modulesList?.length || 8) + (invertersList?.length || 6)} Hardware Items`,
+                    badge: `${(modulesList?.length || 8) + (invertersList?.length || 6)} Items`
+                  },
+                  {
+                    id: 'bom',
+                    icon: 'inventory_2',
+                    title: 'Default Bill of Material (BOM)',
+                    subtitle: `${pdfBomSpecs?.length || 8} Slabs Component Specs`,
+                    badge: `${pdfBomSpecs?.length || 8} Slabs`
+                  },
+                  {
+                    id: 'bank',
+                    icon: 'account_balance',
+                    title: 'Company Bank Details & Terms',
+                    subtitle: 'Payment Terms, Warranty & Bank Info',
+                    badge: 'Legal & Bank'
+                  },
+                  {
+                    id: 'dealer_custom',
+                    icon: 'tune',
+                    title: 'Dealer Custom Pricing Matrix',
+                    subtitle: `${totalDealersCount} Partner Pricing Rules`,
+                    badge: `${totalDealersCount} Dealers`
+                  }
+                ].map((item) => {
+                  const isSelected = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        handleTabChange(item.id);
+                        setMobileDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left cursor-pointer min-h-[48px] ${
+                        isSelected
+                          ? 'bg-primary/10 border border-primary/30 text-on-surface font-semibold shadow-xs'
+                          : 'bg-transparent border border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isSelected
+                              ? 'bg-primary text-surface-container-lowest shadow-xs'
+                              : 'bg-surface-container text-secondary'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-xs truncate ${isSelected ? 'font-bold text-primary' : 'font-medium text-on-surface'}`}>
+                            {item.title}
+                          </span>
+                          <span className="text-[10px] text-secondary truncate">{item.subtitle}</span>
+                        </div>
+                      </div>
 
-        <button
-          type="button"
-          onClick={() => handleTabChange('bank')}
-          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-            activeTab === 'bank'
-              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
-              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">account_balance</span>
-          <span>Company Bank Details &amp; Terms &amp; Conditions</span>
-          {activeTab === 'bank' ? (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
-              Active
-            </span>
-          ) : (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
-              Legal &amp; Bank
-            </span>
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-semibold ${
+                            isSelected
+                              ? 'bg-primary/20 text-primary'
+                              : 'bg-surface-container text-secondary'
+                          }`}
+                        >
+                          {isSelected ? 'Active' : item.badge}
+                        </span>
+                        {isSelected && (
+                          <span className="material-symbols-outlined text-primary text-[18px]">check</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
           )}
-        </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => handleTabChange('dealer_custom')}
-          className={`flex items-center gap-2 px-4 py-3.5 border-b-2 font-label-md tracking-tight whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-            activeTab === 'dealer_custom'
-              ? 'border-primary text-inverse-surface font-bold bg-surface-container-low/40 rounded-t-lg'
-              : 'border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-lowest/50'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">tune</span>
-          <span>Dealer Custom Pricing Matrix</span>
-          {activeTab === 'dealer_custom' ? (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-bold">
-              Active
+        {/* Desktop / Tablet Segmented Tabs */}
+        <div className="hidden sm:grid grid-cols-5 gap-2 p-1.5 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-xs">
+          {/* TAB 1: Base Pricing & Subsidy Slabs */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('base')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'base'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'base' ? 'text-primary' : 'text-secondary'}`}>
+                payments
+              </span>
+              <span className="text-xs tracking-tight truncate">Base Pricing</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'base'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'base' ? 'Active' : 'Slabs'}
             </span>
-          ) : (
-            <span className="font-label-xs text-label-xs px-2 py-0.5 rounded-full bg-surface-container text-secondary">
-              {totalDealersCount} Dealers
+          </button>
+
+          {/* TAB 2: Modules & Inverters Master */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('modules')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'modules'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'modules' ? 'text-primary' : 'text-secondary'}`}>
+                solar_power
+              </span>
+              <span className="text-xs tracking-tight truncate">Hardware</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'modules'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'modules' ? 'Active' : `${(modulesList?.length || 8) + (invertersList?.length || 6)} Items`}
             </span>
-          )}
-        </button>
+          </button>
+
+          {/* TAB 3: Default Bill of Material (BOM) */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('bom')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'bom'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'bom' ? 'text-primary' : 'text-secondary'}`}>
+                inventory_2
+              </span>
+              <span className="text-xs tracking-tight truncate">BOM Master</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'bom'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'bom' ? 'Active' : `${pdfBomSpecs?.length || 8} Slabs`}
+            </span>
+          </button>
+
+          {/* TAB 4: Company Bank Details & Terms */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('bank')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'bank'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'bank' ? 'text-primary' : 'text-secondary'}`}>
+                account_balance
+              </span>
+              <span className="text-xs tracking-tight truncate">Bank & Terms</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'bank'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'bank' ? 'Active' : 'Legal'}
+            </span>
+          </button>
+
+          {/* TAB 5: Dealer Custom Pricing Matrix */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('dealer_custom')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'dealer_custom'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'dealer_custom' ? 'text-primary' : 'text-secondary'}`}>
+                tune
+              </span>
+              <span className="text-xs tracking-tight truncate">Dealer Pricing</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'dealer_custom'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'dealer_custom' ? 'Active' : `${totalDealersCount} D`}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Main Workspace Full-Width Layout (SR-45) */}
@@ -985,7 +1170,166 @@ ${origin}/?tab=pricing_master
                   </div>
                 </div>
 
-                <div className="overflow-x-auto w-full">
+                {/* MOBILE VIEW: Responsive Compact Cards (< md) */}
+                <div className="block md:hidden space-y-3">
+                  {localBosMatrix.map((row, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-3"
+                    >
+                      {/* Top Row: Capacity, Modules, and Action Buttons */}
+                      <div className="flex items-center justify-between gap-2 border-b border-surface-container-high/60 pb-2.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isInlineEditingMatrix ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-secondary">KW:</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={row.capacityKW}
+                                onChange={(e) => handleMatrixCellChange(idx, 'capacityKW', e.target.value)}
+                                className="w-16 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-center"
+                              />
+                            </div>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg bg-inverse-surface text-surface-container-lowest font-mono font-bold text-xs">
+                              {row.capacityKW} kW
+                            </span>
+                          )}
+
+                          {isInlineEditingMatrix ? (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-semibold text-secondary">Mods:</span>
+                              <input
+                                type="number"
+                                value={getModules(row)}
+                                onChange={(e) => handleMatrixCellChange(idx, 'noOfModules', e.target.value)}
+                                className="w-14 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono text-primary font-bold text-center"
+                              />
+                            </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-mono font-bold text-[11px] border border-emerald-200">
+                              {getModules(row)} Modules
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditSlabModal(idx)}
+                            className="p-1.5 rounded-lg hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
+                            title="Edit slab"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSlab(idx)}
+                            className="p-1.5 rounded-lg hover:bg-rose-50 text-secondary hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Delete slab"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Equipment Prices Grid */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {/* Adani Bi-Fi */}
+                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">Adani Bi-Fi</div>
+                          {isInlineEditingMatrix ? (
+                            <input
+                              type="number"
+                              value={getAdaniPrice(row)}
+                              onChange={(e) => handleMatrixCellChange(idx, 'adaniBiFiPrice', e.target.value)}
+                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
+                            />
+                          ) : (
+                            <div className="font-mono font-semibold text-on-surface mt-0.5">
+                              ₹ {Number(getAdaniPrice(row)).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* APS Bi-Fi */}
+                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">APS Bi-Fi</div>
+                          {isInlineEditingMatrix ? (
+                            <input
+                              type="number"
+                              value={getApsBiFiPrice(row)}
+                              onChange={(e) => handleMatrixCellChange(idx, 'apsBiFiPrice', e.target.value)}
+                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
+                            />
+                          ) : (
+                            <div className="font-mono font-semibold text-on-surface mt-0.5">
+                              ₹ {Number(getApsBiFiPrice(row)).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Rayzone */}
+                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">Rayzone</div>
+                          {isInlineEditingMatrix ? (
+                            <input
+                              type="number"
+                              value={getRayzonePrice(row)}
+                              onChange={(e) => handleMatrixCellChange(idx, 'rayzonePrice', e.target.value)}
+                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
+                            />
+                          ) : (
+                            <div className="font-mono font-semibold text-on-surface mt-0.5">
+                              ₹ {Number(getRayzonePrice(row)).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* APS TOPCon 600W */}
+                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                          <div className="text-[10px] font-semibold text-[#256676] uppercase tracking-wider">APS 600W TOPCon</div>
+                          {isInlineEditingMatrix ? (
+                            <input
+                              type="number"
+                              value={getApsTopconPrice(row)}
+                              onChange={(e) => handleMatrixCellChange(idx, 'apsTopcon600Price', e.target.value)}
+                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-bold text-[#256676]"
+                            />
+                          ) : (
+                            <div className="font-mono font-bold text-[#256676] mt-0.5">
+                              ₹ {Number(getApsTopconPrice(row)).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Waaree 585W TOPCon (Full-width featured on mobile) */}
+                        <div className="col-span-2 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 flex items-center justify-between">
+                          <div>
+                            <div className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Waaree 585W TOPCon</div>
+                            <div className="text-[10px] text-emerald-700">Official Gujarat Standard</div>
+                          </div>
+                          {isInlineEditingMatrix ? (
+                            <input
+                              type="number"
+                              value={getWaareePrice(row)}
+                              onChange={(e) => handleMatrixCellChange(idx, 'waaree585Price', e.target.value)}
+                              className="w-28 px-1.5 py-1 bg-white border border-emerald-300 rounded text-xs font-mono font-bold text-primary text-right"
+                            />
+                          ) : (
+                            <div className="font-mono font-bold text-primary text-sm">
+                              ₹ {Number(getWaareePrice(row)).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP VIEW: Full Comparison Table (>= md) */}
+                <div className="hidden md:block overflow-x-auto w-full">
                   <table className="w-full text-left border-collapse min-w-[700px] md:min-w-full">
                     <thead>
                       <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-none">
@@ -1027,7 +1371,7 @@ ${origin}/?tab=pricing_master
                             )}
                           </td>
 
-                          {/* No of Modules (Clean numeric count only, without 'Mod' suffix) */}
+                          {/* No of Modules */}
                           <td className="px-2 py-2.5 font-semibold text-primary font-mono text-center whitespace-nowrap">
                             {isInlineEditingMatrix ? (
                               <input
@@ -1139,7 +1483,7 @@ ${origin}/?tab=pricing_master
                 </div>
 
                 {isInlineEditingMatrix && (
-                  <div className="mt-4 pt-3 border-t border-surface-container-low flex items-center justify-between">
+                  <div className="mt-4 pt-3 border-t border-surface-container-low flex items-center justify-between flex-wrap gap-2">
                     <span className="text-xs text-secondary italic">
                       Tip: Modify the input fields directly in the table, then click &quot;Save Matrix Changes&quot; to apply.
                     </span>
@@ -1156,22 +1500,22 @@ ${origin}/?tab=pricing_master
               </div>
 
               {/* DEDICATED INVERTER SIZING & BENCHMARK PRICING MATRIX (SR-57) */}
-              <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm overflow-hidden">
+              <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-4 sm:p-6 shadow-sm overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-surface-container-low gap-3">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
                       <span className="material-symbols-outlined text-xl">electric_bolt</span>
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="font-headline-md text-headline-md text-inverse-surface font-bold">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
                           Inverter Sizing &amp; Benchmark Pricing Matrix
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                           {inverterBenchmarkMatrix.length} Ratings
                         </span>
                       </div>
-                      <p className="font-body-sm text-body-sm text-secondary mt-0.5">
+                      <p className="font-body-sm text-xs sm:text-body-sm text-secondary mt-0.5">
                         Standard grid-tied string inverter benchmark pricing and phase topologies decoupled from module BOS tiers.
                       </p>
                     </div>
@@ -1210,7 +1554,105 @@ ${origin}/?tab=pricing_master
                   </div>
                 </div>
 
-                <div className="overflow-x-auto w-full">
+                {/* MOBILE VIEW: Responsive Inverter Cards (< md) */}
+                <div className="block md:hidden space-y-3">
+                  {inverterBenchmarkMatrix.map((inv, idx) => (
+                    <div
+                      key={inv.id || idx}
+                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-surface-container-high/60 pb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isInlineEditingInverters ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] font-semibold text-secondary">KW:</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={inv.capacityKW}
+                                onChange={(e) => handleInverterCellChange(idx, 'capacityKW', e.target.value)}
+                                className="w-16 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-center"
+                              />
+                            </div>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg bg-inverse-surface text-surface-container-lowest font-mono font-bold text-xs">
+                              {inv.capacityKW} kW
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {inv.phase}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditInvModal(idx)}
+                            className="p-1.5 rounded-lg hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
+                            title="Edit inverter"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit_note</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteInverterBenchmark(idx)}
+                            className="p-1.5 rounded-lg hover:bg-rose-50 text-secondary hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Delete inverter"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-xs pt-0.5">
+                        <div className="min-w-0 flex-1">
+                          {isInlineEditingInverters ? (
+                            <div className="space-y-1">
+                              <input
+                                type="text"
+                                value={inv.brand}
+                                onChange={(e) => handleInverterCellChange(idx, 'brand', e.target.value)}
+                                placeholder="Brand"
+                                className="w-full px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-semibold"
+                              />
+                              <input
+                                type="text"
+                                value={inv.series}
+                                onChange={(e) => handleInverterCellChange(idx, 'series', e.target.value)}
+                                placeholder="Series"
+                                className="w-full px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-[11px] text-secondary"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="font-semibold text-on-surface truncate">{inv.brand}</div>
+                              <div className="text-[11px] text-secondary truncate">{inv.series}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className="text-[10px] font-semibold text-secondary uppercase">Benchmark Price</div>
+                          {isInlineEditingInverters ? (
+                            <input
+                              type="number"
+                              value={inv.benchmarkPrice}
+                              onChange={(e) => handleInverterCellChange(idx, 'benchmarkPrice', e.target.value)}
+                              className="w-24 mt-1 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-right"
+                            />
+                          ) : (
+                            <div className="font-mono font-bold text-sm text-on-surface mt-0.5">
+                              ₹ {Number(inv.benchmarkPrice || 0).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP VIEW: Full Comparison Table (>= md) */}
+                <div className="hidden md:block overflow-x-auto w-full">
                   <table className="w-full text-left border-collapse min-w-[700px] md:min-w-full">
                     <thead>
                       <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-10 border-none">

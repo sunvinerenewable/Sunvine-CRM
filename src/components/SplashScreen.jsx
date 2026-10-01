@@ -4,14 +4,14 @@ export default function SplashScreen({ onFinish }) {
   const [fadeState, setFadeState] = useState('in');
 
   useEffect(() => {
-    // 1 second display, then fade out
+    // Fast 400ms display, then smooth fade out (completed by 650ms)
     const timer = setTimeout(() => {
       setFadeState('out');
-    }, 1000);
+    }, 400);
 
     const finishTimer = setTimeout(() => {
       onFinish();
-    }, 1300);
+    }, 650);
 
     return () => {
       clearTimeout(timer);

@@ -4,17 +4,26 @@ on:
   push:
     branches:
       - main
+      - sumit-updates
+      - devlopment
       - development
       - dev
+      - 'fix/*'
   pull_request:
     branches:
       - main
+      - sumit-updates
+      - devlopment
       - development
 
 jobs:
   build-and-verify:
     name: Verify Build & Test Integrity
     runs-on: ubuntu-latest
+    # ✅ This job does NOT block Vercel — Vercel deploys independently.
+    # CI runs in parallel with the Vercel deployment, not before it.
+    # To enforce CI as a Vercel deploy gate, add a "Required checks" rule
+    # in Vercel Dashboard → Project → Settings → Git → Required checks.
 
     steps:
       - name: Checkout Repository
@@ -33,5 +42,9 @@ jobs:
         run: npm test
 
       - name: Compile Production Build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_GEOAPIFY_API_KEY: ${{ secrets.VITE_GEOAPIFY_API_KEY }}
+          VITE_GOOGLE_PLACES_API_KEY: ${{ secrets.VITE_GOOGLE_PLACES_API_KEY }}
         run: npm run build
-

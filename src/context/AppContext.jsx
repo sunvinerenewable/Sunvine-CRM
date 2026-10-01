@@ -39,12 +39,15 @@ import {
 import { hardwareService } from '../services/hardwareService';
 import { quotationService } from '../services/quotationService';
 import { pricingService } from '../services/pricingService';
-import { dealerService } from '../services/dealerService';
-import { staffService } from '../services/staffService';
 import { customerFileService } from '../services/customerFileService';
+import { staffService } from '../services/staffService';
+import { systemSettingsService } from '../services/systemSettingsService';
+import { auditLogService } from '../services/auditLogService';
+import { dealerService } from '../services/dealerService';
 import { bankService } from '../services/bankService';
 import { settingsService } from '../services/settingsService';
 import { authService } from '../services/authService';
+import { supabase } from '../lib/supabase';
 import { generateFieldBOM } from '../data/standardBomData';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
@@ -66,6 +69,7 @@ export const DEFAULT_GOVERNANCE_SETTINGS = {
 const AppContext = createContext();
 
 const TAB_TO_PATH = {
+  // Dealer & Common
   dashboard: '/dashboard',
   create_quote: '/new-quotation',
   admin_create_quote: '/admin/new-quotation',
@@ -74,50 +78,90 @@ const TAB_TO_PATH = {
   my_applications: '/my-applications',
   profile: '/settings',
   dealer_settings: '/settings',
+  dealer_performance: '/dealer/performance',
+  lead_generation: '/leads',
+  docs: '/documentation',
+
+  // Admin
   admin_dashboard: '/admin',
+  admin_performance: '/admin/performance',
   dealers_mgmt: '/admin/dealers',
   staff_mgmt: '/admin/staff',
   pricing_master: '/admin/pricing',
   hardware_master: '/admin/hardware',
   all_quotes: '/admin/quotations',
   admin_settings: '/admin/settings',
-  admin_performance: '/admin/performance',
   admin_reports: '/admin/reports',
   admin_audit: '/admin/audit-logs',
   admin_docs: '/admin/documentation',
+
+  // Staff
   staff_dashboard: '/staff',
   staff_files: '/staff/files',
+  staff_pricing: '/staff/pricing',
   staff_performance: '/staff/performance',
   staff_new_lead: '/staff/new-lead',
   staff_map: '/staff/map',
-  dealer_performance: '/dealer/performance',
-  lead_generation: '/leads',
-  docs: '/documentation'
+  verification_desk: '/staff/verification',
+  staff_verification: '/staff/verification'
 };
 
 const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   acc[path] = tab;
   return acc;
 }, {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
   '/profile': 'dealer_settings',
   '/admin/new-quotation': 'create_quote',
-  '/staff': 'staff_dashboard'
+  '/admin/dashboard': 'admin_dashboard',
+  '/staff': 'staff_dashboard',
+  '/staff/dashboard': 'staff_dashboard',
+  '/staff/pricing': 'staff_pricing',
+  '/staff/files': 'staff_files',
+  '/staff/verification': 'verification_desk',
+  '/staff/new-quotation': 'create_quote',
+  '/admin/quotations': 'all_quotes'
 });
+
+const isPublicProposalRoute = () => {
+  if (typeof window === 'undefined') return false;
+  const search = window.location.search || '';
+  const searchParams = new URLSearchParams(search);
+  if (searchParams.get('view') === 'quote' || searchParams.has('quoteId')) {
+    return true;
+  }
+  const hash = window.location.hash || '';
+  if (hash.startsWith('#/quote/') || hash.startsWith('#/view-quote/')) {
+    return true;
+  }
+  return false;
+};
+
+const getInitialAuthViewFromUrl = () => {
+  if (typeof window === 'undefined') return 'dealer_login';
+  const pathname = (window.location.pathname || '').toLowerCase();
+  if (pathname.startsWith('/admin')) return 'admin_login';
+  if (pathname.startsWith('/staff')) return 'staff_login';
+  return 'dealer_login';
+};
 
 const getInitialTabFromUrl = () => {
   if (typeof window === 'undefined') return 'dashboard';
-  const pathname = window.location.pathname;
+  const pathname = window.location.pathname.replace(/\/$/, '') || '/';
   if (pathname === '/profile') {
     window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
     return 'dealer_settings';
   }
-  if (pathname === '/' || pathname === '') {
+  const matched = PATH_TO_TAB[pathname];
+  if (matched) {
+    return matched === 'profile' ? 'dealer_settings' : matched;
+  }
+  if (pathname === '/' || pathname === '' || pathname === '/login' || pathname === '/admin/login' || pathname === '/staff/login') {
     const saved = localStorage.getItem('sunvine_tab');
     return saved === 'profile' ? 'dealer_settings' : saved || 'dashboard';
   }
-  const matched = PATH_TO_TAB[pathname];
-  if (matched === 'profile') return 'dealer_settings';
-  return matched || localStorage.getItem('sunvine_tab') || 'dashboard';
+  return localStorage.getItem('sunvine_tab') || 'dashboard';
 };
 
 export const AppProvider = ({ children }) => {
@@ -126,8 +170,25 @@ export const AppProvider = ({ children }) => {
     return localStorage.getItem('sunvine_auth') === 'true';
   });
 
-  // Auth screen toggle when not authenticated ('dealer_login' or 'admin_login')
-  const [authView, setAuthView] = useState('dealer_login');
+  // Auth screen toggle when not authenticated ('dealer_login', 'admin_login', or 'staff_login')
+  const [authView, setAuthViewState] = useState(getInitialAuthViewFromUrl);
+
+  const setAuthView = (newView, replace = false) => {
+    setAuthViewState(newView);
+    if (typeof window !== 'undefined') {
+      let targetPath = '/login';
+      if (newView === 'admin_login') targetPath = '/admin/login';
+      else if (newView === 'staff_login') targetPath = '/staff/login';
+
+      if (window.location.pathname !== targetPath) {
+        if (replace) {
+          window.history.replaceState({ authView: newView }, '', targetPath);
+        } else {
+          window.history.pushState({ authView: newView }, '', targetPath);
+        }
+      }
+    }
+  };
 
   // Role: 'dealer' or 'admin'
   const [role, setRole] = useState(() => localStorage.getItem('sunvine_role') || 'dealer');
@@ -136,13 +197,32 @@ export const AppProvider = ({ children }) => {
   const setActiveTab = (newTab, replace = false) => {
     const effectiveTab = newTab === 'profile' ? 'dealer_settings' : newTab;
     setActiveTabState(effectiveTab);
+    safeSetItem('sunvine_tab', effectiveTab);
+
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
-      const targetPath = (role === 'admin' && (effectiveTab === 'create_quote' || effectiveTab === 'admin_create_quote'))
-        ? '/admin/new-quotation'
-        : (TAB_TO_PATH[effectiveTab] || '/dashboard');
+
+      let targetPath = TAB_TO_PATH[effectiveTab];
+      if (role === 'admin') {
+        if (effectiveTab === 'create_quote' || effectiveTab === 'admin_create_quote') {
+          targetPath = '/admin/new-quotation';
+        }
+      } else if (role === 'staff') {
+        if (effectiveTab === 'create_quote') {
+          targetPath = '/staff/new-quotation';
+        } else if (effectiveTab === 'pricing_master' || effectiveTab === 'staff_pricing') {
+          targetPath = '/staff/pricing';
+        }
+      }
+
+      if (!targetPath) {
+        if (role === 'admin') targetPath = '/admin';
+        else if (role === 'staff') targetPath = '/staff';
+        else targetPath = '/dashboard';
+      }
+
       if (window.location.pathname !== targetPath) {
         if (replace) {
           window.history.replaceState({ tab: effectiveTab }, '', targetPath);
@@ -157,7 +237,30 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     const handlePopState = () => {
       if (typeof window !== 'undefined') {
-        const path = window.location.pathname;
+        const path = window.location.pathname.replace(/\/$/, '') || '/';
+
+        // Unauthenticated popstate navigation between login screens
+        if (!isAuthenticated) {
+          if (path.startsWith('/admin')) {
+            setAuthViewState('admin_login');
+            if (path !== '/admin/login') {
+              window.history.replaceState({ authView: 'admin_login' }, '', '/admin/login');
+            }
+          } else if (path.startsWith('/staff')) {
+            setAuthViewState('staff_login');
+            if (path !== '/staff/login') {
+              window.history.replaceState({ authView: 'staff_login' }, '', '/staff/login');
+            }
+          } else {
+            setAuthViewState('dealer_login');
+            if (path !== '/login') {
+              window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+            }
+          }
+          return;
+        }
+
+        // Authenticated popstate navigation
         if (path === '/profile') {
           window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
           setActiveTabState('dealer_settings');
@@ -171,27 +274,80 @@ export const AppProvider = ({ children }) => {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [isAuthenticated]);
 
-  // Update URL on initial load if logged in
+  // Enforce login URL redirection for unauthenticated navigation across all pages
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isPublicProposalRoute()) return;
+
+    if (!isAuthenticated) {
+      const pathname = (window.location.pathname || '').replace(/\/$/, '') || '/';
+
+      if (pathname.startsWith('/admin')) {
+        if (pathname !== '/admin/login') {
+          window.history.replaceState({ authView: 'admin_login' }, '', '/admin/login');
+        }
+        if (authView !== 'admin_login') {
+          setAuthViewState('admin_login');
+        }
+      } else if (pathname.startsWith('/staff')) {
+        if (pathname !== '/staff/login') {
+          window.history.replaceState({ authView: 'staff_login' }, '', '/staff/login');
+        }
+        if (authView !== 'staff_login') {
+          setAuthViewState('staff_login');
+        }
+      } else {
+        // Any other route (e.g. /dashboard, /new-quotation, /preview-quotation, /my-quotations, /settings, /, etc.)
+        if (pathname !== '/login') {
+          window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+        }
+        if (authView !== 'dealer_login') {
+          setAuthViewState('dealer_login');
+        }
+      }
+    }
+  }, [isAuthenticated, authView]);
+
+  // Update URL on initial load if logged in & guard roles against unauthorized paths
   useEffect(() => {
     if (isAuthenticated && typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.get('view') === 'quote') {
-        // Do not overwrite public quotation proposal view URL
-        return;
-      }
+      if (isPublicProposalRoute()) return;
+
       if (window.location.pathname === '/profile') {
         window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
         setActiveTabState('dealer_settings');
         return;
       }
-      const targetPath = TAB_TO_PATH[activeTab] || '/dashboard';
-      if (window.location.pathname !== targetPath && window.location.pathname === '/') {
+      let targetPath = TAB_TO_PATH[activeTab];
+      if (role === 'admin' && (activeTab === 'create_quote' || activeTab === 'admin_create_quote')) {
+        targetPath = '/admin/new-quotation';
+      } else if (role === 'staff' && activeTab === 'create_quote') {
+        targetPath = '/staff/new-quotation';
+      } else if (role === 'staff' && (activeTab === 'pricing_master' || activeTab === 'staff_pricing')) {
+        targetPath = '/staff/pricing';
+      } else if (!targetPath) {
+        targetPath = role === 'admin' ? '/admin' : (role === 'staff' ? '/staff' : '/dashboard');
+      }
+
+      const curPath = window.location.pathname.replace(/\/$/, '') || '/';
+      const isLoginOrRoot = curPath === '/' || curPath === '/login' || curPath === '/admin/login' || curPath === '/staff/login';
+
+      if (isLoginOrRoot) {
         window.history.replaceState({ tab: activeTab }, '', targetPath);
       }
+
+      // Role isolation: prevent unauthorized role paths in browser address bar
+      if (role === 'dealer' && (curPath.startsWith('/admin') || curPath.startsWith('/staff'))) {
+        const fallback = activeTab === 'create_quote' ? '/new-quotation' : '/dashboard';
+        window.history.replaceState({ tab: activeTab }, '', fallback);
+      } else if (role === 'staff' && curPath.startsWith('/admin')) {
+        window.history.replaceState({ tab: 'staff_dashboard' }, '', '/staff');
+        setActiveTabState('staff_dashboard');
+      }
     }
-  }, [isAuthenticated, activeTab]);
+  }, [isAuthenticated, activeTab, role]);
   
 // Safe storage parser and serializer
 const safeJsonParse = (key, fallback) => {
@@ -270,67 +426,154 @@ const safeSetItem = (key, value) => {
   const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
   const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(false);
 
-  // Live Supabase Hardware Sync (SR-45)
+  // Determine if running in public proposal viewer mode
+  const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
+
+  // Live Universal Database Hydration (Async startup from Supabase PostgreSQL)
   useEffect(() => {
     let isMounted = true;
-    const loadHardwareFromSupabase = async () => {
-      setIsHardwareDbSyncing(true);
+    const hydrateAllFromSupabase = async () => {
       try {
-        const [dbModules, dbInverters] = await Promise.all([
+        setIsHardwareDbSyncing(true);
+        const [
+          dbModules,
+          dbInverters,
+          dbPresets,
+          dbBos,
+          dbBenchmarks,
+          dbTiers,
+          dbDealers,
+          dbQuotations,
+          dbFiles,
+          dbStaff,
+          dbSettings,
+          dbLogs,
+          dbNotifs
+        ] = await Promise.allSettled([
           hardwareService.getAllModules(),
-          hardwareService.getAllInverters()
+          hardwareService.getAllInverters(),
+          pricingService.getPricingPresets(),
+          pricingService.getBosMatrix(),
+          pricingService.getInverterBenchmarks(),
+          pricingService.getTierMargins(),
+          dealerService.getAllDealers(),
+          quotationService.getAllQuotations(100),
+          customerFileService.getAllCustomerFiles(),
+          staffService.getAllStaff(),
+          systemSettingsService.getSystemSettings(),
+          auditLogService.getAuditLogs(100),
+          auditLogService.getNotifications()
         ]);
 
-        if (isMounted) {
-          if (dbModules && Array.isArray(dbModules) && dbModules.length > 0) {
-            setModulesList(dbModules);
-            setIsHardwareDbConnected(true);
-          } else {
-            // Seed Supabase if tables are newly created and empty
-            hardwareService.seedInitialHardwareIfEmpty(DEFAULT_MODULES, DEFAULT_INVERTERS);
-          }
+        if (!isMounted) return;
 
-          if (dbInverters && Array.isArray(dbInverters) && dbInverters.length > 0) {
-            setInvertersList(dbInverters);
-            setIsHardwareDbConnected(true);
-          }
+        if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
+          setModulesList(dbModules.value);
+          setIsHardwareDbConnected(true);
+        }
+        if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
+          setInvertersList(dbInverters.value);
+          setIsHardwareDbConnected(true);
+        }
+        if (dbPresets.status === 'fulfilled' && dbPresets.value) {
+          setPricingPresets(dbPresets.value);
+        }
+        if (dbBos.status === 'fulfilled' && Array.isArray(dbBos.value) && dbBos.value.length > 0) {
+          setPdfBosMatrix(dbBos.value);
+        }
+        if (dbBenchmarks.status === 'fulfilled' && Array.isArray(dbBenchmarks.value) && dbBenchmarks.value.length > 0) {
+          setInverterBenchmarkMatrix(dbBenchmarks.value);
+        }
+        if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
+          setTierMargins(dbTiers.value);
+        }
+        if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value) && dbDealers.value.length > 0) {
+          setDealers(dbDealers.value);
+        }
+        if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
+          setQuotations(dbQuotations.value);
+        }
+        if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value) && dbFiles.value.length > 0) {
+          setCustomerFiles(dbFiles.value);
+        }
+        if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value) && dbStaff.value.length > 0) {
+          setStaffList(dbStaff.value);
+        }
+        if (dbSettings.status === 'fulfilled' && dbSettings.value) {
+          setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
+        }
+        if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value) && dbLogs.value.length > 0) {
+          setAuditLogs(dbLogs.value);
+        }
+        if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value) && dbNotifs.value.length > 0) {
+          setNotifications(dbNotifs.value);
         }
       } catch (err) {
-        console.warn('[AppContext] Supabase hardware sync fallback to local cache:', err);
+        console.warn('[AppContext] Supabase live hydration fallback to local cache:', err);
       } finally {
         if (isMounted) setIsHardwareDbSyncing(false);
       }
     };
 
-    loadHardwareFromSupabase();
+    hydrateAllFromSupabase();
     return () => { isMounted = false; };
   }, []);
 
-  // Live Supabase Quotations Hydration (reconciled with local cache)
+  // Real-time Supabase Database Subscriptions across all major tables
   useEffect(() => {
-    let isMounted = true;
-    const loadQuotationsFromSupabase = async () => {
-      try {
-        const dbQuotations = await quotationService.getAllQuotations();
-        if (isMounted && Array.isArray(dbQuotations) && dbQuotations.length > 0) {
-          setQuotations(prev => {
-            const remoteMap = new Map(dbQuotations.map(q => [q.id, q]));
-            const merged = [...dbQuotations];
-            (prev || []).forEach(localQ => {
-              if (localQ && localQ.id && !remoteMap.has(localQ.id)) {
-                merged.push(localQ);
-              }
-            });
-            return merged;
-          });
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const row = payload.new;
+          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
+          setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
+        } else if (payload.eventType === 'UPDATE') {
+          const row = payload.new;
+          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
+          setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
+        } else if (payload.eventType === 'DELETE') {
+          setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
-      } catch (err) {
-        console.warn('[AppContext] Supabase quotation sync fallback to local cache:', err);
-      }
-    };
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, (payload) => {
+        dealerService.getAllDealers().then(data => { if (data) setDealers(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
+        staffService.getAllStaff().then(data => { if (data) setStaffList(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, () => {
+        customerFileService.getAllCustomerFiles().then(data => { if (data) setCustomerFiles(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
+        hardwareService.getAllModules().then(data => { if (data) setModulesList(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
+        hardwareService.getAllInverters().then(data => { if (data) setInvertersList(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pricing_presets' }, () => {
+        pricingService.getPricingPresets().then(data => { if (data) setPricingPresets(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bos_pricing_matrix' }, () => {
+        pricingService.getBosMatrix().then(data => { if (data) setPdfBosMatrix(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
+        pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_custom_pricing' }, () => {
+        pricingService.getTierMargins().then(data => { if (data) setTierMargins(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
+        hardwareService.getAllBomItems().then(data => { if (data && data.length > 0) setBomCatalog(data); });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
+      })
+      .subscribe();
 
-    loadQuotationsFromSupabase();
-    return () => { isMounted = false; };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Solar Loan Partner Banks (Database Connected)
@@ -473,6 +716,20 @@ const safeSetItem = (key, value) => {
     return (Array.isArray(parsed) && parsed.length > 0) ? parsed : PDF_BOS_PRICE_MATRIX;
   });
 
+  // Dedicated Inverter Sizing & Benchmark Pricing Matrix
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
+    return safeJsonParse('sunvine_inverter_benchmark_matrix', [
+      { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
+      { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
+      { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
+      { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
+      { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
+      { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
+      { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
+      { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
+    ]);
+  });
+
   // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync)
   const [bomCatalog, setBomCatalog] = useState(() => {
     return safeJsonParse('sunvine_bom_catalog', STANDARD_BOM_CATALOG);
@@ -569,17 +826,14 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_seen_catalog_items', []);
   });
 
-  // Quotations List (All in Gujarat)
+  // Quotations List (Live Supabase Database)
   const [quotations, setQuotations] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_QUOTATIONS;
-    const parsed = safeJsonParse('sunvine_quotations', INITIAL_QUOTATIONS);
-    return (Array.isArray(parsed) && parsed.length >= 3) ? parsed : INITIAL_QUOTATIONS;
+    return safeJsonParse('sunvine_quotations', []);
   });
 
   // Active quotation loaded in 4-Page Preview
   const [previewQuotation, setPreviewQuotation] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_QUOTATIONS[0];
-    return safeJsonParse('sunvine_preview_quotation', INITIAL_QUOTATIONS[0]);
+    return safeJsonParse('sunvine_preview_quotation', null);
   });
 
   // Active quotation loaded for Editing in CreateQuotation
@@ -1030,9 +1284,12 @@ const safeSetItem = (key, value) => {
 
   const logout = () => {
     setIsAuthenticated(false);
-    setAuthView('dealer_login');
+    setAuthView('dealer_login', true);
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+    }
     authService.logout().catch(() => {});
   };
 
@@ -1084,6 +1341,7 @@ const safeSetItem = (key, value) => {
 
   const addCustomerFile = async (newFile) => {
     setCustomerFiles(prev => [newFile, ...prev]);
+    customerFileService.saveCustomerFile(newFile);
     // Also update staff totalFiles and pipelineKw
     if (newFile.staffId) {
       setStaffList(prev => prev.map(s => s.id === newFile.staffId ? {
@@ -1752,6 +2010,7 @@ const safeSetItem = (key, value) => {
     };
     setPricingPresets(updated);
     safeSetItem('sunvine_pricing_presets', updated);
+    pricingService.savePricingPresets(updated);
     try {
       await settingsService.savePricingPresets(updated);
     } catch (e) {
@@ -1778,6 +2037,7 @@ const safeSetItem = (key, value) => {
     const updated = { ...tierMargins, ...newTiers };
     setTierMargins(updated);
     safeSetItem('sunvine_tier_margins', updated);
+    pricingService.saveTierMargins(updated);
     try {
       await settingsService.savePricingPresets({ tierMargins: updated });
     } catch (e) {
@@ -2075,6 +2335,8 @@ const safeSetItem = (key, value) => {
         dismissedNotifIds,
         pdfBosMatrix,
         setPdfBosMatrix,
+        inverterBenchmarkMatrix,
+        setInverterBenchmarkMatrix,
         pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
         officialProfile: SUNVINE_OFFICIAL_PROFILE,
         // Standard BOM & BoS Engine

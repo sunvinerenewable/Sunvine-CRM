@@ -1,30 +1,404 @@
 import { supabase } from '../lib/supabase';
 
 const DEALER_PRICING_KEY = 'sunvine_dealer_custom_pricing_v2';
-const KITS_PRESETS_KEY = 'sunvine_solar_kits_presets_v2';
+const PRICING_PRESETS_KEY = 'sunvine_pricing_presets';
+const BOS_MATRIX_KEY = 'sunvine_bos_matrix_v2';
+const INVERTER_BENCHMARKS_KEY = 'sunvine_inverter_benchmark_matrix';
+const BOM_CATALOG_KEY = 'sunvine_bom_catalog_v2';
+const TIER_MARGINS_KEY = 'sunvine_tier_margins';
 
 export const pricingService = {
-  /**
-   * Fetch all custom dealer pricings (Admin sees all, staff filtered if needed)
-   */
-  async getAllDealerPricings() {
+  // ==========================================
+  // 1. GLOBAL PRICING PRESETS
+  // ==========================================
+  async getPricingPresets() {
+    try {
+      const { data, error } = await supabase
+        .from('pricing_presets')
+        .select('*')
+        .eq('id', 'global_default')
+        .single();
+
+      if (!error && data) {
+        const presets = {
+          baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
+          subsidyCap: Number(data.subsidy_cap) || 78000,
+          minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
+          enforceMinMargin: data.enforce_min_margin !== false,
+          lastSynced: data.updated_at ? new Date(data.updated_at).toLocaleDateString() : 'Active',
+          updatedBy: data.last_synced_by || 'Operations Desk'
+        };
+        localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(presets));
+        return presets;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch pricing presets fallback:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(PRICING_PRESETS_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async savePricingPresets(presets) {
+    if (!presets) return { success: false, error: 'Presets required' };
+
+    try {
+      localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(presets));
+    } catch (_) {}
+
+    try {
+      const payload = {
+        id: 'global_default',
+        base_rate_per_kw: Number(presets.baseRatePerKw) || 59800,
+        subsidy_cap: Number(presets.subsidyCap) || 78000,
+        min_margin_per_kw: Number(presets.minMarginPerKw) || 4000,
+        enforce_min_margin: presets.enforceMinMargin !== false,
+        last_synced_by: presets.updatedBy || 'Operations Desk',
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('pricing_presets')
+        .upsert([payload], { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        console.warn('Supabase save pricing presets notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+      }
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+    }
+  },
+
+  // ==========================================
+  // 2. BOS PRICING MATRIX
+  // ==========================================
+  async getBosMatrix() {
+    try {
+      const { data, error } = await supabase
+        .from('bos_pricing_matrix')
+        .select('*')
+        .order('capacity_kw', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const matrix = data.map(row => ({
+          capacityKW: Number(row.capacity_kw),
+          noOfModules: Number(row.no_of_modules),
+          inverterCapacityKW: row.inverter_capacity_kw,
+          adaniBiFiPrice: Number(row.adani_bifi_price),
+          apsBiFiPrice: Number(row.aps_bifi_price),
+          rayzonePrice: Number(row.rayzone_price),
+          topcon585CapacityKW: Number(row.topcon585_capacity_kw) || (Number(row.capacity_kw) * 1.06),
+          waaree585Price: Number(row.waaree_585_price),
+          topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),
+          apsTopcon600Price: Number(row.aps_topcon_600_price)
+        }));
+        localStorage.setItem(BOS_MATRIX_KEY, JSON.stringify(matrix));
+        return matrix;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch BOS matrix fallback:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(BOS_MATRIX_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async saveBosMatrix(matrixList) {
+    if (!Array.isArray(matrixList) || matrixList.length === 0) {
+      return { success: false, error: 'Valid matrix list required' };
+    }
+
+    try {
+      localStorage.setItem(BOS_MATRIX_KEY, JSON.stringify(matrixList));
+    } catch (_) {}
+
+    try {
+      const rows = matrixList.map((item, idx) => ({
+        id: `bos-${String(item.capacityKW).replace('.', '_')}`,
+        capacity_kw: Number(item.capacityKW),
+        no_of_modules: Number(item.noOfModules) || 2,
+        inverter_capacity_kw: String(item.inverterCapacityKW || item.capacityKW),
+        adani_bifi_price: Number(item.adaniBiFiPrice) || 0,
+        aps_bifi_price: Number(item.apsBiFiPrice) || 0,
+        rayzone_price: Number(item.rayzonePrice) || 0,
+        topcon585_capacity_kw: Number(item.topcon585CapacityKW) || Number(item.capacityKW),
+        waaree_585_price: Number(item.waaree585Price) || 0,
+        topcon600_capacity_kw: Number(item.topcon600CapacityKW) || Number(item.capacityKW),
+        aps_topcon_600_price: Number(item.apsTopcon600Price) || 0,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('bos_pricing_matrix')
+        .upsert(rows, { onConflict: 'id' });
+
+      if (error) {
+        console.warn('Supabase save BOS matrix notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+      }
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+    }
+  },
+
+  async deleteBosSlab(capacityKwOrId) {
+    try {
+      if (typeof capacityKwOrId === 'number' || !isNaN(Number(capacityKwOrId))) {
+        await supabase.from('bos_pricing_matrix').delete().eq('capacity_kw', Number(capacityKwOrId));
+      } else {
+        await supabase.from('bos_pricing_matrix').delete().eq('id', capacityKwOrId);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  // ==========================================
+  // 3. INVERTER BENCHMARKS MATRIX
+  // ==========================================
+  async getInverterBenchmarks() {
+    try {
+      const { data, error } = await supabase
+        .from('inverter_benchmark_matrix')
+        .select('*')
+        .order('capacity_kw', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const benchmarks = data.map(row => ({
+          capacityKW: Number(row.capacity_kw),
+          brand: row.brand,
+          series: row.series,
+          phase: row.phase,
+          benchmarkPrice: Number(row.benchmark_price)
+        }));
+        localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
+        return benchmarks;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch inverter benchmarks fallback:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(INVERTER_BENCHMARKS_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async saveInverterBenchmarks(benchmarks) {
+    if (!Array.isArray(benchmarks) || benchmarks.length === 0) {
+      return { success: false, error: 'Valid benchmarks required' };
+    }
+
+    try {
+      localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
+    } catch (_) {}
+
+    try {
+      const rows = benchmarks.map((bm, idx) => ({
+        id: `inv-bm-${idx + 1}`,
+        capacity_kw: Number(bm.capacityKW),
+        brand: bm.brand,
+        series: bm.series,
+        phase: bm.phase,
+        benchmark_price: Number(bm.benchmarkPrice),
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('inverter_benchmark_matrix')
+        .upsert(rows, { onConflict: 'id' });
+
+      if (error) {
+        console.warn('Supabase save inverter benchmarks notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+      }
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+    }
+  },
+
+  async deleteInverterBenchmark(idOrCapacity) {
+    try {
+      if (typeof idOrCapacity === 'number' || !isNaN(Number(idOrCapacity))) {
+        await supabase.from('inverter_benchmark_matrix').delete().eq('capacity_kw', Number(idOrCapacity));
+      } else {
+        await supabase.from('inverter_benchmark_matrix').delete().eq('id', idOrCapacity);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  // ==========================================
+  // 4. BILL OF MATERIALS (BOM) CATALOG
+  // ==========================================
+  async getBomCatalog() {
+    try {
+      const { data, error } = await supabase
+        .from('bom_catalog')
+        .select('*')
+        .order('capacity_kw', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        const catalog = data.map(row => ({
+          id: row.id,
+          capacityKW: Number(row.capacity_kw),
+          modules: row.modules_spec,
+          inverter: row.inverter_spec,
+          dcWire: row.dc_wire,
+          acWire: row.ac_wire,
+          earthingWire: row.earthing_wire,
+          laWire: row.la_wire,
+          acdb: row.acdb,
+          dcdb: row.dcdb,
+          earthingKit: row.earthing_kit,
+          pvcPipes: row.pvc_pipes,
+          hardware: row.hardware || 'Including',
+          mc4: row.mc4_pairs
+        }));
+        localStorage.setItem(BOM_CATALOG_KEY, JSON.stringify(catalog));
+        return catalog;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch BOM catalog fallback:', err);
+    }
+
+    try {
+      const cached = localStorage.getItem(BOM_CATALOG_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async saveBomCatalog(catalog) {
+    if (!Array.isArray(catalog) || catalog.length === 0) {
+      return { success: false, error: 'Valid BOM catalog required' };
+    }
+
+    try {
+      localStorage.setItem(BOM_CATALOG_KEY, JSON.stringify(catalog));
+    } catch (_) {}
+
+    try {
+      const rows = catalog.map((item, idx) => ({
+        id: item.id || `bom-${String(item.capacityKW).replace('.', '_')}`,
+        capacity_kw: Number(item.capacityKW) || 3.0,
+        modules_spec: item.modules || '',
+        inverter_spec: item.inverter || '',
+        dc_wire: item.dcWire || '',
+        ac_wire: item.acWire || '',
+        earthing_wire: item.earthingWire || '',
+        la_wire: item.laWire || '',
+        acdb: item.acdb || '',
+        dcdb: item.dcdb || '',
+        earthing_kit: item.earthingKit || '',
+        pvc_pipes: item.pvcPipes || '',
+        hardware: item.hardware || 'Including',
+        mc4_pairs: item.mc4 || '',
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('bom_catalog')
+        .upsert(rows, { onConflict: 'id' });
+
+      if (error) {
+        console.warn('Supabase save BOM catalog notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+      }
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+    }
+  },
+
+  // ==========================================
+  // 5. DEALER TIER MARGINS
+  // ==========================================
+  async getTierMargins() {
     try {
       const { data, error } = await supabase
         .from('dealer_custom_pricing')
         .select('*');
 
       if (!error && data && data.length > 0) {
-        const mapped = {};
+        const tiers = {};
         data.forEach(row => {
-          mapped[row.dealer_id || row.dealer_code] = row.pricing_data;
+          tiers[row.tier_id] = {
+            tierName: row.tier_name,
+            defaultMarginPerKw: Number(row.default_margin_per_kw),
+            maxMarginCapPerKw: Number(row.max_margin_cap_per_kw),
+            description: row.description
+          };
         });
-        localStorage.setItem(DEALER_PRICING_KEY, JSON.stringify(mapped));
-        return mapped;
+        localStorage.setItem(TIER_MARGINS_KEY, JSON.stringify(tiers));
+        return tiers;
       }
     } catch (err) {
-      console.warn('Supabase fetch dealer pricing fallback:', err);
+      console.warn('Supabase fetch tier margins fallback:', err);
     }
 
+    try {
+      const cached = localStorage.getItem(TIER_MARGINS_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  async saveTierMargins(tiers) {
+    if (!tiers || typeof tiers !== 'object') return { success: false, error: 'Tiers required' };
+
+    try {
+      localStorage.setItem(TIER_MARGINS_KEY, JSON.stringify(tiers));
+    } catch (_) {}
+
+    try {
+      const rows = Object.entries(tiers).map(([tierId, config]) => ({
+        tier_id: tierId,
+        tier_name: config.tierName || tierId,
+        default_margin_per_kw: Number(config.defaultMarginPerKw) || 4000,
+        max_margin_cap_per_kw: Number(config.maxMarginCapPerKw) || 6000,
+        description: config.description || '',
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data, error } = await supabase
+        .from('dealer_custom_pricing')
+        .upsert(rows, { onConflict: 'tier_id' });
+
+      if (error) {
+        console.warn('Supabase save tier margins notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+      }
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+    }
+  },
+
+  // ==========================================
+  // 6. DEALER CUSTOM PRICINGS
+  // ==========================================
+  async getAllDealerPricings() {
     try {
       const cached = localStorage.getItem(DEALER_PRICING_KEY);
       return cached ? JSON.parse(cached) : {};
@@ -33,125 +407,31 @@ export const pricingService = {
     }
   },
 
-  /**
-   * Save dealer custom pricing to Supabase and cache locally
-   */
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
-
-    // Support overloaded invocation: saveDealerPricing(dealerId, pricingConfig)
-    if (typeof dealerCode === 'object' && dealerCode !== null && pricingData === undefined) {
-      pricingData = dealerCode;
-      dealerCode = dealerId;
-      salespersonId = null;
-    }
-
-    // Update local cache first
     try {
       const cached = JSON.parse(localStorage.getItem(DEALER_PRICING_KEY) || '{}');
       cached[dealerId] = pricingData;
-      if (dealerCode) cached[dealerCode] = pricingData;
       localStorage.setItem(DEALER_PRICING_KEY, JSON.stringify(cached));
     } catch (_) {}
 
     try {
-      const payload = {
-        dealer_id: dealerId,
-        dealer_code: dealerCode || dealerId,
-        salesperson_id: salespersonId || null,
-        pricing_data: pricingData,
-        updated_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('dealer_custom_pricing')
-        .upsert([payload], { onConflict: 'dealer_id' })
-        .select();
+      const targetIdentifier = dealerCode || dealerId;
+      const { error } = await supabase
+        .from('dealer_accounts')
+        .update({
+          pricing_config: pricingData,
+          updated_at: new Date().toISOString()
+        })
+        .or(`dealer_code.eq.${targetIdentifier},id.eq.${targetIdentifier}`);
 
       if (error) {
         console.warn('Supabase save dealer pricing notice:', error.message);
-        return { success: true, localOnly: true, data: pricingData };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
-      return { success: true, data };
+      return { success: true, data: pricingData };
     } catch (err) {
-      return { success: true, localOnly: true, data: pricingData };
-    }
-  },
-
-  /**
-   * Fetch all saved BOM Kits & Presets
-   */
-  async getKitsPresets() {
-    try {
-      const { data, error } = await supabase
-        .from('solar_kits_presets')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        localStorage.setItem(KITS_PRESETS_KEY, JSON.stringify(data));
-        return data;
-      }
-    } catch (err) {
-      console.warn('Supabase fetch kits fallback:', err);
-    }
-
-    try {
-      const cached = localStorage.getItem(KITS_PRESETS_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
-  },
-
-  /**
-   * Save a reusable BOM Kit Preset to Supabase & localStorage
-   */
-  async saveKitPreset(kit) {
-    if (!kit || !kit.name) return { success: false, error: 'Kit name required' };
-    const kitId = kit.id || `kit-${Date.now()}`;
-    const payload = {
-      id: kitId,
-      name: kit.name,
-      capacity_kw: Number(kit.capacityKw) || 3.3,
-      created_by: kit.createdBy || 'Admin',
-      creator_role: kit.creatorRole || 'admin',
-      items_json: kit.items || [],
-      created_at: new Date().toISOString()
-    };
-
-    try {
-      const cached = JSON.parse(localStorage.getItem(KITS_PRESETS_KEY) || '[]');
-      const filtered = cached.filter(k => k.id !== kitId);
-      localStorage.setItem(KITS_PRESETS_KEY, JSON.stringify([payload, ...filtered]));
-    } catch (_) {}
-
-    try {
-      const { data, error } = await supabase
-        .from('solar_kits_presets')
-        .upsert([payload], { onConflict: 'id' })
-        .select();
-
-      if (error) {
-        return { success: true, localOnly: true, data: payload };
-      }
-      return { success: true, data };
-    } catch (err) {
-      return { success: true, localOnly: true, data: payload };
-    }
-  },
-
-  /**
-   * Delete a Kit Preset
-   */
-  async deleteKitPreset(kitId) {
-    try {
-      const cached = JSON.parse(localStorage.getItem(KITS_PRESETS_KEY) || '[]');
-      localStorage.setItem(KITS_PRESETS_KEY, JSON.stringify(cached.filter(k => k.id !== kitId)));
-      await supabase.from('solar_kits_presets').delete().eq('id', kitId);
-      return { success: true };
-    } catch (err) {
-      return { success: true };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   }
 };

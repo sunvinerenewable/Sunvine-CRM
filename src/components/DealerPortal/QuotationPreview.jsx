@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { INITIAL_QUOTATIONS } from '../../data/defaultPresets';
 import { quotationService } from '../../services/quotationService';
 import PDFTemplate from './PDFTemplate';
 import { 
@@ -12,8 +11,18 @@ import {
 } from '../../utils/quotationShare';
 import { useToast } from '../Shared/Toast';
 
-export default function QuotationPreview({ isPublicView = false, publicQuoteId = null }) {
-  const { previewQuotation, quotations, pricingMaster, setActiveTab, role } = useApp();
+export default function QuotationPreview({
+  isPublicView = false,
+  publicQuoteId = null,
+  quotation: propQuotation = null,
+  isLoadingProp = false
+}) {
+  const appContext = useApp() || {};
+  const previewQuotation = propQuotation || appContext.previewQuotation;
+  const quotations = appContext.quotations || [];
+  const pricingMaster = appContext.pricingMaster;
+  const setActiveTab = appContext.setActiveTab || (() => {});
+  const role = appContext.role;
   const { addToast } = useToast();
   const [activePage, setActivePage] = useState('all'); // 'all' | 1 | 2 | 3 | 4
   const [baseScale, setBaseScale] = useState(1);
@@ -42,14 +51,12 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
   const isPinchingRef = useRef(false);
   const pinchStateRef = useRef({ startDist: 0, startZoom: 1, docX: 0, docY: 0, lastMidX: 0, lastMidY: 0 });
 
-  // Asynchronously hydrate quotation from Supabase if not in local cache
+  // Asynchronously hydrate quotation from Supabase only in portal view without props
   useEffect(() => {
+    if (propQuotation || isLoadingProp !== undefined) return;
     if (isPublicView && publicQuoteId && !remoteFetchedQuote) {
       const cleanId = String(publicQuoteId).trim().toLowerCase();
       const foundInLocal = (quotations || []).some(
-        q => String(q.id || '').trim().toLowerCase() === cleanId ||
-             String(q.quoteId || '').trim().toLowerCase() === cleanId
-      ) || (INITIAL_QUOTATIONS || []).some(
         q => String(q.id || '').trim().toLowerCase() === cleanId ||
              String(q.quoteId || '').trim().toLowerCase() === cleanId
       );
@@ -69,10 +76,11 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
         return () => { isMounted = false; };
       }
     }
-  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote]);
+  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, propQuotation, isLoadingProp]);
 
-  // Resolve active quotation: priority to remote fetched, publicQuoteId, then state / presets
+  // Resolve active quotation: priority to prop, remote fetched, publicQuoteId, then state
   const activeQuotation = useMemo(() => {
+    if (propQuotation) return propQuotation;
     if (isPublicView) {
       if (remoteFetchedQuote) return remoteFetchedQuote;
 
@@ -86,15 +94,7 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
         );
         if (foundInState) return foundInState;
 
-        // 2. Search in INITIAL_QUOTATIONS preset library
-        const foundInPresets = INITIAL_QUOTATIONS?.find(
-          q => String(q.id || '').trim().toLowerCase() === cleanId ||
-               String(q.quoteId || '').trim().toLowerCase() === cleanId ||
-               String(q.quotationNo || '').trim().toLowerCase() === cleanId
-        );
-        if (foundInPresets) return foundInPresets;
-
-        // 3. Fallback to URL encoded data payload if provided
+        // 2. Fallback to URL encoded data payload if provided
         if (typeof window !== 'undefined') {
           try {
             const dataParam = new URLSearchParams(window.location.search).get('data');
@@ -106,11 +106,10 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
         }
         return null; // Explicit ID provided, waiting or not found
       }
-      // If public view accessed without an ID, fallback to previewQuotation or first preset
-      return previewQuotation || INITIAL_QUOTATIONS[0];
+      return previewQuotation || null;
     }
     return previewQuotation;
-  }, [isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
+  }, [propQuotation, isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
 
   // Initialize phone when quotation changes
   useEffect(() => {
@@ -407,6 +406,7 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
         const newZoom = userZoomRef.current + delta;
         zoomAroundPoint(newZoom, cursorX, cursorY);
       }
+      // Standard mouse wheel scrolling is completely unblocked for smooth native page scrolling
     };
 
     el.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -496,15 +496,15 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
     window.open(url, '_blank');
   };
 
-  if (isLoadingRemote) {
+  if (isLoadingRemote || isLoadingProp) {
     return (
-      <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-lg border border-surface-container-high animate-pulse">
-        <div className="w-14 h-14 rounded-full bg-primary/15 text-primary flex items-center justify-center mx-auto mb-4">
-          <span className="material-symbols-outlined text-[32px] animate-spin">sync</span>
+      <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-high">
+        <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+          <span className="material-symbols-outlined text-[28px] animate-spin">sync</span>
         </div>
-        <h3 className="text-lg font-bold text-on-surface mb-2">Loading Solar Proposal...</h3>
-        <p className="text-xs text-secondary mb-4">
-          Retrieving verified proposal <span className="font-mono font-bold text-on-surface">{publicQuoteId}</span> from Sunvine cloud.
+        <h3 className="text-base font-bold text-on-surface mb-1">Loading Solar Proposal...</h3>
+        <p className="text-xs text-secondary">
+          Retrieving verified proposal <span className="font-mono font-semibold text-on-surface">{publicQuoteId || ''}</span>
         </p>
       </div>
     );
@@ -566,44 +566,45 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
   return (
     <div className="quotation-preview-container pb-20 print:p-0 print:m-0 print:pb-0 w-full" ref={previewWrapperRef}>
       {/* Unified Edge-to-Edge Sticky Header: Pinned directly beneath global navbar with zero left/right empty space */}
-      <div className={`no-print sticky ${isPublicView ? 'top-0' : 'top-16'} z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.04)] px-4 sm:px-6 lg:px-8 py-3 transition-all`}>
+      <div className={`no-print sticky ${isPublicView ? 'top-0' : 'top-16'} z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.04)] px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 transition-all`}>
         {/* Main Header Bar: Back/Brand, Customer Info, Stepper Pipeline, Primary Actions */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Back / Brand Badge + Customer Info */}
-          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+          {/* Top/Left: Back / Brand Badge + Customer Info */}
+          <div className="flex items-center gap-2 sm:gap-3.5 min-w-0 w-full sm:w-auto">
             {!isPublicView ? (
               <button
                 onClick={() => setActiveTab('create_quote')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs hover:border-slate-300 transition-all active:scale-95 shrink-0 cursor-pointer"
+                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs hover:border-slate-300 transition-all active:scale-95 shrink-0 cursor-pointer"
                 title="Return to Details & Pricing"
               >
                 <span className="material-symbols-outlined text-[16px]">arrow_back</span>
                 <span>Back</span>
               </button>
             ) : (
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0">
-                <span className="material-symbols-outlined text-[18px] text-emerald-600">solar_power</span>
-                <span>Sunvine Solar Proposal</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0">
+                <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-emerald-600">solar_power</span>
+                <span className="hidden sm:inline">Sunvine Solar Proposal</span>
+                <span className="sm:hidden">Sunvine Solar</span>
               </div>
             )}
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold text-slate-900 text-sm sm:text-base leading-tight truncate max-w-[170px] sm:max-w-xs md:max-w-md">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <h2 className="font-bold text-slate-900 text-xs sm:text-base leading-tight truncate">
                   {activeQuotation.customerName}
                 </h2>
-                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 shrink-0">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] sm:text-[11px] font-extrabold bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 shrink-0">
                   {activeQuotation.systemCapacityKW || activeQuotation.capacity || '5'} KW
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium font-mono mt-0.5 truncate">
+              <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium font-mono mt-0.5 truncate">
                 Ref: <span className="font-bold text-slate-700">{activeQuotation.id}</span> • {activeQuotation.date}
               </p>
             </div>
           </div>
 
-          {/* Center: Stepper Stage Pipeline (Only in Dealer Mode) */}
+          {/* Center: Stepper Stage Pipeline (Only in Dealer Mode on Desktop) */}
           {!isPublicView && (
-            <div className="hidden md:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shadow-2xs order-last lg:order-none">
+            <div className="hidden lg:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shadow-2xs">
               <button
                 type="button"
                 onClick={() => setActiveTab('create_quote')}
@@ -628,26 +629,26 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
             </div>
           )}
 
-          {/* Right: Primary Action Buttons */}
-          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Right/Bottom: Primary Action Buttons (Grid on Mobile, Flex on Desktop) */}
+          <div className={`${isPublicView ? 'grid grid-cols-2' : 'grid grid-cols-3'} sm:flex sm:items-center gap-1.5 sm:gap-2.5 w-full sm:w-auto shrink-0`}>
             {!isPublicView ? (
               <>
                 <button
                   type="button"
                   onClick={handleCopyOnlineLink}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer min-w-0"
                   title="Copy direct online proposal link to share with customer"
                 >
-                  <span className="material-symbols-outlined text-[17px]">
+                  <span className="material-symbols-outlined text-[16px] sm:text-[17px] shrink-0">
                     {copiedLinkFeedback ? 'check' : 'link'}
                   </span>
-                  <span>{copiedLinkFeedback ? 'Link Copied!' : 'Copy Link'}</span>
+                  <span className="truncate">{copiedLinkFeedback ? 'Copied!' : 'Copy Link'}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={handleOpenOnlineView}
-                  className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer"
+                  className="hidden md:inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
                   title="View Proposal online as customer in a new tab"
                 >
                   <span className="material-symbols-outlined text-[17px]">open_in_new</span>
@@ -657,36 +658,60 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
                 <button
                   onClick={() => setShowWhatsAppModal(true)}
                   disabled={isGeneratingPdf}
-                  className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
                   title="Share proposal on WhatsApp (sends actual PDF file + online link)"
                 >
-                  <span className={`material-symbols-outlined text-[18px] ${isGeneratingPdf ? 'animate-spin' : ''}`}>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGeneratingPdf ? 'animate-spin' : ''}`}>
                     {isGeneratingPdf ? 'sync' : 'chat'}
                   </span>
-                  <span>{isGeneratingPdf ? 'Preparing PDF...' : 'Share WhatsApp'}</span>
+                  <span className="truncate">
+                    {isGeneratingPdf ? 'PDF...' : (
+                      <>
+                        <span className="sm:hidden">WhatsApp</span>
+                        <span className="hidden sm:inline">Share WhatsApp</span>
+                      </>
+                    )}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handlePrint}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
+                  title="Print or Save as 4-Page PDF"
+                >
+                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className="truncate">
+                    <span className="sm:hidden">PDF</span>
+                    <span className="hidden sm:inline">Print / Save PDF</span>
+                  </span>
                 </button>
               </>
             ) : (
-              <a
-                href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I am inquiring about Proposal Reference ${activeQuotation.id} for ${activeQuotation.customerName}.`)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer"
-                title="Inquire via WhatsApp"
-              >
-                <span className="material-symbols-outlined text-[18px]">chat</span>
-                <span className="hidden sm:inline">WhatsApp Advisor</span>
-              </a>
-            )}
+              <>
+                <a
+                  href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I am inquiring about Proposal Reference ${activeQuotation.id} for ${activeQuotation.customerName}.`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
+                  title="Inquire via WhatsApp"
+                >
+                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">chat</span>
+                  <span className="truncate">WhatsApp Advisor</span>
+                </a>
 
-            <button
-              onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer"
-              title="Print or Save as 4-Page PDF"
-            >
-              <span className="material-symbols-outlined text-[18px]">print</span>
-              <span>{isPublicView ? 'Download Official PDF' : 'Print / Save PDF'}</span>
-            </button>
+                <button
+                  onClick={handlePrint}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
+                  title="Print or Save as 4-Page PDF"
+                >
+                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className="truncate">
+                    <span className="sm:hidden">Download PDF</span>
+                    <span className="hidden sm:inline">Download Official PDF</span>
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -694,10 +719,11 @@ export default function QuotationPreview({ isPublicView = false, publicQuoteId =
       {/* PDF Container with Responsive Scaling, 2-Finger Pinch Zoom & Pan Viewport */}
       <div
         ref={pdfScrollContainerRef}
-        className="w-full max-w-full overflow-x-auto overflow-y-visible py-3 sm:py-4 px-2 sm:px-4 print:p-0 print:m-0"
+        className={`w-full max-w-full ${userZoom > 1.05 ? 'overflow-x-auto' : 'overflow-x-visible'} overflow-y-visible py-3 sm:py-4 px-2 sm:px-4 print:p-0 print:m-0`}
         style={{
           WebkitOverflowScrolling: 'touch',
-          touchAction: isPinching ? 'none' : 'pan-x pan-y'
+          touchAction: isPinching ? 'none' : 'auto',
+          overscrollBehavior: 'auto'
         }}
       >
         <div

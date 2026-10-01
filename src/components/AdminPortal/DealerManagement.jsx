@@ -326,7 +326,7 @@ export default function DealerManagement() {
         gstin: newGstin.trim() || editingDealer.gstin || '24AAECB1234F1Z5',
         pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || 'AAECB1234F'),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
-        password: newPassword.trim() || editingDealer.password || 'dealer123'
+        password: newPassword.trim() || editingDealer.password || ''
       };
 
       const isUnchanged =
@@ -342,7 +342,7 @@ export default function DealerManagement() {
         (editingDealer.gstin || '') === (updatedDealerObj.gstin || '') &&
         (editingDealer.pan || '') === (updatedDealerObj.pan || '') &&
         (editingDealer.discomLicense || editingDealer.gedaLicenseNo || '') === (updatedDealerObj.discomLicense || '') &&
-        (editingDealer.password || 'dealer123') === (updatedDealerObj.password || 'dealer123');
+        (editingDealer.password || '') === (updatedDealerObj.password || '');
 
       if (isUnchanged) {
         if (addToast) {
@@ -396,7 +396,7 @@ export default function DealerManagement() {
         totalCapacityKw: 0,
         status: 'Active',
         joinedDate: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date()),
-        password: newPassword.trim() || 'dealer123'
+        password: newPassword.trim() || ''
       };
 
       if (addDealer) {
@@ -1198,7 +1198,7 @@ export default function DealerManagement() {
                           <button
                             onClick={() => {
                               setCredModalDealer(d);
-                              setEditPassword(d.password || 'dealer123');
+                              setEditPassword(d.password || '');
                               setShowEditPassword(false);
                               setCopiedCreds(false);
                               setCredSavedNotice(false);
@@ -1399,7 +1399,7 @@ export default function DealerManagement() {
                           <button
                             onClick={() => {
                               setCredModalDealer(d);
-                              setEditPassword(d.password || 'dealer123');
+                              setEditPassword(d.password || '');
                               setShowEditPassword(false);
                               setCopiedCreds(false);
                               setCredSavedNotice(false);
@@ -1772,7 +1772,7 @@ export default function DealerManagement() {
                 type="button"
                 onClick={() => {
                   if (!editPassword.trim()) return;
-                  const currentPass = credModalDealer.password || 'dealer123';
+                  const currentPass = credModalDealer.password || '';
                   if (editPassword.trim() === currentPass) {
                     if (addToast) {
                       addToast({

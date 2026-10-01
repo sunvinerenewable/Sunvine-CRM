@@ -54,6 +54,8 @@ export default function SolarStructure3DViewer({
   const [isSunPlaying, setIsSunPlaying] = useState(false);
   const [showOverlays, setShowOverlays] = useState(true);
   const sunLightRef = useRef(null);
+  const rendererRef = useRef(null);
+  const sceneRef = useRef(null);
 
   // Animate Sun Position during simulation
   useEffect(() => {
@@ -77,6 +79,9 @@ export default function SolarStructure3DViewer({
       const sunY = sunDist * Math.sin(sunAltitudeRad);
       const sunZ = -sunDist * Math.cos(sunAltitudeRad) * Math.cos(sunAzimuthRad);
       sunLightRef.current.position.set(sunX, sunY, sunZ);
+      if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+      }
     }
   }, [sunHour]);
 
@@ -408,6 +413,7 @@ export default function SolarStructure3DViewer({
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xF0F4F8); // Bright outdoor sky
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 150);
     if (savedCameraStateRef.current) {
@@ -417,11 +423,13 @@ export default function SolarStructure3DViewer({
     }
     cameraRef.current = camera;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(isMobile ? Math.min(window.devicePixelRatio, 1.25) : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    rendererRef.current = renderer;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
@@ -461,8 +469,9 @@ export default function SolarStructure3DViewer({
     const sunLight = new THREE.DirectionalLight(0xfff8e7, 1.4);
     sunLight.position.set(sunX, sunY, sunZ);
     sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
+    const shadowRes = isMobile ? 1024 : 2048;
+    sunLight.shadow.mapSize.width = shadowRes;
+    sunLight.shadow.mapSize.height = shadowRes;
     sunLight.shadow.camera.near = 0.5;
     sunLight.shadow.camera.far = 65;
     sunLight.shadow.camera.left = -25;
@@ -1185,14 +1194,50 @@ export default function SolarStructure3DViewer({
     compassGroup.add(arrowHelper);
     scene.add(compassGroup);
 
-    // 9. Animation Loop
-    let animationId;
-    const animate = () => {
-      animationId = requestAnimationFrame(animate);
+    // 9. On-Demand Render Lifecycle
+    let animationId = null;
+    let isRenderingLoop = false;
+    let dampingTimeout = null;
+
+    const renderOnce = () => {
       controls.update();
       renderer.render(scene, camera);
     };
-    animate();
+
+    const startDampingLoop = () => {
+      if (isRenderingLoop) return;
+      isRenderingLoop = true;
+      const step = () => {
+        controls.update();
+        renderer.render(scene, camera);
+        if (isRenderingLoop) {
+          animationId = requestAnimationFrame(step);
+        }
+      };
+      animationId = requestAnimationFrame(step);
+    };
+
+    const stopDampingLoop = () => {
+      isRenderingLoop = false;
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      renderOnce();
+    };
+
+    const onControlsInteract = () => {
+      startDampingLoop();
+      if (dampingTimeout) clearTimeout(dampingTimeout);
+      dampingTimeout = setTimeout(() => {
+        stopDampingLoop();
+      }, 350);
+    };
+
+    controls.addEventListener('change', onControlsInteract);
+
+    // Initial render
+    renderOnce();
 
     // 10. Resize
     const handleResize = () => {
@@ -1202,13 +1247,31 @@ export default function SolarStructure3DViewer({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      renderOnce();
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
-      cancelAnimationFrame(animationId);
+      stopDampingLoop();
+      if (dampingTimeout) clearTimeout(dampingTimeout);
       window.removeEventListener('resize', handleResize);
+      controls.removeEventListener('change', onControlsInteract);
       controls.removeEventListener('change', handleControlsChange);
+
+      // Deep GPU Resource Cleanup
+      scene.traverse(obj => {
+        if (obj.geometry) {
+          obj.geometry.dispose();
+        }
+        if (obj.material) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(mat => mat?.dispose?.());
+          } else {
+            obj.material?.dispose?.();
+          }
+        }
+      });
+
       renderer.dispose();
       controls.dispose();
       if (container.contains(renderer.domElement)) {
@@ -1245,6 +1308,9 @@ export default function SolarStructure3DViewer({
       position: camera.position.clone(),
       target: controls.target.clone()
     };
+    if (rendererRef.current && sceneRef.current) {
+      rendererRef.current.render(sceneRef.current, camera);
+    }
   };
 
   return (

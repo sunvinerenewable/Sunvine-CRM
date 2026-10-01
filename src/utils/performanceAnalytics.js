@@ -113,7 +113,51 @@ export function calculateSingleStaffPerformance(staff, customerFiles = [], quota
 export function calculateStaffPerformance(staffOrList, customerFiles = [], quotations = [], dealers = []) {
   if (!staffOrList) return [];
   if (Array.isArray(staffOrList)) {
-    return staffOrList.map(s => calculateSingleStaffPerformance(s, customerFiles, quotations, dealers));
+    // Build pre-indexed lookup maps once for O(N) linear performance
+    const dealersByStaffId = new Map();
+    const dealersByStaffName = new Map();
+    (dealers || []).forEach(d => {
+      if (!d) return;
+      if (d.assignedStaffId) {
+        if (!dealersByStaffId.has(d.assignedStaffId)) dealersByStaffId.set(d.assignedStaffId, []);
+        dealersByStaffId.get(d.assignedStaffId).push(d);
+      }
+      if (d.assignedStaffName) {
+        if (!dealersByStaffName.has(d.assignedStaffName)) dealersByStaffName.set(d.assignedStaffName, []);
+        dealersByStaffName.get(d.assignedStaffName).push(d);
+      }
+    });
+
+    const filesByStaffId = new Map();
+    const filesByStaffName = new Map();
+    (customerFiles || []).forEach(f => {
+      if (!f) return;
+      if (f.staffId) {
+        if (!filesByStaffId.has(f.staffId)) filesByStaffId.set(f.staffId, []);
+        filesByStaffId.get(f.staffId).push(f);
+      }
+      if (f.staffName) {
+        if (!filesByStaffName.has(f.staffName)) filesByStaffName.set(f.staffName, []);
+        filesByStaffName.get(f.staffName).push(f);
+      }
+    });
+
+    return staffOrList.map(s => {
+      const staffId = s?.id || 'STF-001';
+      const staffName = s?.name || 'Sales Executive';
+
+      const sDealers = [
+        ...(dealersByStaffId.get(staffId) || []),
+        ...(dealersByStaffName.get(staffName) || [])
+      ].filter((d, idx, arr) => arr.findIndex(x => x.id === d.id) === idx);
+
+      const sFiles = [
+        ...(filesByStaffId.get(staffId) || []),
+        ...(filesByStaffName.get(staffName) || [])
+      ].filter((f, idx, arr) => arr.findIndex(x => x.id === f.id) === idx);
+
+      return calculateSingleStaffPerformance(s, sFiles.length > 0 ? sFiles : customerFiles, quotations, sDealers.length > 0 ? sDealers : dealers);
+    });
   }
   return calculateSingleStaffPerformance(staffOrList, customerFiles, quotations, dealers);
 }
@@ -209,7 +253,59 @@ export function calculateSingleDealerPerformance(dealer, customerFiles = [], quo
 export function calculateDealerPerformance(dealerOrList, customerFiles = [], quotations = []) {
   if (!dealerOrList) return [];
   if (Array.isArray(dealerOrList)) {
-    return dealerOrList.map(d => calculateSingleDealerPerformance(d, customerFiles, quotations));
+    // Build pre-indexed lookup maps for O(N) linear performance
+    const filesByDealerId = new Map();
+    const filesByDealerName = new Map();
+    (customerFiles || []).forEach(f => {
+      if (!f) return;
+      if (f.dealerId) {
+        if (!filesByDealerId.has(f.dealerId)) filesByDealerId.set(f.dealerId, []);
+        filesByDealerId.get(f.dealerId).push(f);
+      }
+      if (f.dealerName) {
+        if (!filesByDealerName.has(f.dealerName)) filesByDealerName.set(f.dealerName, []);
+        filesByDealerName.get(f.dealerName).push(f);
+      }
+    });
+
+    const quotesByDealerId = new Map();
+    const quotesByDealerName = new Map();
+    (quotations || []).forEach(q => {
+      if (!q) return;
+      if (q.dealerId) {
+        if (!quotesByDealerId.has(q.dealerId)) quotesByDealerId.set(q.dealerId, []);
+        quotesByDealerId.get(q.dealerId).push(q);
+      }
+      if (q.dealerCode) {
+        if (!quotesByDealerId.has(q.dealerCode)) quotesByDealerId.set(q.dealerCode, []);
+        quotesByDealerId.get(q.dealerCode).push(q);
+      }
+      if (q.dealerFirmName) {
+        if (!quotesByDealerName.has(q.dealerFirmName)) quotesByDealerName.set(q.dealerFirmName, []);
+        quotesByDealerName.get(q.dealerFirmName).push(q);
+      }
+      if (q.dealerName) {
+        if (!quotesByDealerName.has(q.dealerName)) quotesByDealerName.set(q.dealerName, []);
+        quotesByDealerName.get(q.dealerName).push(q);
+      }
+    });
+
+    return dealerOrList.map(d => {
+      const dealerId = d?.id || 'DLR-GUJ-001';
+      const firmName = d?.firmName || '';
+
+      const dFiles = [
+        ...(filesByDealerId.get(dealerId) || []),
+        ...(filesByDealerName.get(firmName) || [])
+      ].filter((f, idx, arr) => arr.findIndex(x => x.id === f.id) === idx);
+
+      const dQuotes = [
+        ...(quotesByDealerId.get(dealerId) || []),
+        ...(quotesByDealerName.get(firmName) || [])
+      ].filter((q, idx, arr) => arr.findIndex(x => x.id === q.id) === idx);
+
+      return calculateSingleDealerPerformance(d, dFiles.length > 0 ? dFiles : customerFiles, dQuotes.length > 0 ? dQuotes : quotations);
+    });
   }
   return calculateSingleDealerPerformance(dealerOrList, customerFiles, quotations);
 }

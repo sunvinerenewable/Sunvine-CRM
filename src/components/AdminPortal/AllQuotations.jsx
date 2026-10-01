@@ -210,8 +210,8 @@ export default function AllQuotations() {
 
   // Metrics reflect filtered dataset
   const totalProposalsCount = filteredQuotes.length;
-  const totalValue = filteredQuotes.reduce((acc, q) => acc + (q.grandTotalCustomer || q.totalAmount || 0), 0);
-  const totalCapacityKW = filteredQuotes.reduce((acc, q) => acc + (parseFloat(q.systemCapacityKW || q.capacity || 0)), 0);
+  const totalValue = filteredQuotes.reduce((acc, q) => acc + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
+  const totalCapacityKW = filteredQuotes.reduce((acc, q) => acc + (parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0)), 0);
   const totalCapacityMW = (totalCapacityKW / 1000).toFixed(2);
   const avgValue = totalProposalsCount > 0 ? Math.round(totalValue / totalProposalsCount) : 0;
 
@@ -219,27 +219,26 @@ export default function AllQuotations() {
   // Weight-average: total dealer margin rupees / total commissioned kW
   const { avgMarginPerKw, avgMarginComplianceStatus } = (() => {
     const quotesWithMargin = filteredQuotes.filter(q =>
-      (q.dealerMarginPerKW || q.dealerTotalMargin) && (q.systemCapacityKW || q.capacity)
+      (q.dealer_margin || q.dealerMarginPerKW || q.dealerTotalMargin) && (q.system_capacity_kw || q.systemCapacityKW || q.capacity)
     );
     if (quotesWithMargin.length === 0) return { avgMarginPerKw: 0, avgMarginComplianceStatus: 'no-data' };
 
     const totalMarginRupees = quotesWithMargin.reduce((acc, q) => {
-      const kw = parseFloat(q.systemCapacityKW || q.capacity || 0);
-      const marginPerKw = q.dealerMarginPerKW ||
-        (q.dealerTotalMargin && kw ? Math.round(q.dealerTotalMargin / kw) : 0);
-      return acc + (marginPerKw * kw);
+      const kw = parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0);
+      const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
+      return acc + totalMargin;
     }, 0);
 
     const totalKwWithMargin = quotesWithMargin.reduce((acc, q) =>
-      acc + parseFloat(q.systemCapacityKW || q.capacity || 0), 0);
+      acc + parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0), 0);
 
     const avg = totalKwWithMargin > 0 ? Math.round(totalMarginRupees / totalKwWithMargin) : 0;
 
     // Flag any quote with margin > ₹5,500/kW as non-compliant
     const flaggedCount = quotesWithMargin.filter(q => {
-      const kw = parseFloat(q.systemCapacityKW || q.capacity || 0);
-      const marg = q.dealerMarginPerKW ||
-        (q.dealerTotalMargin && kw ? Math.round(q.dealerTotalMargin / kw) : 0);
+      const kw = parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0);
+      const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
+      const marg = kw > 0 ? Math.round(totalMargin / kw) : 0;
       return marg > 5500;
     }).length;
 
@@ -862,10 +861,11 @@ export default function AllQuotations() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {paginatedQuotes.map((q, idx) => {
                   const quoteRef = q.quoteNumber || q.id || `#SV-2025-Q${idx + 100}`;
-                  const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 3200);
-                  const isFlagged = marginPerKw > 6000;
-                  const totalAmt = q.grandTotalCustomer || q.totalAmount || 0;
-                  const baseCost = q.baseCost || (totalAmt - (q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))));
+                  const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
+                  const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                  const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
+                  const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
+                  const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                   const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
                   return (
@@ -1006,10 +1006,12 @@ export default function AllQuotations() {
             <tbody className="divide-y divide-[#E4E7EB] font-body-sm text-xs">
               {paginatedQuotes.map((q, idx) => {
                 const quoteRef = q.quoteNumber || q.id || `#SV-2025-Q${idx + 100}`;
-                const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 3200);
+                const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
+                const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
+                const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
                 const isFlagged = marginPerKw > 6000;
-                const totalAmt = q.grandTotalCustomer || q.totalAmount || 0;
-                const baseCost = q.baseCost || (totalAmt - (q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))));
+                const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                 const ownership = getQuotationOwnership(q);
 
                 return (

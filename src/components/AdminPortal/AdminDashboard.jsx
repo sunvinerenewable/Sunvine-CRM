@@ -813,9 +813,10 @@ export default function AdminDashboard() {
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
                     {paginatedFeedQuotes.map((q, idx) => {
                       const quoteId = q.quoteNumber || q.id;
-                      const marginAmt = q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 24000);
-                      const totalAmt = q.grandTotalCustomer || q.totalAmount || 325000;
-                      const marginPct = ((marginAmt / totalAmt) * 100).toFixed(1);
+                      const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
+                      const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                      const marginAmt = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * kw) : 0));
+                      const marginPct = totalAmt > 0 ? ((marginAmt / totalAmt) * 100).toFixed(1) : '0.0';
                       const statusStr = q.status || 'Approved';
                       const dealerInfo = getDealerCellData(q);
 
@@ -936,9 +937,10 @@ export default function AdminDashboard() {
                     ) : (
                       paginatedFeedQuotes.map((q, idx) => {
                         const quoteId = q.quoteNumber || q.id;
-                        const marginAmt = q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 24000);
-                        const totalAmt = q.grandTotalCustomer || q.totalAmount || 325000;
-                        const marginPct = ((marginAmt / totalAmt) * 100).toFixed(1);
+                        const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
+                        const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                        const marginAmt = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * kw) : 0));
+                        const marginPct = totalAmt > 0 ? ((marginAmt / totalAmt) * 100).toFixed(1) : '0.0';
                         const statusStr = q.status || 'Approved';
                         const dealerInfo = getDealerCellData(q);
 
