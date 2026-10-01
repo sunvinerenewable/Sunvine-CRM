@@ -1,13 +1,15 @@
 /**
  * Rate Limiter Utility for Sunvine API Endpoints
- * In-memory sliding window rate limiter against brute-force attacks.
- * Strictly adheres to Ponytail protocol (Zero external dependencies).
+ *
+ * Supports:
+ * 1. Upstash Redis REST (when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set)
+ *    -> Shared distributed state across all Vercel serverless cold starts.
+ * 2. In-Memory fallback (when Upstash is not configured or in local dev).
  */
 
 const tracker = new Map();
-const CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
-// Periodic cleanup of stale IP records
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const now = Date.now();
@@ -20,14 +22,67 @@ if (typeof setInterval !== 'undefined') {
 }
 
 /**
- * Check if an identifier is currently rate-limited (without incrementing)
- * @param {string} identifier - Client IP or User ID
- * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000 }
- * @returns {object} { blocked: boolean, remaining: number, resetSeconds: number }
+ * Check if Upstash is configured
+ */
+function hasUpstash() {
+  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+/**
+ * Check and increment rate limit via Upstash Redis REST
+ */
+export async function checkDistributedRateLimit(identifier, options = {}) {
+  const maxAttempts = options.maxAttempts || 20;
+  const windowSeconds = Math.ceil((options.windowMs || 5 * 60 * 1000) / 1000);
+  const key = `ratelimit:${identifier}`;
+
+  if (!hasUpstash()) {
+    return checkRateLimit(identifier, options);
+  }
+
+  try {
+    const url = process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    // INCR and EXPIRE in pipeline
+    const res = await fetch(`${url}/pipeline`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify([
+        ['INCR', key],
+        ['EXPIRE', key, windowSeconds, 'NX'],
+        ['TTL', key]
+      ])
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const count = data?.[0]?.result || 1;
+      const ttl = Math.max(1, data?.[2]?.result || windowSeconds);
+      const remaining = Math.max(0, maxAttempts - count);
+      return {
+        allowed: count <= maxAttempts,
+        remaining,
+        resetSeconds: ttl,
+        totalAttempts: count
+      };
+    }
+  } catch (err) {
+    console.warn('[RateLimiter] Upstash unreachable, falling back to local:', err.message);
+  }
+
+  return checkRateLimit(identifier, options);
+}
+
+/**
+ * Local synchronous check / record
  */
 export function isRateLimited(identifier, options = {}) {
   const maxAttempts = options.maxAttempts || 20;
-  const windowMs = options.windowMs || 5 * 60 * 1000; // 5 mins default
+  const windowMs = options.windowMs || 5 * 60 * 1000;
   const now = Date.now();
 
   const record = tracker.get(identifier);
@@ -42,12 +97,6 @@ export function isRateLimited(identifier, options = {}) {
   return { blocked, remaining, resetSeconds, totalAttempts: record.count };
 }
 
-/**
- * Record a failed authentication attempt
- * @param {string} identifier - Client IP or User ID
- * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000 }
- * @returns {object} { allowed: boolean, remaining: number, resetSeconds: number }
- */
 export function recordFailedAttempt(identifier, options = {}) {
   const maxAttempts = options.maxAttempts || 20;
   const windowMs = options.windowMs || 5 * 60 * 1000;
@@ -71,13 +120,6 @@ export function recordFailedAttempt(identifier, options = {}) {
   };
 }
 
-/**
- * Check rate limit for an action
- * If options.increment === false, only checks status without recording attempt.
- * @param {string} identifier - Client IP or User ID
- * @param {object} options - { maxAttempts: 20, windowMs: 5 * 60 * 1000, increment: boolean }
- * @returns {object} { allowed: boolean, remaining: number, resetSeconds: number }
- */
 export function checkRateLimit(identifier, options = {}) {
   if (options.increment === false) {
     const status = isRateLimited(identifier, options);
@@ -88,20 +130,13 @@ export function checkRateLimit(identifier, options = {}) {
       totalAttempts: status.totalAttempts
     };
   }
-
   return recordFailedAttempt(identifier, options);
 }
 
-/**
- * Reset rate limit record upon successful authentication
- */
 export function resetRateLimit(identifier) {
   tracker.delete(identifier);
 }
 
-/**
- * Extract client IP reliably across proxies / Vercel Edge / Cloudflare
- */
 export function getClientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {

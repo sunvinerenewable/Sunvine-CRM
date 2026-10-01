@@ -13,12 +13,13 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: /\.(?:js|mjs)$/i,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'sunvine-dynamic-chunks',
+              networkTimeoutSeconds: 3,
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 60 * 60 * 24 * 30
+                maxAgeSeconds: 60 * 60 * 24
               }
             }
           },
