@@ -2,9 +2,80 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+function apiDevPlugin() {
+  return {
+    name: 'api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api/')) return next();
+
+        const [urlPath, queryString] = req.url.split('?');
+        const query = {};
+        if (queryString) {
+          const params = new URLSearchParams(queryString);
+          for (const [k, v] of params) query[k] = v;
+        }
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            req.body = body ? JSON.parse(body) : {};
+          } catch {
+            req.body = {};
+          }
+          req.query = query;
+
+          if (!res.status) {
+            res.status = (code) => {
+              res.statusCode = code;
+              return res;
+            };
+          }
+          if (!res.json) {
+            res.json = (obj) => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(obj));
+              return res;
+            };
+          }
+
+          try {
+            if (urlPath === '/api/auth/login') {
+              const { default: handler } = await server.ssrLoadModule('/api/auth/login.js');
+              return await handler(req, res);
+            }
+            if (urlPath === '/api/auth/verify') {
+              const { default: handler } = await server.ssrLoadModule('/api/auth/verify.js');
+              return await handler(req, res);
+            }
+            if (urlPath === '/api/auth/logout') {
+              const { default: handler } = await server.ssrLoadModule('/api/auth/logout.js');
+              return await handler(req, res);
+            }
+            if (urlPath === '/api/quotations') {
+              const { default: handler } = await server.ssrLoadModule('/api/quotations.js');
+              return await handler(req, res);
+            }
+          } catch (err) {
+            console.error('[Vite dev API error]:', err);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message }));
+            return;
+          }
+
+          next();
+        });
+      });
+    }
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
+    apiDevPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {

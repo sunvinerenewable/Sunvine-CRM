@@ -47,7 +47,13 @@ async function callLoginApi(payload) {
       credentials: 'include',
       body: JSON.stringify(payload)
     });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      // Received HTML or non-JSON from local Vite dev server without /api middleware
+      return null;
+    }
     const data = await res.json().catch(() => null);
+    if (!data) return null;
     if (res.ok && data?.success) return { ok: true, data };
     if (res.status === 429) return { ok: false, isRateLimited: true, error: data?.error || 'Too many attempts.' };
     return { ok: false, error: data?.error || 'Authentication failed.' };

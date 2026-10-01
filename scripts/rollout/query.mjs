@@ -48,7 +48,11 @@ async function main() {
       return copy;
     });
 
-    console.table(sanitized);
+    if (sanitized.some(r => Object.values(r).some(v => typeof v === 'object' && v !== null))) {
+      console.dir(sanitized, { depth: null });
+    } else {
+      console.table(sanitized);
+    }
   });
 }
 
