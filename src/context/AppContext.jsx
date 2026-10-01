@@ -124,6 +124,28 @@ const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   '/admin/quotations': 'all_quotes'
 });
 
+const isPublicProposalRoute = () => {
+  if (typeof window === 'undefined') return false;
+  const search = window.location.search || '';
+  const searchParams = new URLSearchParams(search);
+  if (searchParams.get('view') === 'quote' || searchParams.has('quoteId')) {
+    return true;
+  }
+  const hash = window.location.hash || '';
+  if (hash.startsWith('#/quote/') || hash.startsWith('#/view-quote/')) {
+    return true;
+  }
+  return false;
+};
+
+const getInitialAuthViewFromUrl = () => {
+  if (typeof window === 'undefined') return 'dealer_login';
+  const pathname = (window.location.pathname || '').toLowerCase();
+  if (pathname.startsWith('/admin')) return 'admin_login';
+  if (pathname.startsWith('/staff')) return 'staff_login';
+  return 'dealer_login';
+};
+
 const getInitialTabFromUrl = () => {
   if (typeof window === 'undefined') return 'dashboard';
   const pathname = window.location.pathname.replace(/\/$/, '') || '/';
@@ -135,7 +157,7 @@ const getInitialTabFromUrl = () => {
   if (matched) {
     return matched === 'profile' ? 'dealer_settings' : matched;
   }
-  if (pathname === '/' || pathname === '') {
+  if (pathname === '/' || pathname === '' || pathname === '/login' || pathname === '/admin/login' || pathname === '/staff/login') {
     const saved = localStorage.getItem('sunvine_tab');
     return saved === 'profile' ? 'dealer_settings' : saved || 'dashboard';
   }
@@ -148,8 +170,25 @@ export const AppProvider = ({ children }) => {
     return localStorage.getItem('sunvine_auth') === 'true';
   });
 
-  // Auth screen toggle when not authenticated ('dealer_login' or 'admin_login')
-  const [authView, setAuthView] = useState('dealer_login');
+  // Auth screen toggle when not authenticated ('dealer_login', 'admin_login', or 'staff_login')
+  const [authView, setAuthViewState] = useState(getInitialAuthViewFromUrl);
+
+  const setAuthView = (newView, replace = false) => {
+    setAuthViewState(newView);
+    if (typeof window !== 'undefined') {
+      let targetPath = '/login';
+      if (newView === 'admin_login') targetPath = '/admin/login';
+      else if (newView === 'staff_login') targetPath = '/staff/login';
+
+      if (window.location.pathname !== targetPath) {
+        if (replace) {
+          window.history.replaceState({ authView: newView }, '', targetPath);
+        } else {
+          window.history.pushState({ authView: newView }, '', targetPath);
+        }
+      }
+    }
+  };
 
   // Role: 'dealer' or 'admin'
   const [role, setRole] = useState(() => localStorage.getItem('sunvine_role') || 'dealer');
@@ -199,6 +238,29 @@ export const AppProvider = ({ children }) => {
     const handlePopState = () => {
       if (typeof window !== 'undefined') {
         const path = window.location.pathname.replace(/\/$/, '') || '/';
+
+        // Unauthenticated popstate navigation between login screens
+        if (!isAuthenticated) {
+          if (path.startsWith('/admin')) {
+            setAuthViewState('admin_login');
+            if (path !== '/admin/login') {
+              window.history.replaceState({ authView: 'admin_login' }, '', '/admin/login');
+            }
+          } else if (path.startsWith('/staff')) {
+            setAuthViewState('staff_login');
+            if (path !== '/staff/login') {
+              window.history.replaceState({ authView: 'staff_login' }, '', '/staff/login');
+            }
+          } else {
+            setAuthViewState('dealer_login');
+            if (path !== '/login') {
+              window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+            }
+          }
+          return;
+        }
+
+        // Authenticated popstate navigation
         if (path === '/profile') {
           window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
           setActiveTabState('dealer_settings');
@@ -212,16 +274,47 @@ export const AppProvider = ({ children }) => {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [isAuthenticated]);
 
-  // Update URL on initial load if logged in
+  // Enforce login URL redirection for unauthenticated navigation across all pages
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isPublicProposalRoute()) return;
+
+    if (!isAuthenticated) {
+      const pathname = (window.location.pathname || '').replace(/\/$/, '') || '/';
+
+      if (pathname.startsWith('/admin')) {
+        if (pathname !== '/admin/login') {
+          window.history.replaceState({ authView: 'admin_login' }, '', '/admin/login');
+        }
+        if (authView !== 'admin_login') {
+          setAuthViewState('admin_login');
+        }
+      } else if (pathname.startsWith('/staff')) {
+        if (pathname !== '/staff/login') {
+          window.history.replaceState({ authView: 'staff_login' }, '', '/staff/login');
+        }
+        if (authView !== 'staff_login') {
+          setAuthViewState('staff_login');
+        }
+      } else {
+        // Any other route (e.g. /dashboard, /new-quotation, /preview-quotation, /my-quotations, /settings, /, etc.)
+        if (pathname !== '/login') {
+          window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+        }
+        if (authView !== 'dealer_login') {
+          setAuthViewState('dealer_login');
+        }
+      }
+    }
+  }, [isAuthenticated, authView]);
+
+  // Update URL on initial load if logged in & guard roles against unauthorized paths
   useEffect(() => {
     if (isAuthenticated && typeof window !== 'undefined') {
-      const searchParams = new URLSearchParams(window.location.search);
-      if (searchParams.get('view') === 'quote') {
-        // Do not overwrite public quotation proposal view URL
-        return;
-      }
+      if (isPublicProposalRoute()) return;
+
       if (window.location.pathname === '/profile') {
         window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
         setActiveTabState('dealer_settings');
@@ -238,8 +331,20 @@ export const AppProvider = ({ children }) => {
         targetPath = role === 'admin' ? '/admin' : (role === 'staff' ? '/staff' : '/dashboard');
       }
 
-      if (window.location.pathname !== targetPath && (window.location.pathname === '/' || window.location.pathname === '')) {
+      const curPath = window.location.pathname.replace(/\/$/, '') || '/';
+      const isLoginOrRoot = curPath === '/' || curPath === '/login' || curPath === '/admin/login' || curPath === '/staff/login';
+
+      if (isLoginOrRoot) {
         window.history.replaceState({ tab: activeTab }, '', targetPath);
+      }
+
+      // Role isolation: prevent unauthorized role paths in browser address bar
+      if (role === 'dealer' && (curPath.startsWith('/admin') || curPath.startsWith('/staff'))) {
+        const fallback = activeTab === 'create_quote' ? '/new-quotation' : '/dashboard';
+        window.history.replaceState({ tab: activeTab }, '', fallback);
+      } else if (role === 'staff' && curPath.startsWith('/admin')) {
+        window.history.replaceState({ tab: 'staff_dashboard' }, '', '/staff');
+        setActiveTabState('staff_dashboard');
       }
     }
   }, [isAuthenticated, activeTab, role]);
@@ -1179,9 +1284,12 @@ const safeSetItem = (key, value) => {
 
   const logout = () => {
     setIsAuthenticated(false);
-    setAuthView('dealer_login');
+    setAuthView('dealer_login', true);
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
+    }
     authService.logout().catch(() => {});
   };
 

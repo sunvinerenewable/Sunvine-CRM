@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js';
 import { checkRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from '../_lib/rateLimiter.js';
 import { verifyPassword } from '../_lib/security.js';
 import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
+import { query, getSupabaseServiceClient } from '../_lib/db.js';
 
 /**
  * POST /api/auth/login
@@ -9,21 +9,12 @@ import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
  * Authentication flow (server-side only):
  * 1. Rate-limit check by client IP
  * 2. Validate input shape
- * 3. Look up the user in Supabase via service-role key (never anon key)
+ * 3. Look up the user in Supabase via PostgreSQL direct connection or service-role client
  * 4. Verify password via PBKDF2/bcrypt comparison server-side
  * 5. Issue a signed JWT in an HTTP-only cookie
  *
  * NO plaintext passwords. NO hardcoded credentials. NO bypass lists.
  */
-
-function getSupabaseServiceClient() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !serviceKey) {
-    throw new Error('[FATAL] Supabase URL and key env vars are required.');
-  }
-  return createClient(url, serviceKey, { auth: { persistSession: false } });
-}
 
 function parseCookies(cookieHeader = '') {
   const out = {};
@@ -74,27 +65,33 @@ export default async function handler(req, res) {
   }
 
   // ── 3. Database lookup ────────────────────────────────────────────────────
-  let db;
-  try {
-    db = getSupabaseServiceClient();
-  } catch (err) {
-    console.error('[API auth/login] DB init error:', err.message);
-    return res.status(503).json({ error: 'Authentication service unavailable. Contact support.' });
-  }
-
   try {
     let userRecord = null;
     let userPayload = null;
 
     if (cleanRole === 'admin') {
       const isEmail = cleanIdentifier.includes('@');
-      const { data, error } = await db
-        .from('admin_accounts')
-        .select('id, email, full_name, role, password_hash')
-        .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier)
-        .maybeSingle();
+      let data = null;
 
-      if (error || !data) {
+      try {
+        const sql = isEmail
+          ? 'SELECT id, email, full_name, role, password_hash FROM admin_accounts WHERE LOWER(email) = LOWER($1) LIMIT 1'
+          : 'SELECT id, email, full_name, role, password_hash FROM admin_accounts WHERE mobile_number = $1 LIMIT 1';
+        const qRes = await query(sql, [cleanIdentifier]);
+        data = qRes.rows[0] || null;
+      } catch (dbErr) {
+        try {
+          const db = getSupabaseServiceClient();
+          const qRes = await db
+            .from('admin_accounts')
+            .select('id, email, full_name, role, password_hash')
+            .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier)
+            .maybeSingle();
+          data = qRes.data;
+        } catch (_) {}
+      }
+
+      if (!data) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
@@ -117,13 +114,25 @@ export default async function handler(req, res) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid mobile number.' });
       }
-      const { data, error } = await db
-        .from('dealer_accounts')
-        .select('id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw')
-        .eq('mobile_number', cleanMobile)
-        .maybeSingle();
+      let data = null;
 
-      if (error || !data) {
+      try {
+        const sql = 'SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw FROM dealer_accounts WHERE mobile_number = $1 LIMIT 1';
+        const qRes = await query(sql, [cleanMobile]);
+        data = qRes.rows[0] || null;
+      } catch (dbErr) {
+        try {
+          const db = getSupabaseServiceClient();
+          const qRes = await db
+            .from('dealer_accounts')
+            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw')
+            .eq('mobile_number', cleanMobile)
+            .maybeSingle();
+          data = qRes.data;
+        } catch (_) {}
+      }
+
+      if (!data) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
@@ -157,13 +166,25 @@ export default async function handler(req, res) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid mobile number.' });
       }
-      const { data, error } = await db
-        .from('staff_accounts')
-        .select('id, name, phone, role, department, city, zone, status, password_hash')
-        .eq('phone', cleanMobile)
-        .maybeSingle();
+      let data = null;
 
-      if (error || !data) {
+      try {
+        const sql = 'SELECT id, name, phone, role, department, city, zone, status, password_hash FROM staff_accounts WHERE phone = $1 LIMIT 1';
+        const qRes = await query(sql, [cleanMobile]);
+        data = qRes.rows[0] || null;
+      } catch (dbErr) {
+        try {
+          const db = getSupabaseServiceClient();
+          const qRes = await db
+            .from('staff_accounts')
+            .select('id, name, phone, role, department, city, zone, status, password_hash')
+            .eq('phone', cleanMobile)
+            .maybeSingle();
+          data = qRes.data;
+        } catch (_) {}
+      }
+
+      if (!data) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
@@ -174,7 +195,6 @@ export default async function handler(req, res) {
         recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
-      // Role mismatch check (sales vs verification)
       const isVerification = (data.department || '').toLowerCase().includes('verification');
       const requestedVerification = String(reqStaffRole || '').toLowerCase().includes('verification');
       if (isVerification !== requestedVerification) {
@@ -189,11 +209,12 @@ export default async function handler(req, res) {
         id: data.id,
         staff_id: data.id,
         role: 'staff',
-        department: data.department,
         name: data.name,
-        mobile: data.mobile_number,
+        phone: data.phone,
+        department: data.department,
         city: data.city,
-        zone: data.zone
+        zone: data.zone,
+        staffRole: isVerification ? 'verification' : 'sales'
       };
     }
 

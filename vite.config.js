@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { ensureEnvLoaded } from './api/_lib/db.js';
+
+ensureEnvLoaded();
 
 function apiDevPlugin() {
   return {
@@ -36,6 +39,12 @@ function apiDevPlugin() {
             res.json = (obj) => {
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify(obj));
+              return res;
+            };
+          }
+          if (!res.send) {
+            res.send = (data) => {
+              res.end(data);
               return res;
             };
           }
