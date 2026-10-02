@@ -375,59 +375,114 @@ const safeSetItem = (key, value) => {
   }
 };
 
-  const isDbUpToDate = typeof window !== 'undefined' && localStorage.getItem('sunvine_db_version') === DB_VERSION;
+  // Startup: One-time purge of legacy business entity keys from browser localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const legacyBusinessKeys = [
+      'sunvine_customer_files',
+      'sunvine_quotations',
+      'sunvine_dealers',
+      'sunvine_staff_list',
+      'sunvine_pricing_master',
+      'sunvine_pricing_presets',
+      'sunvine_bos_price_matrix',
+      'sunvine_bos_matrix_v2',
+      'sunvine_inverters',
+      'sunvine_modules',
+      'sunvine_inverter_benchmark_matrix',
+      'sunvine_bom_catalog',
+      'sunvine_bom_catalog_v2',
+      'sunvine_bom_rates',
+      'sunvine_capacity_bom',
+      'sunvine_solar_kits_presets_v2',
+      'sunvine_dealer_custom_pricing_v2',
+      'sunvine_tier_margins',
+      'sunvine_system_settings',
+      'sunvine_audit_logs',
+      'sunvine_design_records',
+      'sunvine_notifications',
+      'sunvine_last_quote',
+      'sunvine_preview_quotation',
+      'sunvine_required_documents',
+      'sunvine_application_stages',
+      'sunvine_governance_settings'
+    ];
+    legacyBusinessKeys.forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+  }, []);
 
   // Current Dealer Profile (Gujarat default)
   const [currentDealer, setCurrentDealer] = useState(() => {
-    if (!isDbUpToDate) return INITIAL_DEALERS[0];
-    const parsed = safeJsonParse('sunvine_current_dealer', INITIAL_DEALERS[0]);
-    return parsed || INITIAL_DEALERS[0];
+    return safeJsonParse('sunvine_current_dealer', INITIAL_DEALERS[0]) || INITIAL_DEALERS[0];
   });
 
   // Master Pricing Presets (Configurable by Admin & synced with PDF)
-  const [pricingMaster, setPricingMaster] = useState(() => {
-    return safeJsonParse('sunvine_pricing_master', DEFAULT_PRICING_MASTER);
-  });
+  const [pricingMaster, setPricingMaster] = useState(DEFAULT_PRICING_MASTER);
 
   // Benchmark Quotation Presets (Admin & Dealer Sync)
-  const [pricingPresets, setPricingPresets] = useState(() => {
-    return safeJsonParse('sunvine_pricing_presets', DEFAULT_PRICING_MASTER.quotationPresets);
-  });
+  const [pricingPresets, setPricingPresets] = useState(DEFAULT_PRICING_MASTER.quotationPresets);
 
   // Commission Margins & Protective Caps by Dealer Tier
-  const [tierMargins, setTierMargins] = useState(() => {
-    return safeJsonParse('sunvine_tier_margins', DEFAULT_PRICING_MASTER.tierMargins);
-  });
+  const [tierMargins, setTierMargins] = useState(DEFAULT_PRICING_MASTER.tierMargins);
 
   // Admin Master Governance & Policy Settings
-  const [governanceSettings, setGovernanceSettings] = useState(() => {
-    return safeJsonParse('sunvine_governance_settings', DEFAULT_GOVERNANCE_SETTINGS);
-  });
+  const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
 
-  useEffect(() => {
-    safeSetItem('sunvine_tier_margins', tierMargins);
-  }, [tierMargins]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_governance_settings', governanceSettings);
-  }, [governanceSettings]);
-
-  // Solar Hardware Catalogs (Primary: Supabase DB, with offline cache fallback)
-  const [modulesList, setModulesList] = useState(() => {
-    if (!isDbUpToDate) return DEFAULT_MODULES;
-    return safeJsonParse('sunvine_modules', DEFAULT_MODULES);
-  });
-
-  const [invertersList, setInvertersList] = useState(() => {
-    if (!isDbUpToDate) return DEFAULT_INVERTERS;
-    return safeJsonParse('sunvine_inverters', DEFAULT_INVERTERS);
-  });
+  // Solar Hardware Catalogs (Primary: Supabase DB)
+  const [modulesList, setModulesList] = useState(DEFAULT_MODULES);
+  const [invertersList, setInvertersList] = useState(DEFAULT_INVERTERS);
 
   const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
   const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(false);
 
   // Determine if running in public proposal viewer mode
   const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
+
+  const ensureDealerAttribution = (list) => {
+    return (list || []).map(d => {
+      if (!d) return d;
+      const assigned = (d.assignedStaffId && d.assignedStaffName) ? null : getAssignedStaffForDealer(d);
+      const tierLower = (d.tier || '').toLowerCase();
+      const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
+      return {
+        ...d,
+        assignedStaffId: d.assignedStaffId || assigned?.assignedStaffId || assigned?.staffId || 'STF-001',
+        assignedStaffName: d.assignedStaffName || assigned?.assignedStaffName || assigned?.staffName || 'Jayesh Patel',
+        onboardedDate: d.onboardedDate || '2025-06-15',
+        pricingConfig: d.pricingConfig || {
+          pricingMode: 'standard',
+          customBaseRatePerWp: 18.00,
+          customBaseRatePerKw: 58000,
+          customMarginPerKw: defaultTierMargin,
+          customDiscountPercent: 0,
+          customNotes: ''
+        }
+      };
+    });
+  };
+
+  const ensureCustomerFileAttribution = (files) => {
+    return (files || []).map((f, idx) => {
+      if (!f) return f;
+      const hasDealer = Boolean(f.dealerId || f.dealerName);
+      const rawSource = (f.sourceType || f.source || '').toUpperCase();
+      const sourceType = rawSource.includes('DIRECT') ? 'DIRECT_STAFF' : (rawSource === 'DEALER' || hasDealer ? 'DEALER' : (idx % 2 === 0 ? 'DIRECT_STAFF' : 'DEALER'));
+      const rawFinance = (f.financeType || '').toUpperCase();
+      const financeType = rawFinance === 'LOAN' || Boolean(f.loanBank) ? 'LOAN' : (rawFinance === 'CASH' ? 'CASH' : (idx % 3 === 0 ? 'LOAN' : 'CASH'));
+      const loanBank = financeType === 'LOAN' ? (f.loanBank || 'State Bank of India') : null;
+      return {
+        ...f,
+        sourceType,
+        financeType,
+        loanBank,
+        staffId: f.staffId || f.staff_id || 'STF-001',
+        staffName: f.staffName || f.staff_name || 'Jayesh Patel',
+        documents: f.documents || {},
+        timeline: Array.isArray(f.timeline) ? f.timeline : []
+      };
+    });
+  };
 
   // Live Universal Database Hydration (Async startup from Supabase PostgreSQL)
   useEffect(() => {
@@ -448,7 +503,9 @@ const safeSetItem = (key, value) => {
           dbStaff,
           dbSettings,
           dbLogs,
-          dbNotifs
+          dbNotifs,
+          dbBanks,
+          dbBomItems
         ] = await Promise.allSettled([
           hardwareService.getAllModules(),
           hardwareService.getAllInverters(),
@@ -462,7 +519,9 @@ const safeSetItem = (key, value) => {
           staffService.getAllStaff(),
           systemSettingsService.getSystemSettings(),
           auditLogService.getAuditLogs(100),
-          auditLogService.getNotifications()
+          auditLogService.getNotifications(),
+          bankService.getAllSolarBanks(),
+          hardwareService.getAllBomItems()
         ]);
 
         if (!isMounted) return;
@@ -487,29 +546,52 @@ const safeSetItem = (key, value) => {
         if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
           setTierMargins(dbTiers.value);
         }
-        if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value) && dbDealers.value.length > 0) {
-          setDealers(dbDealers.value);
+        if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value)) {
+          setDealers(ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS));
         }
         if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
           setQuotations(dbQuotations.value);
         }
-        if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value) && dbFiles.value.length > 0) {
-          setCustomerFiles(dbFiles.value);
+        if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value)) {
+          setCustomerFiles(ensureCustomerFileAttribution(dbFiles.value));
         }
-        if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value) && dbStaff.value.length > 0) {
-          setStaffList(dbStaff.value);
+        if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
+          setStaffList(dbStaff.value.length > 0 ? dbStaff.value : DEFAULT_STAFF);
         }
         if (dbSettings.status === 'fulfilled' && dbSettings.value) {
           setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
+          if (dbSettings.value.governanceSettings) {
+            setGovernanceSettings(dbSettings.value.governanceSettings);
+          }
         }
-        if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value) && dbLogs.value.length > 0) {
-          setAuditLogs(dbLogs.value);
+        if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value)) {
+          setAuditLogs(dbLogs.value.length > 0 ? dbLogs.value : INITIAL_AUDIT_LOGS);
         }
-        if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value) && dbNotifs.value.length > 0) {
-          setNotifications(dbNotifs.value);
+        if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value)) {
+          setNotifications(dbNotifs.value.length > 0 ? dbNotifs.value : DEFAULT_NOTIFICATIONS);
+        }
+        if (dbBanks.status === 'fulfilled' && Array.isArray(dbBanks.value) && dbBanks.value.length > 0) {
+          setSolarBanks(dbBanks.value);
+        }
+        if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value) && dbBomItems.value.length > 0) {
+          setBomCatalog(prev => {
+            const mergedMap = new Map();
+            STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
+            dbBomItems.value.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
+            return Array.from(mergedMap.values());
+          });
+          setBomRates(prev => {
+            const next = { ...prev };
+            dbBomItems.value.forEach(it => {
+              if (it.defaultRate && !next[it.id]) {
+                next[it.id] = it.defaultRate;
+              }
+            });
+            return next;
+          });
         }
       } catch (err) {
-        console.warn('[AppContext] Supabase live hydration fallback to local cache:', err);
+        console.warn('[AppContext] Supabase live hydration notice:', err);
       } finally {
         if (isMounted) setIsHardwareDbSyncing(false);
       }
@@ -543,7 +625,9 @@ const safeSetItem = (key, value) => {
         staffService.getAllStaff().then(data => { if (data) setStaffList(data); });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, () => {
-        customerFileService.getAllCustomerFiles().then(data => { if (data) setCustomerFiles(data); });
+        customerFileService.getAllCustomerFiles().then(data => {
+          if (data && Array.isArray(data)) setCustomerFiles(ensureCustomerFileAttribution(data));
+        });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
         hardwareService.getAllModules().then(data => { if (data) setModulesList(data); });
@@ -579,161 +663,26 @@ const safeSetItem = (key, value) => {
   // Solar Loan Partner Banks (Database Connected)
   const [solarBanks, setSolarBanks] = useState([]);
 
-  // Live Supabase Master Database Hydration on Mount
-  useEffect(() => {
-    let isMounted = true;
-    const hydrateMasterDataFromDatabase = async () => {
-      try {
-        const [
-          dbDealers,
-          dbStaff,
-          dbFiles,
-          dbSettings,
-          dbPricing,
-          dbBos,
-          dbBanks,
-          dbLogs,
-          dbBomItems
-        ] = await Promise.all([
-          dealerService.getAllDealers(),
-          staffService.getAllStaff(),
-          customerFileService.getAllCustomerFiles(),
-          settingsService.getSystemSettings(),
-          settingsService.getPricingPresets(),
-          settingsService.getBosPriceMatrix(),
-          bankService.getAllSolarBanks(),
-          settingsService.getAuditLogs(),
-          hardwareService.getAllBomItems()
-        ]);
-
-        if (!isMounted) return;
-
-        if (dbDealers && dbDealers.length > 0) {
-          setDealers(ensureDealerAttribution(dbDealers));
-        }
-        if (dbStaff && dbStaff.length > 0) {
-          setStaffList(dbStaff);
-        }
-        if (dbFiles && dbFiles.length > 0) {
-          setCustomerFiles(ensureCustomerFileAttribution(dbFiles));
-        }
-        if (dbSettings) {
-          setSystemSettings(prev => ({ ...prev, ...dbSettings }));
-          if (dbSettings.governanceSettings) {
-            setGovernanceSettings(dbSettings.governanceSettings);
-          }
-        }
-        if (dbPricing) {
-          setPricingPresets(prev => ({
-            ...prev,
-            baseRatePerKw: dbPricing.baseRatePerKw || prev.baseRatePerKw,
-            subsidyCap: dbPricing.subsidyCap || prev.subsidyCap,
-            minMarginPerKw: dbPricing.minMarginPerKw || prev.minMarginPerKw,
-            lastSynced: dbPricing.lastSynced || prev.lastSynced
-          }));
-          if (dbPricing.tierMargins) {
-            setTierMargins(dbPricing.tierMargins);
-          }
-          if (dbPricing.bomRates) {
-            setBomRates(prev => ({ ...prev, ...dbPricing.bomRates }));
-          }
-          if (dbPricing.capacityBomMatrix) {
-            setCapacityBomMatrix(prev => ({ ...prev, ...dbPricing.capacityBomMatrix }));
-          }
-          if (dbPricing.baseRates) {
-            setPricingMaster(prev => ({ ...prev, baseRates: dbPricing.baseRates }));
-          }
-        }
-        if (dbBos && dbBos.length > 0) {
-          setPdfBosMatrix(dbBos);
-        }
-        if (dbBanks && dbBanks.length > 0) {
-          setSolarBanks(dbBanks);
-        }
-        if (dbLogs && dbLogs.length > 0) {
-          setAuditLogs(dbLogs);
-        }
-        if (dbBomItems && dbBomItems.length > 0) {
-          setBomCatalog(prev => {
-            const mergedMap = new Map();
-            STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
-            dbBomItems.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
-            return Array.from(mergedMap.values());
-          });
-          setBomRates(prev => {
-            const next = { ...prev };
-            dbBomItems.forEach(it => {
-              if (it.defaultRate && !next[it.id]) {
-                next[it.id] = it.defaultRate;
-              }
-            });
-            return next;
-          });
-        }
-      } catch (err) {
-        console.warn('[AppContext] Supabase master database sync fallback:', err);
-      }
-    };
-
-    hydrateMasterDataFromDatabase();
-    return () => { isMounted = false; };
-  }, []);
-
-  const ensureDealerAttribution = (list) => {
-    return (list || []).map(d => {
-      if (!d) return d;
-      const assigned = (d.assignedStaffId && d.assignedStaffName) ? null : getAssignedStaffForDealer(d);
-      const tierLower = (d.tier || '').toLowerCase();
-      const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
-      return {
-        ...d,
-        assignedStaffId: d.assignedStaffId || assigned?.assignedStaffId || assigned?.staffId || 'STF-001',
-        assignedStaffName: d.assignedStaffName || assigned?.assignedStaffName || assigned?.staffName || 'Jayesh Patel',
-        onboardedDate: d.onboardedDate || '2025-06-15',
-        pricingConfig: d.pricingConfig || {
-          pricingMode: 'standard', // 'standard' | 'custom'
-          customBaseRatePerWp: 18.00,
-          customBaseRatePerKw: 58000,
-          customMarginPerKw: defaultTierMargin,
-          customDiscountPercent: 0,
-          customNotes: ''
-        }
-      };
-    });
-  };
-
-  // Dealers Directory (550 Gujarat Dealers Only)
-  const [dealers, setDealers] = useState(() => {
-    const raw = isDbUpToDate ? safeJsonParse('sunvine_dealers', INITIAL_DEALERS) : INITIAL_DEALERS;
-    const base = (Array.isArray(raw) && raw.length >= 500) ? raw : INITIAL_DEALERS;
-    return ensureDealerAttribution(base);
-  });
+  // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority)
+  const [dealers, setDealers] = useState(() => ensureDealerAttribution(INITIAL_DEALERS));
 
   // Real PDF BOS Reference Data
-  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => {
-    if (!isDbUpToDate) return PDF_BOS_PRICE_MATRIX;
-    const parsed = safeJsonParse('sunvine_bos_price_matrix', PDF_BOS_PRICE_MATRIX);
-    return (Array.isArray(parsed) && parsed.length > 0) ? parsed : PDF_BOS_PRICE_MATRIX;
-  });
+  const [pdfBosMatrix, setPdfBosMatrix] = useState(PDF_BOS_PRICE_MATRIX);
 
   // Dedicated Inverter Sizing & Benchmark Pricing Matrix
-  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
-    return safeJsonParse('sunvine_inverter_benchmark_matrix', [
-      { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
-      { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
-      { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
-      { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
-      { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
-      { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
-      { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
-      { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
-    ]);
-  });
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState([
+    { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
+    { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
+    { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
+    { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
+    { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
+    { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
+    { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
+    { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
+  ]);
 
   // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync)
-  const [bomCatalog, setBomCatalog] = useState(() => {
-    return safeJsonParse('sunvine_bom_catalog', STANDARD_BOM_CATALOG);
-  });
+  const [bomCatalog, setBomCatalog] = useState(STANDARD_BOM_CATALOG);
 
   // Standard BOM Item Rates (Admin Configurable)
   const defaultBomRates = useMemo(() => {
@@ -743,83 +692,38 @@ const safeSetItem = (key, value) => {
     }, {});
   }, [bomCatalog]);
 
-  const [bomRates, setBomRates] = useState(() => {
-    if (!isDbUpToDate) return defaultBomRates;
-    return safeJsonParse('sunvine_bom_rates', defaultBomRates);
-  });
+  const [bomRates, setBomRates] = useState(defaultBomRates);
 
   // Standard Capacity-Wise BOM Quantities (Admin Configurable)
-  const [capacityBomMatrix, setCapacityBomMatrix] = useState(() => {
-    if (!isDbUpToDate) return DEFAULT_CAPACITY_BOM;
-    return safeJsonParse('sunvine_capacity_bom', DEFAULT_CAPACITY_BOM);
-  });
+  const [capacityBomMatrix, setCapacityBomMatrix] = useState(DEFAULT_CAPACITY_BOM);
 
   // Reusable Solar BOM Kits & Presets (Field-Grade)
-  const [kitsPresets, setKitsPresets] = useState(() => {
-    return safeJsonParse('sunvine_solar_kits_presets_v2', [
-      {
-        id: 'kit-standard-3_3kw',
-        name: '3.3 kW Standard 6-Panel HDGI Kit (Field Sheet)',
-        capacityKw: 3.3,
-        createdBy: 'Sunvine HO',
-        creatorRole: 'admin',
-        items: generateFieldBOM({ kw: 3.3, panelWatt: 540, panelQuantity: 6, ratePerWp: 18.00 })
-      },
-      {
-        id: 'kit-standard-4_4kw',
-        name: '4.4 kW Standard 8-Panel HDGI Kit',
-        capacityKw: 4.4,
-        createdBy: 'Sunvine HO',
-        creatorRole: 'admin',
-        items: generateFieldBOM({ kw: 4.4, panelWatt: 550, panelQuantity: 8, ratePerWp: 18.00 })
-      },
-      {
-        id: 'kit-standard-5_5kw',
-        name: '5.5 kW 10-Panel High-Rise HDGI Kit',
-        capacityKw: 5.5,
-        createdBy: 'Sunvine HO',
-        creatorRole: 'admin',
-        items: generateFieldBOM({ kw: 5.5, panelWatt: 550, panelQuantity: 10, ratePerWp: 18.00 })
-      }
-    ]);
-  });
-
-  useEffect(() => {
-    safeSetItem('sunvine_solar_kits_presets_v2', kitsPresets);
-  }, [kitsPresets]);
-
-  // Load kits & dealer custom prices from Supabase on mount
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      try {
-        const remoteKits = await pricingService.getKitsPresets();
-        if (isMounted && remoteKits && remoteKits.length > 0) {
-          setKitsPresets(prev => {
-            const merged = [...remoteKits];
-            prev.forEach(p => {
-              if (!merged.some(m => m.id === p.id)) merged.push(p);
-            });
-            return merged;
-          });
-        }
-      } catch (_) {}
-
-      try {
-        const remotePricings = await pricingService.getAllDealerPricings();
-        if (isMounted && remotePricings && Object.keys(remotePricings).length > 0) {
-          setDealers(prev => prev.map(d => {
-            const remoteCfg = remotePricings[d.id] || remotePricings[d.dealerCode];
-            if (remoteCfg) {
-              return { ...d, pricingConfig: { ...(d.pricingConfig || {}), ...remoteCfg } };
-            }
-            return d;
-          }));
-        }
-      } catch (_) {}
-    })();
-    return () => { isMounted = false; };
-  }, []);
+  const [kitsPresets, setKitsPresets] = useState([
+    {
+      id: 'kit-standard-3_3kw',
+      name: '3.3 kW Standard 6-Panel HDGI Kit (Field Sheet)',
+      capacityKw: 3.3,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 3.3, panelWatt: 540, panelQuantity: 6, ratePerWp: 18.00 })
+    },
+    {
+      id: 'kit-standard-4_4kw',
+      name: '4.4 kW Standard 8-Panel HDGI Kit',
+      capacityKw: 4.4,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 4.4, panelWatt: 550, panelQuantity: 8, ratePerWp: 18.00 })
+    },
+    {
+      id: 'kit-standard-5_5kw',
+      name: '5.5 kW 10-Panel High-Rise HDGI Kit',
+      capacityKw: 5.5,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 5.5, panelWatt: 550, panelQuantity: 10, ratePerWp: 18.00 })
+    }
+  ]);
 
   // Catalog items viewed by dealer (for "NEW" badge management)
   const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
@@ -827,14 +731,10 @@ const safeSetItem = (key, value) => {
   });
 
   // Quotations List (Live Supabase Database)
-  const [quotations, setQuotations] = useState(() => {
-    return safeJsonParse('sunvine_quotations', []);
-  });
+  const [quotations, setQuotations] = useState([]);
 
   // Active quotation loaded in 4-Page Preview
-  const [previewQuotation, setPreviewQuotation] = useState(() => {
-    return safeJsonParse('sunvine_preview_quotation', null);
-  });
+  const [previewQuotation, setPreviewQuotation] = useState(null);
 
   // Active quotation loaded for Editing in CreateQuotation
   const [editingQuotation, setEditingQuotation] = useState(null);
@@ -847,152 +747,34 @@ const safeSetItem = (key, value) => {
 
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
-    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]);
+    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
   });
 
   // Sales Staff Directory (Managed by Admin, logged in by Staff)
-  const [staffList, setStaffList] = useState(() => {
-    return safeJsonParse('sunvine_staff_list', DEFAULT_STAFF);
-  });
+  const [staffList, setStaffList] = useState(DEFAULT_STAFF);
 
-  const ensureCustomerFileAttribution = (files) => {
-    return (files || []).map((f, idx) => {
-      if (!f) return f;
-      const hasDealer = Boolean(f.dealerId || f.dealerName);
-      const rawSource = (f.sourceType || f.source || '').toUpperCase();
-      const sourceType = rawSource.includes('DIRECT') ? 'DIRECT_STAFF' : (rawSource === 'DEALER' || hasDealer ? 'DEALER' : (idx % 2 === 0 ? 'DIRECT_STAFF' : 'DEALER'));
-      const rawFinance = (f.financeType || '').toUpperCase();
-      const financeType = rawFinance === 'LOAN' || Boolean(f.loanBank) ? 'LOAN' : (rawFinance === 'CASH' ? 'CASH' : (idx % 3 === 0 ? 'LOAN' : 'CASH'));
-      const loanBank = financeType === 'LOAN' ? (f.loanBank || 'State Bank of India') : null;
-      return {
-        ...f,
-        sourceType,
-        financeType,
-        loanBank
-      };
-    });
-  };
-
-  // Customer Files Pipeline (Synchronized between Admin and Sales Staff)
-  const [customerFiles, setCustomerFiles] = useState(() => {
-    const raw = safeJsonParse('sunvine_customer_files', DEFAULT_CUSTOMER_FILES);
-    const base = (Array.isArray(raw) && raw.length > 0) ? raw : DEFAULT_CUSTOMER_FILES;
-    return ensureCustomerFileAttribution(base);
-  });
+  // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority)
+  const [customerFiles, setCustomerFiles] = useState([]);
 
   // Master Dynamic System Settings
-  const [systemSettings, setSystemSettings] = useState(() => {
-    return safeJsonParse('sunvine_system_settings', DEFAULT_SYSTEM_SETTINGS);
-  });
+  const [systemSettings, setSystemSettings] = useState(DEFAULT_SYSTEM_SETTINGS);
 
   // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
-  const [requiredDocuments, setRequiredDocuments] = useState(() => {
-    const raw = safeJsonParse('sunvine_required_documents', null);
-    if (Array.isArray(raw) && raw.length > 0) return raw;
-    return systemSettings?.requiredDocuments || DEFAULT_REQUIRED_DOCUMENTS;
-  });
-
-  useEffect(() => {
-    safeSetItem('sunvine_required_documents', requiredDocuments);
-  }, [requiredDocuments]);
+  const [requiredDocuments, setRequiredDocuments] = useState(DEFAULT_REQUIRED_DOCUMENTS);
 
   // Master Dynamic Application / Pipeline Stages State
-  const [applicationStages, setApplicationStages] = useState(() => {
-    const raw = safeJsonParse('sunvine_application_stages', null);
-    if (Array.isArray(raw) && raw.length > 0) return raw;
-    return systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES;
-  });
-
-  useEffect(() => {
-    safeSetItem('sunvine_application_stages', applicationStages);
-  }, [applicationStages]);
+  const [applicationStages, setApplicationStages] = useState(DEFAULT_PIPELINE_STAGES);
 
   // Immutable Audit Activity Ledger
-  const [auditLogs, setAuditLogs] = useState(() => {
-    return safeJsonParse('sunvine_audit_logs', INITIAL_AUDIT_LOGS);
-  });
+  const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
 
   // 2D and 3D Solar CAD Design Records
-  const [designRecords, setDesignRecords] = useState(() => {
-    return safeJsonParse('sunvine_design_records', []);
-  });
+  const [designRecords, setDesignRecords] = useState([]);
 
   // System & Compliance Notifications
-  const [notifications, setNotifications] = useState(() => {
-    if (!isDbUpToDate) return DEFAULT_NOTIFICATIONS;
-    const parsed = safeJsonParse('sunvine_notifications', DEFAULT_NOTIFICATIONS);
-    return (Array.isArray(parsed) && parsed.length > 0) ? parsed : DEFAULT_NOTIFICATIONS;
-  });
+  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS);
 
-  useEffect(() => {
-    safeSetItem('sunvine_db_version', DB_VERSION);
-  }, []);
-
-  // Multi-tab real-time storage synchronization (SR-52)
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (!e.key || !e.newValue) return;
-      try {
-        const parsed = JSON.parse(e.newValue);
-        switch (e.key) {
-          case 'sunvine_modules':
-            setModulesList(parsed);
-            break;
-          case 'sunvine_inverters':
-            setInvertersList(parsed);
-            break;
-          case 'sunvine_notifications':
-            setNotifications(parsed);
-            break;
-          case 'sunvine_dealers':
-            setDealers(parsed);
-            break;
-          case 'sunvine_pricing_master':
-            setPricingMaster(parsed);
-            break;
-          case 'sunvine_pricing_presets':
-            setPricingPresets(parsed);
-            break;
-          case 'sunvine_tier_margins':
-            setTierMargins(parsed);
-            break;
-          case 'sunvine_governance_settings':
-            setGovernanceSettings(parsed);
-            break;
-          case 'sunvine_quotations':
-            setQuotations(parsed);
-            break;
-          case 'sunvine_seen_catalog_items':
-            setSeenCatalogItemIds(parsed);
-            break;
-          case 'sunvine_staff_list':
-            setStaffList(parsed);
-            break;
-          case 'sunvine_customer_files':
-            setCustomerFiles(parsed);
-            break;
-          case 'sunvine_system_settings':
-            setSystemSettings(parsed);
-            break;
-          case 'sunvine_audit_logs':
-            setAuditLogs(parsed);
-            break;
-          case 'sunvine_design_records':
-            setDesignRecords(parsed);
-            break;
-          default:
-            break;
-        }
-      } catch (err) {
-        // Non-JSON or parse error
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  // Synchronize state with localStorage
+  // Synchronize client-only UI state with localStorage
   useEffect(() => {
     safeSetItem('sunvine_auth', isAuthenticated ? 'true' : 'false');
   }, [isAuthenticated]);
@@ -1010,82 +792,12 @@ const safeSetItem = (key, value) => {
   }, [currentDealer]);
 
   useEffect(() => {
-    safeSetItem('sunvine_pricing_master', pricingMaster);
-  }, [pricingMaster]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_pricing_presets', pricingPresets);
-  }, [pricingPresets]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_bos_price_matrix', pdfBosMatrix);
-  }, [pdfBosMatrix]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_modules', modulesList);
-  }, [modulesList]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_inverters', invertersList);
-  }, [invertersList]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_dealers', dealers);
-  }, [dealers]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_quotations', quotations);
-  }, [quotations]);
-
-  useEffect(() => {
-    if (previewQuotation) {
-      safeSetItem('sunvine_preview_quotation', previewQuotation);
-    }
-  }, [previewQuotation]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_notifications', notifications);
-  }, [notifications]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_bom_rates', bomRates);
-  }, [bomRates]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_bom_catalog', bomCatalog);
-  }, [bomCatalog]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_capacity_bom', capacityBomMatrix);
-  }, [capacityBomMatrix]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
-  }, [seenCatalogItemIds]);
-
-  useEffect(() => {
     safeSetItem('sunvine_current_staff', currentStaff);
   }, [currentStaff]);
 
   useEffect(() => {
-    safeSetItem('sunvine_staff_list', staffList);
-  }, [staffList]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_customer_files', customerFiles);
-  }, [customerFiles]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_system_settings', systemSettings);
-  }, [systemSettings]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_audit_logs', auditLogs);
-  }, [auditLogs]);
-
-  useEffect(() => {
-    safeSetItem('sunvine_design_records', designRecords);
-  }, [designRecords]);
+    safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
+  }, [seenCatalogItemIds]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -1383,12 +1095,10 @@ const safeSetItem = (key, value) => {
       const currentSection = prev?.[section] || {};
       const updatedSection = { ...currentSection, ...updates };
       updatedSectionData = updatedSection;
-      const updated = {
+      return {
         ...prev,
         [section]: updatedSection
       };
-      safeSetItem('sunvine_system_settings', updated);
-      return updated;
     });
 
     if (updatedSectionData) {
@@ -1506,6 +1216,21 @@ const safeSetItem = (key, value) => {
       recordId: fileId,
       details: `Updated customer file attributes`,
       newValue: Object.keys(updatedFields).join(', ')
+    });
+  };
+
+  const deleteCustomerFile = async (fileId) => {
+    setCustomerFiles(prev => prev.filter(f => f.id !== fileId));
+    try {
+      await customerFileService.deleteCustomerFile(fileId);
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete customer file in DB:', e);
+    }
+    logActivity({
+      action: 'DELETE_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Deleted customer file ${fileId} from organization records.`
     });
   };
 
@@ -1655,9 +1380,7 @@ const safeSetItem = (key, value) => {
   const updateDealerMarginCap = async (id, newCap) => {
     const numericCap = Number(newCap);
     setDealers(prev => {
-      const updated = prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
-      safeSetItem('sunvine_dealers', updated);
-      return updated;
+      return prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
     });
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
@@ -1796,7 +1519,6 @@ const safeSetItem = (key, value) => {
           pricingConfig: mergedConfig
         };
       });
-      safeSetItem('sunvine_dealers', updated);
       return updated;
     });
 
@@ -1810,7 +1532,7 @@ const safeSetItem = (key, value) => {
       }));
     }
 
-    // Persist to Supabase / offline cache
+    // Persist to Supabase
     pricingService.saveDealerPricing(id, pricingConfig).catch(err => {
       console.warn('[AppContext] saveDealerPricing error:', err);
     });
@@ -1869,7 +1591,6 @@ const safeSetItem = (key, value) => {
           pricingConfig: updatedConfig
         };
       });
-      safeSetItem('sunvine_dealers', updated);
       return updated;
     });
 
@@ -1923,7 +1644,6 @@ const safeSetItem = (key, value) => {
           pricingConfig: updatedConfig
         };
       });
-      safeSetItem('sunvine_dealers', updated);
       return updated;
     });
 
@@ -1992,7 +1712,6 @@ const safeSetItem = (key, value) => {
 
   const updatePricingMaster = (newMaster) => {
     setPricingMaster(newMaster);
-    safeSetItem('sunvine_pricing_master', newMaster);
   };
 
   const updatePricingPresets = async (newPresets) => {
@@ -2009,7 +1728,6 @@ const safeSetItem = (key, value) => {
       lastSynced: `Today, ${timeStr} by ${role === 'admin' ? 'Super Admin Desk' : 'Ops'}`
     };
     setPricingPresets(updated);
-    safeSetItem('sunvine_pricing_presets', updated);
     pricingService.savePricingPresets(updated);
     try {
       await settingsService.savePricingPresets(updated);
@@ -2036,7 +1754,6 @@ const safeSetItem = (key, value) => {
 
     const updated = { ...tierMargins, ...newTiers };
     setTierMargins(updated);
-    safeSetItem('sunvine_tier_margins', updated);
     pricingService.saveTierMargins(updated);
     try {
       await settingsService.savePricingPresets({ tierMargins: updated });
@@ -2060,7 +1777,6 @@ const safeSetItem = (key, value) => {
 
     const updated = { ...governanceSettings, ...newSettings };
     setGovernanceSettings(updated);
-    safeSetItem('sunvine_governance_settings', updated);
     try {
       await settingsService.saveSystemSettings('governanceSettings', updated);
     } catch (e) {
@@ -2079,9 +1795,6 @@ const safeSetItem = (key, value) => {
             modified = true;
           }
         });
-        if (modified) {
-          safeSetItem('sunvine_tier_margins', updatedTiers);
-        }
         return modified ? updatedTiers : prev;
       });
     }
@@ -2275,6 +1988,7 @@ const safeSetItem = (key, value) => {
         deleteStaff,
         addCustomerFile,
         updateCustomerFile,
+        deleteCustomerFile,
         updateFileStatus,
         pricingMaster,
         updatePricingMaster,

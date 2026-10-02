@@ -1,8 +1,5 @@
 import { supabase } from '../lib/supabase';
 
-const AUDIT_LOGS_KEY = 'sunvine_audit_logs';
-const NOTIFICATIONS_KEY = 'sunvine_notifications';
-
 export const auditLogService = {
   async getAuditLogs(limit = 100) {
     try {
@@ -13,19 +10,13 @@ export const auditLogService = {
         .limit(limit);
 
       if (!error && data && data.length > 0) {
-        localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify(data));
         return data;
       }
     } catch (err) {
       console.warn('Supabase fetch audit logs fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(AUDIT_LOGS_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
+    return [];
   },
 
   async logEvent(action, entityType, entityId, details = {}, userEmail = 'ops@sunvine.in', userRole = 'admin') {
@@ -40,11 +31,6 @@ export const auditLogService = {
     };
 
     try {
-      const cached = JSON.parse(localStorage.getItem(AUDIT_LOGS_KEY) || '[]');
-      localStorage.setItem(AUDIT_LOGS_KEY, JSON.stringify([payload, ...cached.slice(0, 99)]));
-    } catch (_) {}
-
-    try {
       await supabase.from('audit_logs').insert([payload]);
     } catch (_) {}
   },
@@ -57,7 +43,7 @@ export const auditLogService = {
         .order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const mapped = data.map(row => ({
+        return data.map(row => ({
           id: row.id,
           audience: row.audience,
           type: row.type,
@@ -69,19 +55,12 @@ export const auditLogService = {
           targetTab: row.target_tab,
           createdAt: row.created_at
         }));
-        localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(mapped));
-        return mapped;
       }
     } catch (err) {
       console.warn('Supabase fetch notifications fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(NOTIFICATIONS_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
+    return [];
   },
 
   async saveNotification(notif) {

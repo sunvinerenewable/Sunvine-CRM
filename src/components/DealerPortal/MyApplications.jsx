@@ -1,6 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useToast } from '../Shared/Toast';
+import { useLoading } from '../../context/LoadingContext';
+import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
 import { DEFAULT_REQUIRED_DOCUMENTS, isDocMandatoryForCategory } from '../../data/defaultRequiredDocuments';
@@ -28,6 +32,7 @@ export default function MyApplications() {
   const [activeFileDetail, setActiveFileDetail] = useState(null);
   const [uploadTargetFile, setUploadTargetFile] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [previewDoc, setPreviewDoc] = useState(null);
   const [quickStageFile, setQuickStageFile] = useState(null);
   const [quickStageVal, setQuickStageVal] = useState('');
   const [quickStageNotes, setQuickStageNotes] = useState('');
@@ -159,67 +164,122 @@ export default function MyApplications() {
     return { total, verificationCount, discomFilingCount, installationCount, completedCount };
   }, [dealerFiles]);
 
-  // File upload handler
+  const { addToast } = useToast();
+  const { showLoader, hideLoader } = useLoading();
+
+  // File upload handler (Cloudflare R2 + Supabase)
   const handleUploadDocument = async (docKey, file) => {
     if (!uploadTargetFile || !file) return;
+
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
+
+    if (!isAllowed) {
+      addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+      addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
+      return;
+    }
+
+    showLoader('Securing document in Cloudflare R2 Vault...');
     try {
-      const optimized = await compressMedia(file);
+      let fileUrl = null;
+      let filename = file.name;
+      let fileSize = file.size;
+
+      try {
+        const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey);
+        if (uploadRes?.success) {
+          fileUrl = uploadRes.publicUrl || uploadRes.url;
+          filename = uploadRes.filename || file.name;
+          fileSize = uploadRes.fileSize || file.size;
+        }
+      } catch (err) {
+        console.warn('[MyApplications] Cloudflare R2 upload warning:', err);
+        addToast(err.message || 'Upload failed', 'error');
+        return;
+      }
+
       const updatedDocs = {
         ...(uploadTargetFile.documents || {}),
         [docKey]: {
-          filename: optimized.file?.name || file.name,
-          size: optimized.compressedFormatted || formatFileSize(file.size),
-          originalSize: optimized.originalFormatted || formatFileSize(file.size),
-          reduction: optimized.reduction || '0%',
-          dataUrl: optimized.dataUrl || optimized.posterDataUrl,
+          filename,
+          url: fileUrl,
+          size: formatFileSize(fileSize),
           uploaded: true,
           date: new Date().toISOString().split('T')[0]
         }
       };
 
       if (updateCustomerFile) {
-        updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
       }
       setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+      addToast(`Document uploaded to R2: ${filename}`, 'success');
     } catch (e) {
-      const updatedDocs = {
-        ...(uploadTargetFile.documents || {}),
-        [docKey]: {
-          filename: file.name,
-          size: formatFileSize(file.size),
-          uploaded: true,
-          date: new Date().toISOString().split('T')[0]
-        }
-      };
-      if (updateCustomerFile) {
-        updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
-      }
-      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+      console.error('[MyApplications] Upload error:', e);
+      addToast(e.message || 'Upload failed', 'error');
+    } finally {
+      hideLoader();
     }
   };
 
   // Camera capture handler
-  const handleCameraCapture = (stats) => {
+  const handleCameraCapture = async (stats) => {
     if (!uploadTargetFile || !cameraTargetDoc || !stats) return;
     const docKey = cameraTargetDoc.key;
-    const updatedDocs = {
-      ...(uploadTargetFile.documents || {}),
-      [docKey]: {
-        filename: stats.file?.name || `${docKey}_camera.jpg`,
-        size: stats.compressedFormatted,
-        originalSize: stats.originalFormatted,
-        reduction: stats.reduction,
-        dataUrl: stats.dataUrl,
-        uploaded: true,
-        date: new Date().toISOString().split('T')[0]
-      }
-    };
 
-    if (updateCustomerFile) {
-      updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+    showLoader('Securing camera photo in Cloudflare R2 Vault...');
+    try {
+      let fileUrl = null;
+      let filename = stats.file?.name || `${docKey}_camera.jpg`;
+      let fileSize = stats.file?.size || 0;
+
+      if (stats.file) {
+        try {
+          const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
+          if (uploadRes?.success) {
+            fileUrl = uploadRes.publicUrl || uploadRes.url;
+            filename = uploadRes.filename || stats.file.name;
+            fileSize = uploadRes.fileSize || stats.file.size;
+          }
+        } catch (err) {
+          console.warn('[MyApplications] Camera upload warning:', err);
+        }
+      }
+
+      const updatedDocs = {
+        ...(uploadTargetFile.documents || {}),
+        [docKey]: {
+          filename,
+          url: fileUrl,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
+
+      if (updateCustomerFile) {
+        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+      }
+      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+      setCameraTargetDoc(null);
+      addToast(`Photo secured in Cloudflare R2: ${filename}`, 'success');
+    } catch (e) {
+      console.error('[MyApplications] Camera upload error:', e);
+      addToast(e.message || 'Camera upload failed', 'error');
+    } finally {
+      hideLoader();
     }
-    setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-    setCameraTargetDoc(null);
   };
 
   // Quick stage advance
@@ -875,14 +935,29 @@ export default function MyApplications() {
                       )}
                     </div>
 
-                    {/* Upload Controls */}
+                    {/* Upload & Preview Controls */}
                     <div className="flex items-center gap-2 pt-2 border-t border-surface-container text-[11px]">
+                      {isUploaded && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc({
+                            title: doc.label,
+                            filename: docState.filename || 'document.pdf',
+                            url: docState.url || docState.dataUrl
+                          })}
+                          className="px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-center cursor-pointer transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">visibility</span>
+                          <span>Preview</span>
+                        </button>
+                      )}
+
                       <label className="flex-1 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1">
                         <span className="material-symbols-outlined text-[15px]">upload_file</span>
                         <span>{isUploaded ? 'Replace' : 'Upload'}</span>
                         <input
                           type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
+                          accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                           className="hidden"
                           onChange={(e) => handleUploadDocument(doc.key, e.target.files?.[0])}
                         />
@@ -915,6 +990,14 @@ export default function MyApplications() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* 8. CAMERA CAPTURE MODAL */}

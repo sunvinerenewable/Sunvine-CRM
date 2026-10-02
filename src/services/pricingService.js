@@ -1,17 +1,11 @@
 import { supabase } from '../lib/supabase';
 
-const DEALER_PRICING_KEY = 'sunvine_dealer_custom_pricing_v2';
-const PRICING_PRESETS_KEY = 'sunvine_pricing_presets';
-const BOS_MATRIX_KEY = 'sunvine_bos_matrix_v2';
-const INVERTER_BENCHMARKS_KEY = 'sunvine_inverter_benchmark_matrix';
-const BOM_CATALOG_KEY = 'sunvine_bom_catalog_v2';
-const TIER_MARGINS_KEY = 'sunvine_tier_margins';
-
 async function invalidateCatalogCache(keys) {
   try {
     await fetch('/api/catalog', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
     });
   } catch (_) {}
@@ -28,7 +22,6 @@ export const pricingService = {
       if (res.ok) {
         const json = await res.json();
         if (json?.presets) {
-          localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(json.presets));
           return json.presets;
         }
       }
@@ -43,7 +36,7 @@ export const pricingService = {
         .single();
 
       if (!error && data) {
-        const presets = {
+        return {
           baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
           subsidyCap: Number(data.subsidy_cap) || 78000,
           minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
@@ -51,27 +44,16 @@ export const pricingService = {
           lastSynced: data.updated_at ? new Date(data.updated_at).toLocaleDateString() : 'Active',
           updatedBy: data.last_synced_by || 'Operations Desk'
         };
-        localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(presets));
-        return presets;
       }
     } catch (err) {
       console.warn('Supabase fetch pricing presets fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(PRICING_PRESETS_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async savePricingPresets(presets) {
     if (!presets) return { success: false, error: 'Presets required' };
-
-    try {
-      localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(presets));
-    } catch (_) {}
 
     try {
       const payload = {
@@ -94,11 +76,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save pricing presets notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
     }
   },
 
@@ -113,7 +95,7 @@ export const pricingService = {
         .order('capacity_kw', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        const matrix = data.map(row => ({
+        return data.map(row => ({
           capacityKW: Number(row.capacity_kw),
           noOfModules: Number(row.no_of_modules),
           inverterCapacityKW: row.inverter_capacity_kw,
@@ -125,19 +107,12 @@ export const pricingService = {
           topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),
           apsTopcon600Price: Number(row.aps_topcon_600_price)
         }));
-        localStorage.setItem(BOS_MATRIX_KEY, JSON.stringify(matrix));
-        return matrix;
       }
     } catch (err) {
       console.warn('Supabase fetch BOS matrix fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(BOS_MATRIX_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async saveBosMatrix(matrixList) {
@@ -146,11 +121,7 @@ export const pricingService = {
     }
 
     try {
-      localStorage.setItem(BOS_MATRIX_KEY, JSON.stringify(matrixList));
-    } catch (_) {}
-
-    try {
-      const rows = matrixList.map((item, idx) => ({
+      const rows = matrixList.map((item) => ({
         id: `bos-${String(item.capacityKW).replace('.', '_')}`,
         capacity_kw: Number(item.capacityKW),
         no_of_modules: Number(item.noOfModules) || 2,
@@ -171,11 +142,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save BOS matrix notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
     }
   },
 
@@ -202,15 +173,13 @@ export const pricingService = {
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json?.inverterBenchmarks) && json.inverterBenchmarks.length > 0) {
-          const benchmarks = json.inverterBenchmarks.map(row => ({
+          return json.inverterBenchmarks.map(row => ({
             capacityKW: Number(row.capacity_kw),
             brand: row.brand,
             series: row.series,
             phase: row.phase,
             benchmarkPrice: Number(row.benchmark_price)
           }));
-          localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
-          return benchmarks;
         }
       }
     } catch (_) {}
@@ -223,36 +192,25 @@ export const pricingService = {
         .order('capacity_kw', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        const benchmarks = data.map(row => ({
+        return data.map(row => ({
           capacityKW: Number(row.capacity_kw),
           brand: row.brand,
           series: row.series,
           phase: row.phase,
           benchmarkPrice: Number(row.benchmark_price)
         }));
-        localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
-        return benchmarks;
       }
     } catch (err) {
       console.warn('Supabase fetch inverter benchmarks fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(INVERTER_BENCHMARKS_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async saveInverterBenchmarks(benchmarks) {
     if (!Array.isArray(benchmarks) || benchmarks.length === 0) {
       return { success: false, error: 'Valid benchmarks required' };
     }
-
-    try {
-      localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
-    } catch (_) {}
 
     try {
       const rows = benchmarks.map((bm, idx) => ({
@@ -274,11 +232,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save inverter benchmarks notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
     }
   },
 
@@ -306,7 +264,7 @@ export const pricingService = {
         .order('capacity_kw', { ascending: true });
 
       if (!error && data && data.length > 0) {
-        const catalog = data.map(row => ({
+        return data.map(row => ({
           id: row.id,
           capacityKW: Number(row.capacity_kw),
           modules: row.modules_spec,
@@ -322,19 +280,12 @@ export const pricingService = {
           hardware: row.hardware || 'Including',
           mc4: row.mc4_pairs
         }));
-        localStorage.setItem(BOM_CATALOG_KEY, JSON.stringify(catalog));
-        return catalog;
       }
     } catch (err) {
       console.warn('Supabase fetch BOM catalog fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(BOM_CATALOG_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async saveBomCatalog(catalog) {
@@ -343,11 +294,7 @@ export const pricingService = {
     }
 
     try {
-      localStorage.setItem(BOM_CATALOG_KEY, JSON.stringify(catalog));
-    } catch (_) {}
-
-    try {
-      const rows = catalog.map((item, idx) => ({
+      const rows = catalog.map((item) => ({
         id: item.id || `bom-${String(item.capacityKW).replace('.', '_')}`,
         capacity_kw: Number(item.capacityKW) || 3.0,
         modules_spec: item.modules || '',
@@ -371,11 +318,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save BOM catalog notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
     }
   },
 
@@ -398,27 +345,17 @@ export const pricingService = {
             description: row.description
           };
         });
-        localStorage.setItem(TIER_MARGINS_KEY, JSON.stringify(tiers));
         return tiers;
       }
     } catch (err) {
       console.warn('Supabase fetch tier margins fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(TIER_MARGINS_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async saveTierMargins(tiers) {
     if (!tiers || typeof tiers !== 'object') return { success: false, error: 'Tiers required' };
-
-    try {
-      localStorage.setItem(TIER_MARGINS_KEY, JSON.stringify(tiers));
-    } catch (_) {}
 
     try {
       const rows = Object.entries(tiers).map(([tierId, config]) => ({
@@ -436,11 +373,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save tier margins notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
     }
   },
 
@@ -449,20 +386,29 @@ export const pricingService = {
   // ==========================================
   async getAllDealerPricings() {
     try {
-      const cached = localStorage.getItem(DEALER_PRICING_KEY);
-      return cached ? JSON.parse(cached) : {};
-    } catch (_) {
-      return {};
+      const { data, error } = await supabase
+        .from('dealer_accounts')
+        .select('id, dealer_code, pricing_config');
+
+      if (!error && data && data.length > 0) {
+        const pricingMap = {};
+        data.forEach(row => {
+          if (row.pricing_config && Object.keys(row.pricing_config).length > 0) {
+            if (row.id) pricingMap[row.id] = row.pricing_config;
+            if (row.dealer_code) pricingMap[row.dealer_code] = row.pricing_config;
+          }
+        });
+        return pricingMap;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch dealer pricings notice:', err);
     }
+
+    return {};
   },
 
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
-    try {
-      const cached = JSON.parse(localStorage.getItem(DEALER_PRICING_KEY) || '{}');
-      cached[dealerId] = pricingData;
-      localStorage.setItem(DEALER_PRICING_KEY, JSON.stringify(cached));
-    } catch (_) {}
 
     try {
       const targetIdentifier = dealerCode || dealerId;
@@ -476,11 +422,88 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save dealer pricing notice:', error.message);
-        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
+        return { success: false, error: error.message };
       }
       return { success: true, data: pricingData };
     } catch (err) {
-      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
+      return { success: false, error: err.message };
+    }
+  },
+
+  // ==========================================
+  // 7. SOLAR KIT PRESETS
+  // ==========================================
+  async getKitsPresets() {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('terms_and_warranties')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      if (!error && data?.terms_and_warranties?.solarKits) {
+        return data.terms_and_warranties.solarKits;
+      }
+    } catch (err) {
+      console.warn('Supabase fetch kit presets fallback:', err);
+    }
+    return [];
+  },
+
+  async saveKitPreset(newKit) {
+    if (!newKit || !newKit.id) return { success: false, error: 'Kit required' };
+    try {
+      const { data: curr } = await supabase
+        .from('system_settings')
+        .select('terms_and_warranties')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      const tw = curr?.terms_and_warranties || {};
+      const existingKits = Array.isArray(tw.solarKits) ? tw.solarKits : [];
+      const idx = existingKits.findIndex(k => k.id === newKit.id);
+      if (idx >= 0) {
+        existingKits[idx] = newKit;
+      } else {
+        existingKits.unshift(newKit);
+      }
+      tw.solarKits = existingKits;
+
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert([{
+          id: 'global_settings',
+          terms_and_warranties: tw,
+          updated_at: new Date().toISOString()
+        }], { onConflict: 'id' });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data: newKit };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async deleteKitPreset(kitId) {
+    if (!kitId) return { success: false };
+    try {
+      const { data: curr } = await supabase
+        .from('system_settings')
+        .select('terms_and_warranties')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      const tw = curr?.terms_and_warranties || {};
+      if (Array.isArray(tw.solarKits)) {
+        tw.solarKits = tw.solarKits.filter(k => k.id !== kitId);
+        await supabase
+          .from('system_settings')
+          .update({ terms_and_warranties: tw, updated_at: new Date().toISOString() })
+          .eq('id', 'global_settings');
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   }
 };

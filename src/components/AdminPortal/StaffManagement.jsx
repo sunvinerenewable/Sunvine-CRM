@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import { useLoading } from '../../context/LoadingContext';
+import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
@@ -119,30 +122,78 @@ export default function StaffManagement() {
   const [newCustLoanBank, setNewCustLoanBank] = useState('State Bank of India (Surya Ghar Loan)');
   const [newCustLoanRef, setNewCustLoanRef] = useState('');
 
-  // Document Upload Handlers (Optional)
-  const handleUploadDoc = (fileId, docKey, filename = 'document.pdf') => {
+  const { showLoader, hideLoader } = useLoading();
+
+  // Document Upload Handlers (Optional - uploads directly to Cloudflare R2)
+  const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
     const file = customerFiles.find(f => f.id === fileId);
-    if (!file) return;
+    if (!file || !fileOrName) return;
 
-    const updatedDocs = {
-      ...file.documents,
-      [docKey]: {
-        uploaded: true,
-        filename: filename || `${docKey}_uploaded.pdf`,
-        date: new Date().toISOString().split('T')[0]
+    if (typeof fileOrName === 'object') {
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const fileExt = fileOrName.name?.split('.').pop()?.toLowerCase() || '';
+      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(fileOrName.type?.toLowerCase());
+
+      if (!isAllowed) {
+        addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
+        return;
       }
-    };
-
-    updateCustomerFile(fileId, { documents: updatedDocs });
-
-    if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
-      setSelectedFileForDocs(prev => ({
-        ...prev,
-        documents: updatedDocs
-      }));
+      if (fileOrName.size > 2 * 1024 * 1024) {
+        const sizeMB = (fileOrName.size / 1024 / 1024).toFixed(2);
+        addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
+        return;
+      }
     }
 
-    addToast(`Document uploaded: ${docKey} (Optional)`, 'success');
+    let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
+    let fileUrl = null;
+    let fileSize = typeof fileOrName === 'object' ? fileOrName.size : null;
+
+    showLoader('Securing document in Cloudflare R2 Vault...');
+    try {
+      if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
+        try {
+          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
+          if (uploadRes?.success) {
+            filename = uploadRes.filename || fileOrName.name;
+            fileUrl = uploadRes.publicUrl || uploadRes.url;
+            fileSize = uploadRes.fileSize || fileOrName.size;
+          }
+        } catch (err) {
+          console.warn('[StaffManagement] Cloudflare R2 upload error:', err);
+          addToast(err.message || 'Upload failed', 'error');
+          return;
+        }
+      }
+
+      const updatedDocs = {
+        ...file.documents,
+        [docKey]: {
+          uploaded: true,
+          filename: filename || `${docKey}_uploaded.pdf`,
+          url: fileUrl,
+          size: fileSize,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
+
+      await updateCustomerFile(fileId, { documents: updatedDocs });
+
+      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+        setSelectedFileForDocs(prev => ({
+          ...prev,
+          documents: updatedDocs
+        }));
+      }
+
+      addToast(`Document secured in R2: ${filename}`, 'success');
+    } catch (e) {
+      console.error('[StaffManagement] handleUploadDoc failed:', e);
+      addToast(e.message || 'Failed to upload document', 'error');
+    } finally {
+      hideLoader();
+    }
   };
 
   const handleCreateStaff = (e) => {
@@ -1270,10 +1321,11 @@ export default function StaffManagement() {
                           <span>Upload (Optional)</span>
                           <input
                             type="file"
+                            accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                             className="hidden"
-                            onChange={e => {
+                            onChange={async (e) => {
                               const f = e.target.files?.[0];
-                              if (f) handleUploadDoc(selectedFileForDocs.id, item.key, f.name);
+                              if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
                             }}
                           />
                         </label>
@@ -1296,23 +1348,12 @@ export default function StaffManagement() {
         </div>
       )}
 
-      {/* PREVIEW MODAL */}
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-center text-slate-900">
-            <h3 className="font-bold text-slate-900 text-base">{previewDoc.title}</h3>
-            <div className="p-6 bg-slate-50 border border-slate-200 rounded-xl">
-              <span className="material-symbols-outlined text-4xl text-emerald-600">verified</span>
-              <p className="text-slate-900 text-sm font-semibold mt-2">{previewDoc.filename}</p>
-            </div>
-            <button
-              onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* CUSTOMER FILE TIMELINE MODAL */}

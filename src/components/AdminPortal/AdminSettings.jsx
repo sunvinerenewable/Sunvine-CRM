@@ -236,11 +236,6 @@ export default function AdminSettings() {
         stages: stagesList.map(s => s.label)
       });
     }
-    try {
-      localStorage.setItem('sunvine_application_stages', JSON.stringify(stagesList));
-    } catch (e) {
-      console.error('Failed saving application stages', e);
-    }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };

@@ -1,10 +1,8 @@
 import { supabase } from '../lib/supabase';
 
-const STAFF_LIST_KEY = 'sunvine_staff_list';
-
 export const staffService = {
   /**
-   * Fetch all staff members from Supabase, fallback to localStorage
+   * Fetch all staff members from Supabase PostgreSQL
    */
   async getAllStaff() {
     try {
@@ -15,10 +13,11 @@ export const staffService = {
 
       if (error) {
         console.warn('[staffService] Fetch staff warning:', error.message);
+        return [];
       }
 
-      if (data && data.length > 0) {
-        const mapped = data.map(s => ({
+      if (Array.isArray(data)) {
+        return data.map(s => ({
           id: s.id,
           name: s.name,
           role: s.role,
@@ -35,19 +34,12 @@ export const staffService = {
           pipelineKw: Number(s.pipeline_kw) || 0,
           rating: Number(s.rating) || 4.9
         }));
-        try { localStorage.setItem(STAFF_LIST_KEY, JSON.stringify(mapped)); } catch (_) {}
-        return mapped;
       }
     } catch (err) {
       console.warn('[staffService] Error fetching staff:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(STAFF_LIST_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
+    return [];
   },
 
   /**

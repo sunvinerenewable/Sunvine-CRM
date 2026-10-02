@@ -5,14 +5,28 @@ const ToastContext = createContext(null);
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
-  const addToast = useCallback(({ title, message, type = 'success', duration = 3500 }) => {
+  const addToast = useCallback((toastOrMessage, maybeType = 'success', duration = 3500) => {
+    let title = '';
+    let message = '';
+    let type = maybeType;
+    let dur = duration;
+
+    if (typeof toastOrMessage === 'string') {
+      message = toastOrMessage;
+    } else if (toastOrMessage && typeof toastOrMessage === 'object') {
+      title = toastOrMessage.title || '';
+      message = toastOrMessage.message || '';
+      type = toastOrMessage.type || maybeType || 'success';
+      dur = toastOrMessage.duration !== undefined ? toastOrMessage.duration : duration;
+    }
+
     const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     setToasts(prev => [...prev, { id, title, message, type }]);
 
-    if (duration > 0) {
+    if (dur > 0) {
       setTimeout(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
-      }, duration);
+      }, dur);
     }
   }, []);
 
@@ -31,11 +45,15 @@ export function ToastProvider({ children }) {
         {toasts.map(toast => {
           const isError = toast.type === 'error';
           const isWarning = toast.type === 'warning';
-          const icon = isError ? 'error' : isWarning ? 'warning' : 'check_circle';
+          const isInfo = toast.type === 'info';
+          const icon = isError ? 'error' : isWarning ? 'warning' : isInfo ? 'info' : 'check_circle';
+          const iconColor = isError ? 'text-rose-400' : isWarning ? 'text-amber-400' : isInfo ? 'text-sky-400' : 'text-[#6CBF3D]';
           const bg = isError
-            ? 'bg-rose-900/95 text-rose-100 border-rose-700'
+            ? 'bg-rose-950/95 text-rose-100 border-rose-700/80'
             : isWarning
-            ? 'bg-amber-900/95 text-amber-100 border-amber-700'
+            ? 'bg-amber-950/95 text-amber-100 border-amber-700/80'
+            : isInfo
+            ? 'bg-sky-950/95 text-sky-100 border-sky-700/80'
             : 'bg-[#0F1B2E]/95 text-white border-[#6CBF3D]/40';
 
           return (
@@ -44,7 +62,7 @@ export function ToastProvider({ children }) {
               role="status"
               className={`pointer-events-auto p-3.5 rounded-xl border shadow-xl backdrop-blur-md flex items-start gap-3 text-xs animate-in slide-in-from-bottom-2 duration-200 ${bg}`}
             >
-              <span className="material-symbols-outlined text-[18px] text-[#6CBF3D] shrink-0 mt-0.5">
+              <span className={`material-symbols-outlined text-[18px] ${iconColor} shrink-0 mt-0.5`}>
                 {icon}
               </span>
               <div className="flex-1 min-w-0">

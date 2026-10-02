@@ -24,9 +24,7 @@ export function ensureEnvLoaded() {
         if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
           val = val.slice(1, -1);
         }
-        if (!process.env[key]) {
-          process.env[key] = val;
-        }
+        process.env[key] = val;
       }
     } catch (_) {}
   }

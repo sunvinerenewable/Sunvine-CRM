@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import { storageService } from '../../services/storageService';
@@ -75,7 +76,7 @@ export default function StaffFiles() {
     return matchSearch && matchStatus && matchSource && matchFinance;
   });
 
-  const handleCreateCustomerFile = (e) => {
+  const handleCreateCustomerFile = async (e) => {
     e.preventDefault();
     if (!newCustName.trim() || !newCustPhone.trim()) {
       addToast('Please enter customer name and phone', 'error');
@@ -119,7 +120,7 @@ export default function StaffFiles() {
         }
       };
 
-      addCustomerFile(newFile);
+      await addCustomerFile(newFile);
       setShowAddFileModal(false);
       setNewCustName('');
       setNewCustPhone('');
@@ -132,24 +133,71 @@ export default function StaffFiles() {
     }
   };
 
+  const handleDownloadGovtPack = (customerFile) => {
+    if (!customerFile) return;
+    const docs = customerFile.documents || {};
+    const attached = Object.entries(docs).filter(([_, d]) => d?.uploaded && d?.url);
+
+    if (attached.length === 0) {
+      addToast('No PDF documents have been uploaded for this customer yet.', 'error');
+      return;
+    }
+
+    attached.forEach(([key, doc]) => {
+      const link = document.createElement('a');
+      link.href = doc.url;
+      link.target = '_blank';
+      link.download = `${customerFile.id}_${key}_${doc.filename || 'document.pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
+  };
+
   const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
     if (!file) return;
 
+    if (!fileOrName) return;
+
+    // Strict PDF & Image (JPG, PNG, WEBP) & 2 MB Validation
+    if (typeof fileOrName === 'object') {
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const fileExt = fileOrName.name?.split('.').pop()?.toLowerCase() || '';
+      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(fileOrName.type?.toLowerCase());
+
+      if (!isAllowed) {
+        addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
+        return;
+      }
+      if (fileOrName.size > 2 * 1024 * 1024) {
+        const sizeMB = (fileOrName.size / 1024 / 1024).toFixed(2);
+        addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
+        return;
+      }
+    }
+
     let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
     let fileUrl = null;
+    let fileSize = typeof fileOrName === 'object' ? fileOrName.size : null;
 
-    showLoader('Securing document in vault...');
+    showLoader('Securing document in Cloudflare R2 Vault...');
     try {
       if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
         try {
           const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
           if (uploadRes?.success) {
-            filename = uploadRes.filename;
-            fileUrl = uploadRes.publicUrl;
+            filename = uploadRes.filename || fileOrName.name;
+            fileUrl = uploadRes.publicUrl || uploadRes.url;
+            fileSize = uploadRes.fileSize || fileOrName.size;
           }
         } catch (err) {
-          console.warn('[StaffFiles] Direct upload fallback:', err);
+          console.warn('[StaffFiles] Cloudflare R2 upload error:', err);
+          addToast(err.message || 'Upload failed', 'error');
+          return;
         }
       }
 
@@ -157,8 +205,9 @@ export default function StaffFiles() {
         ...file.documents,
         [docKey]: {
           uploaded: true,
-          filename: filename || `${docKey}_uploaded.pdf`,
+          filename: filename || `${docKey}_document.pdf`,
           url: fileUrl,
+          sizeBytes: fileSize,
           date: new Date().toISOString().split('T')[0]
         }
       };
@@ -169,7 +218,7 @@ export default function StaffFiles() {
         setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
       }
 
-      addToast(`Document uploaded: ${filename}`, 'success');
+      addToast(`Document attached: ${filename}`, 'success');
     } finally {
       hideLoader();
     }
@@ -740,7 +789,7 @@ export default function StaffFiles() {
         </div>
       )}
 
-      {/* OPTIONAL DOCUMENT VAULT MODAL */}
+      {/* OPTIONAL DOCUMENT VAULT MODAL (PM Surya Ghar / DISCOM Compliant) */}
       {selectedFileForDocs && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
@@ -750,13 +799,18 @@ export default function StaffFiles() {
                 <h3 className="text-lg font-bold text-on-surface">
                   {selectedFileForDocs.customerName} - Document Vault
                 </h3>
-                <p className="text-xs text-secondary">
-                  Note: Uploading documents is <strong>completely optional</strong>. You can proceed without any documents.
-                </p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary-container/20 text-primary font-semibold border border-primary/30">
+                    PDF &amp; Images &bull; Max 2 MB per document
+                  </span>
+                  <span className="text-[11px] text-secondary">
+                    PM Surya Ghar / DISCOM Portal Ready
+                  </span>
+                </div>
               </div>
               <button
                 onClick={() => setSelectedFileForDocs(null)}
-                className="text-secondary hover:text-on-surface cursor-pointer"
+                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -772,6 +826,8 @@ export default function StaffFiles() {
               ].map((doc) => {
                 const isUp = selectedFileForDocs.documents?.[doc.key]?.uploaded;
                 const dData = selectedFileForDocs.documents?.[doc.key];
+                const sizeLabel = dData?.sizeBytes ? ` (${(dData.sizeBytes / 1024).toFixed(0)} KB)` : '';
+                const isPdf = dData?.filename?.toLowerCase().endsWith('.pdf');
 
                 return (
                   <div
@@ -786,29 +842,49 @@ export default function StaffFiles() {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                           isUp ? 'bg-emerald-200 text-emerald-800' : 'bg-surface-container text-secondary'
                         }`}>
-                          {isUp ? 'Uploaded' : 'Optional'}
+                          {isUp ? `${isPdf ? 'PDF' : 'Photo'} Attached${sizeLabel}` : 'PDF / Photo (Optional)'}
                         </span>
                       </div>
                       {isUp && (
-                        <p className="text-[11px] font-mono text-primary mt-1 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">{dData?.filename}</p>
+                        <p className="text-[11px] font-mono text-primary mt-1 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">
+                          {dData?.filename}
+                        </p>
                       )}
                     </div>
 
-                    <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between">
+                    <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between gap-2">
                       {isUp ? (
-                        <button
-                          onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
-                          className="text-xs text-primary font-semibold hover:underline"
-                        >
-                          View Preview
-                        </button>
+                        <div className="flex items-center gap-3 w-full justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
+                            className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">visibility</span>
+                            <span>View Preview</span>
+                          </button>
+
+                          <label className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px]">sync</span>
+                            <span>Replace</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
+                              }}
+                            />
+                          </label>
+                        </div>
                       ) : (
                         <label className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">upload</span>
-                          <span>Upload (Optional)</span>
+                          <span className="material-symbols-outlined text-[15px]">upload_file</span>
+                          <span>Upload (Max 2 MB)</span>
                           <input
                             type="file"
-                            accept=".pdf,.jpg,.jpeg,.png,.webp"
+                            accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                             className="hidden"
                             onChange={async (e) => {
                               const f = e.target.files?.[0];
@@ -823,10 +899,20 @@ export default function StaffFiles() {
               })}
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-surface-container-high">
+            <div className="flex items-center justify-between pt-4 border-t border-surface-container-high gap-3 flex-wrap">
               <button
+                type="button"
+                onClick={() => handleDownloadGovtPack(selectedFileForDocs)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[16px]">download</span>
+                <span>Download Government PDF Pack</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setSelectedFileForDocs(null)}
-                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg cursor-pointer"
+                className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg transition-colors cursor-pointer"
               >
                 Close Vault
               </button>
@@ -835,29 +921,12 @@ export default function StaffFiles() {
         </div>
       )}
 
-      {/* DOCUMENT PREVIEW MODAL */}
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between border-b border-surface-container-high pb-2">
-              <h4 className="font-bold text-sm text-on-surface">{previewDoc.title}</h4>
-              <button onClick={() => setPreviewDoc(null)} className="text-secondary hover:text-on-surface">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div className="p-6 bg-surface-container-low rounded-xl text-center space-y-2">
-              <span className="material-symbols-outlined text-4xl text-emerald-600">verified</span>
-              <p className="text-xs font-bold text-on-surface">{previewDoc.filename}</p>
-              <p className="text-[11px] text-secondary">Verified Document on Sunvine Secure Vault</p>
-            </div>
-            <button
-              onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* TIMELINE & ATTRIBUTION MODAL */}

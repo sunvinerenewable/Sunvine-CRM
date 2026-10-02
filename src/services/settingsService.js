@@ -6,6 +6,7 @@ async function invalidateCatalogCache(keys) {
     await fetch('/api/catalog', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
     });
   } catch (_) {}
