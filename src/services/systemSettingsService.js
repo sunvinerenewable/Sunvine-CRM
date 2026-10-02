@@ -1,7 +1,5 @@
 import { supabase } from '../lib/supabase';
 
-const SYSTEM_SETTINGS_KEY = 'sunvine_system_settings';
-
 export const systemSettingsService = {
   async getSystemSettings() {
     try {
@@ -12,33 +10,22 @@ export const systemSettingsService = {
         .single();
 
       if (!error && data) {
-        const settings = {
+        return {
           companyProfile: data.company_profile,
           bankDetails: data.bank_details,
           termsAndWarranties: data.terms_and_warranties,
           statutoryTaxes: data.statutory_taxes
         };
-        localStorage.setItem(SYSTEM_SETTINGS_KEY, JSON.stringify(settings));
-        return settings;
       }
     } catch (err) {
       console.warn('Supabase fetch system settings fallback:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(SYSTEM_SETTINGS_KEY);
-      return cached ? JSON.parse(cached) : null;
-    } catch (_) {
-      return null;
-    }
+    return null;
   },
 
   async saveSystemSettings(settings) {
-    if (!settings) return { success: false };
-
-    try {
-      localStorage.setItem(SYSTEM_SETTINGS_KEY, JSON.stringify(settings));
-    } catch (_) {}
+    if (!settings) return { success: false, error: 'Settings required' };
 
     try {
       const payload = {
@@ -55,11 +42,11 @@ export const systemSettingsService = {
         .upsert([payload], { onConflict: 'id' });
 
       if (error) {
-        return { success: true, localOnly: true, data: settings };
+        return { success: false, error: error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: settings };
+      return { success: false, error: err.message };
     }
   }
 };

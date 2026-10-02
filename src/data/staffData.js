@@ -175,11 +175,11 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Registration Completed', date: '2026-09-25', actor: 'Admin Desk', notes: 'GEDA net-meter sanction received' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_ramesh_dave.pdf', date: '2026-09-20' },
-      lightBill: { uploaded: true, filename: 'ugvcl_bill_aug2026.pdf', date: '2026-09-20' },
-      meterPhoto: { uploaded: true, filename: 'meter_reading_6kw.jpg', date: '2026-09-21' },
-      sitePhoto: { uploaded: true, filename: 'rooftop_drone_elevation.jpg', date: '2026-09-21' },
-      bankPassbook: { uploaded: true, filename: 'sbi_cheque_subsidy.pdf', date: '2026-09-22' }
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
+      meterPhoto: { uploaded: false, filename: null, date: null },
+      sitePhoto: { uploaded: false, filename: null, date: null },
+      bankPassbook: { uploaded: false, filename: null, date: null }
     }
   },
   {
@@ -220,11 +220,11 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Documentation', date: '2026-09-24', actor: 'Staff Hardik Chauhan', notes: 'Aadhaar uploaded, site photo pending' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_solanki.pdf', date: '2026-09-22' },
-      lightBill: { uploaded: true, filename: 'pgvcl_bill_sep2026.pdf', date: '2026-09-22' },
-      meterPhoto: { uploaded: true, filename: 'meter_closeup.jpg', date: '2026-09-23' },
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
+      meterPhoto: { uploaded: false, filename: null, date: null },
       sitePhoto: { uploaded: false, filename: null, date: null },
-      bankPassbook: { uploaded: true, filename: 'bob_passbook.pdf', date: '2026-09-23' }
+      bankPassbook: { uploaded: false, filename: null, date: null }
     }
   },
   {
@@ -267,11 +267,11 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Completed', date: '2026-09-27', actor: 'Central Ops', notes: 'Project commissioned & subsidy released' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_jagdish.pdf', date: '2026-09-18' },
-      lightBill: { uploaded: true, filename: 'dgvcl_bill_aug.pdf', date: '2026-09-18' },
-      meterPhoto: { uploaded: true, filename: 'bidirectional_meter.jpg', date: '2026-09-19' },
-      sitePhoto: { uploaded: true, filename: 'installed_site_view.jpg', date: '2026-09-24' },
-      bankPassbook: { uploaded: true, filename: 'axis_bank_statement.pdf', date: '2026-09-19' }
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
+      meterPhoto: { uploaded: false, filename: null, date: null },
+      sitePhoto: { uploaded: false, filename: null, date: null },
+      bankPassbook: { uploaded: false, filename: null, date: null }
     }
   },
   {
@@ -402,11 +402,11 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Completed', date: '2026-09-27', actor: 'Admin Desk', notes: 'PGVCL inspection cleared' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_kirit.pdf', date: '2026-09-23' },
-      lightBill: { uploaded: true, filename: 'pgvcl_bill.pdf', date: '2026-09-23' },
-      meterPhoto: { uploaded: true, filename: 'meter.jpg', date: '2026-09-24' },
-      sitePhoto: { uploaded: true, filename: 'site.jpg', date: '2026-09-24' },
-      bankPassbook: { uploaded: true, filename: 'passbook.pdf', date: '2026-09-24' }
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
+      meterPhoto: { uploaded: false, filename: null, date: null },
+      sitePhoto: { uploaded: false, filename: null, date: null },
+      bankPassbook: { uploaded: false, filename: null, date: null }
     }
   },
   {
@@ -447,8 +447,8 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Failed', date: '2026-09-22', actor: 'PGVCL Inspector', notes: 'Rejected: Unsafe structural parapet load' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_vora.pdf', date: '2026-09-15' },
-      lightBill: { uploaded: true, filename: 'bill_pgvcl.pdf', date: '2026-09-15' },
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
       meterPhoto: { uploaded: false, filename: null, date: null },
       sitePhoto: { uploaded: false, filename: null, date: null },
       bankPassbook: { uploaded: false, filename: null, date: null }
@@ -493,11 +493,11 @@ export const DEFAULT_CUSTOMER_FILES = [
       { stage: 'Completed', date: '2026-09-24', actor: 'Admin Desk', notes: 'Meter installed and verified' }
     ],
     documents: {
-      aadhaar: { uploaded: true, filename: 'aadhaar_bipin.pdf', date: '2026-09-10' },
-      lightBill: { uploaded: true, filename: 'bill_ugvcl.pdf', date: '2026-09-10' },
-      meterPhoto: { uploaded: true, filename: 'meter_active.jpg', date: '2026-09-17' },
-      sitePhoto: { uploaded: true, filename: 'site_complete.jpg', date: '2026-09-17' },
-      bankPassbook: { uploaded: true, filename: 'passbook_sbi.pdf', date: '2026-09-11' }
+      aadhaar: { uploaded: false, filename: null, date: null },
+      lightBill: { uploaded: false, filename: null, date: null },
+      meterPhoto: { uploaded: false, filename: null, date: null },
+      sitePhoto: { uploaded: false, filename: null, date: null },
+      bankPassbook: { uploaded: false, filename: null, date: null }
     }
   }
 ];

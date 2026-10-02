@@ -1,10 +1,19 @@
 import { supabase } from '../lib/supabase';
 
-const DEALERS_KEY = 'sunvine_dealers';
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
 
 export const dealerService = {
   /**
-   * Fetch all registered dealers from Supabase, fallback to localStorage
+   * Fetch all registered dealers from Supabase PostgreSQL
    */
   async getAllDealers() {
     try {
@@ -15,10 +24,11 @@ export const dealerService = {
 
       if (error) {
         console.warn('[dealerService] Fetch dealers warning:', error.message);
+        return [];
       }
 
-      if (data && data.length > 0) {
-        const mapped = data.map(d => ({
+      if (Array.isArray(data)) {
+        return data.map(d => ({
           id: d.dealer_code || d.id,
           uuid: d.id,
           dealerCode: d.dealer_code,
@@ -44,19 +54,12 @@ export const dealerService = {
           pricingConfig: d.pricing_config || {},
           createdAt: d.created_at
         }));
-        try { localStorage.setItem(DEALERS_KEY, JSON.stringify(mapped)); } catch (_) {}
-        return mapped;
       }
     } catch (err) {
       console.warn('[dealerService] Error fetching dealers:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(DEALERS_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
+    return [];
   },
 
   /**
@@ -156,6 +159,7 @@ export const dealerService = {
         return { success: false, error: error.message };
       }
 
+      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
       return { success: true, data };
     } catch (err) {
       console.error('[dealerService] Error updating dealer:', err);
@@ -173,6 +177,8 @@ export const dealerService = {
         .from('dealer_accounts')
         .delete()
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
+
+      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
 
       if (error) {
         console.warn('[dealerService] Delete dealer warning:', error.message);

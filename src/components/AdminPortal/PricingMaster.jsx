@@ -94,15 +94,7 @@ export default function PricingMaster() {
   });
 
   // Dedicated Inverter Sizing & Benchmark Pricing Matrix states (SR-57)
-  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sunvine_inverter_benchmark_matrix');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {
-      console.warn('Failed to parse inverter benchmark matrix:', e);
-    }
-    return DEFAULT_INVERTER_BENCHMARK_MATRIX;
-  });
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(DEFAULT_INVERTER_BENCHMARK_MATRIX);
   const [isInlineEditingInverters, setIsInlineEditingInverters] = useState(false);
   const [showAddInvBenchmarkModal, setShowAddInvBenchmarkModal] = useState(false);
   const [editingInvBenchmarkIdx, setEditingInvBenchmarkIdx] = useState(null);
@@ -478,11 +470,6 @@ ${origin}/?tab=pricing_master
   const handleSaveInverterMatrix = (updatedList) => {
     const toSave = updatedList || inverterBenchmarkMatrix;
     setInverterBenchmarkMatrix(toSave);
-    try {
-      localStorage.setItem('sunvine_inverter_benchmark_matrix', JSON.stringify(toSave));
-    } catch (e) {
-      console.warn(e);
-    }
     pricingService.saveInverterBenchmarks(toSave);
     setIsInlineEditingInverters(false);
     triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved to database!');
@@ -502,9 +489,6 @@ ${origin}/?tab=pricing_master
     if (window.confirm(`Delete ${item.capacityKW} kW inverter benchmark entry?`)) {
       const updated = inverterBenchmarkMatrix.filter((_, i) => i !== idx);
       setInverterBenchmarkMatrix(updated);
-      try {
-        localStorage.setItem('sunvine_inverter_benchmark_matrix', JSON.stringify(updated));
-      } catch (e) {}
       pricingService.saveInverterBenchmarks(updated);
       await pricingService.deleteInverterBenchmark(item.capacityKW);
       triggerToast('Inverter benchmark entry removed from database');
@@ -702,12 +686,6 @@ ${origin}/?tab=pricing_master
 
     if (setPdfBosMatrix) {
       setPdfBosMatrix(localBosMatrix);
-    }
-
-    try {
-      localStorage.setItem('sunvine_inverter_benchmark_matrix', JSON.stringify(inverterBenchmarkMatrix));
-    } catch (err) {
-      console.warn(err);
     }
 
     // Direct backend persistence to Supabase database (eliminating local-only reliance)

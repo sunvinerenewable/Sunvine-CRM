@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import { getDocumentListForFile } from '../../data/defaultRequiredDocuments';
 
 export default function VerificationDesk() {
   const {
@@ -399,15 +401,9 @@ export default function VerificationDesk() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {[
-                    { key: 'aadhaar', label: 'Aadhaar Card' },
-                    { key: 'lightBill', label: 'Electricity Bill' },
-                    { key: 'meterPhoto', label: 'Meter Photo' },
-                    { key: 'sitePhoto', label: 'Site / Roof Photo' },
-                    { key: 'bankPassbook', label: 'Bank Passbook' }
-                  ].map((doc) => {
-                    const docInfo = docs[doc.key];
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                  {getDocumentListForFile(file).map((doc) => {
+                    const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
                     const isUploaded = Boolean(docInfo?.uploaded);
                     const isVerified = Boolean(docInfo?.verified);
 
@@ -432,7 +428,7 @@ export default function VerificationDesk() {
                             )}
                           </div>
                           <p className="text-[10px] text-secondary mt-0.5 truncate">
-                            {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached (Opt)'}
+                            {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached'}
                           </p>
                         </div>
 
@@ -441,7 +437,7 @@ export default function VerificationDesk() {
                             <>
                               <button
                                 type="button"
-                                onClick={() => setPreviewDoc({ title: doc.label, filename: docInfo.filename || 'document.pdf' })}
+                                onClick={() => setPreviewDoc({ title: doc.label, filename: docInfo.filename || 'document.pdf', url: docInfo.url || docInfo.dataUrl })}
                                 className="text-[10px] text-primary font-bold hover:underline cursor-pointer"
                               >
                                 View
@@ -457,7 +453,7 @@ export default function VerificationDesk() {
                               )}
                             </>
                           ) : (
-                            <span className="text-[10px] text-secondary/60">Optional</span>
+                            <span className="text-[10px] text-secondary/60">Pending</span>
                           )}
                         </div>
                       </div>
@@ -477,29 +473,12 @@ export default function VerificationDesk() {
         </div>
       )}
 
-      {/* DOCUMENT PREVIEW MODAL */}
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl p-6 max-w-md w-full space-y-4 text-on-surface">
-            <div className="flex items-center justify-between border-b border-surface-container-high pb-2">
-              <h4 className="font-bold text-sm text-on-surface">{previewDoc.title}</h4>
-              <button onClick={() => setPreviewDoc(null)} className="text-secondary hover:text-on-surface cursor-pointer">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div className="p-6 bg-surface-container-low rounded-xl text-center space-y-2">
-              <span className="material-symbols-outlined text-4xl text-emerald-600">verified</span>
-              <p className="text-xs font-bold text-on-surface">{previewDoc.filename}</p>
-              <p className="text-[11px] text-secondary">Secured &amp; Verified in Sunvine Document Vault</p>
-            </div>
-            <button
-              onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* TIMELINE AUDIT TRAIL MODAL */}

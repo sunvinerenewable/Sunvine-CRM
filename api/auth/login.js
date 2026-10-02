@@ -1,4 +1,4 @@
-import { checkRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from '../_lib/rateLimiter.js';
+import { checkDistributedRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from '../_lib/rateLimiter.js';
 import { verifyPassword } from '../_lib/security.js';
 import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
 import { query, getSupabaseServiceClient } from '../_lib/db.js';
@@ -7,7 +7,7 @@ import { query, getSupabaseServiceClient } from '../_lib/db.js';
  * POST /api/auth/login
  *
  * Authentication flow (server-side only):
- * 1. Rate-limit check by client IP
+ * 1. Distributed Rate-limit check by client IP (Upstash Redis)
  * 2. Validate input shape
  * 3. Look up the user in Supabase via PostgreSQL direct connection or service-role client
  * 4. Verify password via PBKDF2/bcrypt comparison server-side
@@ -23,8 +23,8 @@ export default async function handler(req, res) {
 
   const clientIp = getClientIp(req);
 
-  // ── 1. Rate limiting ──────────────────────────────────────────────────────
-  const rateCheck = checkRateLimit(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000, increment: false });
+  // ── 1. Distributed Rate limiting (Upstash Redis) ──────────────────────────
+  const rateCheck = await checkDistributedRateLimit(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
   res.setHeader('RateLimit-Limit', '10');
   res.setHeader('RateLimit-Remaining', String(rateCheck.remaining));
   res.setHeader('RateLimit-Reset', String(rateCheck.resetSeconds));
@@ -229,7 +229,7 @@ export default async function handler(req, res) {
     }
 
     // ── 4. Issue JWT ────────────────────────────────────────────────────────
-    resetRateLimit(clientIp);
+    await resetRateLimit(clientIp);
     const token = signJwt(userPayload, 24 * 60 * 60);
     res.setHeader('Set-Cookie', createAuthCookieHeader(token, 24 * 60 * 60));
 

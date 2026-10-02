@@ -183,10 +183,17 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
       const cfg = dealer.pricingConfig || {};
       const productDetails = cfg.productDetails || {};
       const customProductRates = cfg.customProductRates || {};
+      const seenProductKeys = new Set();
 
       Object.keys(customProductRates).forEach(prodKey => {
         const detail = productDetails[prodKey] || {};
         const matchedProd = availableProducts.find(p => p.id === prodKey || p.name === prodKey || p.keyIdentifier === prodKey);
+
+        const canonicalId = matchedProd?.id || detail.id || prodKey;
+        if (seenProductKeys.has(canonicalId)) {
+          return;
+        }
+        seenProductKeys.add(canonicalId);
 
         const prodName = detail.name || matchedProd?.name || prodKey;
         const category = detail.category || matchedProd?.category || 'general';
@@ -199,7 +206,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
           dealerName: getDealerName(dealer),
           dealerFirm: getDealerFirm(dealer),
           dealerCity: dealer.city || 'Gujarat',
-          productId: prodKey,
+          productId: canonicalId,
           productName: prodName,
           category,
           categoryLabel: category === 'module' ? 'Solar Module' : category === 'inverter' ? 'Solar Inverter' : 'BOM Hardware',
@@ -271,6 +278,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
   const handleRemoveProductOverride = (dealerId, productId, prodName) => {
     if (window.confirm(`Reset "${prodName}" to default benchmark rate for this dealer?`)) {
       if (removeDealerProductRate) {
+        
         removeDealerProductRate(dealerId, productId);
       }
       if (onShowToast) onShowToast(`Reset ${prodName} to benchmark`);
@@ -279,50 +287,6 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
 
   return (
     <div className="flex flex-col gap-6 w-full text-on-surface">
-      {/* 1. Header Banner & Scoped Role Notice */}
-      <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="p-2.5 rounded-xl bg-primary-container/15 text-primary shrink-0">
-              <span className="material-symbols-outlined text-2xl">tune</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="font-headline-md text-headline-md font-bold text-inverse-surface tracking-tight">
-                  Dealer-Wise Custom Pricing Matrix &amp; Base Price Overrides
-                </h2>
-                {role === 'staff' ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full font-label-xs text-xs font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                    Sales Staff Scoped View ({accessibleDealers.length} Dealers Assigned)
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/20 text-primary rounded-full font-label-xs text-xs font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                    Admin Master Governance ({dealers?.length || 550} Total Network Dealers)
-                  </span>
-                )}
-              </div>
-              <p className="font-body-sm text-body-sm text-secondary mt-1 max-w-3xl">
-                Configure authorized dealer pricing tiers, custom product rates, special partner discounts, and localized margin caps. Proposals automatically apply negotiated product rates and fallback to Sunvine Global Benchmark Pricing for standard items.
-              </p>
-            </div>
-          </div>
-
-          {/* Quick Metrics Badges */}
-          <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            <div className="px-3.5 py-2 rounded-lg bg-surface-container-low border border-surface-container-high text-left">
-              <div className="font-label-xs text-[10px] text-secondary uppercase font-semibold">Total Network</div>
-              <div className="font-mono text-base font-bold text-primary">{accessibleDealers.length} Dealers</div>
-            </div>
-            <div className="px-3.5 py-2 rounded-lg bg-surface-container-low border border-surface-container-high text-left">
-              <div className="font-label-xs text-[10px] text-secondary uppercase font-semibold">Active Overrides</div>
-              <div className="font-mono text-base font-bold text-on-surface">{allProductOverrides.length} Products</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* 2.5 Product & Material-Wise Dealer Negotiated Rates Engine (Panels, Inverters & BOM) */}
       <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm flex flex-col gap-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-surface-container gap-3">
@@ -350,7 +314,6 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
         {/* Interactive Update Bar: Dealer Dropdown + Category + Product + Custom Price + Update */}
         <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high/80 flex flex-col gap-3">
           <div className="text-xs font-bold text-on-surface flex items-center gap-1.5 text-primary">
-            <span className="material-symbols-outlined text-base">add_circle</span>
             Assign / Update Negotiated Price for Dealer
           </div>
 
@@ -637,7 +600,7 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
               {accessibleDealers.slice(0, 15).map(dealer => {
                 const cfg = dealer.pricingConfig || {};
                 const isCustom = cfg.pricingMode === 'custom';
-                const customItemsCount = Object.keys(cfg.customProductRates || {}).length;
+                const customItemsCount = (allProductOverrides || []).filter(r => r.dealerId === dealer.id).length;
                 return (
                   <tr key={dealer.id} className="hover:bg-surface-container-low/50 transition-colors">
                     <td className="py-3 px-3">

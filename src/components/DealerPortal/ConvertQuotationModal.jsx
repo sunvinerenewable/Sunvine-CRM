@@ -62,6 +62,23 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
 
   const handleFileUpload = async (docKey, file) => {
     if (!file) return;
+
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
+
+    if (!isAllowed) {
+      addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+      addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
+      return;
+    }
+
     try {
       const optimized = await compressMedia(file);
       setDocuments(prev => ({

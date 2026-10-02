@@ -1,11 +1,4 @@
-/**
- * Rate Limiter Utility for Sunvine API Endpoints
- *
- * Supports:
- * 1. Upstash Redis REST (when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are set)
- *    -> Shared distributed state across all Vercel serverless cold starts.
- * 2. In-Memory fallback (when Upstash is not configured or in local dev).
- */
+import { redisDel, redisFlushPattern, isRedisConfigured } from './redis.js';
 
 const tracker = new Map();
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
@@ -22,13 +15,6 @@ if (typeof setInterval !== 'undefined') {
 }
 
 /**
- * Check if Upstash is configured
- */
-function hasUpstash() {
-  return Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
-}
-
-/**
  * Check and increment rate limit via Upstash Redis REST
  */
 export async function checkDistributedRateLimit(identifier, options = {}) {
@@ -36,13 +22,34 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
   const windowSeconds = Math.ceil((options.windowMs || 5 * 60 * 1000) / 1000);
   const key = `ratelimit:${identifier}`;
 
-  if (!hasUpstash()) {
+  if (!isRedisConfigured()) {
     return checkRateLimit(identifier, options);
   }
 
   try {
     const url = process.env.UPSTASH_REDIS_REST_URL;
     const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (options.increment === false) {
+      // Read-only check in Redis
+      const getRes = await fetch(`${url}/pipeline`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify([['GET', key], ['TTL', key]])
+      });
+      if (getRes.ok) {
+        const data = await getRes.json();
+        const count = parseInt(data?.[0]?.result || '0', 10);
+        const ttl = Math.max(1, data?.[1]?.result || windowSeconds);
+        const remaining = Math.max(0, maxAttempts - count);
+        return {
+          allowed: count < maxAttempts,
+          remaining,
+          resetSeconds: ttl,
+          totalAttempts: count
+        };
+      }
+    }
 
     // INCR and EXPIRE in pipeline
     const res = await fetch(`${url}/pipeline`, {
@@ -133,8 +140,14 @@ export function checkRateLimit(identifier, options = {}) {
   return recordFailedAttempt(identifier, options);
 }
 
-export function resetRateLimit(identifier) {
+export async function resetRateLimit(identifier) {
   tracker.delete(identifier);
+  await redisDel(`ratelimit:${identifier}`).catch(() => {});
+}
+
+export async function resetAllRateLimits() {
+  tracker.clear();
+  await redisFlushPattern('ratelimit:*').catch(() => {});
 }
 
 export function getClientIp(req) {

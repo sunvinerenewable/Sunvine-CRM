@@ -1,5 +1,16 @@
 import { supabase } from '../lib/supabase';
 
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
+
 /**
  * Enterprise Supabase Hardware Service
  * Manages approved solar PV modules and string inverters in Supabase PostgreSQL
@@ -22,6 +33,32 @@ export const hardwareService = {
    * Fetch all solar modules from Supabase
    */
   async getAllModules() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=hardware');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.hardware?.modules) && json.hardware.modules.length > 0) {
+          return json.hardware.modules.map(row => ({
+            id: row.id,
+            brand: row.brand,
+            model: row.model,
+            wattage: Number(row.wattage) || 550,
+            cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
+            efficiency: row.efficiency || '22.6%',
+            ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
+            warranty: row.warranty || '30 Years Performance',
+            dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
+            isArchived: !!row.is_archived,
+            isDefault: !!row.is_default,
+            isNew: !!row.is_new,
+            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('solar_modules')
@@ -88,6 +125,8 @@ export const hardwareService = {
         .upsert([payload], { onConflict: 'id' })
         .select();
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase saveModule error:', error.message);
         return { success: false, error: error.message };
@@ -112,6 +151,8 @@ export const hardwareService = {
         })
         .eq('id', moduleId);
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase archiveModule error:', error.message);
         return { success: false, error: error.message };
@@ -132,6 +173,8 @@ export const hardwareService = {
         .from('solar_modules')
         .delete()
         .eq('id', moduleId);
+
+      invalidateCatalogCache(['catalog:hardware']);
 
       if (error) {
         console.warn('[hardwareService] Supabase deleteModule error:', error.message);
@@ -215,6 +258,31 @@ export const hardwareService = {
    * Fetch all string inverters from Supabase
    */
   async getAllInverters() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=hardware');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.hardware?.inverters) && json.hardware.inverters.length > 0) {
+          return json.hardware.inverters.map(row => ({
+            id: row.id,
+            brand: row.brand,
+            model: row.model,
+            capacity: row.capacity || `${row.capacity_kw} kW`,
+            capacityKW: Number(row.capacity_kw) || 5.0,
+            phase: row.phase || 'Three Phase',
+            efficiency: row.efficiency || '98.4%',
+            warranty: row.warranty || '8 Years Comprehensive',
+            basePrice: row.base_price || '₹ 54,000',
+            isArchived: !!row.is_archived,
+            isDefault: !!row.is_default,
+            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('solar_inverters')
@@ -283,6 +351,8 @@ export const hardwareService = {
         .upsert([payload], { onConflict: 'id' })
         .select();
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase saveInverter error:', error.message);
         return { success: false, error: error.message };
@@ -307,6 +377,8 @@ export const hardwareService = {
         })
         .eq('id', inverterId);
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase archiveInverter error:', error.message);
         return { success: false, error: error.message };
@@ -327,6 +399,8 @@ export const hardwareService = {
         .from('solar_inverters')
         .delete()
         .eq('id', inverterId);
+
+      invalidateCatalogCache(['catalog:hardware']);
 
       if (error) {
         console.warn('[hardwareService] Supabase deleteInverter error:', error.message);

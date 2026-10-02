@@ -65,42 +65,7 @@ export const quotationService = {
   },
 
   /**
-   * Helper: Get local quotation by ID from localStorage (offline fallback only)
-   */
-  getLocalQuotationById(id) {
-    if (typeof window === 'undefined' || !id) return null;
-    try {
-      const cleanId = String(id).trim().toLowerCase();
-      const local = localStorage.getItem('sunvine_quotations');
-      if (local) {
-        const parsed = JSON.parse(local);
-        if (Array.isArray(parsed)) {
-          const found = parsed.find(q =>
-            String(q.id || '').trim().toLowerCase() === cleanId ||
-            String(q.quoteId || '').trim().toLowerCase() === cleanId ||
-            String(q.quotationNo || '').trim().toLowerCase() === cleanId
-          );
-          if (found) return found;
-        }
-      }
-      for (const key of ['sunvine_active_draft_quote', 'sunvine_preview_quotation', 'sunvine_last_quote']) {
-        const item = localStorage.getItem(key);
-        if (item) {
-          const parsed = JSON.parse(item);
-          if (parsed && (
-            String(parsed.id || '').trim().toLowerCase() === cleanId ||
-            String(parsed.quoteId || '').trim().toLowerCase() === cleanId
-          )) {
-            return parsed;
-          }
-        }
-      }
-    } catch (_) {}
-    return null;
-  },
-
-  /**
-   * Fetch single quotation by ID — DB/API FIRST, localStorage fallback
+   * Fetch single quotation by ID — DB/API
    */
   async getQuotationById(id) {
     if (!id) return null;
@@ -139,8 +104,7 @@ export const quotationService = {
       }
     } catch (_) {}
 
-    // 3. Last resort: check localStorage
-    return this.getLocalQuotationById(cleanId);
+    return null;
   },
 
   /**
@@ -205,8 +169,6 @@ export const quotationService = {
         const json = await res.json().catch(() => null);
         if (json?.success && json.quotation) {
           const saved = json.quotation;
-          // Sync with local cache for offline viewing
-          this._updateLocalCache(saved);
           return { success: true, data: saved, isCapped: json._marginExceededAndCapped };
         }
       }
@@ -252,7 +214,6 @@ export const quotationService = {
       if (error) {
         return { success: false, error: error.message };
       }
-      this._updateLocalCache(quote);
       return { success: true, data: data?.[0] || quote };
     } catch (err) {
       return { success: false, error: err.message };
@@ -276,7 +237,6 @@ export const quotationService = {
       if (res.ok) {
         const json = await res.json().catch(() => null);
         if (json?.success) {
-          this._updateLocalStatus(id, newStatus);
           return { success: true };
         }
       }
@@ -295,7 +255,6 @@ export const quotationService = {
         .from('quotations')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', id);
-      this._updateLocalStatus(id, newStatus);
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -303,52 +262,11 @@ export const quotationService = {
   },
 
   /**
-   * Helper: update local cache
-   */
-  _updateLocalCache(quote) {
-    if (typeof window === 'undefined' || !quote) return;
-    try {
-      const local = localStorage.getItem('sunvine_quotations');
-      const list = local ? JSON.parse(local) : [];
-      if (Array.isArray(list)) {
-        const idx = list.findIndex(q => q.id === quote.id);
-        if (idx >= 0) list[idx] = { ...list[idx], ...quote };
-        else list.unshift(quote);
-        localStorage.setItem('sunvine_quotations', JSON.stringify(list.slice(0, 100)));
-      }
-      localStorage.setItem('sunvine_last_quote', JSON.stringify(quote));
-    } catch (_) {}
-  },
-
-  _updateLocalStatus(id, newStatus) {
-    if (typeof window === 'undefined') return;
-    try {
-      const local = localStorage.getItem('sunvine_quotations');
-      if (local) {
-        const list = JSON.parse(local);
-        const idx = list.findIndex(q => q.id === id);
-        if (idx >= 0) {
-          list[idx].status = newStatus;
-          list[idx].updatedAt = new Date().toISOString();
-          localStorage.setItem('sunvine_quotations', JSON.stringify(list));
-        }
-      }
-    } catch (_) {}
-  },
-
-  /**
-   * Delete quotation
+   * Delete quotation from database
    */
   async deleteQuotation(id) {
     if (!id) return { success: false };
     try {
-      if (typeof window !== 'undefined') {
-        const local = localStorage.getItem('sunvine_quotations');
-        if (local) {
-          const list = JSON.parse(local).filter(q => q.id !== id);
-          localStorage.setItem('sunvine_quotations', JSON.stringify(list));
-        }
-      }
       await supabase.from('quotations').delete().eq('id', id);
       return { success: true };
     } catch (err) {

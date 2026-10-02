@@ -50,21 +50,20 @@ function apiDevPlugin() {
           }
 
           try {
-            if (urlPath === '/api/auth/login') {
-              const { default: handler } = await server.ssrLoadModule('/api/auth/login.js');
-              return await handler(req, res);
+            let modulePath = null;
+            if (urlPath === '/api/auth/login') modulePath = '/api/auth/login.js';
+            else if (urlPath === '/api/auth/verify') modulePath = '/api/auth/verify.js';
+            else if (urlPath === '/api/auth/logout') modulePath = '/api/auth/logout.js';
+            else if (urlPath.startsWith('/api/')) {
+              const endpoint = urlPath.replace('/api/', '').replace(/\.js$/, '');
+              modulePath = `/api/${endpoint}.js`;
             }
-            if (urlPath === '/api/auth/verify') {
-              const { default: handler } = await server.ssrLoadModule('/api/auth/verify.js');
-              return await handler(req, res);
-            }
-            if (urlPath === '/api/auth/logout') {
-              const { default: handler } = await server.ssrLoadModule('/api/auth/logout.js');
-              return await handler(req, res);
-            }
-            if (urlPath === '/api/quotations') {
-              const { default: handler } = await server.ssrLoadModule('/api/quotations.js');
-              return await handler(req, res);
+
+            if (modulePath) {
+              const { default: handler } = await server.ssrLoadModule(modulePath);
+              if (typeof handler === 'function') {
+                return await handler(req, res);
+              }
             }
           } catch (err) {
             console.error('[Vite dev API error]:', err);

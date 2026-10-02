@@ -543,6 +543,7 @@ async function discoverAutonomousLeads(latitude, longitude, radiusMeters, diagno
   return discovered;
 }
 
+import { cacheAside } from './_lib/redis.js';
 import { verifyJwt } from './_lib/jwt.js';
 
 export default async function handler(req, res) {
@@ -598,6 +599,19 @@ export default async function handler(req, res) {
         success: false,
         error: 'Valid numeric latitude and longitude coordinates are required.'
       });
+    }
+
+    // Check Redis cache for identical coordinate search (rounded to ~100m grid for ultra-high hit rate)
+    const cacheKey = `places:nearby:${latitude.toFixed(3)}:${longitude.toFixed(3)}:${radiusMeters}`;
+    const cachedResult = await cacheAside(cacheKey, 1800, async () => null);
+    if (cachedResult?.data) {
+      const payload = cachedResult.data;
+      payload.diagnostics = {
+        ...payload.diagnostics,
+        cachedInRedis: true,
+        apiLatencyMs: Date.now() - startTime
+      };
+      return res.status(200).json(payload);
     }
 
     // Google API Key precedence: Server env -> Client override
@@ -835,7 +849,7 @@ export default async function handler(req, res) {
     diagnostics.resultsAfterFiltering = finalLeads.length;
     diagnostics.apiLatencyMs = Date.now() - startTime;
 
-    return res.status(200).json({
+    const responsePayload = {
       success: true,
       provider: diagnostics.googleApiStatus.startsWith('CONNECTED')
         ? 'Google Places API (New)'
@@ -845,7 +859,13 @@ export default async function handler(req, res) {
       count: finalLeads.length,
       leads: finalLeads,
       diagnostics: diagnostics
-    });
+    };
+
+    // Cache in Upstash Redis for 30 minutes
+    const { redisSet } = await import('./_lib/redis.js');
+    redisSet(cacheKey, responsePayload, 1800).catch(() => {});
+
+    return res.status(200).json(responsePayload);
   } catch (error) {
     console.error('places-nearby fatal error:', error);
     return res.status(500).json({

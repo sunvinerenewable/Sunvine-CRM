@@ -1,12 +1,27 @@
 import { supabase } from '../lib/supabase';
 
-const CUSTOMER_FILES_KEY = 'sunvine_customer_files';
-
 export const customerFileService = {
   /**
-   * Fetch all customer files from Supabase, fallback to localStorage
+   * Fetch all customer files from serverless API (Supabase PostgreSQL + Redis cache), or direct Supabase query
    */
   async getAllCustomerFiles() {
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data;
+        }
+      }
+    } catch (apiErr) {
+      console.warn('[customerFileService] API fetch notice, checking database direct:', apiErr);
+    }
+
     try {
       const { data, error } = await supabase
         .from('customer_files')
@@ -14,11 +29,12 @@ export const customerFileService = {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.warn('[customerFileService] Fetch warning:', error.message);
+        console.warn('[customerFileService] Supabase direct notice:', error.message);
+        return [];
       }
 
-      if (data && data.length > 0) {
-        const mapped = data.map(f => ({
+      if (Array.isArray(data)) {
+        return data.map(f => ({
           id: f.id,
           customerName: f.customer_name,
           phone: f.phone,
@@ -45,31 +61,40 @@ export const customerFileService = {
           stage: f.stage || 'LEAD_SOURCED',
           currentStage: f.stage || 'LEAD_SOURCED',
           status: f.status || 'Sourced',
-          documents: f.documents || {},
+          documents: (f.documents && typeof f.documents === 'object' && !Array.isArray(f.documents)) ? f.documents : {},
           timeline: Array.isArray(f.timeline) ? f.timeline : [],
           createdAt: f.created_at,
           updatedAt: f.updated_at
         }));
-        try { localStorage.setItem(CUSTOMER_FILES_KEY, JSON.stringify(mapped)); } catch (_) {}
-        return mapped;
       }
     } catch (err) {
-      console.warn('[customerFileService] Fetch exception:', err);
+      console.warn('[customerFileService] Direct fetch exception:', err);
     }
 
-    try {
-      const cached = localStorage.getItem(CUSTOMER_FILES_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch (_) {
-      return [];
-    }
+    return [];
   },
 
   /**
-   * Save / Upsert customer file to Supabase
+   * Save / Upsert customer file to Supabase in real time
    */
   async saveCustomerFile(file) {
     if (!file || !file.id) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'save', file })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return json;
+      }
+    } catch (apiErr) {
+      console.warn('[customerFileService] API save notice, falling back to direct:', apiErr);
+    }
 
     const payload = {
       id: file.id,
@@ -104,7 +129,7 @@ export const customerFileService = {
         .select();
 
       if (error) {
-        console.warn('[customerFileService] Save warning:', error.message);
+        console.warn('[customerFileService] Save direct notice:', error.message);
         return { success: true, localOnly: true, data: file };
       }
 
@@ -116,10 +141,26 @@ export const customerFileService = {
   },
 
   /**
-   * Update customer file status or timeline in Supabase
+   * Update customer file status or timeline in Supabase in real time
    */
   async updateCustomerFile(fileId, updates) {
     if (!fileId) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'update', fileId, updates })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return json;
+      }
+    } catch (apiErr) {
+      console.warn('[customerFileService] API update notice, falling back to direct:', apiErr);
+    }
 
     const payload = {
       updated_at: new Date().toISOString()
@@ -184,7 +225,7 @@ export const customerFileService = {
         .eq('id', fileId);
 
       if (error) {
-        console.warn('[customerFileService] Update warning:', error.message);
+        console.warn('[customerFileService] Update direct notice:', error.message);
         return { success: false, error: error.message };
       }
 
@@ -196,10 +237,24 @@ export const customerFileService = {
   },
 
   /**
-   * Delete customer file from database
+   * Delete customer file from database in real time
    */
   async deleteCustomerFile(fileId) {
     if (!fileId) return { success: false };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'delete', fileId })
+      });
+
+      if (res.ok) return { success: true };
+    } catch (apiErr) {
+      console.warn('[customerFileService] API delete notice:', apiErr);
+    }
+
     try {
       await supabase.from('customer_files').delete().eq('id', fileId);
       return { success: true };

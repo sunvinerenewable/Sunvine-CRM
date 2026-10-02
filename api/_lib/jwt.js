@@ -37,7 +37,13 @@ export function signJwt(payload, expiresInSeconds = DEFAULT_EXPIRATION_SECONDS) 
   const secret = getSecret();
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
-  const fullPayload = { ...payload, iss: 'sunvine-solar-epc', iat: now, exp: now + expiresInSeconds };
+  const fullPayload = { 
+    ...payload, 
+    jti: crypto.randomUUID(),
+    iss: 'sunvine-solar-epc', 
+    iat: now, 
+    exp: now + expiresInSeconds 
+  };
 
   const encodedHeader = base64UrlEncode(JSON.stringify(header));
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));

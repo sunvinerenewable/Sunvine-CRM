@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from './Toast';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import {
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DOCUMENT_SCHEMAS
+} from '../../data/defaultRequiredDocuments';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -18,6 +25,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
   const [timelineNotes, setTimelineNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('timeline'); // 'timeline', 'financials', 'documents'
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   if (!file) return null;
 
@@ -389,20 +397,40 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
           {activeTab === 'documents' && (
             <div className="space-y-4">
-              <p className="text-xs text-secondary">
-                Document uploads are strictly non-blocking. Verification can be performed at any point in the lifecycle.
-              </p>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs text-secondary">
+                  Document uploads are strictly non-blocking. PDF files are securely stored in Cloudflare R2 Vault.
+                </p>
+                {Object.values(file.documents || {}).some(d => d?.uploaded && d?.url) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const docs = file.documents || {};
+                      const attached = Object.entries(docs).filter(([_, d]) => d?.uploaded && d?.url);
+                      attached.forEach(([key, doc]) => {
+                        const link = document.createElement('a');
+                        link.href = doc.url;
+                        link.target = '_blank';
+                        link.download = `${file.id}_${key}_${doc.filename || 'document.pdf'}`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      });
+                      addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">download</span>
+                    <span>Download Government PDF Pack</span>
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { key: 'electricityBill', label: 'Latest Electricity Bill (Torrent / DISCOM)', icon: 'receipt_long' },
-                  { key: 'aadhaarCard', label: 'Customer Aadhaar / Identity Proof', icon: 'badge' },
-                  { key: 'propertyTaxReceipt', label: 'Property Tax Receipt / Index Copy', icon: 'home_work' },
-                  { key: 'bankPassbook', label: 'Bank Passbook / Cancelled Cheque (DBT)', icon: 'account_balance' },
-                  { key: 'rooftopPhoto', label: 'Rooftop Survey Photo / CAD Layout', icon: 'solar_power' }
-                ].map((doc) => {
-                  const docInfo = file.documents?.[doc.key];
+                {getDocumentListForFile(file).map((doc) => {
+                  const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
                   const isUploaded = Boolean(docInfo?.uploaded);
+                  const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';
 
                   return (
                     <div
@@ -410,28 +438,45 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                       className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">
-                          {doc.icon}
+                        <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                          {doc.icon || 'description'}
                         </span>
                         <div className="min-w-0">
                           <p className="font-semibold text-on-surface truncate">{doc.label}</p>
                           <p className="text-[11px] text-secondary">
                             {isUploaded ? (
                               <span className="font-mono text-primary break-all select-all font-medium">
-                                Uploaded: {docInfo?.filename || 'verified.pdf'}
+                                Document Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
                               </span>
                             ) : (
-                              'Pending optional upload'
+                              `${doc.category} \u2022 Optional (Max 2 MB)`
                             )}
                           </p>
                         </div>
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] shrink-0 ${
-                        isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
-                      }`}>
-                        {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isUploaded && docInfo?.url && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc({
+                              title: doc.label,
+                              filename: docInfo.filename || 'document.pdf',
+                              url: docInfo.url
+                            })}
+                            className="p-1.5 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded-lg transition-colors flex items-center cursor-pointer"
+                            title="Inspect & Download Document"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          </button>
+                        )}
+
+                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
+                          isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
+                        }`}>
+                          {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
@@ -451,6 +496,14 @@ export default function CustomerFileDetailModal({ file, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
     </div>
   );
 }

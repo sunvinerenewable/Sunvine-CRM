@@ -31,9 +31,10 @@ function getPublicProposalId() {
   return null;
 }
 
-// Lazy-load the isolated public view or the full authenticated portal
+import PortalApp from './components/PortalApp';
+
+// Lazy-load only the isolated public quotation viewer for WhatsApp customers
 const PublicQuotationView = lazy(() => import('./components/PublicQuotationView'));
-const PortalApp = lazy(() => import('./components/PortalApp'));
 
 export default function App() {
   const isPublic = isPublicProposalRoute();
@@ -48,9 +49,7 @@ export default function App() {
               <PublicQuotationView publicQuoteId={publicQuoteId} />
             </Suspense>
           ) : (
-            <Suspense fallback={<PortalSkeleton />}>
-              <PortalApp />
-            </Suspense>
+            <PortalApp />
           )}
           <GlobalActionLoader />
         </ToastProvider>

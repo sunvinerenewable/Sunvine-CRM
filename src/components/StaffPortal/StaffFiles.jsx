@@ -2,10 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import { storageService } from '../../services/storageService';
 import { useLoading } from '../../context/LoadingContext';
+import {
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DOCUMENT_SCHEMAS
+} from '../../data/defaultRequiredDocuments';
 
 export default function StaffFiles() {
   const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
@@ -24,6 +31,9 @@ export default function StaffFiles() {
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustEmail, setNewCustEmail] = useState('');
+  const [newCustCoApplicantName, setNewCustCoApplicantName] = useState('');
+  const [newCustCoApplicantPhone, setNewCustCoApplicantPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
   const [newCustDiscom, setNewCustDiscom] = useState('UGVCL');
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
@@ -75,7 +85,7 @@ export default function StaffFiles() {
     return matchSearch && matchStatus && matchSource && matchFinance;
   });
 
-  const handleCreateCustomerFile = (e) => {
+  const handleCreateCustomerFile = async (e) => {
     e.preventDefault();
     if (!newCustName.trim() || !newCustPhone.trim()) {
       addToast('Please enter customer name and phone', 'error');
@@ -86,10 +96,14 @@ export default function StaffFiles() {
     try {
       const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
       const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
       const newFile = {
         id: newFileId,
         customerName: newCustName.trim(),
         phone: newCustPhone.trim(),
+        email: newCustEmail.trim() || null,
+        coApplicantName: isLoanCase ? (newCustCoApplicantName.trim() || null) : null,
+        coApplicantPhone: isLoanCase ? (newCustCoApplicantPhone.trim() || null) : null,
         address: newCustAddress.trim() || 'Gujarat, India',
         discom: newCustDiscom,
         consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -104,25 +118,22 @@ export default function StaffFiles() {
         dealerName: matchedDealer ? (matchedDealer.firmName || matchedDealer.name) : null,
         financeType: newCustFinanceType,
         paymentMode: newCustFinanceType,
-        loanBank: newCustFinanceType === 'LOAN' ? newCustLoanBank : null,
-        loanRefNo: newCustFinanceType === 'LOAN' ? newCustLoanRef.trim() : null,
+        loanBank: isLoanCase ? newCustLoanBank : null,
+        loanRefNo: isLoanCase ? newCustLoanRef.trim() : null,
         createdDate: new Date().toISOString().split('T')[0],
         status: 'Sourced',
         currentStage: 'LEAD_SOURCED',
         applicationNo: 'Draft Pending',
-        documents: {
-          aadhaar: { uploaded: false, filename: null, date: null },
-          lightBill: { uploaded: false, filename: null, date: null },
-          meterPhoto: { uploaded: false, filename: null, date: null },
-          sitePhoto: { uploaded: false, filename: null, date: null },
-          bankPassbook: { uploaded: false, filename: null, date: null }
-        }
+        documents: {}
       };
 
-      addCustomerFile(newFile);
+      await addCustomerFile(newFile);
       setShowAddFileModal(false);
       setNewCustName('');
       setNewCustPhone('');
+      setNewCustEmail('');
+      setNewCustCoApplicantName('');
+      setNewCustCoApplicantPhone('');
       setNewCustAddress('');
       setNewCustConsumerNo('');
       setNewCustLoanRef('');
@@ -132,24 +143,72 @@ export default function StaffFiles() {
     }
   };
 
+  const handleDownloadGovtPack = (customerFile) => {
+    if (!customerFile) return;
+    const docs = customerFile.documents || {};
+    const attached = Object.entries(docs).filter(([_, d]) => d?.uploaded && d?.url);
+
+    if (attached.length === 0) {
+      addToast('No PDF documents have been uploaded for this customer yet.', 'error');
+      return;
+    }
+
+    attached.forEach(([key, doc]) => {
+      const link = document.createElement('a');
+      link.href = doc.url;
+      link.target = '_blank';
+      link.download = `${customerFile.id}_${key}_${doc.filename || 'document.pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+    addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
+  };
+
   const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
     if (!file) return;
 
+    if (!fileOrName) return;
+
+    // Strict PDF & Image (JPG, PNG, WEBP) & 2 MB Validation
+    if (typeof fileOrName === 'object') {
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const fileExt = fileOrName.name?.split('.').pop()?.toLowerCase() || '';
+      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(fileOrName.type?.toLowerCase());
+
+      if (!isAllowed) {
+        addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
+        return;
+      }
+      if (fileOrName.size > 2 * 1024 * 1024) {
+        const sizeMB = (fileOrName.size / 1024 / 1024).toFixed(2);
+        addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
+        return;
+      }
+    }
+
     let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
     let fileUrl = null;
+    let fileSize = typeof fileOrName === 'object' ? fileOrName.size : null;
 
-    showLoader('Securing document in vault...');
+    showLoader('Securing document in Cloudflare R2 Vault...');
     try {
       if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
         try {
-          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
+          const oldDoc = file?.documents?.[docKey];
+          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey, { oldDoc });
           if (uploadRes?.success) {
-            filename = uploadRes.filename;
-            fileUrl = uploadRes.publicUrl;
+            filename = uploadRes.filename || fileOrName.name;
+            fileUrl = uploadRes.publicUrl || uploadRes.url;
+            fileSize = uploadRes.fileSize || fileOrName.size;
           }
         } catch (err) {
-          console.warn('[StaffFiles] Direct upload fallback:', err);
+          console.warn('[StaffFiles] Cloudflare R2 upload error:', err);
+          addToast(err.message || 'Upload failed', 'error');
+          return;
         }
       }
 
@@ -157,8 +216,9 @@ export default function StaffFiles() {
         ...file.documents,
         [docKey]: {
           uploaded: true,
-          filename: filename || `${docKey}_uploaded.pdf`,
+          filename: filename || `${docKey}_document.pdf`,
           url: fileUrl,
+          sizeBytes: fileSize,
           date: new Date().toISOString().split('T')[0]
         }
       };
@@ -169,7 +229,34 @@ export default function StaffFiles() {
         setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
       }
 
-      addToast(`Document uploaded: ${filename}`, 'success');
+      addToast(`Document attached: ${filename}`, 'success');
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const handleDeleteDoc = async (fileId, docKey) => {
+    const file = customerFiles.find(f => f.id === fileId);
+    if (!file) return;
+    const doc = file.documents?.[docKey];
+
+    showLoader('Removing document from Cloudflare R2 Vault...');
+    try {
+      await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', doc);
+
+      const updatedDocs = { ...(file.documents || {}) };
+      delete updatedDocs[docKey];
+
+      updateCustomerFile(fileId, { documents: updatedDocs });
+
+      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+      }
+
+      addToast('Document removed from Cloudflare R2', 'info');
+    } catch (e) {
+      console.error('[StaffFiles] handleDeleteDoc failed:', e);
+      addToast(e.message || 'Failed to remove document', 'error');
     } finally {
       hideLoader();
     }
@@ -431,37 +518,43 @@ export default function StaffFiles() {
                   )}
                 </div>
 
-                {/* Document Status - Explicitly marked Optional */}
-                <div className="mt-4 pt-3 border-t border-surface-container-high">
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-secondary font-medium">Documents (Optional)</span>
-                    <span className="text-emerald-700 font-bold text-[11px]">{docsCount} / 5 Attached</span>
-                  </div>
-                  <div className="grid grid-cols-5 gap-1 text-center">
-                    {[
-                      { key: 'aadhaar', label: 'Aadhaar' },
-                      { key: 'lightBill', label: 'Bill' },
-                      { key: 'meterPhoto', label: 'Meter' },
-                      { key: 'sitePhoto', label: 'Site' },
-                      { key: 'bankPassbook', label: 'Bank' }
-                    ].map((doc) => {
-                      const isUp = file.documents?.[doc.key]?.uploaded;
-                      return (
-                        <div
-                          key={doc.key}
-                          title={`${doc.label}: ${isUp ? 'Uploaded' : 'Optional / Not uploaded'}`}
-                          className={`py-1 rounded text-[10px] font-semibold border ${
-                            isUp
-                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                              : 'bg-surface-container-low border-surface-container-high text-secondary/60'
-                          }`}
-                        >
-                          {doc.label}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* Document Status - Dynamic by Category */}
+                {(() => {
+                  const docCompletion = getDocumentCompletion(file);
+                  const docList = getDocumentListForFile(file);
+                  const schemaKey = getDocumentSchemaKey(file);
+                  const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
+
+                  return (
+                    <div className="mt-4 pt-3 border-t border-surface-container-high">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="text-secondary font-medium flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px] text-primary">folder_open</span>
+                          <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                        </span>
+                        <span className="text-emerald-700 font-bold text-[11px]">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                      </div>
+                      <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
+                        {docList.map((doc) => {
+                          const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
+                          return (
+                            <div
+                              key={doc.key}
+                              title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
+                              className={`py-1 px-1 rounded text-[9px] font-semibold border truncate ${
+                                isUp
+                                  ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                                  : 'bg-surface-container-low border-surface-container-high text-secondary/60'
+                              }`}
+                            >
+                              <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Action Buttons */}
@@ -625,8 +718,33 @@ export default function StaffFiles() {
                 </div>
               </div>
 
-              {/* Source Type & Finance Type (Cash vs Loan) */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
+              {/* Source Type & Finance Type (Cash vs Bank Loan vs Finance Loan) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Customer Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    value={newCustEmail}
+                    onChange={(e) => setNewCustEmail(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Payment / Case Type</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={(e) => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium"
+                  >
+                    <option value="CASH">Residential (100% Cash / Self Paid)</option>
+                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
+                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-xs font-semibold text-secondary mb-1">Source Type</label>
                   <select
@@ -636,17 +754,6 @@ export default function StaffFiles() {
                   >
                     <option value="DIRECT_STAFF">Direct Sales Lead</option>
                     <option value="DEALER">Dealer Network Partner</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Payment / Case Type</label>
-                  <select
-                    value={newCustFinanceType}
-                    onChange={(e) => setNewCustFinanceType(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
-                  >
-                    <option value="CASH">100% Cash / Self Paid</option>
-                    <option value="LOAN">Solar Bank Loan / EMI</option>
                   </select>
                 </div>
               </div>
@@ -667,55 +774,87 @@ export default function StaffFiles() {
                 </div>
               )}
 
-              {newCustFinanceType === 'LOAN' && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2.5">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-amber-900">Financing Bank / NBFC</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowBankModal(true)}
-                        className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[13px]">manage_search</span>
-                        <span>Browse 40+ Official Banks</span>
-                      </button>
+              {(newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN') && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-amber-700">account_balance</span>
+                      <span>{newCustFinanceType === 'FINANCE_LOAN' ? 'NBFC Loan Details' : 'Bank Loan Details'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBankModal(true)}
+                      className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                      <span>Browse 40+ Official Banks</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Financing Bank / NBFC</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={newCustLoanBank}
+                          onChange={(e) => setNewCustLoanBank(e.target.value)}
+                          className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          {GROUPED_SOLAR_BANKS.map((group) => (
+                            <optgroup key={group.category} label={group.label}>
+                              {group.banks.map((b) => (
+                                <option key={b.id} value={b.name}>
+                                  {b.name} ({b.interestRate.split(' ')[0]})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setShowBankModal(true)}
+                          className="px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
+                          title="Browse All 40+ Banks"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">search</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <select
-                        value={newCustLoanBank}
-                        onChange={(e) => setNewCustLoanBank(e.target.value)}
-                        className="flex-1 bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                      >
-                        {GROUPED_SOLAR_BANKS.map((group) => (
-                          <optgroup key={group.category} label={group.label}>
-                            {group.banks.map((b) => (
-                              <option key={b.id} value={b.name}>
-                                {b.name} ({b.interestRate.split(' ')[0]})
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setShowBankModal(true)}
-                        className="px-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
-                        title="Browse All 40+ Banks"
-                      >
-                        <span className="material-symbols-outlined text-[17px]">search</span>
-                      </button>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Loan Ref / App # (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustLoanRef}
+                        onChange={(e) => setNewCustLoanRef(e.target.value)}
+                        placeholder="e.g. SBI-2026-9812"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-amber-900 mb-1">Loan Ref / App # (Opt)</label>
-                    <input
-                      type="text"
-                      value={newCustLoanRef}
-                      onChange={(e) => setNewCustLoanRef(e.target.value)}
-                      placeholder="e.g. SBI-2026-9812"
-                      className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
-                    />
+
+                  {/* Co-Applicant Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Name (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustCoApplicantName}
+                        onChange={(e) => setNewCustCoApplicantName(e.target.value)}
+                        placeholder="e.g. Sunitaben B. Patel"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Mobile (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newCustCoApplicantPhone}
+                        onChange={(e) => setNewCustCoApplicantPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -740,124 +879,187 @@ export default function StaffFiles() {
         </div>
       )}
 
-      {/* OPTIONAL DOCUMENT VAULT MODAL */}
-      {selectedFileForDocs && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between border-b border-surface-container-high pb-3">
-              <div>
-                <span className="text-xs font-mono font-bold text-primary">{selectedFileForDocs.id}</span>
-                <h3 className="text-lg font-bold text-on-surface">
-                  {selectedFileForDocs.customerName} - Document Vault
-                </h3>
-                <p className="text-xs text-secondary">
-                  Note: Uploading documents is <strong>completely optional</strong>. You can proceed without any documents.
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedFileForDocs(null)}
-                className="text-secondary hover:text-on-surface cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
+      {/* DYNAMIC DOCUMENT VAULT MODAL (Residential, Bank Loan, Finance Loan) */}
+      {selectedFileForDocs && (() => {
+        const docList = getDocumentListForFile(selectedFileForDocs);
+        const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
+        const schema = DOCUMENT_SCHEMAS[schemaKey];
+        const docCompletion = getDocumentCompletion(selectedFileForDocs);
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { key: 'aadhaar', label: 'Aadhaar Card' },
-                { key: 'lightBill', label: 'Electricity / Light Bill' },
-                { key: 'meterPhoto', label: 'Electricity Meter Photo' },
-                { key: 'sitePhoto', label: 'Rooftop / Site Photo' },
-                { key: 'bankPassbook', label: 'Bank Passbook / Cheque' }
-              ].map((doc) => {
-                const isUp = selectedFileForDocs.documents?.[doc.key]?.uploaded;
-                const dData = selectedFileForDocs.documents?.[doc.key];
-
-                return (
-                  <div
-                    key={doc.key}
-                    className={`p-3 rounded-xl border flex flex-col justify-between ${
-                      isUp ? 'bg-emerald-50/50 border-emerald-300' : 'bg-surface-container-low border-surface-container-high'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-on-surface">{doc.label}</span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
-                          isUp ? 'bg-emerald-200 text-emerald-800' : 'bg-surface-container text-secondary'
-                        }`}>
-                          {isUp ? 'Uploaded' : 'Optional'}
-                        </span>
-                      </div>
-                      {isUp && (
-                        <p className="text-[11px] font-mono text-primary mt-1 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">{dData?.filename}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between">
-                      {isUp ? (
-                        <button
-                          onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
-                          className="text-xs text-primary font-semibold hover:underline"
-                        >
-                          View Preview
-                        </button>
-                      ) : (
-                        <label className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">upload</span>
-                          <span>Upload (Optional)</span>
-                          <input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png,.webp"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const f = e.target.files?.[0];
-                              if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
-                            }}
-                          />
-                        </label>
-                      )}
-                    </div>
+        return (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-3xl p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 my-6 sm:my-8 max-h-[90vh] overflow-y-auto">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-surface-container-high pb-3 sm:pb-4 gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-primary">{selectedFileForDocs.id}</span>
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold bg-primary-container/20 text-primary border border-primary/30">
+                      {schema?.label || 'Document Vault'}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-semibold bg-surface-container text-on-surface">
+                      {docCompletion.uploaded} of {docCompletion.total} Attached
+                    </span>
                   </div>
-                );
-              })}
-            </div>
 
-            <div className="flex justify-end pt-3 border-t border-surface-container-high">
-              <button
-                onClick={() => setSelectedFileForDocs(null)}
-                className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg cursor-pointer"
-              >
-                Close Vault
-              </button>
+                  <h3 className="text-lg sm:text-xl font-bold text-on-surface mt-1 truncate">
+                    {selectedFileForDocs.customerName} — Document Vault
+                  </h3>
+
+                  {/* Customer Metadata Bar */}
+                  <div className="flex items-center gap-x-3 gap-y-1 text-xs text-secondary mt-1 flex-wrap">
+                    <span>Mobile: <strong className="text-on-surface font-semibold">{selectedFileForDocs.phone}</strong></span>
+                    {selectedFileForDocs.email && (
+                      <span>Email: <strong className="text-on-surface font-semibold">{selectedFileForDocs.email}</strong></span>
+                    )}
+                    {selectedFileForDocs.consumerNo && (
+                      <span>Consumer No: <strong className="text-on-surface">{selectedFileForDocs.consumerNo}</strong></span>
+                    )}
+                    <span>System: <strong className="text-primary font-bold">{selectedFileForDocs.solarSystemKw} kW</strong></span>
+                    {selectedFileForDocs.coApplicantName && (
+                      <span>Co-Applicant: <strong className="text-on-surface">{selectedFileForDocs.coApplicantName}</strong></span>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedFileForDocs(null)}
+                  className="self-end sm:self-start text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
+                {docList.map((doc) => {
+                  const dData = selectedFileForDocs.documents?.[doc.key] || (doc.alias ? selectedFileForDocs.documents?.[doc.alias] : null);
+                  const isUp = Boolean(dData?.uploaded);
+                  const sizeLabel = dData?.sizeBytes ? ` (${(dData.sizeBytes / 1024).toFixed(0)} KB)` : '';
+                  const isPdf = dData?.filename?.toLowerCase().endsWith('.pdf');
+
+                  return (
+                    <div
+                      key={doc.key}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+                        isUp ? 'bg-emerald-50/50 border-emerald-300' : 'bg-surface-container-low border-surface-container-high'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                              {doc.icon || 'description'}
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-on-surface truncate block">{doc.label}</span>
+                              <p className="text-[10px] text-secondary leading-tight">{doc.category} &bull; {doc.description}</p>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                            isUp
+                              ? 'bg-emerald-200 text-emerald-800'
+                              : doc.mandatory
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-surface-container text-secondary border border-surface-container-high'
+                          }`}>
+                            {isUp ? `${isPdf ? 'PDF' : 'Photo'} Attached${sizeLabel}` : (doc.mandatory ? 'Pending' : 'Optional')}
+                          </span>
+                        </div>
+
+                        {isUp && (
+                          <p className="text-[11px] font-mono text-primary mt-2 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">
+                            {dData?.filename}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between gap-2">
+                        {isUp ? (
+                          <div className="flex items-center gap-3 w-full justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
+                              className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
+                              <span>View Preview</span>
+                            </button>
+
+                            <div className="flex items-center gap-3">
+                              <label className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[13px]">sync</span>
+                                <span>Replace</span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
+                                  }}
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key)}
+                                className="text-[11px] text-error hover:underline font-medium cursor-pointer flex items-center gap-0.5"
+                                title="Delete document from Cloudflare R2 Vault"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">delete</span>
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1 w-full justify-center py-0.5">
+                            <span className="material-symbols-outlined text-[15px]">upload_file</span>
+                            <span>Upload Document {doc.mandatory ? '' : '(Optional)'} (Max 2 MB)</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-surface-container-high gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadGovtPack(selectedFileForDocs)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  <span>Download Government PDF Pack</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedFileForDocs(null)}
+                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                >
+                  Close Vault
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
-      {/* DOCUMENT PREVIEW MODAL */}
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between border-b border-surface-container-high pb-2">
-              <h4 className="font-bold text-sm text-on-surface">{previewDoc.title}</h4>
-              <button onClick={() => setPreviewDoc(null)} className="text-secondary hover:text-on-surface">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div className="p-6 bg-surface-container-low rounded-xl text-center space-y-2">
-              <span className="material-symbols-outlined text-4xl text-emerald-600">verified</span>
-              <p className="text-xs font-bold text-on-surface">{previewDoc.filename}</p>
-              <p className="text-[11px] text-secondary">Verified Document on Sunvine Secure Vault</p>
-            </div>
-            <button
-              onClick={() => setPreviewDoc(null)}
-              className="w-full py-2 bg-primary text-on-primary rounded-lg text-xs font-bold cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
 
       {/* TIMELINE & ATTRIBUTION MODAL */}
