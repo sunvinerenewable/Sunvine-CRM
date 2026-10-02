@@ -14,33 +14,59 @@
     <link rel="icon" type="image/png" href="/pwa-192x192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0F1B2E" />
-    <meta name="description" content="Sunvine Renewable Energy - Solar EPC Dealer & Admin Quotation Portal" />
+    <title>Sunvine Solar EPC Portal | Enterprise Dealer &amp; Admin Quotation Platform</title>
+    <meta name="description" content="Sunvine Renewable Energy official platform for solar EPC channel partners, quotation generation, and field operations." />
+    <meta name="keywords" content="Sunvine Renewable Energy, solar epc dealer portal, solar quotation, solar boq, pm surya ghar subsidy, gujarat solar installers" />
+    <link rel="canonical" href="https://sunvine-dealer.vprotech.online/" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sunvine EPC" />
 
-    <!-- Local Offline Priority Webfont -->
-    <link rel="preload" href="/fonts/material-symbols-outlined.woff2" as="font" type="font/woff2" crossorigin>
+    <!-- Open Graph / Social Sharing Meta Tags -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://sunvine-dealer.vprotech.online/" />
+    <meta property="og:title" content="Sunvine Solar EPC Portal | Enterprise Dealer &amp; Operations Console" />
+    <meta property="og:description" content="Sunvine Renewable Energy official platform for solar EPC channel partners, quotation generation, and field operations." />
+    <meta property="og:image" content="/pwa-512x512.png" />
 
-    <!-- High-Priority Font Preconnections (CDN Fallbacks) -->
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Sunvine Solar EPC Portal" />
+    <meta name="twitter:description" content="High-precision solar telemetry &amp; dealer quotation engine." />
+    <meta name="twitter:image" content="/pwa-512x512.png" />
+
+    <!-- Authoritative Typography Preconnections & Stylesheets -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
 
-    <title>Sunvine Solar EPC Portal</title>
-    
     <style>
-      /* Local Offline Font Definition */
+      /* Local Typography Fallback Definitions */
       @font-face {
-        font-family: 'Material Symbols Outlined';
+        font-family: 'Inter';
         font-style: normal;
-        font-weight: 100 700;
-        src: url('/fonts/material-symbols-outlined.woff2') format('woff2'),
-             url('https://fonts.gstatic.com/s/materialsymbolsoutlined/v373/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2') format('woff2');
-        font-display: block;
+        font-weight: 100 900;
+        font-display: swap;
+        src: url('/fonts/inter-latin.woff2') format('woff2');
+      }
+
+      @font-face {
+        font-family: 'Space Grotesk';
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: local('Space Grotesk'), url('/fonts/space-grotesk-latin.woff2') format('woff2');
+      }
+
+      @font-face {
+        font-family: 'Space_Grotesk';
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+        src: local('Space Grotesk'), url('/fonts/space-grotesk-latin.woff2') format('woff2');
       }
 
       /* Critical baseline styling to guarantee zero raw HTML or FOUC */
@@ -57,24 +83,26 @@
         min-height: 100vh;
         background-color: #F7F9FF;
       }
+
+      /* Mask ligature text completely while font is rendering */
       .material-symbols-outlined {
-        font-family: 'Material Symbols Outlined';
+        font-family: 'Material Symbols Outlined' !important;
         font-weight: normal;
         font-style: normal;
         line-height: 1;
-        display: inline-block;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         white-space: nowrap;
         word-wrap: normal;
         direction: ltr;
         -webkit-font-feature-settings: 'liga';
         font-feature-settings: 'liga';
         text-rendering: optimizeLegibility;
-      }
-
-      /* Prevent unformatted ligature text ("calendar_month", "bolt", "solar_power") from flashing before icon font loads */
-      html:not(.fonts-loaded) .material-symbols-outlined {
-        color: transparent !important;
-        background: transparent !important;
+        overflow: hidden;
+        width: 1em;
+        height: 1em;
+        flex-shrink: 0;
         user-select: none;
       }
 
@@ -99,76 +127,41 @@
         animation: pulseShell 1.8s ease-in-out infinite;
       }
       .app-boot-logo {
-        width: 64px;
-        height: 64px;
+        width: 220px;
+        height: auto;
+        max-width: 85vw;
         object-fit: contain;
       }
-      .app-boot-title {
-        font-size: 18px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        color: #FFFFFF;
-        margin: 0;
-      }
       .app-boot-subtitle {
-        font-size: 12px;
+        font-size: 13px;
         color: #A1F96F;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
         font-weight: 600;
         margin: 0;
       }
-      .app-boot-spinner {
-        width: 28px;
-        height: 28px;
-        margin-top: 24px;
-        border: 3px solid rgba(108, 191, 61, 0.2);
-        border-top-color: #6CBF3D;
-        border-radius: 50%;
-        animation: spinShell 0.8s linear infinite;
-      }
-      @keyframes spinShell {
-        to { transform: rotate(360deg); }
-      }
       @keyframes pulseShell {
         0%, 100% { opacity: 1; }
-        50% { opacity: 0.8; }
+        50% { opacity: 0.85; }
       }
     </style>
-
-    <!-- Font Loading & Ligature Protection Script -->
-    <script>
-      (function() {
-        if ('fonts' in document) {
-          Promise.all([
-            document.fonts.load('24px "Material Symbols Outlined"'),
-            document.fonts.load('400 16px "Inter"')
-          ]).then(function() {
-            document.documentElement.classList.add('fonts-loaded');
-          }).catch(function() {
-            document.documentElement.classList.add('fonts-loaded');
-          });
-          // Guaranteed fallback timeout so UI is never stuck hidden
-          setTimeout(function() {
-            document.documentElement.classList.add('fonts-loaded');
-          }, 500);
-        } else {
-          document.documentElement.classList.add('fonts-loaded');
-        }
-      })();
-    </script>
   </head>
   <body class="bg-[#F7F9FF] text-[#181C20] font-sans antialiased selection:bg-[#6CBF3D] selection:text-white">
     <div id="root">
       <!-- Branded App Shell visible instantly before JavaScript hydration -->
       <div class="app-boot-shell">
         <div class="app-boot-brand">
-          <img src="/sunvine_logo_white.png" alt="Sunvine Renewable Energy" class="app-boot-logo" onerror="this.style.display='none'" />
+          <img
+            src="/sunvine_logo_white.png"
+            alt="Sunvine Renewable Energy"
+            class="app-boot-logo"
+            width="220"
+            height="52"
+            onerror="this.src='/sunvine-logo.png'"
+          />
           <div style="text-align: center;">
-            <p class="app-boot-title">Sunvine Renewable Energy</p>
             <p class="app-boot-subtitle">Solar EPC Operations Platform</p>
           </div>
-          <div class="app-boot-spinner" role="status" aria-label="Loading application"></div>
         </div>
       </div>
     </div>

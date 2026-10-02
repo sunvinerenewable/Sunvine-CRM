@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { DEFAULT_PIPELINE_STAGES, isDocMandatoryForCategory } from '../../data/defaultRequiredDocuments';
 
 const DEFAULT_BANKS = [
   { id: 'bnk-1', name: 'State Bank of India', scheme: 'PM Surya Ghar Collateral-Free Loan', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true },
@@ -10,26 +11,24 @@ const DEFAULT_BANKS = [
   { id: 'bnk-6', name: 'Union Bank of India', scheme: 'Union Solar Green Loan', interestRate: 7.15, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true }
 ];
 
-const DEFAULT_PIPELINE_STAGES = [
-  { id: 'LEAD_SOURCED', label: '1. Lead Sourced & Feasibility Check', description: 'Customer inquiry recorded, initial solar feasibility verified', mandatory: true },
-  { id: 'SITE_SURVEY', label: '2. Site Feasibility & Roof CAD Survey', description: 'Rooftop measurements, tilt angle, and shadow profiling', mandatory: true },
-  { id: 'QUOTATION_ACCEPTED', label: '3. Quotation Accepted & Advance Token', description: 'Customer confirms proposal and pays booking advance', mandatory: true },
-  { id: 'DISCOM_APPLICATION', label: '4. DISCOM Net-Meter Application Filed', description: 'Formal submission to PGVCL/UGVCL/DGVCL/MGVCL web portal', mandatory: true },
-  { id: 'FEASIBILITY_APPROVAL', label: '5. Technical Feasibility & Sanction Approved', description: 'DISCOM site inspection clearance and technical sanction letter', mandatory: true },
-  { id: 'PLANT_INSTALLATION', label: '6. Solar Hardware Installation (Modules & Inverter)', description: 'Module mounting structure, solar PV panels, and inverter commissioning', mandatory: true },
-  { id: 'CEI_INSPECTION', label: '7. Safety CEI Drawing Inspection', description: 'Chief Electrical Inspectorate safety approval for systems > 10 kW', mandatory: false },
-  { id: 'NET_METER_SYNC', label: '8. Bidirectional Net-Meter Grid Energization', description: 'Installation of bi-directional meter and synchronisation with power grid', mandatory: true },
-  { id: 'SUBSIDY_CLAIM', label: '9. PM Surya Ghar DBT Claim Verification', description: 'Uploading commissioning certificate on National Portal for central subsidy', mandatory: true },
-  { id: 'HANDOVER_COMPLETED', label: '10. Commissioned & Handed Over with Warranty Pack', description: 'Plant handover to customer with manufacturer warranty documentation', mandatory: true }
-];
-
 export default function AdminSettings() {
   const {
     governanceSettings,
     updateGovernanceSettings,
     systemSettings,
     updateSystemSettings,
-    setActiveTab: setActiveTabGlobal
+    setActiveTab: setActiveTabGlobal,
+    requiredDocuments,
+    addRequiredDocument,
+    updateRequiredDocument,
+    deleteRequiredDocument,
+    resetRequiredDocuments,
+    applicationCategories,
+    applicationStages,
+    addApplicationStage,
+    updateApplicationStage,
+    deleteApplicationStage,
+    resetApplicationStages
   } = useApp();
   const [activeTab, setActiveTab] = useState('governance');
   const [saved, setSaved] = useState(false);
@@ -65,9 +64,11 @@ export default function AdminSettings() {
     collateralFree: true
   });
 
-  // Pipeline Stages Master State (SR-64)
+  // Pipeline Stages Master State (SR-64 & Custom Stages)
   const [stagesList, setStagesList] = useState(() => {
-    return systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES;
+    return (applicationStages && applicationStages.length > 0)
+      ? applicationStages
+      : (systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES);
   });
   const [showStageModal, setShowStageModal] = useState(false);
   const [editingStage, setEditingStage] = useState(null);
@@ -76,6 +77,29 @@ export default function AdminSettings() {
     label: '',
     description: '',
     mandatory: true
+  });
+
+  // Keep stagesList in sync when applicationStages updates
+  useEffect(() => {
+    if (applicationStages && applicationStages.length > 0) {
+      setStagesList(applicationStages);
+    }
+  }, [applicationStages]);
+
+  // Dynamic Document Upload Management State
+  const [docCategoryFilter, setDocCategoryFilter] = useState('all');
+  const [docViewMode, setDocViewMode] = useState('cards'); // 'cards' | 'matrix'
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [docForm, setDocForm] = useState({
+    label: '',
+    description: '',
+    icon: 'description',
+    categories: ['residential'],
+    mandatory: true,
+    categoryMandatory: { residential: true, commercial: false, common_meter: false },
+    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
+    captureMode: 'both'
   });
 
   // Policy editor state
@@ -203,24 +227,45 @@ export default function AdminSettings() {
     setEditingBank(null);
   };
 
-  // Pipeline Stages Master Handlers (SR-64)
+  // Pipeline Stages Master Handlers (Dynamic CRUD for Drop-Down Menus)
   const handleSavePipelineStages = () => {
-    if (!updateSystemSettings) return;
-    updateSystemSettings('fileLifecycle', {
-      ...systemSettings?.fileLifecycle,
-      stagesDetailed: stagesList,
-      stages: stagesList.map(s => s.label)
-    });
+    if (updateSystemSettings) {
+      updateSystemSettings('fileLifecycle', {
+        ...systemSettings?.fileLifecycle,
+        stagesDetailed: stagesList,
+        stages: stagesList.map(s => s.label)
+      });
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
 
   const handleToggleStageMandatory = (stageId) => {
-    setStagesList(prev => prev.map(s => s.id === stageId ? { ...s, mandatory: !s.mandatory } : s));
+    const target = stagesList.find(s => s.id === stageId);
+    if (!target) return;
+    const nextVal = !target.mandatory;
+    if (updateApplicationStage) {
+      updateApplicationStage(stageId, { mandatory: nextVal });
+    }
+    setStagesList(prev => prev.map(s => s.id === stageId ? { ...s, mandatory: nextVal } : s));
   };
 
   const handleDeleteStage = (stageId) => {
+    if (deleteApplicationStage) {
+      deleteApplicationStage(stageId);
+    }
     setStagesList(prev => prev.filter(s => s.id !== stageId));
+  };
+
+  const handleResetStages = () => {
+    if (window.confirm('Reset application stages to standard 10 Gujarat DISCOM milestones?')) {
+      if (resetApplicationStages) {
+        resetApplicationStages();
+      }
+      setStagesList(DEFAULT_PIPELINE_STAGES);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
   };
 
   const handleOpenAddStage = () => {
@@ -247,17 +292,148 @@ export default function AdminSettings() {
 
   const handleSaveStageForm = (e) => {
     e.preventDefault();
+    if (!stageForm.label?.trim()) return;
+
     if (editingStage) {
+      if (updateApplicationStage) {
+        updateApplicationStage(editingStage.id, {
+          label: stageForm.label.trim(),
+          description: stageForm.description?.trim() || '',
+          mandatory: Boolean(stageForm.mandatory)
+        });
+      }
       setStagesList(prev => prev.map(s => s.id === editingStage.id ? { ...s, ...stageForm } : s));
     } else {
       const newStage = {
-        ...stageForm,
-        id: stageForm.id || `STAGE_${Date.now().toString().slice(-4)}`
+        id: stageForm.id?.trim() || `STAGE_${Date.now().toString().slice(-4)}`,
+        label: stageForm.label.trim(),
+        description: stageForm.description?.trim() || '',
+        mandatory: Boolean(stageForm.mandatory)
       };
+      if (addApplicationStage) {
+        addApplicationStage(newStage);
+      }
       setStagesList(prev => [...prev, newStage]);
     }
     setShowStageModal(false);
     setEditingStage(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  // Dynamic Required Documents Master Handlers with Category-Specific Mandatory Rules
+  const handleOpenAddDoc = () => {
+    setEditingDoc(null);
+    setDocForm({
+      label: '',
+      description: '',
+      icon: 'description',
+      categories: ['residential'],
+      mandatory: true,
+      categoryMandatory: {
+        residential: true,
+        commercial: false,
+        common_meter: false
+      },
+      allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: 'both'
+    });
+    setShowDocModal(true);
+  };
+
+  const handleOpenEditDoc = (doc) => {
+    setEditingDoc(doc);
+    const catMandatory = { ...(doc.categoryMandatory || {}) };
+    (doc.categories || ['residential']).forEach(c => {
+      if (catMandatory[c] === undefined) {
+        catMandatory[c] = Boolean(doc.mandatory);
+      }
+    });
+
+    setDocForm({
+      label: doc.label || '',
+      description: doc.description || '',
+      icon: doc.icon || 'description',
+      categories: doc.categories || ['residential'],
+      mandatory: Boolean(doc.mandatory),
+      categoryMandatory: catMandatory,
+      allowedExtensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png'],
+      captureMode: doc.captureMode || 'both'
+    });
+    setShowDocModal(true);
+  };
+
+  const handleSaveDocForm = (e) => {
+    e.preventDefault();
+    if (!docForm.label.trim()) return;
+
+    const docPayload = {
+      label: docForm.label.trim(),
+      description: docForm.description.trim(),
+      icon: docForm.icon || 'description',
+      categories: docForm.categories,
+      mandatory: docForm.mandatory,
+      categoryMandatory: docForm.categoryMandatory || {},
+      allowedExtensions: docForm.allowedExtensions,
+      captureMode: docForm.captureMode
+    };
+
+    if (editingDoc) {
+      updateRequiredDocument(editingDoc.id, docPayload);
+    } else {
+      addRequiredDocument({
+        ...docPayload,
+        id: `doc-${Date.now()}`,
+        key: `doc_${docForm.label.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`
+      });
+    }
+
+    setShowDocModal(false);
+    setEditingDoc(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleToggleDocCategory = (catId) => {
+    setDocForm(prev => {
+      const exists = prev.categories.includes(catId);
+      const next = exists ? prev.categories.filter(c => c !== catId) : [...prev.categories, catId];
+      const validCategories = next.length > 0 ? next : ['residential'];
+      const nextCatMandatory = { ...(prev.categoryMandatory || {}) };
+      if (!exists && nextCatMandatory[catId] === undefined) {
+        nextCatMandatory[catId] = prev.mandatory;
+      }
+      return {
+        ...prev,
+        categories: validCategories,
+        categoryMandatory: nextCatMandatory
+      };
+    });
+  };
+
+  const handleToggleDocCategoryInclusion = (docId, categoryId) => {
+    const doc = (requiredDocuments || []).find(d => d.id === docId);
+    if (!doc) return;
+    const cats = doc.categories || [];
+    const exists = cats.includes(categoryId);
+    const updatedCats = exists ? cats.filter(c => c !== categoryId) : [...cats, categoryId];
+    if (updatedCats.length === 0) return; // keep at least 1 category
+    updateRequiredDocument(docId, {
+      categories: updatedCats
+    });
+  };
+
+  const handleToggleCategoryMandatory = (docId, categoryId) => {
+    const doc = (requiredDocuments || []).find(d => d.id === docId);
+    if (!doc) return;
+    const currentIsMandatory = isDocMandatoryForCategory(doc, categoryId);
+    const updatedCategoryMandatory = {
+      ...(doc.categoryMandatory || {}),
+      [categoryId]: !currentIsMandatory
+    };
+    updateRequiredDocument(docId, {
+      categoryMandatory: updatedCategoryMandatory
+    });
   };
 
   return (
@@ -407,6 +583,18 @@ export default function AdminSettings() {
             <span className="material-symbols-outlined text-[17px]">description</span>
             <span>6. Document Policies</span>
             {activeTab === 'policies' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('documents')}
+            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'documents'
+                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
+                : 'text-secondary hover:text-on-surface'
+              }`}
+          >
+            <span className="material-symbols-outlined text-[17px]">folder_managed</span>
+            <span>7. Document Upload Master</span>
+            {activeTab === 'documents' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
           </button>
         </div>
 
@@ -607,6 +795,15 @@ export default function AdminSettings() {
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  onClick={handleResetStages}
+                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest hover:bg-surface-container text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Reset to 10 standard Gujarat DISCOM stages"
+                >
+                  <span className="material-symbols-outlined text-base">restart_alt</span>
+                  <span>Reset Defaults</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleOpenAddStage}
                   className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
@@ -625,62 +822,76 @@ export default function AdminSettings() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {stagesList.map((stg, i) => (
-                <div key={stg.id || i} className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col justify-between gap-3 shadow-xs">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <span className="w-6 h-6 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
-                        {i + 1}
+              {stagesList.map((stg, i) => {
+                const isCustom = !DEFAULT_PIPELINE_STAGES.some(d => d.id === stg.id);
+                return (
+                  <div key={stg.id || i} className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col justify-between gap-3 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <span className="w-6 h-6 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-on-surface text-xs">{stg.label}</span>
+                            {isCustom && (
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/20">
+                                CUSTOM
+                              </span>
+                            )}
+                          </div>
+                          {stg.description && (
+                            <div className="text-[11px] text-secondary mt-0.5 leading-relaxed">{stg.description}</div>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-mono text-secondary px-2 py-0.5 rounded bg-surface-container-lowest shrink-0">
+                        {stg.id}
                       </span>
-                      <div className="min-w-0">
-                        <div className="font-bold text-on-surface text-xs">{stg.label}</div>
-                        {stg.description && (
-                          <div className="text-[11px] text-secondary mt-0.5 leading-relaxed">{stg.description}</div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-surface-container/60 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStageMandatory(stg.id)}
+                        className={`px-2 py-0.5 rounded-full font-semibold transition-colors cursor-pointer text-[10px] flex items-center gap-1 ${
+                          stg.mandatory
+                            ? 'bg-primary/15 text-primary border border-primary/20'
+                            : 'bg-surface-container text-secondary'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                        {stg.mandatory ? 'Mandatory Gate' : 'Optional Stage'}
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditStage(stg)}
+                          className="p-1 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                          title="Edit Stage Details"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        {(isCustom || stagesList.length > 3) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Delete stage "${stg.label}"?`)) {
+                                handleDeleteStage(stg.id);
+                              }
+                            }}
+                            className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
+                            title="Delete Stage"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
                         )}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-secondary px-2 py-0.5 rounded bg-surface-container-lowest shrink-0">
-                      {stg.id}
-                    </span>
                   </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-surface-container/60 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStageMandatory(stg.id)}
-                      className={`px-2 py-0.5 rounded-full font-semibold transition-colors cursor-pointer text-[10px] flex items-center gap-1 ${
-                        stg.mandatory
-                          ? 'bg-primary/15 text-primary border border-primary/20'
-                          : 'bg-surface-container text-secondary'
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                      {stg.mandatory ? 'Mandatory Gate' : 'Optional Stage'}
-                    </button>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditStage(stg)}
-                        className="p-1 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                        title="Edit Stage Details"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">edit</span>
-                      </button>
-                      {i >= 10 && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteStage(stg.id)}
-                          className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
-                          title="Delete Custom Stage"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -892,7 +1103,580 @@ export default function AdminSettings() {
             </form>
           </div>
         )}
+
+        {/* Tab Content 7: Dynamic Document Upload Master */}
+        {activeTab === 'documents' && (
+          <div className="p-6 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-surface-container-high">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[22px]">folder_managed</span>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    Customer Application Document Upload Master
+                  </h3>
+                </div>
+                <p className="text-xs text-secondary mt-1">
+                  Dynamically manage required uploads for customer applications. Map documents to categories (Residential, Commercial, Common Meters) and define mandatory vs optional gates.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* View Switcher */}
+                <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-surface-container-high">
+                  <button
+                    type="button"
+                    onClick={() => setDocViewMode('cards')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                      docViewMode === 'cards'
+                        ? 'bg-surface-container-highest text-on-surface shadow-xs'
+                        : 'text-secondary hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">grid_view</span>
+                    <span>Cards</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDocViewMode('matrix')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                      docViewMode === 'matrix'
+                        ? 'bg-surface-container-highest text-on-surface shadow-xs'
+                        : 'text-secondary hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">table_chart</span>
+                    <span>Category Matrix</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={resetRequiredDocuments}
+                  className="px-3 py-2 rounded-xl border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Reset to default Gujarat DISCOM checklist"
+                >
+                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                  <span>Reset Defaults</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddDoc}
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-bold flex items-center gap-1.5 hover:bg-primary/90 transition-all shadow-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  <span>Add Document</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Category Filter Pills (Cards View) */}
+            {docViewMode === 'cards' && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {[
+                  { id: 'all', label: 'All Document Requirements', count: (requiredDocuments || []).length },
+                  { id: 'residential', label: 'Residential Rooftop', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('residential')).length },
+                  { id: 'commercial', label: 'Commercial & Industrial', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('commercial')).length },
+                  { id: 'common_meter', label: 'Common Meter / Society', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('common_meter')).length }
+                ].map((pill) => (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => setDocCategoryFilter(pill.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      docCategoryFilter === pill.id
+                        ? 'bg-primary text-on-primary shadow-xs'
+                        : 'bg-surface-container-low text-secondary hover:text-on-surface border border-surface-container-high'
+                    }`}
+                  >
+                    <span>{pill.label}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      docCategoryFilter === pill.id ? 'bg-black/20 text-white' : 'bg-surface-container text-secondary'
+                    }`}>
+                      {pill.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* VIEW MODE 1: Category Mapping Matrix Table */}
+            {docViewMode === 'matrix' ? (
+              <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-surface-container text-secondary font-semibold uppercase text-[10px] tracking-wider bg-surface-container-low/80">
+                      <th className="py-3 px-4">Document Title &amp; Scope</th>
+                      <th className="py-3 px-3 text-center">Residential (PM Surya Ghar)</th>
+                      <th className="py-3 px-3 text-center">Commercial &amp; Industrial</th>
+                      <th className="py-3 px-3 text-center">Common Meter / Society</th>
+                      <th className="py-3 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container/60">
+                    {(requiredDocuments || []).map((doc) => {
+                      const categories = doc.categories || [];
+                      const isRes = categories.includes('residential');
+                      const isComm = categories.includes('commercial');
+                      const isSoc = categories.includes('common_meter');
+                      const resMandatory = isDocMandatoryForCategory(doc, 'residential');
+                      const commMandatory = isDocMandatoryForCategory(doc, 'commercial');
+                      const socMandatory = isDocMandatoryForCategory(doc, 'common_meter');
+
+                      return (
+                        <tr key={doc.id} className="hover:bg-surface-container/40 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2.5">
+                              <span className="material-symbols-outlined text-primary text-[20px]">{doc.icon || 'description'}</span>
+                              <div>
+                                <div className="font-bold text-on-surface text-xs">{doc.label}</div>
+                                <div className="text-[10px] font-mono text-secondary">{doc.key}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Residential Cell */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="inline-flex flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'residential')}
+                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
+                                  isRes ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-surface-container text-secondary/50 line-through'
+                                }`}
+                              >
+                                {isRes ? 'Applicable' : 'Excluded'}
+                              </button>
+                              {isRes && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'residential')}
+                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
+                                    resMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
+                                  }`}
+                                  title="Toggle Mandatory vs Optional for Residential"
+                                >
+                                  {resMandatory ? 'Mandatory' : 'Optional'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Commercial Cell */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="inline-flex flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'commercial')}
+                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
+                                  isComm ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-surface-container text-secondary/50 line-through'
+                                }`}
+                              >
+                                {isComm ? 'Applicable' : 'Excluded'}
+                              </button>
+                              {isComm && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'commercial')}
+                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
+                                    commMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
+                                  }`}
+                                  title="Toggle Mandatory vs Optional for Commercial"
+                                >
+                                  {commMandatory ? 'Mandatory' : 'Optional'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Common Meter Cell */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="inline-flex flex-col items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'common_meter')}
+                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
+                                  isSoc ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-surface-container text-secondary/50 line-through'
+                                }`}
+                              >
+                                {isSoc ? 'Applicable' : 'Excluded'}
+                              </button>
+                              {isSoc && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'common_meter')}
+                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
+                                    socMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
+                                  }`}
+                                  title="Toggle Mandatory vs Optional for Common Meter"
+                                >
+                                  {socMandatory ? 'Mandatory' : 'Optional'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="py-3 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditDoc(doc)}
+                                className="p-1 rounded text-secondary hover:text-primary transition-colors cursor-pointer"
+                                title="Edit Requirement"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteRequiredDocument(doc.id)}
+                                className="p-1 rounded text-secondary hover:text-error transition-colors cursor-pointer"
+                                title="Remove Requirement"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              /* VIEW MODE 2: Document Cards Grid (Enhanced with Category Mandatory Badges) */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {(requiredDocuments || [])
+                  .filter(doc => docCategoryFilter === 'all' || (doc.categories || []).includes(docCategoryFilter))
+                  .map((doc) => {
+                    const isMandatory = Boolean(doc.mandatory);
+                    return (
+                      <div
+                        key={doc.id}
+                        className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high hover:border-primary/40 transition-colors flex flex-col justify-between gap-3 shadow-xs"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+                                <span className="material-symbols-outlined text-[20px]">{doc.icon || 'description'}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="font-bold text-xs text-on-surface truncate">{doc.label}</h4>
+                                <span className="text-[10px] font-mono text-secondary block">Key: {doc.key}</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => updateRequiredDocument(doc.id, { mandatory: !isMandatory })}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors shrink-0 ${
+                                isMandatory
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                  : 'bg-surface-container-high text-secondary border border-surface-container-highest'
+                              }`}
+                              title="Click to toggle Global Mandatory vs Optional"
+                            >
+                              {isMandatory ? 'Global Mandatory' : 'Global Optional'}
+                            </button>
+                          </div>
+
+                          <p className="text-xs text-secondary leading-relaxed line-clamp-2">
+                            {doc.description || 'Customer document upload requirement'}
+                          </p>
+
+                          {/* Category Specific Mandatory Matrix Badges */}
+                          <div className="pt-2 border-t border-surface-container/60 space-y-1">
+                            <div className="text-[10px] text-secondary font-semibold uppercase">Category Gates:</div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {(doc.categories || []).map(cat => {
+                                const isCatMandatory = isDocMandatoryForCategory(doc, cat);
+                                const catLabel = cat === 'residential' ? 'Res' : cat === 'commercial' ? 'C&I' : 'Society';
+                                return (
+                                  <button
+                                    key={cat}
+                                    type="button"
+                                    onClick={() => handleToggleCategoryMandatory(doc.id, cat)}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
+                                      isCatMandatory
+                                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                                        : 'bg-surface-container text-secondary hover:text-on-surface'
+                                    }`}
+                                    title={`Click to toggle mandatory status for ${cat}`}
+                                  >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                                    <span>{catLabel}: {isCatMandatory ? 'Mandatory' : 'Optional'}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Actions */}
+                        <div className="flex items-center justify-between pt-2 border-t border-surface-container text-xs">
+                          <span className="text-[10px] text-secondary flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">
+                              {doc.captureMode === 'video' ? 'videocam' : doc.captureMode === 'image' ? 'photo_camera' : 'add_photo_alternate'}
+                            </span>
+                            <span>{doc.captureMode === 'both' ? 'Camera & File' : doc.captureMode === 'video' ? 'Video' : 'Photo'}</span>
+                          </span>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDoc(doc)}
+                              className="p-1 rounded text-secondary hover:text-primary transition-colors cursor-pointer"
+                              title="Edit Document Requirement"
+                            >
+                              <span className="material-symbols-outlined text-[17px]">edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteRequiredDocument(doc.id)}
+                              className="p-1 rounded text-secondary hover:text-error transition-colors cursor-pointer"
+                              title="Remove Document Requirement"
+                            >
+                              <span className="material-symbols-outlined text-[17px]">delete</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Modal: Add / Edit Required Document Requirement */}
+      {showDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
+            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-xl">folder_managed</span>
+                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
+                  {editingDoc ? 'Edit Document Requirement' : 'Add New Document Requirement'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDocModal(false)}
+                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDocForm} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold mb-1">Document Title / Label *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Electricity / Light Bill"
+                  value={docForm.label}
+                  onChange={(e) => setDocForm({ ...docForm, label: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold text-on-surface"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Description / Guidance</label>
+                <textarea
+                  rows="2"
+                  placeholder="Instructions for customer or technician regarding this upload..."
+                  value={docForm.description}
+                  onChange={(e) => setDocForm({ ...docForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary text-on-surface"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Material Icon</label>
+                  <select
+                    value={docForm.icon}
+                    onChange={(e) => setDocForm({ ...docForm, icon: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
+                  >
+                    <option value="electric_bolt">electric_bolt (Bills)</option>
+                    <option value="badge">badge (Aadhaar / ID)</option>
+                    <option value="credit_card">credit_card (PAN Card)</option>
+                    <option value="home_work">home_work (Property Tax)</option>
+                    <option value="solar_power">solar_power (Rooftop Photo)</option>
+                    <option value="speed">speed (Meter Photo)</option>
+                    <option value="receipt_long">receipt_long (GST Certificate)</option>
+                    <option value="domain">domain (Society NOC)</option>
+                    <option value="person">person (Passport Photo)</option>
+                    <option value="description">description (General Document)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Direct Capture Mode</label>
+                  <select
+                    value={docForm.captureMode}
+                    onChange={(e) => setDocForm({ ...docForm, captureMode: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
+                  >
+                    <option value="both">Both Photo &amp; File Upload</option>
+                    <option value="image">Camera Photo Capture</option>
+                    <option value="video">Camera Video Recording</option>
+                    <option value="file">File Upload Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Application Categories Mapping */}
+              <div>
+                <label className="block font-semibold mb-2">Map to Application Categories *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: 'residential', label: 'Residential', icon: 'home' },
+                    { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
+                    { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
+                  ].map(cat => {
+                    const isChecked = docForm.categories.includes(cat.id);
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => handleToggleDocCategory(cat.id)}
+                        className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-colors text-left ${
+                          isChecked
+                            ? 'bg-primary/10 border-primary text-primary font-bold'
+                            : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-base">{cat.icon}</span>
+                        <span className="text-xs">{cat.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Global Default Mandatory Gate Toggle */}
+              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-on-surface block">Default Mandatory Upload Gate</span>
+                  <span className="text-[11px] text-secondary">
+                    Default compliance gate applied if category-specific rule is unspecified.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={docForm.mandatory}
+                  onChange={(e) => {
+                    const nextVal = e.target.checked;
+                    setDocForm(prev => {
+                      const nextCatMandatory = { ...(prev.categoryMandatory || {}) };
+                      // Also update any existing categories that were matching the old default
+                      prev.categories.forEach(c => {
+                        if (nextCatMandatory[c] === undefined) {
+                          nextCatMandatory[c] = nextVal;
+                        }
+                      });
+                      return { ...prev, mandatory: nextVal, categoryMandatory: nextCatMandatory };
+                    });
+                  }}
+                  className="rounded text-primary focus:ring-primary w-5 h-5 cursor-pointer"
+                />
+              </div>
+
+              {/* Category-Specific Mandatory Rules Matrix */}
+              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-primary text-[18px]">verified</span>
+                    <span className="font-bold text-on-surface">Category Mandatory Overrides</span>
+                  </div>
+                  <span className="text-[10px] text-secondary">Click to toggle per category</span>
+                </div>
+                <p className="text-[11px] text-secondary">
+                  Specify whether this document is strictly mandatory or optional for each customer project type.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {[
+                    { id: 'residential', label: 'Residential', icon: 'home' },
+                    { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
+                    { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
+                  ].map(cat => {
+                    const isMapped = docForm.categories.includes(cat.id);
+                    const isCatMandatory = isMapped && Boolean(
+                      docForm.categoryMandatory?.[cat.id] !== undefined
+                        ? docForm.categoryMandatory[cat.id]
+                        : docForm.mandatory
+                    );
+
+                    if (!isMapped) {
+                      return (
+                        <div
+                          key={cat.id}
+                          className="p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container opacity-40 text-center flex flex-col items-center justify-center gap-1"
+                        >
+                          <span className="text-[10px] text-secondary font-medium">{cat.label}</span>
+                          <span className="text-[9px] text-secondary/70">Not Mapped</span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          setDocForm(prev => ({
+                            ...prev,
+                            categoryMandatory: {
+                              ...(prev.categoryMandatory || {}),
+                              [cat.id]: !isCatMandatory
+                            }
+                          }));
+                        }}
+                        className={`p-2.5 rounded-xl border flex flex-col gap-1 text-left transition-all cursor-pointer ${
+                          isCatMandatory
+                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-xs'
+                            : 'bg-surface-container-lowest border-surface-container-highest text-secondary hover:text-on-surface'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-[11px] font-semibold text-on-surface">{cat.label}</span>
+                          <span className="material-symbols-outlined text-[14px]">
+                            {isCatMandatory ? 'check_circle' : 'remove_circle_outline'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold">
+                          {isCatMandatory ? 'Mandatory Gate' : 'Optional Upload'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setShowDocModal(false)}
+                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-primary text-on-primary font-bold hover:bg-primary/90 transition-all cursor-pointer shadow-sm"
+                >
+                  {editingDoc ? 'Update Requirement' : 'Add Requirement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Add / Edit Partner Bank (SR-64) */}
       {showBankModal && (

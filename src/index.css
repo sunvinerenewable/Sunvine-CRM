@@ -1,10 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: #1B1F23;
     background-color: #F7F9FF;
     margin: 0;
@@ -12,8 +14,15 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif;
   }
+}
+
+/* Guarantee Space Grotesk classes always render in clean sans-serif (never serif) */
+.font-\[\'Space_Grotesk\'\],
+[class*="Space_Grotesk"],
+[class*="space_grotesk"] {
+  font-family: 'Space Grotesk', 'Inter', system-ui, -apple-system, sans-serif !important;
 }
 
 @layer components {
@@ -36,7 +45,9 @@
   line-height: 1;
   letter-spacing: normal;
   text-transform: none;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
@@ -44,6 +55,11 @@
   font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow: hidden;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  user-select: none;
 }
 
 @keyframes dropdownEnter {
@@ -200,4 +216,83 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #6CBF3D;
+}
+
+/* ==========================================================================
+   Uiverse.io by JkHuger - 9-Square Brand Green Loader
+   ========================================================================== */
+@keyframes loader_5191 {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.loader {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.square {
+  background: #6CBF3D;
+  width: 10px;
+  height: 10px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -5px;
+  margin-left: -5px;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(108, 191, 61, 0.55);
+}
+
+#sq1 {
+  margin-top: -25px;
+  margin-left: -25px;
+  animation: loader_5191 675ms ease-in-out 0s infinite alternate;
+}
+
+#sq2 {
+  margin-top: -25px;
+  animation: loader_5191 675ms ease-in-out 75ms infinite alternate;
+}
+
+#sq3 {
+  margin-top: -25px;
+  margin-left: 15px;
+  animation: loader_5191 675ms ease-in-out 150ms infinite;
+}
+
+#sq4 {
+  margin-left: -25px;
+  animation: loader_5191 675ms ease-in-out 225ms infinite;
+}
+
+#sq5 {
+  animation: loader_5191 675ms ease-in-out 300ms infinite;
+}
+
+#sq6 {
+  margin-left: 15px;
+  animation: loader_5191 675ms ease-in-out 375ms infinite;
+}
+
+#sq7 {
+  margin-top: 15px;
+  margin-left: -25px;
+  animation: loader_5191 675ms ease-in-out 450ms infinite;
+}
+
+#sq8 {
+  margin-top: 15px;
+  animation: loader_5191 675ms ease-in-out 525ms infinite;
+}
+
+#sq9 {
+  margin-top: 15px;
+  margin-left: 15px;
+  animation: loader_5191 675ms ease-in-out 600ms infinite;
 }

@@ -1,16 +1,107 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { ensureEnvLoaded } from './api/_lib/db.js';
+
+ensureEnvLoaded();
+
+function apiDevPlugin() {
+  return {
+    name: 'api-dev-middleware',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api/')) return next();
+
+        const [urlPath, queryString] = req.url.split('?');
+        const query = {};
+        if (queryString) {
+          const params = new URLSearchParams(queryString);
+          for (const [k, v] of params) query[k] = v;
+        }
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            req.body = body ? JSON.parse(body) : {};
+          } catch {
+            req.body = {};
+          }
+          req.query = query;
+
+          if (!res.status) {
+            res.status = (code) => {
+              res.statusCode = code;
+              return res;
+            };
+          }
+          if (!res.json) {
+            res.json = (obj) => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(obj));
+              return res;
+            };
+          }
+          if (!res.send) {
+            res.send = (data) => {
+              res.end(data);
+              return res;
+            };
+          }
+
+          try {
+            let modulePath = null;
+            if (urlPath === '/api/auth/login') modulePath = '/api/auth/login.js';
+            else if (urlPath === '/api/auth/verify') modulePath = '/api/auth/verify.js';
+            else if (urlPath === '/api/auth/logout') modulePath = '/api/auth/logout.js';
+            else if (urlPath.startsWith('/api/')) {
+              const endpoint = urlPath.replace('/api/', '').replace(/\.js$/, '');
+              modulePath = `/api/${endpoint}.js`;
+            }
+
+            if (modulePath) {
+              const { default: handler } = await server.ssrLoadModule(modulePath);
+              if (typeof handler === 'function') {
+                return await handler(req, res);
+              }
+            }
+          } catch (err) {
+            console.error('[Vite dev API error]:', err);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: err.message }));
+            return;
+          }
+
+          next();
+        });
+      });
+    }
+  };
+}
 
 export default defineConfig({
   plugins: [
     react(),
+    apiDevPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        globPatterns: ['**/*.{css,html,ico,png,svg,woff,woff2}', '**/index*.js'],
         runtimeCaching: [
+          {
+            urlPattern: /\.(?:js|mjs)$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'sunvine-dynamic-chunks',
+              networkTimeoutSeconds: 3,
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24
+              }
+            }
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
@@ -43,6 +134,8 @@ export default defineConfig({
       },
       includeAssets: [
         'favicon.ico',
+        'sunvine-logo.png',
+        'sunvine-logo-darkmode.png',
         'sunvine_logo_transparent.png',
         'sunvine_logo_white.png',
         'pwa-192x192.png',

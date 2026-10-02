@@ -1,5 +1,16 @@
 import { supabase } from '../lib/supabase';
 
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
+
 /**
  * Enterprise Supabase Hardware Service
  * Manages approved solar PV modules and string inverters in Supabase PostgreSQL
@@ -22,6 +33,32 @@ export const hardwareService = {
    * Fetch all solar modules from Supabase
    */
   async getAllModules() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=hardware');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.hardware?.modules) && json.hardware.modules.length > 0) {
+          return json.hardware.modules.map(row => ({
+            id: row.id,
+            brand: row.brand,
+            model: row.model,
+            wattage: Number(row.wattage) || 550,
+            cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
+            efficiency: row.efficiency || '22.6%',
+            ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
+            warranty: row.warranty || '30 Years Performance',
+            dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
+            isArchived: !!row.is_archived,
+            isDefault: !!row.is_default,
+            isNew: !!row.is_new,
+            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('solar_modules')
@@ -88,6 +125,8 @@ export const hardwareService = {
         .upsert([payload], { onConflict: 'id' })
         .select();
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase saveModule error:', error.message);
         return { success: false, error: error.message };
@@ -112,6 +151,8 @@ export const hardwareService = {
         })
         .eq('id', moduleId);
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase archiveModule error:', error.message);
         return { success: false, error: error.message };
@@ -132,6 +173,8 @@ export const hardwareService = {
         .from('solar_modules')
         .delete()
         .eq('id', moduleId);
+
+      invalidateCatalogCache(['catalog:hardware']);
 
       if (error) {
         console.warn('[hardwareService] Supabase deleteModule error:', error.message);
@@ -215,6 +258,31 @@ export const hardwareService = {
    * Fetch all string inverters from Supabase
    */
   async getAllInverters() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=hardware');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.hardware?.inverters) && json.hardware.inverters.length > 0) {
+          return json.hardware.inverters.map(row => ({
+            id: row.id,
+            brand: row.brand,
+            model: row.model,
+            capacity: row.capacity || `${row.capacity_kw} kW`,
+            capacityKW: Number(row.capacity_kw) || 5.0,
+            phase: row.phase || 'Three Phase',
+            efficiency: row.efficiency || '98.4%',
+            warranty: row.warranty || '8 Years Comprehensive',
+            basePrice: row.base_price || '₹ 54,000',
+            isArchived: !!row.is_archived,
+            isDefault: !!row.is_default,
+            createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('solar_inverters')
@@ -283,6 +351,8 @@ export const hardwareService = {
         .upsert([payload], { onConflict: 'id' })
         .select();
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase saveInverter error:', error.message);
         return { success: false, error: error.message };
@@ -307,6 +377,8 @@ export const hardwareService = {
         })
         .eq('id', inverterId);
 
+      invalidateCatalogCache(['catalog:hardware']);
+
       if (error) {
         console.warn('[hardwareService] Supabase archiveInverter error:', error.message);
         return { success: false, error: error.message };
@@ -327,6 +399,8 @@ export const hardwareService = {
         .from('solar_inverters')
         .delete()
         .eq('id', inverterId);
+
+      invalidateCatalogCache(['catalog:hardware']);
 
       if (error) {
         console.warn('[hardwareService] Supabase deleteInverter error:', error.message);
@@ -387,6 +461,211 @@ export const hardwareService = {
       }
     } catch (err) {
       console.warn('[hardwareService] Seed notice:', err.message);
+    }
+  },
+
+  /**
+   * Fetch all Bill of Materials (BOM) Hardware Catalog Items from Supabase
+   */
+  async getAllBomItems() {
+    try {
+      const { data, error } = await supabase
+        .from('bom_catalog')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.warn('[hardwareService] Supabase bom_catalog fetch error:', error.message);
+        return null;
+      }
+
+      if (!data || data.length === 0) {
+        return null;
+      }
+
+      // Filter out capacity slab presets (e.g. bom-2_16, bom-3_24) vs actual hardware items
+      return data
+        .filter(row => !row.id.startsWith('bom-') || row.inverter_spec?.match(/structure|electrical|cables|conduits|safety/i))
+        .map(row => {
+          const rawRate = Number(row.capacity_kw) || 0;
+          return {
+            id: row.id,
+            name: row.modules_spec || row.id,
+            category: row.inverter_spec || 'structure',
+            description: row.dc_wire || '',
+            unit: row.ac_wire || 'Nos',
+            defaultRate: rawRate > 0 ? rawRate : 100,
+            make: row.hardware || 'Approved Make',
+            specs: row.earthing_wire || '',
+            gstRate: Number(row.la_wire) || 18,
+            isArchived: row.acdb === 'archived',
+            updatedAt: row.updated_at
+          };
+        });
+    } catch (err) {
+      console.error('[hardwareService] getAllBomItems exception:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Save or update a BOM hardware item directly in Supabase
+   */
+  async saveBomItem(item) {
+    if (!item || !item.name) {
+      return { success: false, error: 'Item name is required' };
+    }
+
+    const payload = {
+      id: item.id || `bom_hw_${Date.now()}`,
+      modules_spec: item.name.trim(),
+      inverter_spec: item.category || 'structure',
+      dc_wire: item.description || '',
+      ac_wire: item.unit || 'Nos',
+      capacity_kw: Number(item.defaultRate || item.rate) || 100,
+      hardware: item.make || 'Approved Brand',
+      earthing_wire: item.specs || '',
+      la_wire: String(item.gstRate !== undefined ? item.gstRate : 18),
+      acdb: item.isArchived ? 'archived' : 'active',
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('bom_catalog')
+        .upsert([payload], { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        console.warn('[hardwareService] saveBomItem error:', error.message);
+        return { success: false, error: error.message };
+      }
+
+      return {
+        success: true,
+        data: {
+          id: payload.id,
+          name: payload.modules_spec,
+          category: payload.inverter_spec,
+          description: payload.dc_wire,
+          unit: payload.ac_wire,
+          defaultRate: payload.capacity_kw,
+          make: payload.hardware,
+          specs: payload.earthing_wire,
+          gstRate: Number(payload.la_wire) || 18,
+          isArchived: payload.acdb === 'archived'
+        }
+      };
+    } catch (err) {
+      console.error('[hardwareService] saveBomItem exception:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Delete a BOM hardware item from Supabase
+   */
+  async deleteBomItem(itemId) {
+    if (!itemId) return { success: false, error: 'Item ID is required' };
+    try {
+      const { error } = await supabase
+        .from('bom_catalog')
+        .delete()
+        .eq('id', itemId);
+
+      if (error) {
+        console.warn('[hardwareService] deleteBomItem error:', error.message);
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[hardwareService] deleteBomItem exception:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Toggle archive status of a BOM hardware item
+   */
+  async archiveBomItem(itemId, isArchived) {
+    if (!itemId) return { success: false, error: 'Item ID is required' };
+    try {
+      const { error } = await supabase
+        .from('bom_catalog')
+        .update({
+          acdb: isArchived ? 'archived' : 'active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', itemId);
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Bulk update benchmark rates for BOM hardware items
+   */
+  async bulkUpdateBomRates(ratesMap) {
+    try {
+      const updates = Object.entries(ratesMap).map(([id, rate]) => ({
+        id,
+        capacity_kw: Number(rate) || 0,
+        updated_at: new Date().toISOString()
+      }));
+
+      for (const item of updates) {
+        await supabase
+          .from('bom_catalog')
+          .update({
+            capacity_kw: item.capacity_kw,
+            updated_at: item.updated_at
+          })
+          .eq('id', item.id);
+      }
+      return { success: true };
+    } catch (err) {
+      console.error('[hardwareService] bulkUpdateBomRates error:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Bulk import multiple BOM hardware items into Supabase
+   */
+  async bulkImportBomItems(items) {
+    if (!items || items.length === 0) return { success: true, count: 0 };
+
+    const payloads = items.map((it, idx) => ({
+      id: it.id || `bom_imp_${Date.now()}_${idx}`,
+      modules_spec: (it.name || it.description || 'Hardware Item').trim(),
+      inverter_spec: it.category || 'structure',
+      dc_wire: it.description || '',
+      ac_wire: it.unit || 'Nos',
+      capacity_kw: Number(it.defaultRate || it.rate) || 100,
+      hardware: it.make || 'Approved Brand',
+      earthing_wire: it.specs || '',
+      la_wire: String(it.gstRate !== undefined ? it.gstRate : 18),
+      acdb: it.isArchived ? 'archived' : 'active',
+      updated_at: new Date().toISOString()
+    }));
+
+    try {
+      const { data, error } = await supabase
+        .from('bom_catalog')
+        .upsert(payloads, { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, count: data?.length || payloads.length };
+    } catch (err) {
+      return { success: false, error: err.message };
     }
   }
 };

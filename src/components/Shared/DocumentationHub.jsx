@@ -242,7 +242,7 @@ export default function DocumentationHub() {
             <span>&bull;</span>
             <span className="text-primary font-bold">Standard Operations Hub</span>
           </div>
-          <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
             Documentation &amp; Policy Center
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
@@ -309,7 +309,7 @@ export default function DocumentationHub() {
 
           {/* Quick Notice */}
           <div className="p-4 rounded-xl bg-surface-container-low/60 border border-surface-container-high text-xs text-secondary space-y-1">
-            <span className="font-bold text-on-surface block font-['Space_Grotesk']">Need Regulatory Liaison?</span>
+            <span className="font-bold text-on-surface block font-heading">Need Regulatory Liaison?</span>
             <p className="leading-relaxed">
               For corporate agreements, bank solar loan tie-ups, or institutional tender queries, contact{' '}
               <a href="mailto:legal@sunvine.in" className="text-primary font-medium hover:underline">
@@ -331,7 +331,7 @@ export default function DocumentationHub() {
                 Last Reviewed: {currentPolicy.lastUpdated || 'September 2026'}
               </span>
             </div>
-            <h2 className="font-['Space_Grotesk'] text-xl sm:text-2xl font-bold text-on-surface mt-2">
+            <h2 className="font-heading text-xl sm:text-2xl font-bold text-on-surface mt-2">
               {currentPolicy.title}
             </h2>
           </div>
@@ -340,7 +340,7 @@ export default function DocumentationHub() {
           <div className="space-y-6 text-xs sm:text-sm">
             {(currentPolicy.sections || []).map((sec, idx) => (
               <div key={idx} className="space-y-2 p-4 rounded-xl bg-surface-container-low/40 border border-surface-container-high/60">
-                <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface flex items-center gap-2">
+                <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
                   <span className="w-1.5 h-4 bg-primary rounded-full"></span>
                   <span>{sec.heading}</span>
                 </h3>

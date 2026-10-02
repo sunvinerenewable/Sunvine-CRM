@@ -1,236 +1,184 @@
 import { supabase } from '../lib/supabase';
 
 /**
- * Enterprise Authentication & Security Service
- * Implements Rate Limiting, Brute Force Mitigation & Cryptographic OTP Validation
+ * Enterprise Authentication Service
+ *
+ * Auth model: Custom JWT in HTTP-only cookie from /api/auth/login.
+ * The browser-side Supabase client uses the ANON key for catalog reads
+ * only. All sensitive operations go through /api with the JWT cookie.
+ *
+ * IMPORTANT: No Supabase Auth sessions (signIn/setSession) are used.
+ * The anon key is intentionally public; security comes from RLS + API.
  */
 
-// Rate Limiting Cache to protect server/database from spam
+// ── Client-side rate limit (supplemental; real rate limit is server-side) ──
 const rateLimitCache = new Map();
 
-function checkClientRateLimit(key, maxRequests = 5, windowMs = 15 * 60 * 1000) {
+function checkClientRateLimit(key, maxRequests = 10, windowMs = 5 * 60 * 1000) {
   const now = Date.now();
   const record = rateLimitCache.get(key) || { count: 0, resetAt: now + windowMs };
-
   if (now > record.resetAt) {
-    record.count = 1;
+    record.count = 0;
     record.resetAt = now + windowMs;
     rateLimitCache.set(key, record);
-    return { allowed: true };
   }
-
   if (record.count >= maxRequests) {
     const waitMins = Math.ceil((record.resetAt - now) / 60000);
-    return {
-      allowed: false,
-      message: `Too many attempts. Security lockout active for ${waitMins} minute(s) to protect system.`
-    };
+    return { allowed: false, message: `Too many failed attempts. Try again in ${waitMins} minute(s).` };
   }
-
-  record.count += 1;
-  rateLimitCache.set(key, record);
   return { allowed: true };
 }
 
+function recordClientFail(key, maxRequests = 10, windowMs = 5 * 60 * 1000) {
+  const now = Date.now();
+  const record = rateLimitCache.get(key) || { count: 0, resetAt: now + windowMs };
+  if (now > record.resetAt) { record.count = 0; record.resetAt = now + windowMs; }
+  record.count += 1;
+  rateLimitCache.set(key, record);
+}
+
+function clearClientLimit(key) { rateLimitCache.delete(key); }
+
+async function callLoginApi(payload) {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(payload)
+    });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      // Received HTML or non-JSON from local Vite dev server without /api middleware
+      return null;
+    }
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
+    if (res.ok && data?.success) return { ok: true, data };
+    if (res.status === 429) return { ok: false, isRateLimited: true, error: data?.error || 'Too many attempts.' };
+    return { ok: false, error: data?.error || 'Authentication failed.' };
+  } catch {
+    // API unreachable (local dev without server) — fallback handled below
+    return null;
+  }
+}
+
 export const authService = {
-  /**
-   * Request 6-Digit Cryptographic OTP via Email
-   */
-  async requestOtp(recipientEmail) {
-    const cleanEmail = recipientEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      return { success: false, error: 'Invalid email address provided.' };
-    }
-
-    // 1. Anti-Brute-Force Rate Limiter
-    const rateCheck = checkClientRateLimit(`otp_${cleanEmail}`, 5, 10 * 60 * 1000);
-    if (!rateCheck.allowed) {
-      return { success: false, error: rateCheck.message };
-    }
-
-    // 2. Generate Cryptographic 6-digit random code
-    const cryptoArray = new Uint32Array(1);
-    crypto.getRandomValues(cryptoArray);
-    const generatedOtp = String(100000 + (cryptoArray[0] % 900000));
-
-    // 3. Expiration: 5 Minutes
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
+  async logout() {
     try {
-      // Invalidate previous unverified OTPs for this email
-      await supabase
-        .from('otp_verifications')
-        .update({ verified: true })
-        .eq('recipient', cleanEmail)
-        .eq('verified', false);
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch { /* offline */ }
+    // Also clear any lingering Supabase anon session
+    try { await supabase.auth.signOut(); } catch { /* ignore */ }
+  },
 
-      // Insert new secure OTP record
-      const { error: insertError } = await supabase
-        .from('otp_verifications')
-        .insert([
-          {
-            recipient: cleanEmail,
-            otp_code: generatedOtp,
-            attempts: 0,
-            max_attempts: 5,
-            verified: false,
-            expires_at: expiresAt
-          }
-        ]);
-
-      if (insertError) {
-        console.warn('Supabase OTP table notice:', insertError.message);
+  async verifySession() {
+    try {
+      const res = await fetch('/api/auth/verify', { method: 'GET', credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.authenticated && data?.user) return { authenticated: true, user: data.user };
       }
+    } catch { /* network */ }
+    return { authenticated: false };
+  },
 
-      // Try sending official Supabase Auth Email OTP
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          shouldCreateUser: false
-        }
+  async loginAdmin(identifier, password) {
+    if (!identifier || !password) return { success: false, error: 'Identifier and password are required.' };
+    const cleanIdentifier = String(identifier).trim();
+    const rateKey = `admin_${cleanIdentifier}`;
+    const rateCheck = checkClientRateLimit(rateKey);
+    if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
+
+    const apiRes = await callLoginApi({ role: 'admin', identifier: cleanIdentifier, password });
+    if (!apiRes) {
+      // Fallback: try Supabase RPC (dev without /api server)
+      return this._rpcLogin('admin', cleanIdentifier, password, rateKey);
+    }
+    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, user: apiRes.data.user }; }
+    if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
+    recordClientFail(rateKey);
+    return { success: false, error: apiRes.error };
+  },
+
+  async loginDealer(mobileNumber, password) {
+    const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) return { success: false, error: 'Enter a valid 10-digit mobile number.' };
+    if (!/^[6-9]/.test(cleanMobile)) return { success: false, error: 'Mobile must start with 6, 7, 8, or 9.' };
+    if (!password || !password.trim()) return { success: false, error: 'Password cannot be empty.' };
+    const rateKey = `dealer_${cleanMobile}`;
+    const rateCheck = checkClientRateLimit(rateKey);
+    if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
+
+    const apiRes = await callLoginApi({ role: 'dealer', identifier: cleanMobile, password });
+    if (!apiRes) return this._rpcLogin('dealer', cleanMobile, password, rateKey);
+    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, dealer: apiRes.data.user }; }
+    if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
+    recordClientFail(rateKey);
+    return { success: false, error: apiRes.error };
+  },
+
+  async loginStaff(mobileNumber, password, selectedRole = 'sales') {
+    const cleanMobile = String(mobileNumber || '').replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) return { success: false, error: 'Enter a valid 10-digit mobile number.' };
+    if (!password || !password.trim()) return { success: false, error: 'Password cannot be empty.' };
+    const rateKey = `staff_${cleanMobile}`;
+    const rateCheck = checkClientRateLimit(rateKey);
+    if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
+
+    const apiRes = await callLoginApi({ role: 'staff', identifier: cleanMobile, password, staffRole: selectedRole });
+    if (!apiRes) return this._rpcLogin('staff', cleanMobile, password, rateKey, selectedRole);
+    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, staff: apiRes.data.user }; }
+    if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
+    recordClientFail(rateKey);
+    return { success: false, error: apiRes.error };
+  },
+
+  /** RPC fallback for local dev without the API server running.
+   * ⚠️ NEVER runs in production — the raw password would travel through the anon-key client. */
+  async _rpcLogin(userType, identifier, password, rateKey, staffRole) {
+    // Hard block in production — surface a clear error instead of bypassing API security
+    if (import.meta.env.PROD) {
+      recordClientFail(rateKey);
+      return { success: false, error: 'Authentication service unavailable. Please try again.' };
+    }
+    try {
+      const { data, error } = await supabase.rpc('verify_user_credentials', {
+        p_user_type: userType,
+        p_identifier: identifier,
+        p_password: password
       });
-
-      return {
-        success: true,
-        expiresInSeconds: 300,
-        // In local development/demo, expose OTP in console for quick testing
-        debugCode: process.env.NODE_ENV !== 'production' ? generatedOtp : null
-      };
+      if (!error && data?.success) {
+        clearClientLimit(rateKey);
+        const user = data.user || data.dealer || data.staff || data.admin;
+        if (userType === 'dealer') return { success: true, dealer: user };
+        if (userType === 'staff') return { success: true, staff: user };
+        return { success: true, user };
+      }
+      recordClientFail(rateKey);
+      return { success: false, error: data?.error || 'Invalid credentials.' };
     } catch (err) {
-      console.error('OTP Dispatch Error:', err);
-      return { success: false, error: 'Unable to dispatch security code. Please try again.' };
+      recordClientFail(rateKey);
+      return { success: false, error: 'Authentication service unavailable.' };
     }
   },
 
-  /**
-   * Verify OTP with Strict Anti-Brute Force Counter
-   */
-  async verifyOtp(recipientEmail, enteredOtp) {
-    const cleanEmail = recipientEmail.trim().toLowerCase();
-    const cleanOtp = enteredOtp.trim();
-
-    if (cleanOtp.length !== 6 || !/^\d{6}$/.test(cleanOtp)) {
-      return { success: false, error: 'Security code must be exactly 6 numeric digits.' };
+  async updatePassword(userType, identifier, newPassword) {
+    if (!newPassword || newPassword.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters.' };
     }
-
     try {
-      // Check latest active OTP
-      const { data, error } = await supabase
-        .from('otp_verifications')
-        .select('*')
-        .eq('recipient', cleanEmail)
-        .eq('verified', false)
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (error || !data) {
-        // Fallback for standard admin demo token if database has not been seeded yet
-        if (cleanOtp === '491820' || cleanOtp === '123456') {
-          return { success: true };
-        }
-        return { success: false, error: 'Security code expired or invalid. Request a new code.' };
+      const { data, error } = await supabase.rpc('update_user_password', {
+        p_user_type: userType,
+        p_identifier: identifier,
+        p_new_password: newPassword
+      });
+      if (error || !data?.success) {
+        return { success: false, error: data?.error || error?.message || 'Failed to update password.' };
       }
-
-      // Check max failed attempts lockout
-      if (data.attempts >= data.max_attempts) {
-        return {
-          success: false,
-          error: 'Maximum attempt threshold exceeded. Token locked for security.'
-        };
-      }
-
-      // Validate Code Match
-      if (data.otp_code !== cleanOtp) {
-        // Increment failed attempts count
-        await supabase
-          .from('otp_verifications')
-          .update({ attempts: data.attempts + 1 })
-          .eq('id', data.id);
-
-        const remaining = data.max_attempts - (data.attempts + 1);
-        return {
-          success: false,
-          error: `Invalid code. ${remaining} attempt(s) remaining before lockout.`
-        };
-      }
-
-      // Mark OTP as verified
-      await supabase
-        .from('otp_verifications')
-        .update({ verified: true })
-        .eq('id', data.id);
-
       return { success: true };
     } catch (err) {
-      return { success: true }; // Fallback
-    }
-  },
-
-  /**
-   * Secure Dealer Login with sanitized 10-digit mobile
-   */
-  async loginDealer(mobileNumber, password) {
-    const cleanNumber = String(mobileNumber).replace(/\D/g, '').slice(0, 10);
-    if (cleanNumber.length !== 10 || !/^[6-9]/.test(cleanNumber)) {
-      return { success: false, error: 'Please enter a valid 10-digit Indian mobile number.' };
-    }
-
-    if (!password || password.trim().length === 0) {
-      return { success: false, error: 'Password cannot be empty.' };
-    }
-
-    // Rate Limiting to prevent brute-force dictionary attacks
-    const rateCheck = checkClientRateLimit(`dealer_${cleanNumber}`, 5, 5 * 60 * 1000);
-    if (!rateCheck.allowed) {
-      return { success: false, error: rateCheck.message };
-    }
-
-    try {
-      const { data: dealer, error } = await supabase
-        .from('dealers')
-        .select('*')
-        .eq('mobile_number', cleanNumber)
-        .single();
-
-      if (error || !dealer) {
-        // Fallback for default dealer account
-        if (cleanNumber === '9876543210' && password === 'dealer123') {
-          return {
-            success: true,
-            dealer: {
-              id: 'SV-DLR-0104',
-              firmName: 'Sunline Solar Solutions',
-              contactPerson: 'Rajesh Kumar',
-              mobileNumber: '9876543210',
-              email: 'rajesh@sunlinesolar.in',
-              city: 'Ahmedabad',
-              state: 'Gujarat',
-              discom: 'UGVCL',
-              rating: 4.9
-            }
-          };
-        }
-        return { success: false, error: 'No authorized dealer account found with this mobile number.' };
-      }
-
-      return {
-        success: true,
-        dealer: {
-          id: dealer.dealer_code,
-          firmName: dealer.firm_name,
-          contactPerson: dealer.contact_person,
-          mobileNumber: dealer.mobile_number,
-          email: dealer.email,
-          city: dealer.city,
-          state: dealer.state,
-          discom: dealer.discom,
-          rating: dealer.rating
-        }
-      };
-    } catch (err) {
-      return { success: false, error: 'Server authentication error. Please try again.' };
+      return { success: false, error: 'Failed to update password.' };
     }
   }
 };

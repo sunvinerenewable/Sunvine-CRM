@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { resolveCapacityBom, calculateFieldBOMTotals } from '../../data/standardBomData';
+import { resolveCapacityBom } from '../../data/standardBomData';
+import { calculateSubsidy } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -8,6 +9,97 @@ const formatINR = (val) => {
     maximumFractionDigits: 0
   }).format(val);
 };
+
+// Resolves component manufacturer / brand name (Make)
+export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake = '') {
+  if (item?.make && typeof item.make === 'string' && item.make.trim()) {
+    return item.make.trim();
+  }
+  if (item?.brand && typeof item.brand === 'string' && item.brand.trim()) {
+    return item.brand.trim();
+  }
+
+  const itemId = String(item?.id || '').toLowerCase();
+  const itemName = String(item?.name || item?.item || item?.description || '').toLowerCase();
+  const category = String(item?.category || '').toLowerCase();
+
+  // 1. Solar PV Modules
+  if (itemId.includes('panel') || itemId.includes('module') || category === 'panel' || itemName.includes('solar panel') || itemName.includes('pv module')) {
+    return effectiveModuleMake ? `${effectiveModuleMake} / Tier-1` : 'Tier-1 Certified Bifacial';
+  }
+
+  // 2. Solar Inverters
+  if (itemId.includes('inverter') || category === 'inverter' || itemName.includes('inverter')) {
+    return effectiveInverterMake ? `${effectiveInverterMake} / Reputed` : 'MNRE Approved Grid-Tied';
+  }
+
+  // 3. Electrical Switchgear (ACDB / DCDB)
+  if (itemId.includes('acdb') || itemId.includes('dcdb') || itemName.includes('acdb') || itemName.includes('dcdb') || itemName.includes('combo')) {
+    return 'ASG / L&T / Schneider';
+  }
+
+  // 4. MC4 Connectors
+  if (itemId.includes('mc4') || itemName.includes('mc4')) {
+    return 'Staubli / Multi-Contact';
+  }
+
+  // 5. DC Solar Cables
+  if (itemId.includes('dc_wire') || itemId.includes('dc_cable') || itemName.includes('dc 4') || (itemName.includes('dc') && itemName.includes('cable'))) {
+    return 'Polycab / RR Kabel (EN 50618)';
+  }
+
+  // 6. AC Grid Cables
+  if (itemId.includes('ac_wire') || itemId.includes('ac_cable') || itemName.includes('ac cable') || itemName.includes('grid cable')) {
+    return 'Polycab / Havells / RR Kabel';
+  }
+
+  // 7. Earthing Cables & LA Cables
+  if (itemId.includes('earthing_cable') || itemName.includes('earthing cable')) {
+    return 'Polycab / RR Kabel';
+  }
+  if (itemId.includes('la_cable') || itemName.includes('la cable') || itemName.includes('down conductor')) {
+    return 'Polycab / Vasundhara (ISI)';
+  }
+
+  // 8. Chemical Earthing Kit
+  if (itemId.includes('earthing') || itemName.includes('earthing kit') || itemName.includes('chemical earthing')) {
+    return 'Vasundhara / Chemical Gel (IS 3043)';
+  }
+
+  // 9. Lightning Arrestor
+  if (itemId.includes('lightning') || itemName.includes('lightning arrestor') || itemName.includes('la ')) {
+    return 'Vasundhara / Pure Copper';
+  }
+
+  // 10. Module Mounting Structure (GI Pipes, Studs, Angles, Purlins)
+  if (itemId.includes('gi_pipe') || itemId.includes('purlin') || itemName.includes('pipe') || itemName.includes('purlin') || itemId.includes('stud') || itemId.includes('angels') || itemId.includes('angles') || category === 'structure') {
+    if (itemId.includes('fastner') || itemName.includes('fastener') || itemId.includes('j_bolt') || itemId.includes('nut_washer')) {
+      return 'Unbrako / Grade 8.8 (HDGI)';
+    }
+    if (itemId.includes('walkway') || itemName.includes('walkway')) {
+      return 'Sunvine / FRP Heavy Duty';
+    }
+    if (itemId.includes('foundation') || itemName.includes('foundation')) {
+      return 'UltraTech / RCC Standard';
+    }
+    if (itemId.includes('zinc') || itemName.includes('zinc')) {
+      return '3M / Rust-Oleum';
+    }
+    return 'Fortune / Jindal / Tata (HDGI 80μ)';
+  }
+
+  // 11. Conduits & Accessories (PVC pipes, elbows, tees, clamps)
+  if (category === 'conduits' || itemId.includes('pvc') || itemName.includes('pvc') || itemId.includes('clamp') || itemName.includes('clamp')) {
+    return 'Polycab / Precision';
+  }
+
+  // 12. Logistics / Transportation
+  if (category === 'logistics' || itemId.includes('transport') || itemName.includes('transportation') || itemName.includes('freight')) {
+    return 'Doorstep Insured Logistics';
+  }
+
+  return 'MNRE / BIS Approved';
+}
 
 export default function PDFTemplate({ quotation, activePage = 'all' }) {
   if (!quotation) return null;
@@ -40,8 +132,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
     selectedInverterMake = '',
     coverImage,
     customCoverUrl,
-    bomItems,
-    bomTotals
+    bomItems
   } = quotation;
 
   // Resolve numerical capacity and dimensions
@@ -65,12 +156,18 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
   // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
   const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
-  const baseBeforeGst = quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
-  const gstAmount = quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+
+  const isInterState = quotation.isInterState || (String(quotation.customerState || quotation.state || 'Gujarat').trim().toLowerCase() !== 'gujarat');
+  const bomTotals = quotation.bomTotals || quotation.quote_payload?.bomTotals;
+  const baseBeforeGst = bomTotals?.totalTaxableBase || quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
+  const gstAmount = bomTotals?.totalGstAmount || quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+  const cgstAmount = bomTotals?.cgstTotal !== undefined ? bomTotals.cgstTotal : (isInterState ? 0 : Math.round(gstAmount / 2));
+  const sgstAmount = bomTotals?.sgstTotal !== undefined ? bomTotals.sgstTotal : (isInterState ? 0 : gstAmount - cgstAmount);
+  const igstAmount = bomTotals?.igstTotal !== undefined ? bomTotals.igstTotal : (isInterState ? gstAmount : 0);
 
   const subsidyAmount = quotation.subsidyAmount !== undefined 
     ? quotation.subsidyAmount 
-    : (projectType === 'Commercial' ? 0 : (resolvedCapKW <= 1 ? 30000 : resolvedCapKW <= 2 ? 60000 : 78000));
+    : calculateSubsidy(resolvedCapKW, projectType);
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
   // Line item breakdown
@@ -169,7 +266,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
               <div className="text-xs font-black text-[#0B2545] uppercase mt-0.5">{customerName}</div>
               <div className="text-[11px] text-gray-700 mt-0.5">
                 <span>Site: {location || `${city}, Gujarat`}</span>
-                {customerPhone && <span className="ml-2 font-mono">| Tel: {customerPhone}</span>}
+                {customerPhone && <span className="ml-2 font-mono">| Mo: {customerPhone}</span>}
               </div>
               <div className="text-[10px] text-[#2E7D32] font-bold mt-0.5">
                 Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central DBT)'}
@@ -275,16 +372,42 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                   <td className="py-1.5 px-3 text-right font-mono font-bold text-xs">{formatINR(baseBeforeGst)}</td>
                 </tr>
 
-                {/* Composite GST 13.8% */}
-                <tr className="bg-emerald-50/40 text-emerald-950 font-bold border-t border-emerald-200">
-                  <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Statutory GST</span>
-                      <span>COMPOSITE GST @ 13.8% (70% GOODS @ 12% + 30% SERVICES @ 18%) :</span>
-                    </div>
-                  </td>
-                  <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(gstAmount)}</td>
-                </tr>
+                {/* Statutory GST Split (CGST + SGST for intra-state Gujarat / IGST for inter-state) */}
+                {isInterState ? (
+                  <tr className="bg-emerald-50/40 text-emerald-950 font-bold border-t border-emerald-200">
+                    <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Inter-State GST</span>
+                        <span>INTEGRATED GST (IGST) :</span>
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(igstAmount)}</td>
+                  </tr>
+                ) : (
+                  <>
+                    <tr className="bg-emerald-50/20 text-emerald-950 font-semibold border-t border-emerald-200">
+                      <td colSpan={3} className="py-1 px-3 text-right text-[10px] border-r border-slate-300">
+                        <span className="text-gray-600">CENTRAL GST (CGST) :</span>
+                      </td>
+                      <td className="py-1 px-3 text-right font-mono font-semibold text-xs text-emerald-900">{formatINR(cgstAmount)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/20 text-emerald-950 font-semibold border-t border-emerald-100">
+                      <td colSpan={3} className="py-1 px-3 text-right text-[10px] border-r border-slate-300">
+                        <span className="text-gray-600">STATE GST (SGST / GUJARAT) :</span>
+                      </td>
+                      <td className="py-1 px-3 text-right font-mono font-semibold text-xs text-emerald-900">{formatINR(sgstAmount)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50/50 text-emerald-950 font-bold border-t border-emerald-200">
+                      <td colSpan={3} className="py-1.5 px-3 text-right text-[10px] border-r border-slate-300">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase">Total Tax</span>
+                          <span>TOTAL STATUTORY GST (CGST + SGST) :</span>
+                        </div>
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">{formatINR(gstAmount)}</td>
+                    </tr>
+                  </>
+                )}
 
                 {/* Gross Turnkey Price */}
                 <tr className="bg-[#0B2545] text-white font-black text-xs">
@@ -502,26 +625,17 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
               <table className="w-full text-[9px] text-left">
                 <thead className="bg-[#0B2545] text-white font-bold">
                   <tr>
-                    <th className="py-1 px-2 w-7 text-center border-r border-slate-700">SR</th>
-                    <th className="py-1 px-2 border-r border-slate-700 min-w-[200px]">PRODUCT / SERVICE DESCRIPTION &amp; SPECIFICATION</th>
-                    <th className="py-1 px-1.5 text-center w-12 border-r border-slate-700">QTY</th>
-                    <th className="py-1 px-1.5 text-center w-12 border-r border-slate-700">UNIT</th>
-                    <th className="py-1 px-2 text-right w-18 border-r border-slate-700">RATE (₹)</th>
-                    <th className="py-1 px-1 text-center w-10 border-r border-slate-700">GST</th>
-                    <th className="py-1 px-2 text-right w-20">TOTAL (₹)</th>
+                    <th className="py-1 px-2 w-8 text-center border-r border-slate-700">SR</th>
+                    <th className="py-1 px-2 border-r border-slate-700">PRODUCT / HARDWARE DESCRIPTION &amp; SPECIFICATION</th>
+                    <th className="py-1 px-1.5 text-center w-14 border-r border-slate-700">QTY</th>
+                    <th className="py-1 px-1.5 text-center w-14 border-r border-slate-700">UNIT</th>
+                    <th className="py-1 px-2 text-center w-48">MAKE</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-gray-900 font-medium">
                   {bomItems.map((item, idx) => {
                     const itemName = item.name || item.item || item.description || `BOM Item #${idx + 1}`;
-                    const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
                     const qty = Number(item.qty) || 0;
-                    const rate = Number(item.rate) || 0;
-                    const lineTotal = (item.totalWithGst !== undefined && item.totalWithGst > 0)
-                      ? item.totalWithGst
-                      : (item.total !== undefined && item.total > 0)
-                        ? Math.round(item.total * (1 + gst / 100))
-                        : Math.round(qty * rate * (1 + gst / 100));
 
                     return (
                       <tr key={item.id || idx} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
@@ -538,63 +652,22 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                         <td className="py-0.5 px-1.5 text-center font-mono text-[8.5px] text-gray-600 border-r border-slate-200">
                           {item.unit || 'NOS'}
                         </td>
-                        <td className="py-0.5 px-2 text-right font-mono border-r border-slate-200">
-                          {formatINR(rate)}
-                        </td>
-                        <td className="py-0.5 px-1 text-center border-r border-slate-200">
-                          <span className={`px-1 py-0.2 rounded font-bold text-[8px] ${gst === 5 ? 'bg-emerald-100 text-emerald-800' : gst === 0 ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-800'}`}>
-                            {gst}%
-                          </span>
-                        </td>
-                        <td className="py-0.5 px-2 text-right font-mono font-bold text-gray-900">
-                          {formatINR(lineTotal)}
+                        <td className="py-0.5 px-2 text-center font-bold text-[#0B2545] text-[8.5px]">
+                          {resolveItemMake(item, effectiveModuleMake, effectiveInverterMake)}
                         </td>
                       </tr>
                     );
                   })}
 
-                  {/* Field BOM Subtotals Summary Rows */}
-                  {(bomTotals || (bomItems && bomItems.length > 0 ? calculateFieldBOMTotals(bomItems) : null)) && (() => {
-                    const effectiveTotals = bomTotals || calculateFieldBOMTotals(bomItems);
-                    return (
-                      <>
-                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px] border-t border-slate-300">
-                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                            SOLAR PV MODULES, INVERTER &amp; MC4 CONNECTORS (5% GST BASE: ₹{formatINR(effectiveTotals.subtotal5GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst5Total)}) :
-                          </td>
-                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                            ₹ {formatINR(effectiveTotals.subtotal5GstBase + effectiveTotals.gst5Total)}
-                          </td>
-                        </tr>
-                        <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
-                          <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                            STRUCTURE &amp; BOS MATERIALS (18% GST BASE: ₹{formatINR(effectiveTotals.subtotal18GstBase)} + TAX: ₹{formatINR(effectiveTotals.gst18Total)}) :
-                          </td>
-                          <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                            ₹ {formatINR(effectiveTotals.subtotal18GstBase + effectiveTotals.gst18Total)}
-                          </td>
-                        </tr>
-                        {effectiveTotals.transportTotal > 0 && (
-                          <tr className="bg-slate-100 font-bold text-gray-800 text-[8.5px]">
-                            <td colSpan={4} className="py-1 px-2 text-right border-r border-slate-300 uppercase">
-                              FREIGHT, PACKAGING &amp; TRANSIT LOGISTICS (0% GST BASE: ₹{formatINR(effectiveTotals.transportTotal)}) :
-                            </td>
-                            <td colSpan={3} className="py-1 px-2 text-right font-mono font-bold text-[#0B2545]">
-                              ₹ {formatINR(effectiveTotals.transportTotal)}
-                            </td>
-                          </tr>
-                        )}
-                        <tr className="bg-[#0B2545] text-white font-black text-[9.5px]">
-                          <td colSpan={4} className="py-1 px-2 text-right uppercase tracking-wider border-r border-slate-700">
-                            TOTAL ENGINEERING BILL OF MATERIALS (GROSS INCL. GST) :
-                          </td>
-                          <td colSpan={3} className="py-1 px-2 text-right font-mono text-xs font-black text-amber-300">
-                            ₹ {formatINR(effectiveTotals.grossTurnkeyCost)}
-                          </td>
-                        </tr>
-                      </>
-                    );
-                  })()}
+                  {/* Field BOM Compliance Summary Footer */}
+                  <tr className="bg-[#0B2545] text-white font-bold text-[9px] border-t border-slate-700">
+                    <td colSpan={4} className="py-1 px-2 uppercase tracking-wide border-r border-slate-700">
+                      ALL BALANCE OF SYSTEM (BOS) COMPONENTS 100% MNRE &amp; BIS / IEC COMPLIANT
+                    </td>
+                    <td className="py-1 px-2 text-center font-bold text-amber-300 uppercase text-[8.5px]">
+                      APPROVED OEM MAKE
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -606,7 +679,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                     <th className="py-1 px-2.5 font-bold uppercase w-10 text-center border-r border-slate-700">SR</th>
                     <th className="py-1 px-3 font-bold uppercase border-r border-slate-700">EQUIPMENT &amp; MATERIAL DESCRIPTION</th>
                     <th className="py-1 px-2.5 font-bold uppercase text-center w-24 border-r border-slate-700">QTY</th>
-                    <th className="py-1 px-2.5 font-bold uppercase text-center w-36">APPROVED MAKE / SPEC</th>
+                    <th className="py-1 px-2.5 font-bold uppercase text-center w-40">MAKE</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 text-gray-900">

@@ -4,7 +4,7 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab } = useApp();
+  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -16,6 +16,29 @@ export default function DealerManagement() {
   const [editingDealer, setEditingDealer] = useState(null);
   const [showTierModal, setShowTierModal] = useState(false);
   const [viewMode, setViewMode] = useTableViewMode('admin_dealer_mgmt');
+  const [dealerToDelete, setDealerToDelete] = useState(null);
+
+  const handleConfirmDeleteDealer = () => {
+    if (!dealerToDelete) return;
+    if (deleteDealer) {
+      deleteDealer(dealerToDelete.id || dealerToDelete.dealerCode);
+    }
+    if (addToast) {
+      addToast({
+        title: 'Dealer Partner Deleted',
+        message: `${dealerToDelete.firmName} (${dealerToDelete.id}) was permanently removed.`,
+        type: 'info'
+      });
+    }
+    setDealerToDelete(null);
+    if (credModalDealer?.id === dealerToDelete.id) {
+      setCredModalDealer(null);
+    }
+    if (editingDealer?.id === dealerToDelete.id) {
+      setEditingDealer(null);
+      setShowAddModal(false);
+    }
+  };
 
   // Dealer Custom Pricing Modal States
   const [pricingModalDealer, setPricingModalDealer] = useState(null);
@@ -303,7 +326,7 @@ export default function DealerManagement() {
         gstin: newGstin.trim() || editingDealer.gstin || '24AAECB1234F1Z5',
         pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || 'AAECB1234F'),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
-        password: newPassword.trim() || editingDealer.password || 'dealer123'
+        password: newPassword.trim() || editingDealer.password || ''
       };
 
       const isUnchanged =
@@ -319,7 +342,7 @@ export default function DealerManagement() {
         (editingDealer.gstin || '') === (updatedDealerObj.gstin || '') &&
         (editingDealer.pan || '') === (updatedDealerObj.pan || '') &&
         (editingDealer.discomLicense || editingDealer.gedaLicenseNo || '') === (updatedDealerObj.discomLicense || '') &&
-        (editingDealer.password || 'dealer123') === (updatedDealerObj.password || 'dealer123');
+        (editingDealer.password || '') === (updatedDealerObj.password || '');
 
       if (isUnchanged) {
         if (addToast) {
@@ -373,7 +396,7 @@ export default function DealerManagement() {
         totalCapacityKw: 0,
         status: 'Active',
         joinedDate: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date()),
-        password: newPassword.trim() || 'dealer123'
+        password: newPassword.trim() || ''
       };
 
       if (addDealer) {
@@ -1175,7 +1198,7 @@ export default function DealerManagement() {
                           <button
                             onClick={() => {
                               setCredModalDealer(d);
-                              setEditPassword(d.password || 'dealer123');
+                              setEditPassword(d.password || '');
                               setShowEditPassword(false);
                               setCopiedCreds(false);
                               setCredSavedNotice(false);
@@ -1204,6 +1227,13 @@ export default function DealerManagement() {
                             title="Edit Dealer Profile"
                           >
                             <span className="material-symbols-outlined text-[16px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => setDealerToDelete(d)}
+                            className="p-1 rounded border border-red-200 hover:border-red-400 bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer"
+                            title="Delete Dealer Partner"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
                           </button>
                         </div>
                       </div>
@@ -1369,7 +1399,7 @@ export default function DealerManagement() {
                           <button
                             onClick={() => {
                               setCredModalDealer(d);
-                              setEditPassword(d.password || 'dealer123');
+                              setEditPassword(d.password || '');
                               setShowEditPassword(false);
                               setCopiedCreds(false);
                               setCredSavedNotice(false);
@@ -1396,6 +1426,13 @@ export default function DealerManagement() {
                             title="Edit Dealer Profile"
                           >
                             <span className="material-symbols-outlined text-[17px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => setDealerToDelete(d)}
+                            className="w-7 h-7 rounded hover:bg-red-50 text-red-600 transition-colors flex items-center justify-center cursor-pointer"
+                            title="Delete Dealer Partner"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">delete</span>
                           </button>
                         </div>
                       </td>
@@ -1708,19 +1745,34 @@ export default function DealerManagement() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container-highest">
+            <div className="flex items-center justify-between gap-2 pt-3 border-t border-surface-container-highest">
               <button
                 type="button"
-                onClick={() => setCredModalDealer(null)}
-                className="px-4 py-2 rounded-lg border border-surface-container-highest text-xs font-semibold text-secondary hover:bg-surface-container-low cursor-pointer"
+                onClick={() => {
+                  const toDel = credModalDealer;
+                  setCredModalDealer(null);
+                  setDealerToDelete(toDel);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs flex items-center gap-1 border border-red-200 cursor-pointer transition-colors"
+                title="Delete this dealer partner completely"
               >
-                Close
+                <span className="material-symbols-outlined text-[15px]">delete</span>
+                <span>Delete Dealer</span>
               </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCredModalDealer(null)}
+                  className="px-4 py-2 rounded-lg border border-surface-container-highest text-xs font-semibold text-secondary hover:bg-surface-container-low cursor-pointer"
+                >
+                  Close
+                </button>
               <button
                 type="button"
                 onClick={() => {
                   if (!editPassword.trim()) return;
-                  const currentPass = credModalDealer.password || 'dealer123';
+                  const currentPass = credModalDealer.password || '';
                   if (editPassword.trim() === currentPass) {
                     if (addToast) {
                       addToast({
@@ -1763,6 +1815,7 @@ export default function DealerManagement() {
                 <span className="material-symbols-outlined text-[16px]">save</span>
                 <span>Save Password</span>
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2003,6 +2056,40 @@ export default function DealerManagement() {
               >
                 <span className="material-symbols-outlined text-[16px]">save</span>
                 <span>Save Dealer Pricing</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRM DELETE DEALER MODAL */}
+      {dealerToDelete && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface-container-lowest border border-red-200 rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 text-on-surface animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">warning</span>
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-base text-on-surface">Delete Dealer Partner?</h3>
+              <p className="text-xs text-secondary mt-1">
+                Are you sure you want to permanently delete <strong className="text-on-surface">{dealerToDelete.firmName}</strong> ({dealerToDelete.id})? Their portal access and login credentials will be removed.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDealerToDelete(null)}
+                className="px-4 py-2 rounded-lg border border-surface-container-high text-xs font-semibold text-secondary hover:bg-surface-container-low cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDealer}
+                className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">delete_forever</span>
+                <span>Confirm Delete</span>
               </button>
             </div>
           </div>

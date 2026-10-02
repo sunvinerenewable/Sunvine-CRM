@@ -17,20 +17,66 @@ export default function BusinessPerformance() {
   const [selectedDealerDetail, setSelectedDealerDetail] = useState(null);
   const [selectedFileForModal, setSelectedFileForModal] = useState(null);
 
-  // Calculate dynamic metrics
+  // Role-Based Data Isolation (Mandate: Staff can only see assigned data; Admin sees all)
+  const isStaffRole = role === 'staff';
+
+  const isolatedDealers = useMemo(() => {
+    if (!isStaffRole) return dealers || [];
+    const sid = currentStaff?.id;
+    const sname = currentStaff?.name;
+    return (dealers || []).filter(d => 
+      (d.assignedStaffId && d.assignedStaffId === sid) ||
+      (d.assignedStaffName && d.assignedStaffName === sname) ||
+      (!d.assignedStaffId && sid === 'STF-001')
+    );
+  }, [dealers, isStaffRole, currentStaff]);
+
+  const isolatedDealerIds = useMemo(() => {
+    return new Set(isolatedDealers.map(d => d.id || d.dealerId));
+  }, [isolatedDealers]);
+
+  const isolatedFiles = useMemo(() => {
+    if (!isStaffRole) return customerFiles || [];
+    const sid = currentStaff?.id;
+    const sname = currentStaff?.name;
+    return (customerFiles || []).filter(f =>
+      f.staffId === sid ||
+      f.staffName === sname ||
+      (f.dealerId && isolatedDealerIds.has(f.dealerId))
+    );
+  }, [customerFiles, isStaffRole, currentStaff, isolatedDealerIds]);
+
+  const isolatedQuotations = useMemo(() => {
+    if (!isStaffRole) return quotations || [];
+    const sid = currentStaff?.id;
+    const sname = currentStaff?.name;
+    return (quotations || []).filter(q =>
+      q.staffId === sid ||
+      q.staffName === sname ||
+      (q.dealerId && isolatedDealerIds.has(q.dealerId))
+    );
+  }, [quotations, isStaffRole, currentStaff, isolatedDealerIds]);
+
+  const isolatedStaffList = useMemo(() => {
+    if (!isStaffRole) return staffList || [];
+    const match = (staffList || []).filter(s => s.id === currentStaff?.id || s.name === currentStaff?.name);
+    return match.length > 0 ? match : (currentStaff ? [currentStaff] : []);
+  }, [staffList, isStaffRole, currentStaff]);
+
+  // Calculate dynamic metrics strictly using isolated data
   const staffMetrics = useMemo(() => {
-    const res = calculateStaffPerformance(staffList, customerFiles, quotations, dealers);
+    const res = calculateStaffPerformance(isolatedStaffList, isolatedFiles, isolatedQuotations, isolatedDealers);
     return Array.isArray(res) ? res : [];
-  }, [staffList, customerFiles, quotations, dealers]);
+  }, [isolatedStaffList, isolatedFiles, isolatedQuotations, isolatedDealers]);
 
   const dealerMetrics = useMemo(() => {
-    const res = calculateDealerPerformance(dealers, customerFiles, quotations);
+    const res = calculateDealerPerformance(isolatedDealers, isolatedFiles, isolatedQuotations);
     return Array.isArray(res) ? res : [];
-  }, [dealers, customerFiles, quotations]);
+  }, [isolatedDealers, isolatedFiles, isolatedQuotations]);
 
   const overallMetrics = useMemo(() => {
-    return calculateOverallBusinessMetrics(quotations, customerFiles, dealers, staffList) || {};
-  }, [quotations, customerFiles, dealers, staffList]);
+    return calculateOverallBusinessMetrics(isolatedQuotations, isolatedFiles, isolatedDealers, isolatedStaffList) || {};
+  }, [isolatedQuotations, isolatedFiles, isolatedDealers, isolatedStaffList]);
 
   // Filtered lists
   const filteredStaff = useMemo(() => {
@@ -60,16 +106,30 @@ export default function BusinessPerformance() {
       {/* 1. Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-surface-container-lowest rounded-2xl border border-surface-container-high shadow-xs">
         <div>
-          <div className="flex items-center gap-2 text-xs font-mono font-semibold text-secondary uppercase tracking-wider">
-            <span>Executive Business Analytics</span>
-            <span>&bull;</span>
-            <span className="text-primary font-bold">Gujarat Ledger Live</span>
+          <div className="flex items-center gap-2 text-xs font-mono font-semibold text-secondary uppercase tracking-wider flex-wrap">
+            {isStaffRole ? (
+              <>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 font-bold border border-emerald-500/20">
+                  Staff Role Isolation Active
+                </span>
+                <span>&bull;</span>
+                <span className="text-primary font-bold">Assigned to {currentStaff?.name || 'Current Staff'} ({currentStaff?.id || 'STF'})</span>
+              </>
+            ) : (
+              <>
+                <span>Executive Business Analytics</span>
+                <span>&bull;</span>
+                <span className="text-primary font-bold">Consolidated Master Ledger</span>
+              </>
+            )}
           </div>
-          <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
-            Performance &amp; Attribution Intelligence
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
+            {isStaffRole ? 'My Performance & Portfolio Analytics' : 'Performance & Attribution Intelligence'}
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
-            Measurable, verifiable metrics tracking sales staff output, dealer network conversions, and cash vs loan business distribution.
+            {isStaffRole
+              ? `Personal performance dashboard displaying exclusively your assigned dealers (${isolatedDealers.length}), customer files (${isolatedFiles.length}), and individual conversion metrics.`
+              : 'Measurable, verifiable metrics tracking sales staff output, dealer network conversions, and cash vs loan business distribution.'}
           </p>
         </div>
 
@@ -77,8 +137,8 @@ export default function BusinessPerformance() {
         <div className="flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl overflow-x-auto">
           {[
             { id: 'overview', label: 'Overview', icon: 'monitoring' },
-            { id: 'staff', label: 'Sales Staff', icon: 'badge' },
-            { id: 'dealers', label: 'Dealer Partners', icon: 'storefront' },
+            { id: 'staff', label: isStaffRole ? 'My Attribution' : 'Sales Staff', icon: 'badge' },
+            { id: 'dealers', label: isStaffRole ? `My Dealers (${isolatedDealers.length})` : 'Dealer Partners', icon: 'storefront' },
             { id: 'finance', label: 'Cash vs Loan', icon: 'account_balance' },
             { id: 'funnel', label: 'Conversion Funnel', icon: 'filter_alt' }
           ].map(tab => (
@@ -159,8 +219,8 @@ export default function BusinessPerformance() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">badge</span>
-                <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
-                  Sales Staff Performance Leaderboard
+                <h3 className="font-heading font-bold text-base text-on-surface">
+                  {isStaffRole ? 'My Sales & Attribution Summary' : 'Sales Staff Performance Leaderboard'}
                 </h3>
               </div>
               <button
@@ -168,7 +228,7 @@ export default function BusinessPerformance() {
                 onClick={() => setActiveTab('staff')}
                 className="text-xs font-bold text-primary hover:underline cursor-pointer"
               >
-                View Full Team &rarr;
+                {isStaffRole ? 'View My Details →' : 'View Full Team →'}
               </button>
             </div>
 
@@ -214,8 +274,8 @@ export default function BusinessPerformance() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">storefront</span>
-                <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
-                  Top Active Gujarat Dealer Partners
+                <h3 className="font-heading font-bold text-base text-on-surface">
+                  {isStaffRole ? `My Assigned Gujarat Dealer Partners (${isolatedDealers.length})` : 'Top Active Gujarat Dealer Partners'}
                 </h3>
               </div>
               <button
@@ -223,7 +283,7 @@ export default function BusinessPerformance() {
                 onClick={() => setActiveTab('dealers')}
                 className="text-xs font-bold text-primary hover:underline cursor-pointer"
               >
-                View All {dealers.length} Dealers &rarr;
+                {isStaffRole ? `View All My ${isolatedDealers.length} Dealers →` : `View All ${dealers.length} Dealers →`}
               </button>
             </div>
 
@@ -276,8 +336,8 @@ export default function BusinessPerformance() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[22px]">badge</span>
-              <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
-                Sales Staff Productivity &amp; Attribution Matrix
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
+                {isStaffRole ? 'My Productivity & Attribution Record' : 'Sales Staff Productivity & Attribution Matrix'}
               </h3>
             </div>
             <div className="w-full sm:w-72">
@@ -349,8 +409,8 @@ export default function BusinessPerformance() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[22px]">storefront</span>
-              <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
-                Gujarat Authorized Dealer Directory &amp; Volume Tracking
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
+                {isStaffRole ? `My Assigned Gujarat Dealer Directory (${isolatedDealers.length})` : 'Gujarat Authorized Dealer Directory & Volume Tracking'}
               </h3>
             </div>
             <div className="w-full sm:w-72">
@@ -434,7 +494,7 @@ export default function BusinessPerformance() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Cash vs Loan Share */}
             <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-              <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface flex items-center gap-2">
+              <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">pie_chart</span>
                 Financing Share Distribution
               </h3>
@@ -474,7 +534,7 @@ export default function BusinessPerformance() {
 
             {/* Bank-wise Breakdown */}
             <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-              <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface flex items-center gap-2">
+              <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-[20px]">account_balance</span>
                 Gujarat Partner Banks Volume
               </h3>
@@ -501,7 +561,7 @@ export default function BusinessPerformance() {
         <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-6">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[22px]">filter_alt</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
+            <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
               End-to-End Quotation to Subsidy Disbursal Funnel
             </h3>
           </div>
@@ -541,7 +601,7 @@ export default function BusinessPerformance() {
                   {selectedStaffDetail.name.substring(0, 2).toUpperCase()}
                 </div>
                 <div>
-                  <h3 className="font-['Space_Grotesk'] font-bold text-lg">{selectedStaffDetail.name}</h3>
+                  <h3 className="font-heading font-bold text-lg">{selectedStaffDetail.name}</h3>
                   <p className="text-xs text-secondary font-mono">{selectedStaffDetail.id} &bull; {selectedStaffDetail.role}</p>
                 </div>
               </div>
@@ -574,7 +634,7 @@ export default function BusinessPerformance() {
             </div>
 
             <div className="space-y-2 text-xs">
-              <span className="font-['Space_Grotesk'] font-bold text-on-surface block">Associated Dealers in Territory</span>
+              <span className="font-heading font-bold text-on-surface block">Associated Dealers in Territory</span>
               <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
                 {(selectedStaffDetail.dealersList || []).map(d => (
                   <div key={d.id} className="flex items-center justify-between p-2 rounded bg-surface-container-low/40">
@@ -607,7 +667,7 @@ export default function BusinessPerformance() {
           <div className="bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container-high w-full max-w-2xl p-6 text-on-surface space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
               <div>
-                <h3 className="font-['Space_Grotesk'] font-bold text-lg">{selectedDealerDetail.firmName}</h3>
+                <h3 className="font-heading font-bold text-lg">{selectedDealerDetail.firmName}</h3>
                 <p className="text-xs text-secondary font-mono">{selectedDealerDetail.id} &bull; {selectedDealerDetail.city}, Gujarat</p>
               </div>
               <button
@@ -639,7 +699,7 @@ export default function BusinessPerformance() {
             </div>
 
             <div className="space-y-2 text-xs">
-              <span className="font-['Space_Grotesk'] font-bold text-on-surface block">Customer Files Sourced</span>
+              <span className="font-heading font-bold text-on-surface block">Customer Files Sourced</span>
               <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                 {(selectedDealerDetail.filesList || []).length === 0 ? (
                   <p className="text-secondary text-xs">No active customer files sourced by this dealer yet.</p>

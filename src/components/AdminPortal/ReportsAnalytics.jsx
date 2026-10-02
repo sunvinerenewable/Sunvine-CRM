@@ -218,7 +218,7 @@ export default function ReportsAnalytics() {
             <span>&bull;</span>
             <span className="text-primary font-bold">Standard RFC-4180 CSV</span>
           </div>
-          <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
+          <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
             Data Export &amp; Custom Reports
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
@@ -240,7 +240,7 @@ export default function ReportsAnalytics() {
       <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
         <div className="flex items-center gap-2 pb-3 border-b border-surface-container-high">
           <span className="material-symbols-outlined text-primary text-[20px]">tune</span>
-          <h3 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface">
+          <h3 className="font-heading font-bold text-sm text-on-surface">
             Report Scope &amp; Multi-Criteria Filters
           </h3>
         </div>
@@ -332,7 +332,7 @@ export default function ReportsAnalytics() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[20px]">table_chart</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface">
+            <h3 className="font-heading font-bold text-sm text-on-surface">
               Live Data Preview ({
                 reportType === 'files' || reportType === 'finance' ? filteredFiles.length :
                 reportType === 'quotations' ? filteredQuotations.length :

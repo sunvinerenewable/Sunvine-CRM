@@ -46,7 +46,7 @@ export default function ComingSoonPlaceholder({
         </div>
 
         {/* Heading */}
-        <h1 className="font-['Space_Grotesk'] text-2xl sm:text-3xl font-black text-on-surface tracking-tight">
+        <h1 className="font-heading text-2xl sm:text-3xl font-black text-on-surface tracking-tight">
           {title}
         </h1>
 

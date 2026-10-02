@@ -1,26 +1,584 @@
 // Default Presets & Master Configuration for Sunvine Renewable Energy
-// 100% Gujarat State Solar EPC Network & BOS Price List from PDF
+// 100% Gujarat State Solar EPC Network & BOS Price List from Official Specifications
 
-import {
-  SUNVINE_OFFICIAL_PROFILE,
-  PDF_BOS_PRICE_MATRIX,
-  PDF_BOM_SPECIFICATIONS,
-  GUJARAT_MODULES,
-  GUJARAT_INVERTERS,
-  GUJARAT_DEALERS,
-  GUJARAT_QUOTATIONS
-} from './gujaratDatabase';
 import { APP_VERSION, CURRENT_RELEASE_CHANGELOG } from '../config/version';
 
-export {
-  SUNVINE_OFFICIAL_PROFILE,
-  PDF_BOS_PRICE_MATRIX,
-  PDF_BOM_SPECIFICATIONS,
-  GUJARAT_MODULES,
-  GUJARAT_INVERTERS,
-  GUJARAT_DEALERS,
-  GUJARAT_QUOTATIONS
+export const SUNVINE_OFFICIAL_PROFILE = {
+  companyName: 'SUNVINE RENEWABLE',
+  gstin: '24AFPFS7402A1Z7',
+  address: 'G-705, near swaminarayan restaurant, Rajkot, Gujarat - 360021',
+  tagline: 'Empowering Gujarat with Clean Solar Energy',
+  state: 'Gujarat',
+  notes: [
+    'ALL PRICES ARE INCLUDING GST',
+    'TRANSPORTATION AND INSTALLATION - DEALER SCOPE',
+    'LIST OF COMPULSORY REQUIRED DOCUMENTS: LIGHT BILL, BANK DETAIL, AADHAR CARD, MOBILE NO.'
+  ],
+  bankDetails: {
+    firmName: 'SUNVINE RENEWABLE',
+    bankName: 'HDFC BANK LTD.',
+    accountNumber: '99998000050580',
+    ifscCode: 'HDFC0002012',
+    branch: 'METODA BRANCH, RAJKOT',
+    email: 'sunvinerenewable@gmail.com'
+  },
+  terms: {
+    modulePerformanceWarrantyYears: 30,
+    moduleDefectWarrantyYears: 12,
+    inverterWarrantyYears: 8,
+    workmanshipWarrantyYears: 5,
+    paymentTerms: '10% advance with purchase order, 90% before material dispatch.',
+    deliveryDays: 15,
+    validityDays: 15,
+    supportPhone: '+91 95865 33750',
+    helpline: '8000050580',
+    website: 'www.sunvinerenewable.com'
+  }
 };
+
+// Exact BOS Price List from PDF (Page 1 Top)
+export const PDF_BOS_PRICE_MATRIX = [
+  {
+    "capacityKW": 2.2,
+    "noOfModules": 4,
+    "inverterCapacityKW": 2.2,
+    "adaniBiFiPrice": 100397,
+    "apsBiFiPrice": 92950,
+    "rayzonePrice": 93412,
+    "topcon585CapacityKW": 2.34,
+    "waaree585Price": 106823,
+    "topcon600CapacityKW": 2.4,
+    "apsTopcon600Price": 101455
+  },
+  {
+    "capacityKW": 2.75,
+    "noOfModules": 5,
+    "inverterCapacityKW": 3,
+    "adaniBiFiPrice": 119721,
+    "apsBiFiPrice": 110298,
+    "rayzonePrice": 110875,
+    "topcon585CapacityKW": 2.925,
+    "waaree585Price": 127639,
+    "topcon600CapacityKW": 3,
+    "apsTopcon600Price": 120929
+  },
+  {
+    "capacityKW": 3.3,
+    "noOfModules": 6,
+    "inverterCapacityKW": 3.6,
+    "adaniBiFiPrice": 138385,
+    "apsBiFiPrice": 127500,
+    "rayzonePrice": 128193,
+    "topcon585CapacityKW": 3.51,
+    "waaree585Price": 148308,
+    "topcon600CapacityKW": 3.6,
+    "apsTopcon600Price": 140257
+  },
+  {
+    "capacityKW": 3.85,
+    "noOfModules": 7,
+    "inverterCapacityKW": 3.6,
+    "adaniBiFiPrice": 159140,
+    "apsBiFiPrice": 145722,
+    "rayzonePrice": 146531,
+    "topcon585CapacityKW": 4.095,
+    "waaree585Price": 169999,
+    "topcon600CapacityKW": 4.2,
+    "apsTopcon600Price": 160606
+  },
+  {
+    "capacityKW": 4.4,
+    "noOfModules": 8,
+    "inverterCapacityKW": "4.2/4.4",
+    "adaniBiFiPrice": 181874,
+    "apsBiFiPrice": 170200,
+    "rayzonePrice": 171124,
+    "topcon585CapacityKW": 4.68,
+    "waaree585Price": 197945,
+    "topcon600CapacityKW": 4.8,
+    "apsTopcon600Price": 187210
+  },
+  {
+    "capacityKW": 4.95,
+    "noOfModules": 9,
+    "inverterCapacityKW": 5,
+    "adaniBiFiPrice": 199878,
+    "apsBiFiPrice": 186698,
+    "rayzonePrice": 187737,
+    "topcon585CapacityKW": 5.265,
+    "waaree585Price": 217911,
+    "topcon600CapacityKW": 5.4,
+    "apsTopcon600Price": 205834
+  },
+  {
+    "capacityKW": 5.5,
+    "noOfModules": 10,
+    "inverterCapacityKW": 5,
+    "adaniBiFiPrice": 218542,
+    "apsBiFiPrice": 203926,
+    "rayzonePrice": 205081,
+    "topcon585CapacityKW": 5.85,
+    "waaree585Price": 238607,
+    "topcon600CapacityKW": 6,
+    "apsTopcon600Price": 225188
+  },
+  {
+    "capacityKW": 6.6,
+    "noOfModules": 12,
+    "inverterCapacityKW": 6,
+    "adaniBiFiPrice": 262251,
+    "apsBiFiPrice": 244530,
+    "rayzonePrice": 245916,
+    "topcon585CapacityKW": 7.02,
+    "waaree585Price": 286148,
+    "topcon600CapacityKW": 7.2,
+    "apsTopcon600Price": 270045
+  },
+  {
+    "capacityKW": 7.7,
+    "noOfModules": 14,
+    "inverterCapacityKW": 8,
+    "adaniBiFiPrice": 315969,
+    "apsBiFiPrice": 296066,
+    "rayzonePrice": 297683,
+    "topcon585CapacityKW": 8.19,
+    "waaree585Price": 344620,
+    "topcon600CapacityKW": 8.4,
+    "apsTopcon600Price": 325833
+  },
+  {
+    "capacityKW": 8.25,
+    "noOfModules": 15,
+    "inverterCapacityKW": 8,
+    "adaniBiFiPrice": 334964,
+    "apsBiFiPrice": 313582,
+    "rayzonePrice": 315315,
+    "topcon585CapacityKW": 8.775,
+    "waaree585Price": 365605,
+    "topcon600CapacityKW": 9,
+    "apsTopcon600Price": 345476
+  },
+  {
+    "capacityKW": 8.8,
+    "noOfModules": 16,
+    "inverterCapacityKW": 8,
+    "adaniBiFiPrice": 353628,
+    "apsBiFiPrice": 330770,
+    "rayzonePrice": 332618,
+    "topcon585CapacityKW": 9.36,
+    "waaree585Price": 386260,
+    "topcon600CapacityKW": 9.6,
+    "apsTopcon600Price": 364790
+  },
+  {
+    "capacityKW": 9.35,
+    "noOfModules": 17,
+    "inverterCapacityKW": 10,
+    "adaniBiFiPrice": 381212,
+    "apsBiFiPrice": 357638,
+    "rayzonePrice": 359601,
+    "topcon585CapacityKW": 9.945,
+    "waaree585Price": 416596,
+    "topcon600CapacityKW": 10.2,
+    "apsTopcon600Price": 393784
+  },
+  {
+    "capacityKW": 9.9,
+    "noOfModules": 18,
+    "inverterCapacityKW": 10,
+    "adaniBiFiPrice": 398326,
+    "apsBiFiPrice": 373330,
+    "rayzonePrice": 375409,
+    "topcon585CapacityKW": 10.53,
+    "waaree585Price": 435756,
+    "topcon600CapacityKW": 10.8,
+    "apsTopcon600Price": 411602
+  },
+  {
+    "capacityKW": 10.45,
+    "noOfModules": 19,
+    "inverterCapacityKW": 10,
+    "adaniBiFiPrice": 416276,
+    "apsBiFiPrice": 390307,
+    "rayzonePrice": 392502,
+    "topcon585CapacityKW": 11.115,
+    "waaree585Price": 456202,
+    "topcon600CapacityKW": 11.4,
+    "apsTopcon600Price": 430706
+  }
+];
+
+// Exact BOS BOM Specifications from PDF
+export const PDF_BOM_SPECIFICATIONS = [
+  {
+    "capacityKW": 2.16,
+    "modules": "4 (540W)",
+    "inverter": "2.2 KW",
+    "dcWire": "30 Mtr",
+    "acWire": "15 Mtr (4 Sqmm)",
+    "earthingWire": "25 Mtr (4 Sqmm)",
+    "laWire": "15 Mtr (10 Sqmm)",
+    "acdb": "1 Phase",
+    "dcdb": "1 IN 1 OUT",
+    "earthingKit": "2 Set",
+    "pvcPipes": "30 Mtr",
+    "hardware": "Including",
+    "mc4": "2 Pairs"
+  },
+  {
+    "capacityKW": 3.24,
+    "modules": "6 (540W)",
+    "inverter": "3.3 KW",
+    "dcWire": "30 Mtr",
+    "acWire": "15 Mtr (4 Sqmm)",
+    "earthingWire": "25 Mtr (4 Sqmm)",
+    "laWire": "15 Mtr (10 Sqmm)",
+    "acdb": "1 Phase",
+    "dcdb": "1 IN 1 OUT",
+    "earthingKit": "2 Set",
+    "pvcPipes": "30 Mtr",
+    "hardware": "Including",
+    "mc4": "2 Pairs"
+  },
+  {
+    "capacityKW": 5.4,
+    "modules": "10 (540W)",
+    "inverter": "5.0 KW",
+    "dcWire": "50 Mtr",
+    "acWire": "25 Mtr (6 Sqmm)",
+    "earthingWire": "30 Mtr (6 Sqmm)",
+    "laWire": "20 Mtr (10 Sqmm)",
+    "acdb": "3 Phase",
+    "dcdb": "2 IN 2 OUT",
+    "earthingKit": "3 Set",
+    "pvcPipes": "50 Mtr",
+    "hardware": "Including",
+    "mc4": "4 Pairs"
+  }
+];
+
+// Approved Solar Modules Catalog
+export const GUJARAT_MODULES = [
+  {
+    id: 'mod-aps-600',
+    brand: 'APS / Sunvine Premier',
+    model: '600WP TOPCON MONO BIFACIAL Panel',
+    wattage: 600,
+    cellTech: 'TOPCon Mono Bifacial',
+    efficiency: '22.8%',
+    ratePerWp: '₹ 24.00/Wp',
+    warrantyYears: 30,
+    isDefault: true
+  },
+  {
+    id: 'mod-waaree-585',
+    brand: 'Waaree Energies',
+    model: '585WP TOPCon Bifacial Dual Glass (HyperIon)',
+    wattage: 585,
+    cellTech: 'TOPCon Mono Bifacial',
+    efficiency: '22.4%',
+    ratePerWp: '₹ 26.80/Wp',
+    warrantyYears: 30,
+    isDefault: false
+  },
+  {
+    id: 'mod-waaree-540',
+    brand: 'Waaree Energies',
+    model: '540W Mono PERC Half-Cut Module',
+    wattage: 540,
+    cellTech: 'Mono PERC Bifacial',
+    efficiency: '21.5%',
+    ratePerWp: '₹ 22.50/Wp',
+    warrantyYears: 25,
+    isDefault: false
+  },
+  {
+    id: 'mod-waaree-610',
+    brand: 'Waaree Energies',
+    model: '610W/620W TOPCon Bifacial Dual Glass',
+    wattage: 610,
+    cellTech: 'TOPCon Mono Bifacial',
+    efficiency: '23.0%',
+    ratePerWp: '₹ 27.50/Wp',
+    warrantyYears: 30,
+    isDefault: false
+  },
+  {
+    id: 'mod-adani-550',
+    brand: 'Adani Solar',
+    model: 'Elan Bi-550W Mono PERC Half-Cut',
+    wattage: 550,
+    cellTech: 'Mono PERC Bifacial',
+    efficiency: '21.8%',
+    ratePerWp: '₹ 22.50/Wp',
+    warrantyYears: 25,
+    isDefault: false
+  },
+  {
+    id: 'mod-adani-600',
+    brand: 'Adani Solar',
+    model: '600W Vertex TOPCon Bifacial',
+    wattage: 600,
+    cellTech: 'TOPCon Mono Bifacial',
+    efficiency: '22.6%',
+    ratePerWp: '₹ 24.00/Wp',
+    warrantyYears: 30,
+    isDefault: false
+  },
+  {
+    id: 'mod-aps-550',
+    brand: 'APS Bi-Fi',
+    model: '550W Bifacial Dual Glass',
+    wattage: 550,
+    cellTech: 'TOPCon Mono Bifacial',
+    efficiency: '21.6%',
+    ratePerWp: '₹ 22.50/Wp',
+    warrantyYears: 25,
+    isDefault: false
+  },
+  {
+    id: 'mod-rayzone-550',
+    brand: 'Rayzone Solar',
+    model: '550W Bi-Fi Mono PERC Half-Cut',
+    wattage: 550,
+    cellTech: 'Mono PERC Bifacial',
+    efficiency: '21.6%',
+    ratePerWp: '₹ 22.70/Wp',
+    warrantyYears: 25,
+    isDefault: false
+  }
+];
+
+// Approved Solar Inverters Catalog
+export const GUJARAT_INVERTERS = [
+  {
+    id: 'inv-solis-2_2',
+    brand: 'Solis / Solaryaan',
+    model: '2.2 KW Single Phase Grid-Tied Inverter',
+    capacityKW: 2.2,
+    phase: 'Single Phase',
+    efficiency: '97.8%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-sunvine-3',
+    brand: 'Sunvine Smart Series',
+    model: '3.0 KW 1-Phase Smart MPPT On-Grid',
+    capacityKW: 3.0,
+    phase: 'Single Phase',
+    efficiency: '98.0%',
+    warrantyYears: 8,
+    isDefault: true
+  },
+  {
+    id: 'inv-solis-3_6',
+    brand: 'Solis / Vsole',
+    model: '3.6 KW Single Phase Dual MPPT On-Grid',
+    capacityKW: 3.6,
+    phase: 'Single Phase',
+    efficiency: '98.2%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-sunvine-5',
+    brand: 'Sunvine Smart Series',
+    model: '5.0 KW 3-Phase Smart MPPT On-Grid',
+    capacityKW: 5.0,
+    phase: 'Three Phase',
+    efficiency: '98.4%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-sunvine-6',
+    brand: 'Sunvine Smart Series',
+    model: '6.0 KW 3-Phase Smart MPPT On-Grid',
+    capacityKW: 6.0,
+    phase: 'Three Phase',
+    efficiency: '98.4%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-growatt-10',
+    brand: 'Growatt / Deye',
+    model: '10.0 KW 3-Phase Dual MPPT On-Grid',
+    capacityKW: 10.0,
+    phase: 'Three Phase',
+    efficiency: '98.6%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-solis-50',
+    brand: 'Solis Cloud Series',
+    model: '50.0 KW 3-Phase Grid-Tied Inverter with Wi-Fi Logger',
+    capacityKW: 50.0,
+    phase: 'Three Phase',
+    efficiency: '98.7%',
+    warrantyYears: 8,
+    isDefault: false
+  },
+  {
+    id: 'inv-solaryaan-125',
+    brand: 'Solaryaan / Solis / Vsole',
+    model: '125.0 KW String type Three-Phase Grid Tied Inverter',
+    capacityKW: 125.0,
+    phase: 'Three Phase',
+    efficiency: '99.0%',
+    warrantyYears: 8,
+    isDefault: false
+  }
+];
+
+// Starter Verified Gujarat Solar EPC Dealers (Snappy boot dataset)
+export const INITIAL_DEALERS = [
+  {
+    id: "SV-DLR-0001",
+    firmName: "Rajkot Solar Tech",
+    contactPerson: "Rajesh Kumar Patel",
+    mobile: "+91 9810000000",
+    email: "rajeshkumarpatel1@sunvinedealer.in",
+    city: "Rajkot",
+    state: "Gujarat",
+    discom: "PGVCL Circle",
+    tier: "Platinum EPC",
+    maxMarginCapPerKw: 6000,
+    totalQuotes: 12,
+    totalCapacityKw: 48.5,
+    gstin: "24ADPS1000A1Z1",
+    pan: "ADPS1000A1",
+    status: "Active",
+    joinedDate: "2024-04-15",
+    address: "GIDC Industrial Estate, Near Main Market, Rajkot, Gujarat - 360001"
+  },
+  {
+    id: "SV-DLR-0002",
+    firmName: "Saur Urja Solutions",
+    contactPerson: "Nilesh Shah",
+    mobile: "+91 9810087391",
+    email: "nileshshah2@sunvinedealer.in",
+    city: "Ahmedabad",
+    state: "Gujarat",
+    discom: "UGVCL / Torrent Power",
+    tier: "Platinum EPC",
+    maxMarginCapPerKw: 6000,
+    totalQuotes: 8,
+    totalCapacityKw: 32.0,
+    gstin: "24BDPS1000A1Z2",
+    pan: "BDPS1000A2",
+    status: "Active",
+    joinedDate: "2024-05-10",
+    address: "Prahlad Nagar Road, Ahmedabad, Gujarat - 380015"
+  },
+  {
+    id: "SV-DLR-0003",
+    firmName: "Surat Green Energy",
+    contactPerson: "Paresh Vora",
+    mobile: "+91 9825123456",
+    email: "paresh@suratgreenenergy.com",
+    city: "Surat",
+    state: "Gujarat",
+    discom: "DGVCL",
+    tier: "Diamond EPC",
+    maxMarginCapPerKw: 7500,
+    totalQuotes: 22,
+    totalCapacityKw: 110.0,
+    gstin: "24CDPS1000A1Z3",
+    pan: "CDPS1000A3",
+    status: "Active",
+    joinedDate: "2024-02-01",
+    address: "Ring Road, Surat, Gujarat - 395002"
+  },
+  {
+    id: "SV-DLR-0004",
+    firmName: "Baroda Solar Hub",
+    contactPerson: "Amit Joshi",
+    mobile: "+91 9879054321",
+    email: "amit@barodasolarhub.in",
+    city: "Vadodara",
+    state: "Gujarat",
+    discom: "MGVCL",
+    tier: "Gold EPC",
+    maxMarginCapPerKw: 5500,
+    totalQuotes: 5,
+    totalCapacityKw: 18.2,
+    gstin: "24DDPS1000A1Z4",
+    pan: "DDPS1000A4",
+    status: "Active",
+    joinedDate: "2024-06-12",
+    address: "Alkapuri, Vadodara, Gujarat - 390007"
+  },
+  {
+    id: "SV-DLR-0005",
+    firmName: "Bhavnagar Sun Power",
+    contactPerson: "Kishore Dave",
+    mobile: "+91 9898011223",
+    email: "kishore@bhavnagarsun.in",
+    city: "Bhavnagar",
+    state: "Gujarat",
+    discom: "PGVCL",
+    tier: "Silver Installer",
+    maxMarginCapPerKw: 4500,
+    totalQuotes: 3,
+    totalCapacityKw: 12.6,
+    gstin: "24EDPS1000A1Z5",
+    pan: "EDPS1000A5",
+    status: "Active",
+    joinedDate: "2024-08-20",
+    address: "Waghawadi Road, Bhavnagar, Gujarat - 364002"
+  }
+];
+
+// Starter Verified Gujarat Quotations (Snappy boot dataset)
+export const INITIAL_QUOTATIONS = [
+  {
+    id: "SV-2026-Q801",
+    quotationNumber: "SV-2026-Q801",
+    consumerName: "Rajeshbhai Patel",
+    consumerPhone: "+91 98251 12345",
+    consumerCity: "Rajkot",
+    systemCapacityKW: 5.0,
+    panelBrand: "Waaree Energies",
+    panelWattage: 585,
+    panelCount: 9,
+    inverterBrand: "Sunvine Smart Series",
+    inverterCapacityKW: 5.0,
+    dealerMarginPerKW: 5000,
+    baseRatePerKW: 58000,
+    totalSystemPrice: 290000,
+    netPayable: 212000,
+    subsidyAmount: 78000,
+    status: "Approved",
+    createdAt: "2026-09-22T08:45:00.000Z",
+    dealerId: "SV-DLR-0001",
+    dealerFirmName: "Rajkot Solar Tech"
+  },
+  {
+    id: "SV-2026-Q802",
+    quotationNumber: "SV-2026-Q802",
+    consumerName: "Dipakbhai Mehta",
+    consumerPhone: "+91 98790 98765",
+    consumerCity: "Ahmedabad",
+    systemCapacityKW: 3.3,
+    panelBrand: "APS / Sunvine Premier",
+    panelWattage: 600,
+    panelCount: 6,
+    inverterBrand: "Sunvine Smart Series",
+    inverterCapacityKW: 3.0,
+    dealerMarginPerKW: 4500,
+    baseRatePerKW: 59800,
+    totalSystemPrice: 197340,
+    netPayable: 119340,
+    subsidyAmount: 78000,
+    status: "Draft",
+    createdAt: "2026-09-23T10:15:00.000Z",
+    dealerId: "SV-DLR-0002",
+    dealerFirmName: "Saur Urja Solutions"
+  }
+];
 
 export const DEFAULT_PRICING_MASTER = {
   // Benchmark Quotation Presets for Admin & Dealer synchronization
@@ -106,21 +664,11 @@ export const DEFAULT_PRICING_MASTER = {
   bomSpecifications: PDF_BOM_SPECIFICATIONS
 };
 
-// Approved Solar Modules Master Catalog (from PDF)
 export const DEFAULT_MODULES = GUJARAT_MODULES;
-
-// Approved Solar Inverters Master Catalog (from PDF & Master)
 export const DEFAULT_INVERTERS = GUJARAT_INVERTERS;
 
-// 550 Verified Gujarat Solar EPC Dealers (100% Gujarat Only)
-export const INITIAL_DEALERS = GUJARAT_DEALERS;
-
-// Gujarat Quotations Master Dataset
-export const INITIAL_QUOTATIONS = GUJARAT_QUOTATIONS;
-
-// Gujarat System & Compliance Notifications (Role-partitioned: 'admin' | 'dealer' | 'all')
+// Gujarat System & Compliance Notifications
 export const DEFAULT_NOTIFICATIONS = [
-  // Latest System Release Notification (Available to All)
   {
     id: 'release-2.2.1',
     audience: 'all',
@@ -144,18 +692,6 @@ export const DEFAULT_NOTIFICATIONS = [
     version: 'v2.2.0'
   },
   {
-    id: 'release-2.1.1',
-    audience: 'all',
-    type: 'success',
-    icon: 'system_update',
-    title: 'System Updated to v2.1.1',
-    description: 'v2.1.1 Production Deployment. Interactive Release Notes, real-time changelog viewer, persistent notification panel, and unified Gujarat solar calculation workflows.',
-    createdAt: '2026-09-24T00:00:00.000Z',
-    isRelease: true,
-    version: 'v2.1.1'
-  },
-  // Super Admin Alerts
-  {
     id: 'notif-adm-001',
     audience: 'admin',
     type: 'success',
@@ -165,28 +701,6 @@ export const DEFAULT_NOTIFICATIONS = [
     createdAt: '2026-09-22T08:30:00.000Z',
     targetTab: 'all_quotes'
   },
-  {
-    id: 'notif-adm-002',
-    audience: 'admin',
-    type: 'warning',
-    icon: 'shield',
-    title: 'Gujarat Margin Benchmark Cap Enforced',
-    description: 'Central operations policy enforced: Max margin ceiling of ₹6,000/kW for Gold and ₹7,500/kW for Platinum partners.',
-    createdAt: '2026-09-22T07:15:00.000Z',
-    targetTab: 'dealers_mgmt'
-  },
-  {
-    id: 'notif-adm-003',
-    audience: 'admin',
-    type: 'info',
-    icon: 'tune',
-    title: 'Central PM Surya Ghar DBT Cap Synced',
-    description: 'Direct Benefit Transfer cap of ₹78,000 (>=3kW) validated against MNRE National Portal ledger.',
-    createdAt: '2026-09-21T18:00:00.000Z',
-    targetTab: 'pricing_master'
-  },
-
-  // Dealer Alerts
   {
     id: 'notif-dlr-001',
     audience: 'dealer',
@@ -207,18 +721,6 @@ export const DEFAULT_NOTIFICATIONS = [
     createdAt: '2026-09-22T06:30:00.000Z',
     targetTab: 'create_quote'
   },
-  {
-    id: 'notif-dlr-003',
-    audience: 'dealer',
-    type: 'info',
-    icon: 'phone_in_talk',
-    title: 'Sunvine EPC Gujarat Helpline Active',
-    description: 'Toll-free dealer dispatch and DISCOM meter tracking available via +91 80000 50580.',
-    createdAt: '2026-09-21T14:00:00.000Z',
-    targetTab: 'dashboard'
-  },
-
-  // General System Broadcast
   {
     id: `notif-sys-${APP_VERSION}`,
     audience: 'all',

@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { authService } from '../../services/authService';
+import { useLoading } from '../../context/LoadingContext';
 
 export default function StaffLogin() {
-  const { login, setAuthView, staffList } = useApp();
-  const [identifier, setIdentifier] = useState('9825112345'); // mobile or staffId
-  const [password, setPassword] = useState('dealer123');
+  const { login, setAuthView } = useApp();
+  const { showLoader, hideLoader } = useLoading();
+  const [selectedStaffRole, setSelectedStaffRole] = useState('sales'); // 'sales' or 'verification'
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    const cleanInput = identifier.trim().toLowerCase();
-    if (!cleanInput) {
-      setError('Please enter your Mobile Number or Staff ID.');
+    const cleanNumber = mobileNumber.replace(/\D/g, '').slice(-10);
+    if (cleanNumber.length !== 10) {
+      setError('Please enter a valid 10-digit Indian mobile number.');
+      return;
+    }
+    if (!/^[6-9]/.test(cleanNumber)) {
+      setError('Mobile number must start with 6, 7, 8, or 9 (Valid Indian telecom series).');
       return;
     }
     if (!password || password.trim().length === 0) {
@@ -22,51 +30,28 @@ export default function StaffLogin() {
       return;
     }
     setError('');
-
-    // Locate staff member by phone, ID, or email
-    const matchedStaff = (staffList || []).find((s) => {
-      const sPhone = String(s.phone || '').replace(/\D/g, '');
-      const sId = String(s.id || '').toLowerCase();
-      const sEmail = String(s.email || '').toLowerCase();
-      const inputDigits = cleanInput.replace(/\D/g, '');
-
-      return (
-        (inputDigits.length >= 10 && sPhone.endsWith(inputDigits)) ||
-        sId === cleanInput ||
-        sEmail === cleanInput
-      );
-    });
-
-    const expectedPassword = matchedStaff?.accessCode || matchedStaff?.password || 'dealer123';
-
-    if (matchedStaff) {
-      if (password !== expectedPassword && password !== 'dealer123' && password !== 'Sunvine@2026') {
-        setError('Incorrect password. Please contact Sunvine Operations Admin.');
-        return;
-      }
-      if (matchedStaff.status === 'Suspended') {
-        setError('Your staff account is currently suspended. Please contact Admin.');
-        return;
-      }
-    } else if (cleanInput === 'staff' && password === 'dealer123') {
-      // Demo fallback staff
-    } else {
-      setError('No registered staff member found with this Mobile Number or Staff ID.');
-      return;
-    }
-
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      login('staff', matchedStaff || staffList?.[0] || undefined);
-    }, 400);
-  };
+    showLoader(
+      selectedStaffRole === 'verification'
+        ? 'Authenticating Verification Desk...'
+        : 'Authenticating Salesperson...'
+    );
 
-  const handleQuickSelectStaff = (stf) => {
-    setIdentifier(stf.phone || stf.id);
-    setPassword(stf.accessCode || stf.password || 'dealer123');
-    setError('');
-    login('staff', stf);
+    try {
+      const res = await authService.loginStaff(cleanNumber, password, selectedStaffRole);
+      if (!res.success) {
+        setError(res.error || 'Authentication failed. Please verify credentials.');
+        setLoading(false);
+        hideLoader();
+        return;
+      }
+      login('staff', res.staff);
+    } catch (err) {
+      setError('Server authentication error. Please try again.');
+    } finally {
+      setLoading(false);
+      hideLoader();
+    }
   };
 
   return (
@@ -81,6 +66,8 @@ export default function StaffLogin() {
             <img
               alt="Sunvine Renewable Logo"
               className="h-8 w-auto object-contain"
+              width="148"
+              height="32"
               src="/sunvine_logo_transparent.png"
             />
           </div>
@@ -163,47 +150,36 @@ export default function StaffLogin() {
             Sign in to access your customer files, new leads, and nearby solar radar.
           </p>
 
-          {/* Quick 1-Click Demo Staff Chips */}
-          <div className="mb-4 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
-            <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-              Quick Select Staff Role:
+          {/* Department Staff Role Selection */}
+          <div className="mb-4">
+            <span className="text-xs font-semibold text-on-surface block mb-1.5">
+              Select Staff Department:
             </span>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(() => {
-                const salesStaff = (staffList || []).find(s => !s.role?.toLowerCase().includes('verification')) || staffList?.[0];
-                const verifyStaff = (staffList || []).find(s => s.role?.toLowerCase().includes('verification') || s.id === 'STF-003') || staffList?.[2];
-
-                return (
-                  <>
-                    {salesStaff && (
-                      <button
-                        type="button"
-                        onClick={() => handleQuickSelectStaff(salesStaff)}
-                        className="p-2 rounded bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-semibold text-on-surface hover:text-emerald-700 flex flex-col items-start cursor-pointer transition-colors text-left"
-                      >
-                        <span className="flex items-center gap-1 text-emerald-700 font-bold">
-                          <span className="material-symbols-outlined text-[14px]">badge</span>
-                          <span>Salesperson</span>
-                        </span>
-                        <span className="text-[10px] text-secondary truncate mt-0.5">{salesStaff.name} ({salesStaff.city})</span>
-                      </button>
-                    )}
-                    {verifyStaff && (
-                      <button
-                        type="button"
-                        onClick={() => handleQuickSelectStaff(verifyStaff)}
-                        className="p-2 rounded bg-surface-container-lowest hover:bg-blue-50 border border-surface-container-high text-[11px] font-semibold text-on-surface hover:text-blue-700 flex flex-col items-start cursor-pointer transition-colors text-left"
-                      >
-                        <span className="flex items-center gap-1 text-blue-700 font-bold">
-                          <span className="material-symbols-outlined text-[14px]">verified_user</span>
-                          <span>Verification Desk</span>
-                        </span>
-                        <span className="text-[10px] text-secondary truncate mt-0.5">{verifyStaff.name} (Desk)</span>
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-surface-container-low rounded-xl border border-surface-container-high">
+              <button
+                type="button"
+                onClick={() => { setSelectedStaffRole('sales'); setError(''); }}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  selectedStaffRole === 'sales'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-secondary hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">badge</span>
+                <span>Salesperson</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSelectedStaffRole('verification'); setError(''); }}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  selectedStaffRole === 'verification'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-secondary hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">verified_user</span>
+                <span>Verification Desk</span>
+              </button>
             </div>
           </div>
 
@@ -211,27 +187,35 @@ export default function StaffLogin() {
           <form className="space-y-3.5" onSubmit={handleLogin}>
             <div>
               <label className="block font-label-xs text-on-surface mb-1.5 font-semibold" htmlFor="mobile-staff-mobile">
-                Mobile Number or Staff ID
+                Staff Registered Mobile Number
               </label>
-              <div className="relative flex items-center">
-                <span className="absolute left-3.5 flex items-center gap-1.5 text-secondary font-label-sm select-none">
-                  <span className="material-symbols-outlined text-base text-emerald-600">badge</span>
-                </span>
+              <div className="flex rounded-lg bg-surface-container-lowest border border-surface-container-high shadow-xs focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-transparent transition-all">
+                <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-container-low rounded-l-lg select-none border-r border-surface-container-high">
+                  <span className="text-sm leading-none">🇮🇳</span>
+                  <span className="font-label-md text-xs text-on-surface font-medium">+91</span>
+                </div>
                 <input
-                  className="w-full h-10 pl-11 pr-4 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-surface-bright border border-surface-container-high"
+                  className="w-full h-10 px-3 bg-transparent font-body-md text-body-md text-on-surface focus:outline-none placeholder:text-secondary min-w-0"
                   id="mobile-staff-mobile"
-                  placeholder="Enter 10-digit mobile or STF-001"
+                  inputMode="numeric"
+                  maxLength={10}
+                  placeholder="Enter 10-digit mobile number"
                   required
-                  type="text"
-                  value={identifier}
+                  type="tel"
+                  value={mobileNumber}
                   onChange={(e) => {
-                    setIdentifier(e.target.value);
+                    setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10));
                     if (error) setError('');
                   }}
                 />
+                {mobileNumber.length === 10 && /^[6-9]/.test(mobileNumber) && (
+                  <div className="flex items-center pr-3 text-emerald-600" title="Valid Format">
+                    <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                  </div>
+                )}
               </div>
               {error && (
-                <p className="mt-1 font-body-xs text-error flex items-center gap-1 text-xs">
+                <p className="mt-1.5 font-body-xs text-error flex items-center gap-1 text-xs">
                   <span className="material-symbols-outlined text-xs">error</span>
                   {error}
                 </p>
@@ -286,7 +270,7 @@ export default function StaffLogin() {
             </div>
 
             <button
-              className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
+              className="w-full h-11 mt-1 rounded-lg bg-primary hover:bg-[#1f5100] text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
               type="submit"
               disabled={loading}
             >
@@ -357,6 +341,8 @@ export default function StaffLogin() {
               <img
                 alt="Sunvine Renewable Energy"
                 className="h-10 w-auto object-contain brightness-0 invert"
+                width="160"
+                height="40"
                 src="/sunvine_logo_transparent.png"
               />
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-lowest/10 backdrop-blur-sm border border-emerald-500/20">
@@ -471,78 +457,73 @@ export default function StaffLogin() {
                 </p>
               </div>
 
-              {/* 1-Click Quick Staff Role Selection */}
-              <div className="mb-4 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high">
-                <span className="text-[11px] font-semibold text-secondary block mb-1.5">
-                  Quick Select Staff Role:
+              {/* Department Role Selection */}
+              <div className="mb-4">
+                <span className="text-xs font-semibold text-on-surface block mb-1.5">
+                  Select Staff Department:
                 </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {(() => {
-                    const salesStaff = (staffList || []).find(s => !s.role?.toLowerCase().includes('verification')) || staffList?.[0];
-                    const verifyStaff = (staffList || []).find(s => s.role?.toLowerCase().includes('verification') || s.id === 'STF-003') || staffList?.[2];
-
-                    return (
-                      <>
-                        {salesStaff && (
-                          <button
-                            type="button"
-                            onClick={() => handleQuickSelectStaff(salesStaff)}
-                            className="p-2.5 rounded-lg bg-surface-container-lowest hover:bg-emerald-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-emerald-700 flex flex-col items-start cursor-pointer transition-colors text-left"
-                          >
-                            <span className="flex items-center gap-1.5 text-emerald-700 font-bold">
-                              <span className="material-symbols-outlined text-[15px]">badge</span>
-                              <span>Salesperson</span>
-                            </span>
-                            <span className="text-[11px] font-semibold text-slate-800 mt-1 truncate">{salesStaff.name}</span>
-                            <span className="text-[10px] text-secondary truncate">{salesStaff.zone?.split(' ')[0]} &bull; ID: {salesStaff.id}</span>
-                          </button>
-                        )}
-                        {verifyStaff && (
-                          <button
-                            type="button"
-                            onClick={() => handleQuickSelectStaff(verifyStaff)}
-                            className="p-2.5 rounded-lg bg-surface-container-lowest hover:bg-blue-50 border border-surface-container-high text-[11px] font-medium text-on-surface hover:text-blue-700 flex flex-col items-start cursor-pointer transition-colors text-left"
-                          >
-                            <span className="flex items-center gap-1.5 text-blue-700 font-bold">
-                              <span className="material-symbols-outlined text-[15px]">verified_user</span>
-                              <span>Verification Desk</span>
-                            </span>
-                            <span className="text-[11px] font-semibold text-slate-800 mt-1 truncate">{verifyStaff.name}</span>
-                            <span className="text-[10px] text-secondary truncate">Office Scrutiny &bull; ID: {verifyStaff.id}</span>
-                          </button>
-                        )}
-                      </>
-                    );
-                  })()}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-surface-container-low rounded-xl border border-surface-container-high">
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedStaffRole('sales'); setError(''); }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      selectedStaffRole === 'sales'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-secondary hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">badge</span>
+                    <span>Salesperson</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedStaffRole('verification'); setError(''); }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      selectedStaffRole === 'verification'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-secondary hover:text-on-surface'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">verified_user</span>
+                    <span>Verification Desk</span>
+                  </button>
                 </div>
               </div>
 
               {/* Form Elements */}
               <form className="space-y-3.5" onSubmit={handleLogin}>
-                {/* Identifier Input */}
+                {/* Mobile Number Input */}
                 <div>
-                  <label className="block font-label-xs text-on-surface mb-1.5 font-semibold" htmlFor="staff-identifier">
-                    Mobile Number or Staff ID
+                  <label className="block font-label-xs text-on-surface mb-1.5 font-semibold" htmlFor="staff-mobile-desktop">
+                    Staff Registered Mobile Number
                   </label>
-                  <div className="relative flex items-center">
-                    <span className="absolute left-3.5 flex items-center gap-1.5 text-secondary font-label-sm select-none">
-                      <span className="material-symbols-outlined text-base text-primary">badge</span>
-                    </span>
+                  <div className="flex rounded-lg bg-surface-container-lowest border border-surface-container-high shadow-xs focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-transparent transition-all">
+                    <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-container-low rounded-l-lg select-none border-r border-surface-container-high">
+                      <span className="text-sm leading-none">🇮🇳</span>
+                      <span className="font-label-md text-xs text-on-surface font-medium">+91</span>
+                    </div>
                     <input
-                      className="w-full h-10 pl-11 pr-4 bg-surface-container-lowest text-on-surface font-body-sm rounded-lg shadow-sm placeholder:text-secondary focus:outline-none focus:ring-2 focus:ring-primary-container focus:bg-surface-bright border border-surface-container-high"
-                      id="staff-identifier"
-                      placeholder="Enter mobile or ID (e.g. STF-001)"
+                      className="w-full h-10 px-3 bg-transparent font-body-md text-body-md text-on-surface focus:outline-none placeholder:text-secondary min-w-0"
+                      id="staff-mobile-desktop"
+                      inputMode="numeric"
+                      maxLength={10}
+                      placeholder="Enter 10-digit mobile number"
                       required
-                      type="text"
-                      value={identifier}
+                      type="tel"
+                      value={mobileNumber}
                       onChange={(e) => {
-                        setIdentifier(e.target.value);
+                        setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10));
                         if (error) setError('');
                       }}
                     />
+                    {mobileNumber.length === 10 && /^[6-9]/.test(mobileNumber) && (
+                      <div className="flex items-center pr-3 text-emerald-600" title="Valid Format">
+                        <span className="material-symbols-outlined text-[20px]">check_circle</span>
+                      </div>
+                    )}
                   </div>
                   {error && (
-                    <p className="mt-1 font-body-xs text-error flex items-center gap-1 text-xs">
+                    <p className="mt-1.5 font-body-xs text-error flex items-center gap-1 text-xs">
                       <span className="material-symbols-outlined text-xs">error</span>
                       {error}
                     </p>
@@ -600,7 +581,7 @@ export default function StaffLogin() {
 
                 {/* Primary Submit Button */}
                 <button
-                  className="w-full h-11 mt-1 rounded-lg bg-primary-container hover:bg-primary text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
+                  className="w-full h-11 mt-1 rounded-lg bg-primary hover:bg-[#1f5100] text-white font-label-md text-sm font-semibold flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all cursor-pointer"
                   type="submit"
                   disabled={loading}
                 >

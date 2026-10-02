@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from './Toast';
+import DocumentPreviewModal from './DocumentPreviewModal';
+import {
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DOCUMENT_SCHEMAS
+} from '../../data/defaultRequiredDocuments';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -8,7 +15,8 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     addCustomerFileTimelineEvent,
     updateCustomerFile,
     role,
-    currentStaff
+    currentStaff,
+    applicationStages
   } = useApp();
   const { addToast } = useToast();
 
@@ -17,21 +25,26 @@ export default function CustomerFileDetailModal({ file, onClose }) {
   const [timelineNotes, setTimelineNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('timeline'); // 'timeline', 'financials', 'documents'
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   if (!file) return null;
 
-  const stages = systemSettings?.fileLifecycle?.stages || [
-    { id: 'LEAD_SOURCED', label: 'Lead Sourced' },
-    { id: 'SITE_SURVEY', label: 'Site Feasibility & Survey' },
-    { id: 'QUOTATION_ACCEPTED', label: 'Quotation Accepted' },
-    { id: 'DISCOM_APPLICATION', label: 'DISCOM Net-Meter Application' },
-    { id: 'FEASIBILITY_APPROVAL', label: 'Technical Feasibility Approved' },
-    { id: 'PLANT_INSTALLATION', label: 'Solar Hardware Installation' },
-    { id: 'CEI_INSPECTION', label: 'Safety & CEI Inspection' },
-    { id: 'NET_METER_SYNC', label: 'Net-Meter Grid Energization' },
-    { id: 'SUBSIDY_CLAIM', label: 'PM Surya Ghar DBT Claim' },
-    { id: 'HANDOVER_COMPLETED', label: 'Commissioned & Handed Over' }
-  ];
+  const stages = (applicationStages && applicationStages.length > 0)
+    ? applicationStages
+    : (systemSettings?.fileLifecycle?.stagesDetailed && systemSettings.fileLifecycle.stagesDetailed.length > 0)
+      ? systemSettings.fileLifecycle.stagesDetailed
+      : [
+          { id: 'LEAD_SOURCED', label: 'Lead Sourced' },
+          { id: 'SITE_SURVEY', label: 'Site Feasibility & Survey' },
+          { id: 'QUOTATION_ACCEPTED', label: 'Quotation Accepted' },
+          { id: 'DISCOM_APPLICATION', label: 'DISCOM Net-Meter Application' },
+          { id: 'FEASIBILITY_APPROVAL', label: 'Technical Feasibility Approved' },
+          { id: 'PLANT_INSTALLATION', label: 'Solar Hardware Installation' },
+          { id: 'CEI_INSPECTION', label: 'Safety & CEI Inspection' },
+          { id: 'NET_METER_SYNC', label: 'Net-Meter Grid Energization' },
+          { id: 'SUBSIDY_CLAIM', label: 'PM Surya Ghar DBT Claim' },
+          { id: 'HANDOVER_COMPLETED', label: 'Commissioned & Handed Over' }
+        ];
 
   const statuses = systemSettings?.fileLifecycle?.statuses || [
     'In Progress',
@@ -87,7 +100,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-['Space_Grotesk'] font-bold text-lg sm:text-xl truncate">
+                <h3 className="font-heading font-bold text-lg sm:text-xl truncate">
                   {file.customerName || 'Customer File'}
                 </h3>
                 <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-surface-container-high text-secondary">
@@ -197,7 +210,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               {/* Add Milestone Form */}
               <form onSubmit={handleAddMilestone} className="p-4 rounded-xl bg-surface-container-low/50 border border-surface-container-high space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-['Space_Grotesk'] font-bold text-xs uppercase tracking-wider text-secondary">
+                  <span className="font-heading font-bold text-xs uppercase tracking-wider text-secondary">
                     Record New Lifecycle Progress
                   </span>
                   <span className="text-[11px] text-secondary">Actor: {role === 'admin' ? 'Super Admin' : currentStaff?.name || 'Staff'}</span>
@@ -260,7 +273,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
               {/* Chronological Timeline List */}
               <div className="space-y-4">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface">
+                <h4 className="font-heading font-bold text-sm text-on-surface">
                   Chronological File History
                 </h4>
 
@@ -277,7 +290,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
                         <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high hover:border-primary/40 transition-colors shadow-xs">
                           <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                            <span className="font-bold text-on-surface font-['Space_Grotesk']">
+                            <span className="font-bold text-on-surface font-heading">
                               {item.title || item.stage}
                             </span>
                             <span className="font-mono text-[11px] text-secondary">
@@ -320,7 +333,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     <span className="material-symbols-outlined text-[18px]">badge</span>
                     Assigned Sales Staff Member
                   </div>
-                  <p className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                  <p className="font-heading font-bold text-base text-on-surface">
                     {file.staffName || 'Unassigned Staff'}
                   </p>
                   <p className="text-xs text-secondary font-mono">
@@ -337,7 +350,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     <span className="material-symbols-outlined text-[18px]">storefront</span>
                     Originating Dealer Partner
                   </div>
-                  <p className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+                  <p className="font-heading font-bold text-base text-on-surface">
                     {file.dealerName || (file.sourceType === 'DIRECT_STAFF' ? 'Direct Staff Sourced (No Dealer)' : 'Unassigned')}
                   </p>
                   <p className="text-xs text-secondary font-mono">
@@ -351,7 +364,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
               {/* Finance Profile Deep Dive */}
               <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high space-y-3">
-                <h4 className="font-['Space_Grotesk'] font-bold text-sm text-on-surface flex items-center gap-2">
+                <h4 className="font-heading font-bold text-sm text-on-surface flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
                   Customer Payment &amp; Financing Arrangement
                 </h4>
@@ -384,20 +397,40 @@ export default function CustomerFileDetailModal({ file, onClose }) {
 
           {activeTab === 'documents' && (
             <div className="space-y-4">
-              <p className="text-xs text-secondary">
-                Document uploads are strictly non-blocking. Verification can be performed at any point in the lifecycle.
-              </p>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="text-xs text-secondary">
+                  Document uploads are strictly non-blocking. PDF files are securely stored in Cloudflare R2 Vault.
+                </p>
+                {Object.values(file.documents || {}).some(d => d?.uploaded && d?.url) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const docs = file.documents || {};
+                      const attached = Object.entries(docs).filter(([_, d]) => d?.uploaded && d?.url);
+                      attached.forEach(([key, doc]) => {
+                        const link = document.createElement('a');
+                        link.href = doc.url;
+                        link.target = '_blank';
+                        link.download = `${file.id}_${key}_${doc.filename || 'document.pdf'}`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      });
+                      addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">download</span>
+                    <span>Download Government PDF Pack</span>
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { key: 'electricityBill', label: 'Latest Electricity Bill (Torrent / DISCOM)', icon: 'receipt_long' },
-                  { key: 'aadhaarCard', label: 'Customer Aadhaar / Identity Proof', icon: 'badge' },
-                  { key: 'propertyTaxReceipt', label: 'Property Tax Receipt / Index Copy', icon: 'home_work' },
-                  { key: 'bankPassbook', label: 'Bank Passbook / Cancelled Cheque (DBT)', icon: 'account_balance' },
-                  { key: 'rooftopPhoto', label: 'Rooftop Survey Photo / CAD Layout', icon: 'solar_power' }
-                ].map((doc) => {
-                  const docInfo = file.documents?.[doc.key];
+                {getDocumentListForFile(file).map((doc) => {
+                  const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
                   const isUploaded = Boolean(docInfo?.uploaded);
+                  const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';
 
                   return (
                     <div
@@ -405,22 +438,45 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                       className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">
-                          {doc.icon}
+                        <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                          {doc.icon || 'description'}
                         </span>
                         <div className="min-w-0">
                           <p className="font-semibold text-on-surface truncate">{doc.label}</p>
                           <p className="text-[11px] text-secondary">
-                            {isUploaded ? `Uploaded: ${docInfo?.filename || 'verified.pdf'}` : 'Pending optional upload'}
+                            {isUploaded ? (
+                              <span className="font-mono text-primary break-all select-all font-medium">
+                                Document Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
+                              </span>
+                            ) : (
+                              `${doc.category} \u2022 Optional (Max 2 MB)`
+                            )}
                           </p>
                         </div>
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] shrink-0 ${
-                        isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
-                      }`}>
-                        {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isUploaded && docInfo?.url && (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc({
+                              title: doc.label,
+                              filename: docInfo.filename || 'document.pdf',
+                              url: docInfo.url
+                            })}
+                            className="p-1.5 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded-lg transition-colors flex items-center cursor-pointer"
+                            title="Inspect & Download Document"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          </button>
+                        )}
+
+                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
+                          isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
+                        }`}>
+                          {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
+                        </span>
+                      </div>
                     </div>
                   );
                 })}
@@ -440,6 +496,14 @@ export default function CustomerFileDetailModal({ file, onClose }) {
           </button>
         </div>
       </div>
+
+      {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          doc={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
     </div>
   );
 }

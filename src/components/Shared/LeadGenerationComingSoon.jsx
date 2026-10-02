@@ -44,7 +44,7 @@ export default function LeadGenerationComingSoon() {
               <span className="w-2 h-2 rounded-full bg-[#7EDE45] animate-ping" />
               Next-Gen Module &bull; Version 2.4 Preview
             </div>
-            <h1 className="font-['Space_Grotesk'] text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
+            <h1 className="font-heading text-2xl sm:text-4xl font-bold tracking-tight text-white leading-tight">
               Sunvine Solar Lead Generation &amp; Distribution Engine
             </h1>
             <p className="text-white/75 text-sm sm:text-base leading-relaxed">
@@ -91,7 +91,7 @@ export default function LeadGenerationComingSoon() {
         }`}>
           <div className="flex items-center gap-3 mb-2">
             <span className="material-symbols-outlined text-primary text-[24px]">admin_panel_settings</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-on-surface text-base">Super Admin Console</h3>
+            <h3 className="font-heading font-bold text-on-surface text-base">Super Admin Console</h3>
           </div>
           <p className="text-secondary text-xs leading-relaxed">
             Configure C&amp;I and residential lead distribution rules, manage lead cost allocations, cap weekly quotas per dealer tier, and monitor real-time conversion velocity.
@@ -105,7 +105,7 @@ export default function LeadGenerationComingSoon() {
         }`}>
           <div className="flex items-center gap-3 mb-2">
             <span className="material-symbols-outlined text-primary text-[24px]">badge</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-on-surface text-base">Staff Zone Routing</h3>
+            <h3 className="font-heading font-bold text-on-surface text-base">Staff Zone Routing</h3>
           </div>
           <p className="text-secondary text-xs leading-relaxed">
             Field executives receive pre-qualified customer leads mapped to their specific DISCOM jurisdiction with geocoded roof coordinates and monthly consumption data.
@@ -119,7 +119,7 @@ export default function LeadGenerationComingSoon() {
         }`}>
           <div className="flex items-center gap-3 mb-2">
             <span className="material-symbols-outlined text-primary text-[24px]">storefront</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-on-surface text-base">Dealer Partner Inquiries</h3>
+            <h3 className="font-heading font-bold text-on-surface text-base">Dealer Partner Inquiries</h3>
           </div>
           <p className="text-secondary text-xs leading-relaxed">
             Receive exclusive customer inquiries in your registered pin code. Convert inquiries to Sunvine quotations with 1-click customer file onboarding.
@@ -139,7 +139,7 @@ export default function LeadGenerationComingSoon() {
             </div>
             <div className="flex flex-col gap-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h4 className="font-['Space_Grotesk'] font-bold text-on-surface text-sm sm:text-base">
+                <h4 className="font-heading font-bold text-on-surface text-sm sm:text-base">
                   {feat.title}
                 </h4>
                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-surface-container-low text-secondary">
@@ -159,7 +159,7 @@ export default function LeadGenerationComingSoon() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-primary text-[22px]">rocket_launch</span>
-            <h3 className="font-['Space_Grotesk'] font-bold text-on-surface text-base">
+            <h3 className="font-heading font-bold text-on-surface text-base">
               Rollout Roadmap &amp; Regional Beta Schedule
             </h3>
           </div>
@@ -171,22 +171,22 @@ export default function LeadGenerationComingSoon() {
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="p-3.5 rounded-lg bg-surface-container-low/60 border border-surface-container-high">
             <span className="text-[11px] font-mono text-secondary font-semibold uppercase">Phase 1 &bull; Active</span>
-            <p className="font-['Space_Grotesk'] font-bold text-on-surface text-sm mt-1">Satellite Roof Feasibility</p>
+            <p className="font-heading font-bold text-on-surface text-sm mt-1">Satellite Roof Feasibility</p>
             <p className="text-secondary text-xs mt-0.5">2D/3D Roof Canvas and Sun Hours simulation live.</p>
           </div>
           <div className="p-3.5 rounded-lg bg-surface-container-low/60 border border-surface-container-high">
             <span className="text-[11px] font-mono text-secondary font-semibold uppercase">Phase 2 &bull; Active</span>
-            <p className="font-['Space_Grotesk'] font-bold text-on-surface text-sm mt-1">Field Radar AI</p>
+            <p className="font-heading font-bold text-on-surface text-sm mt-1">Field Radar AI</p>
             <p className="text-secondary text-xs mt-0.5">Field Executive nearby rooftop prospecting tool live.</p>
           </div>
           <div className="p-3.5 rounded-lg bg-primary-container/10 border border-primary/30">
             <span className="text-[11px] font-mono text-primary font-semibold uppercase">Phase 3 &bull; In Dev</span>
-            <p className="font-['Space_Grotesk'] font-bold text-on-surface text-sm mt-1">Inquiry Auto-Dispatch</p>
+            <p className="font-heading font-bold text-on-surface text-sm mt-1">Inquiry Auto-Dispatch</p>
             <p className="text-secondary text-xs mt-0.5">Connecting website consumer inquiries directly to dealers.</p>
           </div>
           <div className="p-3.5 rounded-lg bg-surface-container-low/60 border border-surface-container-high">
             <span className="text-[11px] font-mono text-secondary font-semibold uppercase">Phase 4 &bull; Upcoming</span>
-            <p className="font-['Space_Grotesk'] font-bold text-on-surface text-sm mt-1">DISCOM Bridge</p>
+            <p className="font-heading font-bold text-on-surface text-sm mt-1">DISCOM Bridge</p>
             <p className="text-secondary text-xs mt-0.5">Automatic consumer number verification and load sync.</p>
           </div>
         </div>

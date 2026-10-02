@@ -27,7 +27,7 @@ export function EmptyState({
       <div className="w-14 h-14 rounded-2xl bg-surface-container-low text-secondary flex items-center justify-center">
         <span className="material-symbols-outlined text-[32px]">{icon}</span>
       </div>
-      <h3 className="font-['Space_Grotesk'] font-bold text-base sm:text-lg text-on-surface">
+      <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
         {title}
       </h3>
       <p className="text-xs sm:text-sm text-secondary max-w-sm leading-relaxed">
@@ -56,7 +56,7 @@ export function ErrorStateDisplay({
       <div className="w-12 h-12 rounded-xl bg-error/15 text-error flex items-center justify-center">
         <span className="material-symbols-outlined text-[28px]">error</span>
       </div>
-      <h3 className="font-['Space_Grotesk'] font-bold text-base text-on-surface">
+      <h3 className="font-heading font-bold text-base text-on-surface">
         {title}
       </h3>
       <p className="text-xs text-secondary max-w-sm">

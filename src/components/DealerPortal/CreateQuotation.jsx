@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { quotationService } from '../../services/quotationService';
 import { useToast } from '../Shared/Toast';
+import { useLoading } from '../../context/LoadingContext';
 import PanelLayoutVisualizer from '../Shared/PanelLayoutVisualizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
@@ -11,6 +12,8 @@ import {
   calculateFieldBOMTotals,
   FIELD_BOM_MASTER_CATALOG
 } from '../../data/standardBomData';
+import { calculateSubsidy as calcSharedSubsidy, calcEMI as calcSharedEMI } from '../../shared/pricing/calculations';
+
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -86,6 +89,7 @@ export const generateUniqueQuotationId = () => {
 };
 
 export default function CreateQuotation() {
+  const { showLoader, hideLoader } = useLoading();
   const { 
     currentDealer, 
     role,
@@ -695,16 +699,8 @@ export default function CreateQuotation() {
   const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
   const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
 
-  // PM Surya Ghar Central DBT Subsidy Formula
-  const calculateSubsidy = (capacity, type) => {
-    if (type === 'Commercial') return 0;
-    const maxSubsidy = pricingPresets?.subsidyCap || 78000;
-    if (capacity <= 1) return Math.min(30000, maxSubsidy);
-    if (capacity <= 2) return Math.min(60000, maxSubsidy);
-    return maxSubsidy;
-  };
-
-  const subsidy = calculateSubsidy(kw, projectType);
+  // PM Surya Ghar Central DBT Subsidy Formula (Canonical Shared Engine)
+  const subsidy = calcSharedSubsidy(kw, projectType, pricingPresets?.subsidyCap || 78000);
   const finalPayable = Math.max(0, totalCost - subsidy);
   const annualGenerationUnits = Math.round(kw * 1440);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
@@ -714,16 +710,10 @@ export default function CreateQuotation() {
   const paybackPercent = Math.min(100, Math.round((parseFloat(paybackYears) / 10) * 100));
   const breakEvenYear = new Date().getFullYear() + Math.ceil(parseFloat(paybackYears));
  
-  // Solar Bank Loan Estimated Monthly EMI (Issue SR-64)
+  // Solar Bank Loan Estimated Monthly EMI (Canonical Shared Engine - Issue SR-64)
   const estimatedMonthlyEmi = useMemo(() => {
     if (financeType !== 'LOAN') return 0;
-    const principal = Math.max(0, finalPayable);
-    if (principal <= 0) return 0;
-    const annualRate = 8.5; // Benchmark solar interest rate p.a.
-    const monthlyRate = annualRate / (12 * 100);
-    const totalMonths = (Number(loanTenureYears) || 5) * 12;
-    const emi = (principal * monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1);
-    return Math.round(emi);
+    return calcSharedEMI(finalPayable, 8.5, loanTenureYears);
   }, [financeType, finalPayable, loanTenureYears]);
 
   // Multi-brand comparison package calculator (Waaree vs APS vs Adani)
@@ -929,6 +919,7 @@ export default function CreateQuotation() {
 
     setIsSubmitting(true);
     setSaveStatus('Saving quotation...');
+    showLoader('Securing Quotation with Cloud...');
     try {
       if (isEdit && updateQuotation) {
         updateQuotation(quotePayload);
@@ -963,6 +954,7 @@ export default function CreateQuotation() {
       });
     } finally {
       setIsSubmitting(false);
+      hideLoader();
     }
   };
 
@@ -1072,30 +1064,35 @@ export default function CreateQuotation() {
       pricingMode: bomPricingMode
     };
 
-    if (isEdit && updateQuotation) {
-      updateQuotation(quotePayload);
-    } else if (addQuotation) {
-      addQuotation(quotePayload);
+    showLoader('Generating Quotation Proposal...');
+    try {
+      if (isEdit && updateQuotation) {
+        updateQuotation(quotePayload);
+      } else if (addQuotation) {
+        addQuotation(quotePayload);
+      }
+      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+        saveDesignRecord({
+          quotationId: quotePayload.id,
+          customerName: custName,
+          capacityKw: kw,
+          type: '2D_ROOF_CAD',
+          roofConfig: quotationRoofConfig,
+          structureLayout: selectedStructureLayout,
+          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+        });
+      }
+      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
+      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+      setActiveTab('preview_quote');
+    } finally {
+      setTimeout(() => hideLoader(), 350);
     }
-    if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
-      saveDesignRecord({
-        quotationId: quotePayload.id,
-        customerName: custName,
-        capacityKw: kw,
-        type: '2D_ROOF_CAD',
-        roofConfig: quotationRoofConfig,
-        structureLayout: selectedStructureLayout,
-        specs: { moduleCount, panelWatt, rooftopAreaSqFt }
-      });
-    }
-    if (setPreviewQuotation) setPreviewQuotation(quotePayload);
-    if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-    }
-    setActiveTab('preview_quote');
   };
 
   return (
@@ -2503,29 +2500,6 @@ export default function CreateQuotation() {
                 </div>
               </div>
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.3</span>
-            </div>
-
-            {/* Input Field for Rate per kW */}
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold" htmlFor="ratePerKw">
-                  Rate per kW (₹)
-                </label>
-                <span className="text-[11px] text-secondary shrink-0">Benchmark: ₹62k–₹68k</span>
-              </div>
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-headline-sm text-headline-sm text-secondary select-none">₹</span>
-                <input
-                  className="w-full h-11 pl-9 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-headline-sm text-headline-sm outline-none shadow-sm border border-surface-container-high focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 transition-all font-bold"
-                  id="ratePerKw"
-                  max="120000"
-                  min="30000"
-                  step="1000"
-                  type="number"
-                  value={ratePerKw}
-                  onChange={(e) => setRatePerKw(Number(e.target.value) || 0)}
-                />
-              </div>
             </div>
 
             {/* Highlighted Auto-Calculated Summary Box */}

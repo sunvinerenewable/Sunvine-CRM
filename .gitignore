@@ -29,3 +29,20 @@ extracted_image*.jpg
 *.njsproj
 *.sln
 *.sw?
+
+# Lighthouse audits
+lighthouse-report*
+
+# Audit reports (contain security findings)
+AUDIT_REPORT_V3.md
+AUDIT_REPORT_V2.md
+
+# Secrets
+.env
+.env.local
+.env.*.local
+DATABASE_URL
+
+# Rollout runs and database dumps
+rollout-run/
+backups/
