@@ -44,9 +44,10 @@ async function runSmokeTests() {
     }
   }
 
-  // Ensure JWT secret is set
+  // Ensure JWT secret is set — use a random value, NEVER a hardcoded string
+  // that could be read from GitHub and used to forge production tokens.
   if (!process.env.JWT_SECRET) {
-    process.env.JWT_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+    process.env.JWT_SECRET = (await import('node:crypto')).randomBytes(48).toString('hex');
   }
 
   let passed = 0;

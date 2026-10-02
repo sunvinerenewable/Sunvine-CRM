@@ -33,8 +33,11 @@ export const quotationService = {
           });
         }
       }
-    } catch (_) {
-      // API unreachable, fall through to Supabase client
+    } catch (err) {
+      if (import.meta.env?.PROD) {
+        console.error('[quotationService] API unreachable in production:', err?.message || err);
+        return [];
+      }
     }
 
     // 2. Direct Supabase fallback
@@ -216,7 +219,10 @@ export const quotationService = {
       // API server not responding (local dev mode without api server)
     }
 
-    // 2. Local dev fallback: Supabase upsert
+    // 2. Local dev fallback (NEVER in production — bypasses server-side money recompute)
+    if (import.meta.env?.PROD) {
+      return { success: false, error: 'Quotation service temporarily unavailable. Please try again.' };
+    }
     try {
       const fallbackPayload = {
         id: quote.id,
@@ -280,7 +286,10 @@ export const quotationService = {
       }
     } catch (_) {}
 
-    // Fallback: direct Supabase update
+    // Fallback (dev only — production must go through API state machine)
+    if (import.meta.env?.PROD) {
+      return { success: false, error: 'Status update service temporarily unavailable.' };
+    }
     try {
       await supabase
         .from('quotations')

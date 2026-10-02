@@ -94,11 +94,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save pricing presets notice:', error.message);
-        return { success: true, localOnly: true, data: presets };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: presets };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   },
 
@@ -171,11 +171,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save BOS matrix notice:', error.message);
-        return { success: true, localOnly: true, data: matrixList };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: matrixList };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   },
 
@@ -274,11 +274,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save inverter benchmarks notice:', error.message);
-        return { success: true, localOnly: true, data: benchmarks };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: benchmarks };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   },
 
@@ -371,11 +371,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save BOM catalog notice:', error.message);
-        return { success: true, localOnly: true, data: catalog };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: catalog };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   },
 
@@ -436,11 +436,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save tier margins notice:', error.message);
-        return { success: true, localOnly: true, data: tiers };
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data };
     } catch (err) {
-      return { success: true, localOnly: true, data: tiers };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   },
 
@@ -476,10 +476,11 @@ export const pricingService = {
 
       if (error) {
         console.warn('Supabase save dealer pricing notice:', error.message);
+        return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database: ' + error.message };
       }
       return { success: true, data: pricingData };
     } catch (err) {
-      return { success: true, localOnly: true, data: pricingData };
+      return { success: false, localOnly: true, error: 'Changes saved locally but could not sync to database. Check your connection.' };
     }
   }
 };

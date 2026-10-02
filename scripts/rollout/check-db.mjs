@@ -31,10 +31,11 @@ async function main() {
   }
 
 
-  // Verify project ref in connection details
+  // Verify project ref in connection details if configured
   const dbUrl = config.DATABASE_URL || '';
-  if (!dbUrl.includes('wyberzvcyrjipjqpotwe')) {
-    console.error('\n[ERROR] Database URL does not match target production project ref (wyberzvcyrjipjqpotwe).');
+  const expectedRef = process.env.SUPABASE_PROJECT_ID;
+  if (expectedRef && !dbUrl.includes(expectedRef)) {
+    console.error(`\n[ERROR] Database URL does not match target project ref (${expectedRef}).`);
     process.exit(1);
   }
 

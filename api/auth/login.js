@@ -16,15 +16,6 @@ import { query, getSupabaseServiceClient } from '../_lib/db.js';
  * NO plaintext passwords. NO hardcoded credentials. NO bypass lists.
  */
 
-function parseCookies(cookieHeader = '') {
-  const out = {};
-  cookieHeader.split(';').forEach(c => {
-    const [k, ...v] = c.split('=');
-    if (k) out[k.trim()] = decodeURIComponent(v.join('='));
-  });
-  return out;
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
@@ -59,7 +50,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid role. Must be admin, dealer, or staff.' });
   }
 
-  if (password.length < 6 || password.length > 128) {
+  if (password.length < 8 || password.length > 128) {
     recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
@@ -74,21 +65,34 @@ export default async function handler(req, res) {
       let data = null;
 
       try {
+        // Try admin_accounts first (post-migration), fall back to admin_users (pre-migration)
+        const table = 'admin_accounts';
         const sql = isEmail
-          ? 'SELECT id, email, full_name, role, password_hash FROM admin_accounts WHERE LOWER(email) = LOWER($1) LIMIT 1'
-          : 'SELECT id, email, full_name, role, password_hash FROM admin_accounts WHERE mobile_number = $1 LIMIT 1';
+          ? `SELECT id, email, full_name, role, password_hash FROM ${table} WHERE LOWER(email) = LOWER($1) LIMIT 1`
+          : `SELECT id, email, full_name, role, password_hash FROM ${table} WHERE mobile_number = $1 LIMIT 1`;
         const qRes = await query(sql, [cleanIdentifier]);
         data = qRes.rows[0] || null;
       } catch (dbErr) {
+        console.error('[auth/login] PostgreSQL admin lookup failed:', dbErr.message);
         try {
           const db = getSupabaseServiceClient();
-          const qRes = await db
+          // Try admin_accounts first, then admin_users as fallback for pre-migration DBs
+          let qRes = await db
             .from('admin_accounts')
             .select('id, email, full_name, role, password_hash')
             .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier)
             .maybeSingle();
+          if (!qRes.data && !qRes.error) {
+            qRes = await db
+              .from('admin_users')
+              .select('id, email, full_name, role, password_hash')
+              .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier)
+              .maybeSingle();
+          }
           data = qRes.data;
-        } catch (_) {}
+        } catch (supErr) {
+          console.error('[auth/login] Supabase admin lookup also failed:', supErr.message);
+        }
       }
 
       if (!data) {
@@ -121,6 +125,7 @@ export default async function handler(req, res) {
         const qRes = await query(sql, [cleanMobile]);
         data = qRes.rows[0] || null;
       } catch (dbErr) {
+        console.error('[auth/login] PostgreSQL dealer lookup failed:', dbErr.message);
         try {
           const db = getSupabaseServiceClient();
           const qRes = await db
@@ -129,7 +134,9 @@ export default async function handler(req, res) {
             .eq('mobile_number', cleanMobile)
             .maybeSingle();
           data = qRes.data;
-        } catch (_) {}
+        } catch (supErr) {
+          console.error('[auth/login] Supabase dealer lookup also failed:', supErr.message);
+        }
       }
 
       if (!data) {
@@ -173,6 +180,7 @@ export default async function handler(req, res) {
         const qRes = await query(sql, [cleanMobile]);
         data = qRes.rows[0] || null;
       } catch (dbErr) {
+        console.error('[auth/login] PostgreSQL staff lookup failed:', dbErr.message);
         try {
           const db = getSupabaseServiceClient();
           const qRes = await db
@@ -181,7 +189,9 @@ export default async function handler(req, res) {
             .eq('phone', cleanMobile)
             .maybeSingle();
           data = qRes.data;
-        } catch (_) {}
+        } catch (supErr) {
+          console.error('[auth/login] Supabase staff lookup also failed:', supErr.message);
+        }
       }
 
       if (!data) {

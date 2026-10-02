@@ -134,8 +134,14 @@ export const authService = {
     return { success: false, error: apiRes.error };
   },
 
-  /** RPC fallback for local dev without the API server running */
+  /** RPC fallback for local dev without the API server running.
+   * ⚠️ NEVER runs in production — the raw password would travel through the anon-key client. */
   async _rpcLogin(userType, identifier, password, rateKey, staffRole) {
+    // Hard block in production — surface a clear error instead of bypassing API security
+    if (import.meta.env.PROD) {
+      recordClientFail(rateKey);
+      return { success: false, error: 'Authentication service unavailable. Please try again.' };
+    }
     try {
       const { data, error } = await supabase.rpc('verify_user_credentials', {
         p_user_type: userType,

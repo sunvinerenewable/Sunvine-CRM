@@ -13,7 +13,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   }
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+const validUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const validKey = supabaseAnonKey || 'placeholder-anon-key';
+
+export const supabase = createClient(validUrl, validKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

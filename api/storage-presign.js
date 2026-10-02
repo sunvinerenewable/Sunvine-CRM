@@ -1,9 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+import { verifyJwt } from './_lib/jwt.js';
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://wyberzvcyrjipjqpotwe.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_XzbS-fQMtSGf2LjFO40yzw_LtT98nG6';
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  // Throw at cold-start so misconfiguration is caught immediately, not silently
+  console.error('[storage-presign] FATAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars are required.');
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -19,7 +24,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
   }
 
-  // Rate limiting against automated storage flood attacks
+  // ── Auth check ────────────────────────────────────────────────────────────
+  const cookies = (req.headers.cookie || '').split(';').reduce((acc, c) => {
+    const [k, ...v] = c.split('=');
+    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
+    return acc;
+  }, {});
+  const jwtResult = verifyJwt(cookies.sunvine_auth_token);
+  if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
+
+  // ── Rate limiting ─────────────────────────────────────────────────────────
   const clientIp = getClientIp(req);
   const rateLimit = await checkDistributedRateLimit(`storage_${clientIp}`, { maxAttempts: 30, windowMs: 15 * 60 * 1000 });
   if (!rateLimit.allowed) {
@@ -45,8 +59,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Sanitize extension
-    const extension = fileName.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Derive extension from MIME type — never trust user-controlled filename
+    const MIME_TO_EXT = { 'application/pdf': 'pdf', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const extension = MIME_TO_EXT[fileType.toLowerCase()] || 'bin';
     const cleanFolder = folder.replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
     const uniqueEntropy = crypto.randomBytes(6).toString('hex');
     const timestamp = Date.now();

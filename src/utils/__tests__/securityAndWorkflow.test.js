@@ -7,8 +7,12 @@ import {
 import { hashPassword, hashBcrypt, verifyPassword } from '../../../api/_lib/security.js';
 import { signJwt, verifyJwt } from '../../../api/_lib/jwt.js';
 
-// Setup test JWT secret
-process.env.JWT_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+import { randomBytes } from 'node:crypto';
+
+// Generate a fresh random JWT secret for each test run.
+// NEVER use a hardcoded/predictable string here — it ends up readable on GitHub
+// and could be copied into a production fallback (which is exactly what happened in db.js).
+process.env.JWT_SECRET = randomBytes(48).toString('hex');
 
 // ── 1. Password Security & PBKDF2 Hashing ──────────────────────────────────
 test('Password Security: PBKDF2 hash generation and verification', () => {

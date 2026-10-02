@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
-import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+import { getClientIp, checkDistributedRateLimit, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 
 /**
@@ -31,8 +31,9 @@ function parseCookies(cookieHeader = '') {
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !serviceKey) throw new Error('SUPABASE_URL and key are required.');
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl) throw new Error('[FATAL] SUPABASE_URL env var is required.');
+  if (!serviceKey) throw new Error('[FATAL] SUPABASE_SERVICE_ROLE_KEY env var is required. Never fall back to the anon key for financial operations.');
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
@@ -141,7 +142,7 @@ async function handleSave(req, res, jwt, db) {
     }
   }
 
-  // ── Load dealer tier margin cap from Redis cache / DB ─────────────────
+  // ── Load dealer tier margin cap from DB ────────────────────────────────
   let maxMarginCapPerKw = 6000; // default
   if (effectiveDealerId) {
     const { data: cachedDealer } = await cacheAside(`dealer:rates:${effectiveDealerId}`, 43200, async () => {
@@ -180,7 +181,9 @@ async function handleSave(req, res, jwt, db) {
     };
   });
 
-  const isInterState = String(body.customer_state || 'Gujarat').toLowerCase() !== 'gujarat';
+  const supplierState = String(body.supplier_state || 'Gujarat').trim();
+  const peakSunHours = Number(body.peak_sun_hours) || 1440;
+  const isInterState = String(body.customer_state || supplierState).trim().toLowerCase() !== supplierState.trim().toLowerCase();
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState);
 
   // Margin validation and capping
@@ -256,8 +259,8 @@ async function handleSave(req, res, jwt, db) {
     total_amount: totalAmount,
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
-    annual_generation_kwh: Math.round(kw * 1440),
-    status: isNew ? 'Draft' : undefined, // don't overwrite status on update
+    annual_generation_kwh: Math.round(kw * peakSunHours),
+    ...(isNew && { status: 'Draft' }),
     quote_payload: quotePayload,
     updated_at: new Date().toISOString()
   };
@@ -436,7 +439,7 @@ async function handleGet(req, res, jwt, db) {
 
   const { data, error } = await db
     .from('quotations')
-    .select('*')
+    .select('id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, base_cost, dealer_margin, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, quote_payload, created_at, updated_at')
     .eq('id', id)
     .maybeSingle();
 
@@ -496,13 +499,10 @@ export default async function handler(req, res) {
   if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
   const jwt = jwtResult.payload;
 
-  // Distributed Rate limit for authenticated routes (120 req/min)
-  const clientIp = getClientIp(req);
-  const rateIdentifier = `quote:${jwt.id || jwt.dealer_id || clientIp}`;
-  const rateCheck = await checkDistributedRateLimit(rateIdentifier, { maxAttempts: 120, windowMs: 60 * 1000 });
-  if (!rateCheck.allowed) {
-    return res.status(429).json({ error: `Too many requests. Try again in ${rateCheck.resetSeconds}s.` });
-  }
+  // Rate limit
+  const ip = getClientIp(req);
+  const rateCheck = checkRateLimit(ip, { maxAttempts: 60, windowMs: 60 * 1000, increment: false });
+  if (!rateCheck.allowed) return res.status(429).json({ error: 'Too many requests.' });
 
   if (req.method === 'GET') {
     const action = req.query?.action || 'list';
