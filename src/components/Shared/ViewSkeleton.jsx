@@ -70,22 +70,6 @@ export function ProposalSkeleton() {
 }
 
 export function PortalSkeleton() {
-  const sidebarItems = [
-    { label: 'Executive Overview', icon: 'dashboard', active: true },
-    { label: 'Business Performance', icon: 'monitoring' },
-    { label: 'Dealer Partners', icon: 'group' },
-    { label: 'Sales Team & Files', icon: 'badge' },
-    { label: 'Reports & Export', icon: 'download' },
-    { label: 'Audit Logs Trail', icon: 'receipt_long' },
-    { label: 'Lead Generation', icon: 'radar' },
-    { label: 'New Direct Quote', icon: 'note_add' },
-    { label: 'Pricing & Presets', icon: 'tune' },
-    { label: 'Hardware Catalog', icon: 'memory' },
-    { label: 'All Quotations', icon: 'inventory_2' },
-    { label: 'Documentation Hub', icon: 'description' },
-    { label: 'Master Governance', icon: 'settings' },
-  ];
-
   return (
     <div className="min-h-screen bg-[#F6F8F7] text-[#0F1B2E] font-sans antialiased">
       {/* Desktop Left Sidebar Skeleton */}
@@ -103,19 +87,23 @@ export function PortalSkeleton() {
             </span>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="flex flex-col mt-2 flex-1 overflow-y-auto py-1">
-            {sidebarItems.map((item, idx) => (
+          {/* Navigation Links Skeleton */}
+          <nav className="flex flex-col mt-2 flex-1 overflow-y-auto py-1 gap-0.5">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((idx) => (
               <div
                 key={idx}
                 className={`flex items-center gap-3 px-6 py-2.5 text-left ${
-                  item.active
-                    ? 'border-l-4 border-primary-container bg-white/10 text-on-secondary font-label-md'
-                    : 'text-secondary-fixed-dim hover:bg-white/5 hover:text-on-secondary font-body-md'
+                  idx === 1
+                    ? 'border-l-4 border-primary-container bg-white/10'
+                    : 'opacity-75'
                 }`}
               >
-                <span className="material-symbols-outlined text-[20px] opacity-80">{item.icon}</span>
-                <span className="text-xs truncate">{item.label}</span>
+                <div className="w-5 h-5 rounded-md bg-white/20 shrink-0 animate-pulse"></div>
+                <div
+                  className={`h-3 rounded bg-white/15 animate-pulse ${
+                    idx % 3 === 0 ? 'w-32' : idx % 2 === 0 ? 'w-24' : 'w-28'
+                  }`}
+                ></div>
               </div>
             ))}
           </nav>
@@ -124,20 +112,20 @@ export function PortalSkeleton() {
 
       {/* Desktop Top Header Skeleton */}
       <header className="no-print hidden md:flex fixed top-0 left-64 right-0 h-16 bg-surface-container-lowest border-b border-surface-container-high z-40 items-center justify-between px-4 sm:px-6 xl:px-8 shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-        <div className="flex items-center gap-2 text-secondary font-label-sm">
-          <span className="material-symbols-outlined text-[18px] text-primary">solar_power</span>
-          <span className="text-xs font-medium text-on-surface">Dealer Operations</span>
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded bg-primary/20 shrink-0 animate-pulse"></div>
+          <div className="h-4 w-28 bg-surface-container-highest rounded animate-pulse"></div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl text-secondary">
-            <span className="material-symbols-outlined text-[22px]">notifications</span>
+          <div className="w-9 h-9 rounded-xl bg-surface-container-low flex items-center justify-center animate-pulse">
+            <div className="w-5 h-5 rounded bg-surface-container-high"></div>
           </div>
           <div className="flex items-center gap-2.5 pl-3 border-l border-surface-container-high">
-            <div className="w-8 h-8 rounded-full bg-slate-200"></div>
-            <div className="hidden sm:block space-y-0.5">
-              <div className="h-3.5 w-20 bg-slate-300 rounded"></div>
-              <div className="h-2.5 w-24 bg-slate-200 rounded"></div>
+            <div className="w-8 h-8 rounded-full bg-surface-container-highest animate-pulse"></div>
+            <div className="hidden sm:block space-y-1">
+              <div className="h-3.5 w-20 bg-surface-container-highest rounded animate-pulse"></div>
+              <div className="h-2.5 w-24 bg-surface-container-high rounded animate-pulse"></div>
             </div>
           </div>
         </div>
