@@ -1,6 +1,16 @@
 import { supabase } from '../lib/supabase';
 import { MASTER_DOCUMENTATION_POLICIES } from '../data/documentationPolicies';
 
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
+
 export const settingsService = {
   /**
    * Fetch Master System Settings (Company Profile, Bank Details, Terms, Tax, Governance, Documentation Policies)
@@ -93,6 +103,7 @@ export const settingsService = {
         return { success: false, error: error.message };
       }
 
+      invalidateCatalogCache(['settings:global']);
       return { success: true, data: data?.[0] };
     } catch (err) {
       console.error('[settingsService] Update error:', err);

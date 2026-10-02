@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
-import { getClientIp, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
+import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+import { cacheAside, redisDel } from './_lib/redis.js';
 
 /**
  * /api/quotations — consolidated quotation resource handler
@@ -140,16 +141,19 @@ async function handleSave(req, res, jwt, db) {
     }
   }
 
-  // ── Load dealer tier margin cap from DB ────────────────────────────────
+  // ── Load dealer tier margin cap from Redis cache / DB ─────────────────
   let maxMarginCapPerKw = 6000; // default
   if (effectiveDealerId) {
-    const { data: dealerData } = await db
-      .from('dealers')
-      .select('max_margin_cap_per_kw, tier')
-      .eq('id', effectiveDealerId)
-      .maybeSingle();
-    if (dealerData?.max_margin_cap_per_kw) {
-      maxMarginCapPerKw = Number(dealerData.max_margin_cap_per_kw);
+    const { data: cachedDealer } = await cacheAside(`dealer:rates:${effectiveDealerId}`, 43200, async () => {
+      const { data: dealerData } = await db
+        .from('dealers')
+        .select('max_margin_cap_per_kw, tier')
+        .eq('id', effectiveDealerId)
+        .maybeSingle();
+      return dealerData || null;
+    });
+    if (cachedDealer?.max_margin_cap_per_kw) {
+      maxMarginCapPerKw = Number(cachedDealer.max_margin_cap_per_kw);
     }
   }
 
@@ -271,6 +275,11 @@ async function handleSave(req, res, jwt, db) {
     return res.status(500).json({ error: 'Failed to save quotation. Please try again.' });
   }
 
+  // Invalidate public proposal cache on save
+  if (data?.share_token || body?.share_token) {
+    await redisDel(`quote:public:${data?.share_token || body?.share_token}`).catch(() => {});
+  }
+
   // Audit log entry
   try {
     await db.from('audit_log').insert({
@@ -298,10 +307,10 @@ async function handleStatus(req, res, jwt, db) {
 
   if (!id || !newStatus) return res.status(400).json({ error: 'id and newStatus are required.' });
 
-  // Fetch current status
+  // Fetch current status and share_token
   const { data: existing, error: fetchErr } = await db
     .from('quotations')
-    .select('id, status, dealer_id')
+    .select('id, status, dealer_id, share_token')
     .eq('id', id)
     .maybeSingle();
 
@@ -326,6 +335,11 @@ async function handleStatus(req, res, jwt, db) {
 
   if (updateErr) return res.status(500).json({ error: 'Status update failed.' });
 
+  // Invalidate public quotation cache
+  if (existing.share_token) {
+    await redisDel(`quote:public:${existing.share_token}`).catch(() => {});
+  }
+
   // Audit log
   try {
     await db.from('audit_log').insert({
@@ -345,34 +359,48 @@ async function handlePublicView(req, res, db) {
   const { token } = req.query || {};
   if (!token) return res.status(400).json({ error: 'share_token is required.' });
 
-  const { data, error } = await db
-    .from('quotations')
-    .select('id, customer_name, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, quote_payload, created_at')
-    .eq('share_token', token)
-    .neq('status', 'Archived')
-    .maybeSingle();
+  const clientIp = getClientIp(req);
+  // Distributed Rate Limit for public links: 30 requests/minute per IP
+  const rateCheck = await checkDistributedRateLimit(`pub:${clientIp}`, { maxAttempts: 30, windowMs: 60 * 1000 });
+  if (!rateCheck.allowed) {
+    return res.status(429).json({ error: `Too many requests. Try again in ${rateCheck.resetSeconds}s.` });
+  }
 
-  if (error || !data) return res.status(404).json({ error: 'Proposal not found or has expired.' });
+  // Cache-Aside with 7-day sliding safety TTL
+  const { data, fromCache } = await cacheAside(`quote:public:${token}`, 604800, async () => {
+    const { data: quoteData } = await db
+      .from('quotations')
+      .select('id, customer_name, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, quote_payload, created_at')
+      .eq('share_token', token)
+      .neq('status', 'Archived')
+      .maybeSingle();
 
-  // Never return internal dealer/financial details on public view
+    if (!quoteData) return null;
+
+    return {
+      id: quoteData.id,
+      customerName: quoteData.customer_name,
+      systemCapacityKw: quoteData.system_capacity_kw,
+      panelType: quoteData.panel_type,
+      inverterType: quoteData.inverter_type,
+      structureType: quoteData.structure_type,
+      totalAmount: quoteData.total_amount,
+      subsidyAmount: quoteData.subsidy_amount,
+      netPayable: quoteData.net_payable,
+      annualGenerationKwh: quoteData.annual_generation_kwh,
+      status: quoteData.status,
+      bomItems: quoteData.quote_payload?.bomItems || [],
+      bomTotals: quoteData.quote_payload?.bomTotals || {},
+      createdAt: quoteData.created_at
+    };
+  });
+
+  if (!data) return res.status(404).json({ error: 'Proposal not found or has expired.' });
+
+  res.setHeader('X-Cache-Source', fromCache ? 'Redis' : 'Database');
   return res.status(200).json({
     success: true,
-    quotation: {
-      id: data.id,
-      customerName: data.customer_name,
-      systemCapacityKw: data.system_capacity_kw,
-      panelType: data.panel_type,
-      inverterType: data.inverter_type,
-      structureType: data.structure_type,
-      totalAmount: data.total_amount,
-      subsidyAmount: data.subsidy_amount,
-      netPayable: data.net_payable,
-      annualGenerationKwh: data.annual_generation_kwh,
-      status: data.status,
-      bomItems: data.quote_payload?.bomItems || [],
-      bomTotals: data.quote_payload?.bomTotals || {},
-      createdAt: data.created_at
-    }
+    quotation: data
   });
 }
 
@@ -426,6 +454,12 @@ async function handleDelete(req, res, jwt, db) {
   const id = req.query?.id || req.body?.id;
   if (!id) return res.status(400).json({ error: 'id parameter is required.' });
 
+  // Get share token for cache eviction
+  const { data: existing } = await db.from('quotations').select('share_token').eq('id', id).maybeSingle();
+  if (existing?.share_token) {
+    await redisDel(`quote:public:${existing.share_token}`).catch(() => {});
+  }
+
   // Direct SQL hard delete from database table
   let query = db.from('quotations').delete().eq('id', id);
   if (role === 'dealer') {
@@ -457,14 +491,18 @@ export default async function handler(req, res) {
 
   // All other actions require JWT
   const cookies = parseCookies(req.headers.cookie || '');
-  const jwtResult = verifyJwt(cookies.sunvine_auth_token);
+  const token = cookies.sunvine_auth_token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const jwtResult = verifyJwt(token);
   if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
   const jwt = jwtResult.payload;
 
-  // Rate limit
-  const ip = getClientIp(req);
-  const rateCheck = checkRateLimit(ip, { maxAttempts: 60, windowMs: 60 * 1000, increment: false });
-  if (!rateCheck.allowed) return res.status(429).json({ error: 'Too many requests.' });
+  // Distributed Rate limit for authenticated routes (120 req/min)
+  const clientIp = getClientIp(req);
+  const rateIdentifier = `quote:${jwt.id || jwt.dealer_id || clientIp}`;
+  const rateCheck = await checkDistributedRateLimit(rateIdentifier, { maxAttempts: 120, windowMs: 60 * 1000 });
+  if (!rateCheck.allowed) {
+    return res.status(429).json({ error: `Too many requests. Try again in ${rateCheck.resetSeconds}s.` });
+  }
 
   if (req.method === 'GET') {
     const action = req.query?.action || 'list';

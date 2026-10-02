@@ -37,7 +37,8 @@ export async function redisCommand(command, ...args) {
         Authorization: `Bearer ${config.token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify([command, ...args])
+      body: JSON.stringify([command, ...args]),
+      signal: AbortSignal.timeout(200)
     });
 
     if (!res.ok) {
@@ -48,7 +49,9 @@ export async function redisCommand(command, ...args) {
     const json = await res.json();
     return json?.result;
   } catch (err) {
-    console.warn(`[Redis] Exception on command ${command}:`, err.message);
+    if (err.name !== 'TimeoutError' && err.name !== 'AbortError') {
+      console.warn(`[Redis] Exception on command ${command}:`, err.message);
+    }
     return null;
   }
 }

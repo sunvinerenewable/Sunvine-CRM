@@ -2,6 +2,16 @@ import { supabase } from '../lib/supabase';
 
 const DEALERS_KEY = 'sunvine_dealers';
 
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
+
 export const dealerService = {
   /**
    * Fetch all registered dealers from Supabase, fallback to localStorage
@@ -156,6 +166,7 @@ export const dealerService = {
         return { success: false, error: error.message };
       }
 
+      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
       return { success: true, data };
     } catch (err) {
       console.error('[dealerService] Error updating dealer:', err);
@@ -173,6 +184,8 @@ export const dealerService = {
         .from('dealer_accounts')
         .delete()
         .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
+
+      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
 
       if (error) {
         console.warn('[dealerService] Delete dealer warning:', error.message);

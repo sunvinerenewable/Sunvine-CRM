@@ -7,11 +7,34 @@ const INVERTER_BENCHMARKS_KEY = 'sunvine_inverter_benchmark_matrix';
 const BOM_CATALOG_KEY = 'sunvine_bom_catalog_v2';
 const TIER_MARGINS_KEY = 'sunvine_tier_margins';
 
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
+
 export const pricingService = {
   // ==========================================
   // 1. GLOBAL PRICING PRESETS
   // ==========================================
   async getPricingPresets() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=presets');
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.presets) {
+          localStorage.setItem(PRICING_PRESETS_KEY, JSON.stringify(json.presets));
+          return json.presets;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('pricing_presets')
@@ -65,6 +88,9 @@ export const pricingService = {
         .from('pricing_presets')
         .upsert([payload], { onConflict: 'id' })
         .select();
+
+      // Invalidate Redis cache
+      invalidateCatalogCache(['pricing:global_presets']);
 
       if (error) {
         console.warn('Supabase save pricing presets notice:', error.message);
@@ -170,6 +196,26 @@ export const pricingService = {
   // 3. INVERTER BENCHMARKS MATRIX
   // ==========================================
   async getInverterBenchmarks() {
+    // 1. Fast Cache-Aside via serverless /api/catalog
+    try {
+      const res = await fetch('/api/catalog?type=inverters');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.inverterBenchmarks) && json.inverterBenchmarks.length > 0) {
+          const benchmarks = json.inverterBenchmarks.map(row => ({
+            capacityKW: Number(row.capacity_kw),
+            brand: row.brand,
+            series: row.series,
+            phase: row.phase,
+            benchmarkPrice: Number(row.benchmark_price)
+          }));
+          localStorage.setItem(INVERTER_BENCHMARKS_KEY, JSON.stringify(benchmarks));
+          return benchmarks;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('inverter_benchmark_matrix')
@@ -222,6 +268,9 @@ export const pricingService = {
       const { data, error } = await supabase
         .from('inverter_benchmark_matrix')
         .upsert(rows, { onConflict: 'id' });
+
+      // Invalidate Redis cache
+      invalidateCatalogCache(['catalog:inverter_benchmarks']);
 
       if (error) {
         console.warn('Supabase save inverter benchmarks notice:', error.message);
