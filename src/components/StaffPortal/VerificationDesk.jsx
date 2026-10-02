@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import { getDocumentListForFile } from '../../data/defaultRequiredDocuments';
 
 export default function VerificationDesk() {
   const {
@@ -400,15 +401,9 @@ export default function VerificationDesk() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {[
-                    { key: 'aadhaar', label: 'Aadhaar Card' },
-                    { key: 'lightBill', label: 'Electricity Bill' },
-                    { key: 'meterPhoto', label: 'Meter Photo' },
-                    { key: 'sitePhoto', label: 'Site / Roof Photo' },
-                    { key: 'bankPassbook', label: 'Bank Passbook' }
-                  ].map((doc) => {
-                    const docInfo = docs[doc.key];
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                  {getDocumentListForFile(file).map((doc) => {
+                    const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
                     const isUploaded = Boolean(docInfo?.uploaded);
                     const isVerified = Boolean(docInfo?.verified);
 
@@ -433,7 +428,7 @@ export default function VerificationDesk() {
                             )}
                           </div>
                           <p className="text-[10px] text-secondary mt-0.5 truncate">
-                            {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached (Opt)'}
+                            {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached'}
                           </p>
                         </div>
 
@@ -458,7 +453,7 @@ export default function VerificationDesk() {
                               )}
                             </>
                           ) : (
-                            <span className="text-[10px] text-secondary/60">Optional</span>
+                            <span className="text-[10px] text-secondary/60">Pending</span>
                           )}
                         </div>
                       </div>

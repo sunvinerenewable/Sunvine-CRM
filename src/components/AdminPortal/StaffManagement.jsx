@@ -7,6 +7,12 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import {
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DOCUMENT_SCHEMAS
+} from '../../data/defaultRequiredDocuments';
 
 export default function StaffManagement() {
   const {
@@ -110,6 +116,9 @@ export default function StaffManagement() {
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustEmail, setNewCustEmail] = useState('');
+  const [newCustCoApplicantName, setNewCustCoApplicantName] = useState('');
+  const [newCustCoApplicantPhone, setNewCustCoApplicantPhone] = useState('');
   const [newCustAddress, setNewCustAddress] = useState('');
   const [newCustDiscom, setNewCustDiscom] = useState('UGVCL');
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
@@ -154,7 +163,8 @@ export default function StaffManagement() {
     try {
       if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
         try {
-          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey);
+          const oldDoc = file?.documents?.[docKey];
+          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey, { oldDoc });
           if (uploadRes?.success) {
             filename = uploadRes.filename || fileOrName.name;
             fileUrl = uploadRes.publicUrl || uploadRes.url;
@@ -191,6 +201,36 @@ export default function StaffManagement() {
     } catch (e) {
       console.error('[StaffManagement] handleUploadDoc failed:', e);
       addToast(e.message || 'Failed to upload document', 'error');
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const handleDeleteDoc = async (fileId, docKey) => {
+    const file = customerFiles.find(f => f.id === fileId);
+    if (!file) return;
+    const doc = file.documents?.[docKey];
+
+    showLoader('Removing document from Cloudflare R2 Vault...');
+    try {
+      await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', doc);
+
+      const updatedDocs = { ...(file.documents || {}) };
+      delete updatedDocs[docKey];
+
+      await updateCustomerFile(fileId, { documents: updatedDocs });
+
+      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+        setSelectedFileForDocs(prev => ({
+          ...prev,
+          documents: updatedDocs
+        }));
+      }
+
+      addToast('Document removed from Cloudflare R2', 'info');
+    } catch (e) {
+      console.error('[StaffManagement] handleDeleteDoc failed:', e);
+      addToast(e.message || 'Failed to remove document', 'error');
     } finally {
       hideLoader();
     }
@@ -235,10 +275,14 @@ export default function StaffManagement() {
     const assignedStaff = staffList.find(s => s.id === newCustStaffId) || staffList[0];
     const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
     const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+    const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
     const newFile = {
       id: newFileId,
       customerName: newCustName.trim(),
       phone: newCustPhone.trim(),
+      email: newCustEmail.trim() || null,
+      coApplicantName: isLoanCase ? (newCustCoApplicantName.trim() || null) : null,
+      coApplicantPhone: isLoanCase ? (newCustCoApplicantPhone.trim() || null) : null,
       address: newCustAddress.trim() || 'Gujarat, India',
       discom: newCustDiscom,
       consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -253,25 +297,22 @@ export default function StaffManagement() {
       dealerName: matchedDealer ? (matchedDealer.firmName || matchedDealer.name) : null,
       financeType: newCustFinanceType,
       paymentMode: newCustFinanceType,
-      loanBank: newCustFinanceType === 'LOAN' ? newCustLoanBank : null,
-      loanRefNo: newCustFinanceType === 'LOAN' ? newCustLoanRef.trim() : null,
+      loanBank: isLoanCase ? newCustLoanBank : null,
+      loanRefNo: isLoanCase ? newCustLoanRef.trim() : null,
       createdDate: new Date().toISOString().split('T')[0],
       status: 'Sourced',
       currentStage: 'LEAD_SOURCED',
       applicationNo: 'Draft Pending',
-      documents: {
-        aadhaar: { uploaded: false, filename: null, date: null },
-        lightBill: { uploaded: false, filename: null, date: null },
-        meterPhoto: { uploaded: false, filename: null, date: null },
-        sitePhoto: { uploaded: false, filename: null, date: null },
-        bankPassbook: { uploaded: false, filename: null, date: null }
-      }
+      documents: {}
     };
 
     addCustomerFile(newFile);
     setShowAddFileModal(false);
     setNewCustName('');
     setNewCustPhone('');
+    setNewCustEmail('');
+    setNewCustCoApplicantName('');
+    setNewCustCoApplicantPhone('');
     setNewCustAddress('');
     setNewCustConsumerNo('');
     setNewCustLoanRef('');
@@ -550,37 +591,43 @@ export default function StaffManagement() {
                         </div>
                       </div>
 
-                      {/* Document Badges (Clearly Optional) */}
-                      <div className="mt-4 pt-3 border-t border-slate-100">
-                        <div className="flex items-center justify-between text-xs mb-2">
-                          <span className="text-slate-500 font-medium">Documents (Optional)</span>
-                          <span className="font-bold text-emerald-700">{docsCount} / 5 Attached</span>
-                        </div>
-                        <div className="grid grid-cols-5 gap-1.5 text-center">
-                          {[
-                            { key: 'aadhaar', label: 'Aadhaar' },
-                            { key: 'lightBill', label: 'Bill' },
-                            { key: 'meterPhoto', label: 'Meter' },
-                            { key: 'sitePhoto', label: 'Site' },
-                            { key: 'bankPassbook', label: 'Bank' }
-                          ].map(doc => {
-                            const isUp = file.documents?.[doc.key]?.uploaded;
-                            return (
-                              <div
-                                key={doc.key}
-                                title={`${doc.label}: ${isUp ? 'Uploaded' : 'Optional'}`}
-                                className={`py-1 rounded flex flex-col items-center justify-center text-[10px] border transition-all ${
-                                  isUp
-                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-bold'
-                                    : 'bg-slate-50 border-slate-200 text-slate-400'
-                                }`}
-                              >
-                                <span>{doc.label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      {/* Document Badges (Dynamic by Category: Residential, Bank Loan, Finance Loan) */}
+                      {(() => {
+                        const docCompletion = getDocumentCompletion(file);
+                        const docList = getDocumentListForFile(file);
+                        const schemaKey = getDocumentSchemaKey(file);
+                        const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
+
+                        return (
+                          <div className="mt-4 pt-3 border-t border-slate-100">
+                            <div className="flex items-center justify-between text-xs mb-2">
+                              <span className="text-slate-500 font-medium flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-emerald-600">folder_open</span>
+                                <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                              </span>
+                              <span className="font-bold text-emerald-700">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                            </div>
+                            <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
+                              {docList.map(doc => {
+                                const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
+                                return (
+                                  <div
+                                    key={doc.key}
+                                    title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
+                                    className={`py-1 px-1 rounded flex flex-col items-center justify-center text-[9px] border transition-all ${
+                                      isUp
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
+                                        : 'bg-slate-50 border-slate-200 text-slate-400'
+                                    }`}
+                                  >
+                                    <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Action Footer */}
@@ -1056,7 +1103,7 @@ export default function StaffManagement() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number *</label>
                   <input
                     type="tel"
                     required
@@ -1065,6 +1112,31 @@ export default function StaffManagement() {
                     placeholder="+91 98250 99881"
                     className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    value={newCustEmail}
+                    onChange={e => setNewCustEmail(e.target.value)}
+                    placeholder="e.g. customer@example.com"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment / Case Type</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={e => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
+                  >
+                    <option value="CASH">Residential (100% Cash / Self Payment)</option>
+                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
+                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
+                  </select>
                 </div>
               </div>
 
@@ -1142,14 +1214,15 @@ export default function StaffManagement() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment / Finance Mode</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Sales Staff</label>
                   <select
-                    value={newCustFinanceType}
-                    onChange={e => setNewCustFinanceType(e.target.value)}
+                    value={newCustStaffId}
+                    onChange={e => setNewCustStaffId(e.target.value)}
                     className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   >
-                    <option value="CASH">100% Cash / Self Payment</option>
-                    <option value="LOAN">Solar Bank Loan / EMI</option>
+                    {(staffList || []).map(s => (
+                      <option key={s.id} value={s.id}>{s.name} - {s.zone}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -1170,71 +1243,90 @@ export default function StaffManagement() {
                 </div>
               )}
 
-              {newCustFinanceType === 'LOAN' && (
-                <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl space-y-2.5">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-amber-900">Partner Bank / FinTech</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowBankModal(true)}
-                        className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[13px]">manage_search</span>
-                        <span>Browse 40+ Official Banks</span>
-                      </button>
+              {(newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN') && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-amber-700">account_balance</span>
+                      <span>{newCustFinanceType === 'FINANCE_LOAN' ? 'NBFC Loan Details' : 'Bank Loan Details'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBankModal(true)}
+                      className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                      <span>Browse 40+ Official Banks</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Financing Partner / Bank</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={newCustLoanBank}
+                          onChange={e => setNewCustLoanBank(e.target.value)}
+                          className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          {GROUPED_SOLAR_BANKS.map(group => (
+                            <optgroup key={group.category} label={group.label}>
+                              {group.banks.map(b => (
+                                <option key={b.id} value={b.name}>
+                                  {b.name} ({b.interestRate.split(' ')[0]})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setShowBankModal(true)}
+                          className="px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
+                          title="Browse All 40+ Banks"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">search</span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      <select
-                        value={newCustLoanBank}
-                        onChange={e => setNewCustLoanBank(e.target.value)}
-                        className="flex-1 bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
-                      >
-                        {GROUPED_SOLAR_BANKS.map(group => (
-                          <optgroup key={group.category} label={group.label}>
-                            {group.banks.map(b => (
-                              <option key={b.id} value={b.name}>
-                                {b.name} ({b.interestRate.split(' ')[0]})
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => setShowBankModal(true)}
-                        className="px-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
-                        title="Browse All 40+ Banks"
-                      >
-                        <span className="material-symbols-outlined text-[17px]">search</span>
-                      </button>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Loan Ref / App # (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustLoanRef}
+                        onChange={e => setNewCustLoanRef(e.target.value)}
+                        placeholder="e.g. SBI-2026-9812"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-amber-900 mb-1">Loan Ref / App # (Opt)</label>
-                    <input
-                      type="text"
-                      value={newCustLoanRef}
-                      onChange={e => setNewCustLoanRef(e.target.value)}
-                      placeholder="e.g. SBI-2026-9812"
-                      className="w-full bg-white border border-amber-300 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
-                    />
+
+                  {/* Co-Applicant fields for Loan cases */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Name (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustCoApplicantName}
+                        onChange={e => setNewCustCoApplicantName(e.target.value)}
+                        placeholder="e.g. Sunitaben B. Patel"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Mobile (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newCustCoApplicantPhone}
+                        onChange={e => setNewCustCoApplicantPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Sales Staff</label>
-                <select
-                  value={newCustStaffId}
-                  onChange={e => setNewCustStaffId(e.target.value)}
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                >
-                  {(staffList || []).map(s => (
-                    <option key={s.id} value={s.id}>{s.name} - {s.zone}</option>
-                  ))}
-                </select>
-              </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-[#E4E7EB]">
                 <button
@@ -1256,97 +1348,167 @@ export default function StaffManagement() {
         </div>
       )}
 
-      {/* MODAL 4: OPTIONAL DOCUMENT VAULT */}
-      {selectedFileForDocs && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-6 max-h-[92vh] overflow-y-auto text-slate-900">
-            <div className="flex items-start justify-between border-b border-[#E4E7EB] pb-4">
-              <div>
-                <span className="text-xs font-mono text-emerald-700 uppercase font-semibold">{selectedFileForDocs.id}</span>
-                <h2 className="text-xl font-bold text-slate-900 mt-1">
-                  {selectedFileForDocs.customerName} - Document Vault (Optional)
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Consumer No: <strong className="text-slate-800">{selectedFileForDocs.consumerNo}</strong> | System: <strong className="text-emerald-700 font-bold">{selectedFileForDocs.solarSystemKw} kW</strong>
-                </p>
-              </div>
-              <button onClick={() => setSelectedFileForDocs(null)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
+      {/* MODAL 4: DYNAMIC DOCUMENT VAULT (Residential, Bank Loan, Finance Loan) */}
+      {selectedFileForDocs && (() => {
+        const docList = getDocumentListForFile(selectedFileForDocs);
+        const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
+        const schema = DOCUMENT_SCHEMAS[schemaKey];
+        const docCompletion = getDocumentCompletion(selectedFileForDocs);
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[
-                { key: 'aadhaar', title: 'Aadhaar Card' },
-                { key: 'lightBill', title: 'Electricity / Light Bill' },
-                { key: 'meterPhoto', title: 'Electricity Meter Photo' },
-                { key: 'sitePhoto', title: 'Rooftop / Site Photo' },
-                { key: 'bankPassbook', title: 'Bank Passbook / Cheque' }
-              ].map(item => {
-                const doc = selectedFileForDocs.documents?.[item.key];
-                const isUploaded = doc?.uploaded;
-
-                return (
-                  <div
-                    key={item.key}
-                    className={`p-4 rounded-xl border flex flex-col justify-between ${
-                      isUploaded ? 'bg-emerald-50/40 border-emerald-300' : 'bg-slate-50 border-slate-200 border-dashed'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-slate-900 text-sm">{item.title}</h4>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                          isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200/80 text-slate-600'
-                        }`}>
-                          {isUploaded ? 'Uploaded' : 'Optional'}
-                        </span>
-                      </div>
-                      {isUploaded && (
-                        <p className="text-xs text-slate-600 mt-2 truncate font-medium">{doc.filename}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
-                      {isUploaded ? (
-                        <button
-                          onClick={() => setPreviewDoc({ ...item, ...doc })}
-                          className="text-xs text-emerald-700 font-semibold hover:underline cursor-pointer"
-                        >
-                          View Preview
-                        </button>
-                      ) : (
-                        <label className="text-xs text-emerald-700 font-semibold hover:underline cursor-pointer flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[15px]">upload</span>
-                          <span>Upload (Optional)</span>
-                          <input
-                            type="file"
-                            accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const f = e.target.files?.[0];
-                              if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
-                            }}
-                          />
-                        </label>
-                      )}
-                    </div>
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-3xl p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 my-6 sm:my-8 max-h-[90vh] overflow-y-auto text-slate-900">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between border-b border-[#E4E7EB] pb-3 sm:pb-4 gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-mono text-emerald-700 uppercase font-semibold">{selectedFileForDocs.id}</span>
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {schema?.label || 'Document Vault'}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-700">
+                      {docCompletion.uploaded} of {docCompletion.total} Attached
+                    </span>
                   </div>
-                );
-              })}
-            </div>
 
-            <div className="flex justify-end pt-3 border-t border-[#E4E7EB]">
-              <button
-                onClick={() => setSelectedFileForDocs(null)}
-                className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer hover:bg-slate-50"
-              >
-                Close
-              </button>
+                  <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 truncate">
+                    {selectedFileForDocs.customerName} — Document Vault
+                  </h2>
+
+                  {/* Customer Metadata Bar */}
+                  <div className="flex items-center gap-x-3 gap-y-1 text-xs text-slate-600 mt-1 flex-wrap">
+                    <span>Mobile: <strong className="text-slate-800 font-semibold">{selectedFileForDocs.phone}</strong></span>
+                    {selectedFileForDocs.email && (
+                      <span>Email: <strong className="text-slate-800 font-semibold">{selectedFileForDocs.email}</strong></span>
+                    )}
+                    {selectedFileForDocs.consumerNo && (
+                      <span>Consumer No: <strong className="text-slate-800">{selectedFileForDocs.consumerNo}</strong></span>
+                    )}
+                    <span>System: <strong className="text-emerald-700 font-bold">{selectedFileForDocs.solarSystemKw} kW</strong></span>
+                    {selectedFileForDocs.coApplicantName && (
+                      <span>Co-Applicant: <strong className="text-slate-800">{selectedFileForDocs.coApplicantName}</strong></span>
+                    )}
+                  </div>
+                </div>
+
+                <button onClick={() => setSelectedFileForDocs(null)} className="self-end sm:self-start text-slate-400 hover:text-slate-700 cursor-pointer p-1">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-3.5">
+                {docList.map(item => {
+                  const doc = selectedFileForDocs.documents?.[item.key] || (item.alias ? selectedFileForDocs.documents?.[item.alias] : null);
+                  const isUploaded = Boolean(doc?.uploaded);
+
+                  return (
+                    <div
+                      key={item.key}
+                      className={`p-3.5 sm:p-4 rounded-xl border flex flex-col justify-between transition-all ${
+                        isUploaded ? 'bg-emerald-50/50 border-emerald-300 shadow-xs' : 'bg-slate-50/80 border-slate-200 border-dashed hover:border-slate-300'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="material-symbols-outlined text-[20px] text-emerald-600 shrink-0">
+                              {item.icon || 'description'}
+                            </span>
+                            <div className="min-w-0">
+                              <h4 className="font-bold text-slate-900 text-sm truncate">{item.label}</h4>
+                              <p className="text-[11px] text-slate-500 leading-tight">{item.category} &bull; {item.description}</p>
+                            </div>
+                          </div>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
+                            isUploaded
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.mandatory
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          }`}>
+                            {isUploaded ? 'Uploaded' : (item.mandatory ? 'Pending' : 'Optional')}
+                          </span>
+                        </div>
+
+                        {isUploaded && (
+                          <div className="mt-2.5 p-2 bg-white rounded-lg border border-emerald-200 text-xs flex items-center justify-between">
+                            <span className="font-mono text-emerald-900 truncate font-medium">{doc.filename}</span>
+                            <span className="text-[10px] text-slate-400 font-sans ml-2 shrink-0">Max 2 MB</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-3.5 pt-2.5 border-t border-slate-200/70 flex items-center justify-between">
+                        {isUploaded ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc({ ...item, ...doc, title: item.label })}
+                              className="text-xs text-emerald-700 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
+                              <span>View Preview</span>
+                            </button>
+
+                            <div className="flex items-center gap-3">
+                              <label className="text-[11px] text-slate-500 hover:text-emerald-700 font-medium cursor-pointer flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">sync</span>
+                                <span>Replace</span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
+                                  }}
+                                />
+                              </label>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDoc(selectedFileForDocs.id, item.key)}
+                                className="text-[11px] text-rose-500 hover:text-rose-700 font-medium cursor-pointer flex items-center gap-0.5"
+                                title="Delete document from Cloudflare R2 Vault"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">delete</span>
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <label className="text-xs text-emerald-700 font-bold hover:underline cursor-pointer flex items-center gap-1.5 w-full justify-center py-1">
+                            <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                            <span>Upload Document {item.mandatory ? '' : '(Optional)'} (Max 2 MB)</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const f = e.target.files?.[0];
+                                if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end pt-3 border-t border-[#E4E7EB]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedFileForDocs(null)}
+                  className="px-4 py-2 bg-white border border-[#E4E7EB] text-slate-700 text-xs font-bold rounded-lg cursor-pointer hover:bg-slate-50"
+                >
+                  Close Vault
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* RICH DOCUMENT PREVIEW & INSPECTION MODAL */}
       {previewDoc && (

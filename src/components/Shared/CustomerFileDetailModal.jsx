@@ -2,6 +2,12 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from './Toast';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import {
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DOCUMENT_SCHEMAS
+} from '../../data/defaultRequiredDocuments';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -421,18 +427,8 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { key: 'electricityBill', label: 'Latest Electricity Bill (Torrent / DISCOM)', icon: 'receipt_long' },
-                  { key: 'aadhaarCard', label: 'Customer Aadhaar / Identity Proof', icon: 'badge' },
-                  { key: 'propertyTaxReceipt', label: 'Property Tax Receipt / Index Copy', icon: 'home_work' },
-                  { key: 'bankPassbook', label: 'Bank Passbook / Cancelled Cheque (DBT)', icon: 'account_balance' },
-                  { key: 'rooftopPhoto', label: 'Rooftop Survey Photo / CAD Layout', icon: 'solar_power' },
-                  { key: 'aadhaar', label: 'Aadhaar Card (Vault)', icon: 'badge' },
-                  { key: 'lightBill', label: 'Electricity / Light Bill (Vault)', icon: 'receipt_long' },
-                  { key: 'meterPhoto', label: 'Electricity Meter Photo', icon: 'electric_meter' },
-                  { key: 'sitePhoto', label: 'Rooftop / Site Photo', icon: 'solar_power' }
-                ].filter((doc, idx, arr) => arr.findIndex(d => d.key === doc.key) === idx).map((doc) => {
-                  const docInfo = file.documents?.[doc.key];
+                {getDocumentListForFile(file).map((doc) => {
+                  const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
                   const isUploaded = Boolean(docInfo?.uploaded);
                   const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';
 
@@ -442,18 +438,18 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                       className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3 text-xs"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="material-symbols-outlined text-[20px] text-secondary shrink-0">
-                          {doc.icon}
+                        <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                          {doc.icon || 'description'}
                         </span>
                         <div className="min-w-0">
                           <p className="font-semibold text-on-surface truncate">{doc.label}</p>
                           <p className="text-[11px] text-secondary">
                             {isUploaded ? (
                               <span className="font-mono text-primary break-all select-all font-medium">
-                                PDF Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
+                                Document Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
                               </span>
                             ) : (
-                              'Pending optional upload (Max 2 MB PDF)'
+                              `${doc.category} \u2022 Optional (Max 2 MB)`
                             )}
                           </p>
                         </div>

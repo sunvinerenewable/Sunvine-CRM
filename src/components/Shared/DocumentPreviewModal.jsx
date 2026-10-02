@@ -122,32 +122,32 @@ export default function DocumentPreviewModal({ doc, onClose }) {
         }`}
       >
         {/* HEADER TOOLBAR */}
-        <div className="bg-[#070D18] border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-4 shrink-0">
+        <div className="bg-[#070D18] border-b border-slate-800 px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Document Info */}
-          <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[22px] leading-none">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0 flex items-center justify-center">
+              <span className="material-symbols-outlined text-[18px] sm:text-[22px] leading-none">
                 {isPdf ? 'picture_as_pdf' : 'image'}
               </span>
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm text-slate-100 truncate">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h3 className="font-bold text-xs sm:text-sm text-slate-100 truncate">
                   {doc.title || doc.label || 'Document Inspection'}
                 </h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold bg-slate-800 text-emerald-400 border border-emerald-500/20 uppercase shrink-0">
-                  {isPdf ? 'PDF Document' : 'High-Res Photo'}
+                <span className="hidden sm:inline-block text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-mono font-semibold bg-slate-800 text-emerald-400 border border-emerald-500/20 uppercase shrink-0">
+                  {isPdf ? 'PDF Document' : 'Photo'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-mono truncate mt-0.5">
+              <p className="text-[10px] sm:text-xs text-slate-400 font-mono truncate mt-0.5">
                 {doc.filename || 'document.pdf'} {doc.size ? `• ${doc.size}` : ''}
               </p>
             </div>
           </div>
 
-          {/* Center: Zoom, Scale & Rotate Controls Pill */}
+          {/* Center (Desktop only >= md): Zoom, Scale & Rotate Controls Pill */}
           {!isPdf && doc.url && (
-            <div className="flex items-center justify-center shrink-0">
+            <div className="hidden md:flex items-center justify-center shrink-0">
               <div className="h-9 flex items-center bg-slate-900/90 border border-slate-700/80 rounded-xl p-1 gap-1 shadow-inner">
                 <button
                   onClick={handleZoomOut}
@@ -186,14 +186,14 @@ export default function DocumentPreviewModal({ doc, onClose }) {
           )}
 
           {/* Right: Actions (Fullscreen, Download, Close) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-1 justify-end shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Fullscreen Toggle */}
             <button
               onClick={() => setIsFullscreen(prev => !prev)}
-              className="w-9 h-9 flex items-center justify-center bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white rounded-xl border border-slate-700/70 cursor-pointer transition-colors text-xs"
+              className="hidden sm:flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl border border-slate-700/70 cursor-pointer transition-colors text-xs"
               title={isFullscreen ? 'Exit Fullscreen' : 'Expand Fullscreen'}
             >
-              <span className="material-symbols-outlined text-[18px] leading-none">
+              <span className="material-symbols-outlined text-[16px] sm:text-[18px] leading-none">
                 {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
               </span>
             </button>
@@ -204,20 +204,20 @@ export default function DocumentPreviewModal({ doc, onClose }) {
                 type="button"
                 onClick={handleDownload}
                 disabled={isDownloading}
-                className="h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800/60 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md disabled:cursor-not-allowed"
+                className="h-8 sm:h-9 px-2.5 sm:px-3.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800/60 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1 sm:gap-1.5 transition-colors cursor-pointer shadow-md disabled:cursor-not-allowed shrink-0"
                 title="Download document directly to device"
               >
                 <span className={`material-symbols-outlined text-[16px] leading-none ${isDownloading ? 'animate-spin' : ''}`}>
                   {isDownloading ? 'progress_activity' : 'download'}
                 </span>
-                <span>{isDownloading ? 'Downloading...' : 'Download File'}</span>
+                <span className="hidden sm:inline">{isDownloading ? 'Downloading...' : 'Download File'}</span>
               </button>
             )}
 
             {/* Close Button */}
             <button
               onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center bg-slate-800 hover:bg-rose-900/60 hover:border-rose-700 text-slate-400 hover:text-rose-200 rounded-xl border border-slate-700 cursor-pointer transition-colors"
+              className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center bg-slate-800 hover:bg-rose-900/60 hover:border-rose-700 text-slate-400 hover:text-rose-200 rounded-xl border border-slate-700 cursor-pointer transition-colors shrink-0"
               title="Close (Esc)"
             >
               <span className="material-symbols-outlined text-[18px] leading-none">close</span>
@@ -249,6 +249,42 @@ export default function DocumentPreviewModal({ doc, onClose }) {
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
               >
+                {/* Mobile Floating Zoom & Rotate Controls Pill */}
+                <div className="md:hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center bg-slate-900/90 border border-slate-700/80 rounded-full p-1 gap-1 shadow-2xl backdrop-blur-md">
+                  <button
+                    onClick={handleZoomOut}
+                    className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white active:bg-slate-800 rounded-full cursor-pointer"
+                    title="Zoom Out (-)"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">zoom_out</span>
+                  </button>
+                  <span className="text-[11px] font-mono text-slate-200 px-1 min-w-[36px] text-center select-none font-semibold">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <button
+                    onClick={handleZoomIn}
+                    className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white active:bg-slate-800 rounded-full cursor-pointer"
+                    title="Zoom In (+)"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">zoom_in</span>
+                  </button>
+                  <div className="w-[1px] h-3.5 bg-slate-700 mx-0.5" />
+                  <button
+                    onClick={handleRotate}
+                    className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white active:bg-slate-800 rounded-full cursor-pointer"
+                    title="Rotate 90°"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">rotate_right</span>
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white active:bg-slate-800 rounded-full cursor-pointer"
+                    title="Reset"
+                  >
+                    <span className="material-symbols-outlined text-[16px] leading-none">restart_alt</span>
+                  </button>
+                </div>
+
                 <div
                   style={{
                     transform: `translate(${position.x}px, ${position.y}px) rotate(${rotation}deg) scale(${zoom})`,
@@ -260,14 +296,14 @@ export default function DocumentPreviewModal({ doc, onClose }) {
                   <img
                     src={doc.url}
                     alt={doc.title || doc.filename || 'Document Preview'}
-                    className="max-h-[80vh] max-w-[85vw] object-contain rounded-lg shadow-2xl ring-1 ring-slate-800/80 pointer-events-none"
+                    className="max-h-[75vh] max-w-[90vw] object-contain rounded-lg shadow-2xl ring-1 ring-slate-800/80 pointer-events-none"
                     draggable={false}
                   />
                 </div>
 
                 {/* Floating Zoom Indicator Pill */}
                 {zoom !== 1 && (
-                  <div className="absolute bottom-4 right-4 bg-slate-900/90 text-emerald-400 border border-slate-700/80 px-3 py-1.5 rounded-full text-xs font-mono font-bold shadow-lg pointer-events-none backdrop-blur-md">
+                  <div className="hidden md:block absolute bottom-4 right-4 bg-slate-900/90 text-emerald-400 border border-slate-700/80 px-3 py-1.5 rounded-full text-xs font-mono font-bold shadow-lg pointer-events-none backdrop-blur-md">
                     {Math.round(zoom * 100)}% • {rotation}°
                   </div>
                 )}

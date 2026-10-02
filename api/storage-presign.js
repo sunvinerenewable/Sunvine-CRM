@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
@@ -121,6 +121,53 @@ export default async function handler(req, res) {
     }
 
     const filePath = `${cleanFolder}/${finalFileName}`;
+
+    // ── Pre-Upload Cleanup: Automatically purge existing sibling files / old extensions ──
+    // When replacing a file (e.g. replacing Aadhaar_Card.png with Aadhaar_Card.pdf),
+    // we must delete all previous extension variants so old files don't linger in Cloudflare R2 / Supabase.
+    const baseCleanName = customFileName
+      ? customFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_')
+      : fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+
+    const keysToPurge = new Set();
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    for (const altExt of allowedExts) {
+      const candidate = `${cleanFolder}/${baseCleanName}.${altExt}`;
+      if (candidate !== filePath) {
+        keysToPurge.add(candidate);
+      }
+    }
+
+    const { oldPath, oldUrl } = req.body || {};
+    const rawOld = oldPath || oldUrl;
+    if (rawOld && typeof rawOld === 'string') {
+      const cleanOldKey = rawOld.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '');
+      if (cleanOldKey && cleanOldKey !== filePath) {
+        keysToPurge.add(cleanOldKey);
+      }
+    }
+
+    if (keysToPurge.size > 0) {
+      if (r2Client) {
+        await Promise.allSettled(
+          Array.from(keysToPurge).map(key =>
+            r2Client.send(new DeleteObjectCommand({
+              Bucket: bucket,
+              Key: key
+            })).catch(() => null)
+          )
+        );
+      }
+
+      if (SUPABASE_URL && SUPABASE_KEY) {
+        try {
+          const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+          await supabaseAdmin.storage.from(bucket).remove(Array.from(keysToPurge)).catch(() => null);
+        } catch {
+          // non-blocking cleanup
+        }
+      }
+    }
 
     // ── 1. Cloudflare R2 Upload Path (Primary) ────────────────────────────────
     if (r2Client) {

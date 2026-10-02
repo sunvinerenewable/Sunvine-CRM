@@ -17,7 +17,7 @@ export const storageService = {
    * Request a presigned URL from the serverless API endpoint (Cloudflare R2 / Supabase)
    */
   async getPresignedUploadUrl(file, options = {}) {
-    const { bucket = 'sunvine-documents', folder = 'customer-files', customFileName } = options;
+    const { bucket = 'sunvine-documents', folder = 'customer-files', customFileName, oldPath, oldDoc } = options;
 
     if (!file) throw new Error('File is required for upload');
 
@@ -38,6 +38,8 @@ export const storageService = {
       throw new Error(`File size (${sizeMB} MB) exceeds the maximum 2 MB limit allowed by the government portal. Please compress the file.`);
     }
 
+    const previousFilePath = oldPath || oldDoc?.path || oldDoc?.url;
+
     try {
       const response = await fetch('/api/storage-presign', {
         method: 'POST',
@@ -49,7 +51,8 @@ export const storageService = {
           fileType: file.type || 'application/pdf',
           fileSize: file.size,
           bucket,
-          folder
+          folder,
+          oldPath: previousFilePath
         })
       });
 
@@ -151,24 +154,37 @@ export const storageService = {
   },
 
   /**
-   * High-level helper for customer document uploads (Aadhaar, Light Bill, Meter, Site, Bank Passbook)
-   * Places all documents directly under `customers/${customerId}/` with clear standard names (e.g. Electricity_Meter_Photo.jpg).
+   * High-level helper for customer document uploads
+   * Places all documents directly under `customers/${customerId}/` with clear standard names (e.g. Aadhaar_Card.pdf).
+   * Automatically cleans up previous files with other extensions (e.g. .png when uploading .pdf).
    */
-  async uploadCustomerDocument(file, customerId = 'general', docKey = 'bill') {
+  async uploadCustomerDocument(file, customerId = 'general', docKey = 'bill', options = {}) {
     const DOC_KEY_TO_NAME = {
       aadhaar: 'Aadhaar_Card',
       aadhar: 'Aadhaar_Card',
+      applicantAadhaar: 'Aadhaar_Card',
+      pan: 'Applicant_PAN_Card',
+      panCard: 'Applicant_PAN_Card',
+      applicantPan: 'Applicant_PAN_Card',
+      coApplicantPan: 'Co_Applicant_PAN_Card',
+      coApplicantAadhaar: 'Co_Applicant_Aadhaar_Card',
+      coApplicantBank: 'Co_Applicant_Bank_Detail',
+      bank: 'Bank_Passbook_Cheque',
+      bankPassbook: 'Bank_Passbook_Cheque',
+      bankDetails: 'Bank_Passbook_Cheque',
+      applicantBank: 'Bank_Passbook_Cheque',
+      cheque: 'Bank_Passbook_Cheque',
       bill: 'Electricity_Light_Bill',
       lightBill: 'Electricity_Light_Bill',
+      electricityBill: 'Electricity_Light_Bill',
       meter: 'Electricity_Meter_Photo',
       meterPhoto: 'Electricity_Meter_Photo',
       electricityMeter: 'Electricity_Meter_Photo',
       site: 'Rooftop_Site_Photo',
       sitePhoto: 'Rooftop_Site_Photo',
       rooftopPhoto: 'Rooftop_Site_Photo',
-      bank: 'Bank_Passbook_Cheque',
-      bankPassbook: 'Bank_Passbook_Cheque',
-      cheque: 'Bank_Passbook_Cheque'
+      veraBill: 'Vera_Property_Tax_Bill',
+      propertyTax: 'Vera_Property_Tax_Bill'
     };
 
     const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -178,7 +194,85 @@ export const storageService = {
     return await this.uploadWithPresignedUrl(file, {
       bucket: 'sunvine-documents',
       folder,
-      customFileName
+      customFileName,
+      ...options
     });
+  },
+
+  /**
+   * Delete a file or list of files from Cloudflare R2 and Supabase Storage
+   */
+  async deleteDocument(filePathOrUrl, bucket = 'sunvine-documents') {
+    if (!filePathOrUrl) return { success: true };
+    const paths = Array.isArray(filePathOrUrl) ? filePathOrUrl : [filePathOrUrl];
+
+    try {
+      const response = await fetch('/api/storage-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ paths, bucket })
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {
+      console.warn('[Storage] /api/storage-delete error, trying Supabase fallback:', e);
+    }
+
+    // Direct Supabase fallback
+    try {
+      const cleanPaths = paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, ''));
+      const { error } = await supabase.storage.from(bucket).remove(cleanPaths);
+      return { success: !error };
+    } catch {
+      return { success: false };
+    }
+  },
+
+  /**
+   * Delete a customer document and all its potential extension variants
+   */
+  async deleteCustomerDocument(docKey, customerId = 'general', bucket = 'sunvine-documents', oldDoc = null) {
+    const DOC_KEY_TO_NAME = {
+      aadhaar: 'Aadhaar_Card',
+      aadhar: 'Aadhaar_Card',
+      applicantAadhaar: 'Aadhaar_Card',
+      pan: 'Applicant_PAN_Card',
+      panCard: 'Applicant_PAN_Card',
+      applicantPan: 'Applicant_PAN_Card',
+      coApplicantPan: 'Co_Applicant_PAN_Card',
+      coApplicantAadhaar: 'Co_Applicant_Aadhaar_Card',
+      coApplicantBank: 'Co_Applicant_Bank_Detail',
+      bank: 'Bank_Passbook_Cheque',
+      bankPassbook: 'Bank_Passbook_Cheque',
+      bankDetails: 'Bank_Passbook_Cheque',
+      applicantBank: 'Bank_Passbook_Cheque',
+      cheque: 'Bank_Passbook_Cheque',
+      bill: 'Electricity_Light_Bill',
+      lightBill: 'Electricity_Light_Bill',
+      electricityBill: 'Electricity_Light_Bill',
+      meter: 'Electricity_Meter_Photo',
+      meterPhoto: 'Electricity_Meter_Photo',
+      electricityMeter: 'Electricity_Meter_Photo',
+      site: 'Rooftop_Site_Photo',
+      sitePhoto: 'Rooftop_Site_Photo',
+      rooftopPhoto: 'Rooftop_Site_Photo',
+      veraBill: 'Vera_Property_Tax_Bill',
+      propertyTax: 'Vera_Property_Tax_Bill'
+    };
+
+    const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const folder = `customers/${cleanCustomerId}`;
+    const baseCustomName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
+
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const paths = allowedExts.map(ext => `${folder}/${baseCustomName}.${ext}`);
+
+    if (oldDoc?.path) paths.push(oldDoc.path);
+    if (oldDoc?.url) paths.push(oldDoc.url);
+
+    return await this.deleteDocument(paths, bucket);
   }
 };
