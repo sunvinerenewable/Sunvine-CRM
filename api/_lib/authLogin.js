@@ -1,7 +1,7 @@
-import { checkDistributedRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from '../_lib/rateLimiter.js';
-import { verifyPassword } from '../_lib/security.js';
-import { signJwt, createAuthCookieHeader } from '../_lib/jwt.js';
-import { query, getSupabaseServiceClient } from '../_lib/db.js';
+import { checkDistributedRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from './rateLimiter.js';
+import { verifyPassword } from './security.js';
+import { signJwt, createAuthCookieHeader } from './jwt.js';
+import { query, getSupabaseServiceClient } from './db.js';
 
 /**
  * POST /api/auth/login

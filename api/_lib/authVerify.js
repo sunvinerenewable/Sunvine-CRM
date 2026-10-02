@@ -1,5 +1,5 @@
-import { verifyJwt } from '../_lib/jwt.js';
-import { redisGet } from '../_lib/redis.js';
+import { verifyJwt } from './jwt.js';
+import { redisGet } from './redis.js';
 
 function parseCookies(cookieHeader) {
   const list = {};

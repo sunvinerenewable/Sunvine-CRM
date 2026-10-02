@@ -51,10 +51,13 @@ function apiDevPlugin() {
 
           try {
             let modulePath = null;
-            if (urlPath === '/api/auth/login') modulePath = '/api/auth/login.js';
-            else if (urlPath === '/api/auth/verify') modulePath = '/api/auth/verify.js';
-            else if (urlPath === '/api/auth/logout') modulePath = '/api/auth/logout.js';
-            else if (urlPath.startsWith('/api/')) {
+            if (urlPath.startsWith('/api/auth/')) {
+              const action = urlPath.replace('/api/auth/', '').replace(/\.js$/, '');
+              query.action = action;
+              req.query = req.query || {};
+              req.query.action = action;
+              modulePath = '/api/auth/[action].js';
+            } else if (urlPath.startsWith('/api/')) {
               const endpoint = urlPath.replace('/api/', '').replace(/\.js$/, '');
               modulePath = `/api/${endpoint}.js`;
             }

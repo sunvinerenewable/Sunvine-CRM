@@ -1,5 +1,5 @@
-import { query, getSupabaseServiceClient, ensureEnvLoaded } from '../_lib/db.js';
-import { hashBcrypt } from '../_lib/security.js';
+import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
+import { hashBcrypt } from './security.js';
 
 ensureEnvLoaded();
 
