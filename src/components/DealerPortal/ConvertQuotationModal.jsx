@@ -373,14 +373,16 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-on-surface mb-1">Sanctioned Load (kW)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={sanctionedLoadKw}
-                    onChange={(e) => setSanctionedLoadKw(e.target.value)}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-on-surface font-mono font-semibold focus:outline-none focus:border-primary"
-                  />
+                  <label className="block font-semibold text-on-surface mb-1">Project Category *</label>
+                  <select
+                    value={applicationCategory}
+                    onChange={(e) => setApplicationCategory(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-on-surface focus:outline-none focus:border-primary cursor-pointer font-medium"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block font-semibold text-on-surface mb-1">Terrace Type</label>

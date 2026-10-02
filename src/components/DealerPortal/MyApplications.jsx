@@ -7,7 +7,16 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
-import { DOCUMENT_SCHEMAS, getDocumentListForFile, getDocumentCompletion, getDocumentSchemaKey } from '../../data/defaultRequiredDocuments';
+import {
+  DOCUMENT_SCHEMAS,
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DEFAULT_REQUIRED_DOCUMENTS,
+  isDocMandatoryForCategory
+} from '../../data/defaultRequiredDocuments';
+import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
+import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 export default function MyApplications() {
   const {
@@ -16,6 +25,7 @@ export default function MyApplications() {
     quotations,
     applicationStages,
     updateCustomerFile,
+    addCustomerFile,
     addCustomerFileTimelineEvent,
     requiredDocuments,
     setActiveTab
@@ -36,6 +46,24 @@ export default function MyApplications() {
   const [quickStageFile, setQuickStageFile] = useState(null);
   const [quickStageVal, setQuickStageVal] = useState('');
   const [quickStageNotes, setQuickStageNotes] = useState('');
+
+  // New Application Modal & Form State
+  const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustEmail, setNewCustEmail] = useState('');
+  const [newCustCoApplicantName, setNewCustCoApplicantName] = useState('');
+  const [newCustCoApplicantPhone, setNewCustCoApplicantPhone] = useState('');
+  const [newCustAddress, setNewCustAddress] = useState('');
+  const [newCustDiscom, setNewCustDiscom] = useState('PGVCL');
+  const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
+  const [newCustLoad, setNewCustLoad] = useState('5.0');
+  const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
+  const [newCustCategory, setNewCustCategory] = useState('residential');
+  const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
+  const [newCustLoanBank, setNewCustLoanBank] = useState('State Bank of India (PM Surya Ghar Scheme)');
+  const [newCustLoanRef, setNewCustLoanRef] = useState('');
 
   // Stages master list
   const stages = useMemo(() => {
@@ -332,6 +360,88 @@ export default function MyApplications() {
     setQuickStageNotes('');
   };
 
+  // Create New Customer Application (Direct Dealer Registration)
+  const handleCreateCustomerFile = async (e) => {
+    e.preventDefault();
+    if (!newCustName.trim() || !newCustPhone.trim()) {
+      addToast('Please enter customer name and contact phone number', 'error');
+      return;
+    }
+
+    showLoader('Registering new customer application...');
+    try {
+      const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
+      const cleanPhone = newCustPhone.trim();
+      const cleanConsumerNo = newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      const newFile = {
+        id: newFileId,
+        customerName: newCustName.trim(),
+        phone: cleanPhone,
+        email: newCustEmail.trim() || null,
+        coApplicantName: isLoanCase ? (newCustCoApplicantName.trim() || null) : null,
+        coApplicantPhone: isLoanCase ? (newCustCoApplicantPhone.trim() || null) : null,
+        address: newCustAddress.trim() || 'Gujarat, India',
+        discom: newCustDiscom,
+        consumerNo: cleanConsumerNo,
+        sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+        solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+        category: newCustCategory || 'residential',
+        roofType: 'RCC Terrace',
+        sourceType: 'DEALER',
+        source: 'DEALER',
+        dealerId: currentDealer?.id || 'DLR-001',
+        dealerName: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+        financeType: newCustFinanceType,
+        paymentMode: newCustFinanceType,
+        loanBank: isLoanCase ? newCustLoanBank : null,
+        loanRefNo: isLoanCase ? newCustLoanRef.trim() : null,
+        createdDate: new Date().toISOString().split('T')[0],
+        status: 'Sourced',
+        currentStage: 'LEAD_SOURCED',
+        applicationNo: 'Draft Pending',
+        documents: {},
+        timeline: [
+          {
+            id: `TL-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0],
+            stage: 'LEAD_SOURCED',
+            title: 'Application Created',
+            status: 'Sourced',
+            action: 'DIRECT_DEALER_CREATION',
+            actor: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+            notes: 'Application registered directly by Authorized Dealer partner.'
+          }
+        ]
+      };
+
+      if (addCustomerFile) {
+        await addCustomerFile(newFile);
+      }
+      setShowAddFileModal(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustEmail('');
+      setNewCustCoApplicantName('');
+      setNewCustCoApplicantPhone('');
+      setNewCustAddress('');
+      setNewCustConsumerNo('');
+      setNewCustLoanRef('');
+
+      // Auto-open Document Upload Vault for the newly created application
+      setUploadTargetFile(newFile);
+
+      addToast(`New application ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
+    } catch (err) {
+      console.error('[MyApplications] Create application error:', err);
+      addToast(err.message || 'Failed to create application', 'error');
+    } finally {
+      hideLoader();
+    }
+  };
+
   // Helper to format currency
   const formatINR = (val) => {
     const num = Number(val) || 0;
@@ -389,11 +499,11 @@ export default function MyApplications() {
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={() => setActiveTab && setActiveTab('create_quote')}
-            className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs flex items-center gap-2 hover:bg-primary/90 transition-all shadow-xs cursor-pointer min-h-[44px]"
+            onClick={() => setShowAddFileModal(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer min-h-[44px]"
           >
             <span className="material-symbols-outlined text-[18px]">add_circle</span>
-            <span>New Quotation</span>
+            <span>New Application</span>
           </button>
         </div>
       </div>
@@ -552,20 +662,30 @@ export default function MyApplications() {
           </div>
           <h3 className="font-bold text-sm text-on-surface">No Applications Match Your Filters</h3>
           <p className="text-xs text-secondary max-w-md">
-            Convert an approved quotation from the Quotations tab or adjust your filters above.
+            Directly register a new solar application or convert an approved quotation from the Quotations tab.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchQuery('');
-              setSelectedStage('ALL');
-              setSelectedCategory('ALL');
-              setSelectedDiscom('ALL');
-            }}
-            className="mt-2 px-4 py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors cursor-pointer"
-          >
-            Clear Filters
-          </button>
+          <div className="flex items-center gap-2.5 mt-2 flex-wrap justify-center">
+            <button
+              type="button"
+              onClick={() => setShowAddFileModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer min-h-[44px]"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_circle</span>
+              <span>New Application</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedStage('ALL');
+                setSelectedCategory('ALL');
+                setSelectedDiscom('ALL');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors cursor-pointer min-h-[44px]"
+            >
+              Clear Filters
+            </button>
+          </div>
         </div>
       ) : viewMode === 'cards' ? (
         /* CARDS VIEW */
@@ -1052,9 +1172,10 @@ export default function MyApplications() {
                 <button
                   type="button"
                   onClick={() => setUploadTargetFile(null)}
-                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:bg-primary/90 transition-all cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:bg-primary/90 transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                 >
-                  Done
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>Done / Skip (Upload Later)</span>
                 </button>
               </div>
             </div>
@@ -1080,6 +1201,253 @@ export default function MyApplications() {
           onClose={() => setCameraTargetDoc(null)}
         />
       )}
+
+      {/* 9. MODAL: CREATE NEW CUSTOMER FILE (IDENTICAL TO STAFF PANEL) */}
+      {showAddFileModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-xl p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto text-on-surface">
+            <div className="flex items-center justify-between border-b border-surface-container-high pb-3">
+              <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">note_add</span>
+                <span>Create New Customer File</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAddFileModal(false)}
+                className="text-secondary hover:text-on-surface cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomerFile} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Customer Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCustName}
+                    onChange={(e) => setNewCustName(e.target.value)}
+                    placeholder="e.g. Bharatbhai M. Patel"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Mobile *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={newCustPhone}
+                    onChange={(e) => setNewCustPhone(e.target.value)}
+                    placeholder="+91 98250 99881"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-1">Site Address</label>
+                <input
+                  type="text"
+                  value={newCustAddress}
+                  onChange={(e) => setNewCustAddress(e.target.value)}
+                  placeholder="Plot 10, Suryam Residency, Ring Road, Ahmedabad"
+                  className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">DISCOM</label>
+                  <select
+                    value={newCustDiscom}
+                    onChange={(e) => setNewCustDiscom(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  >
+                    <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
+                    <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
+                    <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
+                    <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
+                    <option value="Torrent Power">Torrent Power</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Consumer No (Optional)</label>
+                  <input
+                    type="text"
+                    value={newCustConsumerNo}
+                    onChange={(e) => setNewCustConsumerNo(e.target.value)}
+                    placeholder="e.g. 03901/12345/6"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Project Category *</label>
+                  <select
+                    value={newCustCategory}
+                    onChange={(e) => setNewCustCategory(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW) *</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.5"
+                    value={newCustSolarKw}
+                    onChange={(e) => setNewCustSolarKw(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Customer Email & Payment / Case Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Customer Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    value={newCustEmail}
+                    onChange={(e) => setNewCustEmail(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Payment / Case Type</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={(e) => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="CASH">100% Cash / Self Paid</option>
+                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
+                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
+                  </select>
+                </div>
+              </div>
+
+              {(newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN') && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-amber-700">account_balance</span>
+                      <span>{newCustFinanceType === 'FINANCE_LOAN' ? 'NBFC Loan Details' : 'Bank Loan Details'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBankModal(true)}
+                      className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                      <span>Browse 40+ Official Banks</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Financing Bank / NBFC</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={newCustLoanBank}
+                          onChange={(e) => setNewCustLoanBank(e.target.value)}
+                          className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          {GROUPED_SOLAR_BANKS.map((group) => (
+                            <optgroup key={group.category} label={group.label}>
+                              {group.banks.map((b) => (
+                                <option key={b.id} value={b.name}>
+                                  {b.name} ({b.interestRate.split(' ')[0]})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setShowBankModal(true)}
+                          className="px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
+                          title="Browse All 40+ Banks"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">search</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Loan Ref / App # (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustLoanRef}
+                        onChange={(e) => setNewCustLoanRef(e.target.value)}
+                        placeholder="e.g. SBI-2026-9812"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Co-Applicant Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Name (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustCoApplicantName}
+                        onChange={(e) => setNewCustCoApplicantName(e.target.value)}
+                        placeholder="e.g. Sunitaben B. Patel"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Mobile (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newCustCoApplicantPhone}
+                        onChange={(e) => setNewCustCoApplicantPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-surface-container-high">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFileModal(false)}
+                  className="px-4 py-2 bg-surface-container-low text-secondary hover:text-on-surface text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-bold rounded-lg shadow-sm cursor-pointer"
+                >
+                  Create Customer File
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 10. MODAL: BROWSE ALL 40+ OFFICIAL SOLAR LOAN BANKS & FINTECHS */}
+      <SolarBankSelectorModal
+        isOpen={showBankModal}
+        onClose={() => setShowBankModal(false)}
+        selectedBankName={newCustLoanBank}
+        onSelectBank={(selectedName) => setNewCustLoanBank(selectedName)}
+      />
     </div>
   );
 }

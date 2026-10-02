@@ -5,6 +5,8 @@ import { useLoading } from '../../context/LoadingContext';
 import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import {
@@ -44,6 +46,7 @@ export default function StaffManagement() {
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
   const [showBankModal, setShowBankModal] = useState(false);
 
   // Staff Credentials & User Management State
@@ -52,10 +55,12 @@ export default function StaffManagement() {
   const [editStaffPhone, setEditStaffPhone] = useState('');
   const [editStaffEmail, setEditStaffEmail] = useState('');
   const [editStaffRole, setEditStaffRole] = useState('Field Sales Executive');
+  const [editStaffDepartment, setEditStaffDepartment] = useState('Sales');
   const [editStaffZone, setEditStaffZone] = useState('');
   const [editStaffPassword, setEditStaffPassword] = useState('');
   const [showStaffPassword, setShowStaffPassword] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState(null);
+  const [staffDepartmentFilter, setStaffDepartmentFilter] = useState('all');
 
   const handleOpenStaffCreds = (member) => {
     setSelectedStaffForCreds(member);
@@ -63,31 +68,41 @@ export default function StaffManagement() {
     setEditStaffPhone(member.phone || '');
     setEditStaffEmail(member.email || '');
     setEditStaffRole(member.role || 'Field Sales Executive');
+    const isVer = (member.department === 'Verification') || (member.role && member.role.toLowerCase().includes('verification')) || member.id === 'STF-003' || member.id === 'STF-800';
+    setEditStaffDepartment(isVer ? 'Verification' : (member.department || 'Sales'));
     setEditStaffZone(member.zone || '');
     setEditStaffPassword(member.password || 'Sunvine@2026');
     setShowStaffPassword(false);
   };
 
-  const handleSaveStaffCredentials = (e) => {
+  const handleSaveStaffCredentials = async (e) => {
     if (e) e.preventDefault();
     if (!selectedStaffForCreds) return;
     if (!editStaffName.trim() || !editStaffPhone.trim()) {
       addToast('Name and Mobile Number are required.', 'error');
       return;
     }
+    const cleanPhone = String(editStaffPhone).replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      addToast('Please enter a valid 10-digit mobile number.', 'error');
+      return;
+    }
+    const isVerification = editStaffRole.toLowerCase().includes('verification') || editStaffDepartment === 'Verification';
+    const dept = isVerification ? 'Verification' : 'Sales';
     const updated = {
       name: editStaffName.trim(),
-      phone: editStaffPhone.trim(),
-      email: editStaffEmail.trim(),
+      phone: cleanPhone,
+      email: editStaffEmail.trim() || `${cleanPhone}@sunvine.in`,
       role: editStaffRole,
+      department: dept,
       zone: editStaffZone,
       password: editStaffPassword.trim() || 'Sunvine@2026'
     };
     if (updateStaff) {
-      updateStaff(selectedStaffForCreds.id, updated);
+      await updateStaff(selectedStaffForCreds.id, updated);
     }
     if (updateStaffPassword && editStaffPassword.trim()) {
-      updateStaffPassword(selectedStaffForCreds.id, editStaffPassword.trim());
+      await updateStaffPassword(selectedStaffForCreds.id, editStaffPassword.trim());
     }
     addToast(`Staff credentials & profile updated for ${editStaffName}!`, 'success');
     setSelectedStaffForCreds(null);
@@ -122,7 +137,7 @@ export default function StaffManagement() {
   const [newCustAddress, setNewCustAddress] = useState('');
   const [newCustDiscom, setNewCustDiscom] = useState('UGVCL');
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
-  const [newCustLoad, setNewCustLoad] = useState('5.0');
+  const [newCustCategory, setNewCustCategory] = useState('residential');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
   const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-001');
   const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
@@ -236,18 +251,83 @@ export default function StaffManagement() {
     }
   };
 
-  const handleCreateStaff = (e) => {
+  const handleCameraCapture = async (capturedBlob, filename = 'camera_capture.jpg') => {
+    if (!selectedFileForDocs || !cameraTargetDoc) return;
+    const docKey = cameraTargetDoc.key;
+    showLoader('Optimizing and uploading photo to Cloudflare R2...');
+
+    try {
+      const stats = await compressMedia(capturedBlob, {
+        maxDimension: 1600,
+        quality: 0.8,
+        outputFormat: 'image/jpeg'
+      });
+
+      let fileUrl = null;
+      let fileSize = stats.compressedSize;
+
+      if (stats.file) {
+        try {
+          const uploadRes = await storageService.uploadFile(stats.file, {
+            folder: `customer-files/${selectedFileForDocs.id}`,
+            filename
+          });
+          if (uploadRes?.publicUrl) {
+            fileUrl = uploadRes.publicUrl;
+            fileSize = uploadRes.fileSize || stats.file.size;
+          }
+        } catch (err) {
+          console.warn('[StaffManagement] Camera upload warning:', err);
+        }
+      }
+
+      const updatedDocs = {
+        ...(selectedFileForDocs.documents || {}),
+        [docKey]: {
+          filename,
+          url: fileUrl,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
+
+      if (updateCustomerFile) {
+        await updateCustomerFile(selectedFileForDocs.id, { documents: updatedDocs });
+      }
+      setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+      setCameraTargetDoc(null);
+      addToast(`Photo secured in Cloudflare R2: ${filename}`, 'success');
+    } catch (e) {
+      console.error('[StaffManagement] Camera upload error:', e);
+      addToast(e.message || 'Camera upload failed', 'error');
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const handleCreateStaff = async (e) => {
     e.preventDefault();
     if (!newStaffName.trim() || !newStaffPhone.trim()) {
       addToast('Please provide Name and Mobile Number', 'error');
       return;
     }
+    const cleanPhone = String(newStaffPhone).replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      addToast('Please enter a valid 10-digit mobile number.', 'error');
+      return;
+    }
     const newId = `STF-${String((staffList || []).length + 1).padStart(3, '0')}`;
+    const isVerification = newStaffRole.toLowerCase().includes('verification');
     const newStaff = {
       id: newId,
       name: newStaffName.trim(),
       role: newStaffRole,
-      phone: newStaffPhone.trim(),
+      department: isVerification ? 'Verification' : 'Sales',
+      phone: cleanPhone,
       email: newStaffEmail.trim() || `${newStaffName.toLowerCase().replace(/\s+/g, '.')}@sunvine.in`,
       password: newStaffPassword.trim() || 'Sunvine@2026',
       zone: newStaffZone,
@@ -257,16 +337,18 @@ export default function StaffManagement() {
       pipelineKw: 0,
       status: 'Active'
     };
-    addStaff(newStaff);
+    if (addStaff) {
+      await addStaff(newStaff);
+    }
     setShowAddStaffModal(false);
     setNewStaffName('');
     setNewStaffPhone('');
     setNewStaffEmail('');
     setNewStaffPassword('Sunvine@2026');
-    addToast(`Staff member "${newStaff.name}" added with ID: ${newId}!`, 'success');
+    addToast(`Staff member "${newStaff.name}" onboarded with ID: ${newId}!`, 'success');
   };
 
-  const handleCreateFile = (e) => {
+  const handleCreateFile = async (e) => {
     e.preventDefault();
     if (!newCustName.trim() || !newCustPhone.trim()) {
       addToast('Please provide Customer Name and Mobile', 'error');
@@ -286,8 +368,9 @@ export default function StaffManagement() {
       address: newCustAddress.trim() || 'Gujarat, India',
       discom: newCustDiscom,
       consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
-      sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+      sanctionedLoadKw: parseFloat(newCustSolarKw) || 5.0,
       solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+      category: newCustCategory || 'residential',
       roofType: 'RCC Terrace',
       staffId: assignedStaff.id,
       staffName: assignedStaff.name,
@@ -306,7 +389,9 @@ export default function StaffManagement() {
       documents: {}
     };
 
-    addCustomerFile(newFile);
+    if (addCustomerFile) {
+      await addCustomerFile(newFile);
+    }
     setShowAddFileModal(false);
     setNewCustName('');
     setNewCustPhone('');
@@ -316,7 +401,11 @@ export default function StaffManagement() {
     setNewCustAddress('');
     setNewCustConsumerNo('');
     setNewCustLoanRef('');
-    addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
+
+    // Auto-open Document Vault modal for newly created file
+    setSelectedFileForDocs(newFile);
+
+    addToast(`New file ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
   };
 
   const handleSaveStaffPassword = () => {
@@ -680,10 +769,52 @@ export default function StaffManagement() {
         )}
 
         {/* VIEW 2: SALES TEAM DIRECTORY & LOGINS */}
-        {activeView === 'staff' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {(staffList || []).map(member => {
+        {activeView === 'staff' && (() => {
+          const isVerDesk = (m) => (m.department === 'Verification') || (m.role && m.role.toLowerCase().includes('verification')) || m.id === 'STF-003' || m.id === 'STF-800';
+          const displayedStaff = (staffList || []).filter(member => {
+            if (staffDepartmentFilter === 'verification') return isVerDesk(member);
+            if (staffDepartmentFilter === 'sales') return !isVerDesk(member);
+            return true;
+          });
+
+          return (
+            <div className="space-y-4">
+              {/* Department Filter Bar */}
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setStaffDepartmentFilter('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      staffDepartmentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    All Staff ({(staffList || []).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffDepartmentFilter('sales')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      staffDepartmentFilter === 'sales' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Field Sales ({(staffList || []).filter(m => !isVerDesk(m)).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffDepartmentFilter('verification')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      staffDepartmentFilter === 'verification' ? 'bg-white text-amber-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Verification Desk ({(staffList || []).filter(isVerDesk).length})
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {displayedStaff.map(member => {
+                  const isMemberVer = isVerDesk(member);
                 // Compute live individual salesperson metrics
                 const sFiles = (customerFiles || []).filter(f => f.staffId === member.id || f.staffName === member.name);
                 const totalBrought = sFiles.length;
@@ -727,10 +858,19 @@ export default function StaffManagement() {
                       </div>
 
                       <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                        <div className="text-[11px] text-emerald-700 font-semibold">{member.role}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[11px] font-semibold ${isMemberVer ? 'text-amber-700' : 'text-emerald-700'}`}>
+                            {member.role}
+                          </span>
+                          {isMemberVer && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              Verification Desk
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-slate-500">
                           <span className="material-symbols-outlined text-[14px]">call</span>
-                          <a href={`tel:${member.phone}`} className="hover:underline text-slate-800">{member.phone}</a>
+                          <a href={`tel:${member.phone}`} className="hover:underline text-slate-800 font-mono font-medium">{member.phone}</a>
                         </div>
                         <div className="flex items-center gap-1.5 text-slate-500 truncate">
                           <span className="material-symbols-outlined text-[14px]">location_on</span>
@@ -785,7 +925,8 @@ export default function StaffManagement() {
               })}
             </div>
           </div>
-        )}
+        );
+      })()}
       </div>
 
       {/* MODAL 1: ADD NEW STAFF MEMBER */}
@@ -844,11 +985,12 @@ export default function StaffManagement() {
                 <select
                   value={newStaffRole}
                   onChange={e => setNewStaffRole(e.target.value)}
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                 >
-                  <option value="Field Sales Executive">Field Sales Executive</option>
-                  <option value="Area Sales Manager">Area Sales Manager</option>
-                  <option value="Verification Officer">Verification Officer</option>
+                  <option value="Field Sales Executive">Field Sales Executive (Sales)</option>
+                  <option value="Area Sales Manager">Area Sales Manager (Sales)</option>
+                  <option value="Verification Desk Officer">Verification Desk Officer (Verification)</option>
+                  <option value="Senior Technical Auditor">Senior Technical Auditor (Verification)</option>
                 </select>
               </div>
 
@@ -948,15 +1090,35 @@ export default function StaffManagement() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Role / Designation</label>
                   <select
                     value={editStaffRole}
-                    onChange={e => setEditStaffRole(e.target.value)}
+                    onChange={e => {
+                      const newRole = e.target.value;
+                      setEditStaffRole(newRole);
+                      if (newRole.toLowerCase().includes('verification')) {
+                        setEditStaffDepartment('Verification');
+                      } else {
+                        setEditStaffDepartment('Sales');
+                      }
+                    }}
                     className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer"
                   >
                     <option value="Field Sales Executive">Field Sales Executive</option>
-                    <option value="Verification Desk Executive">Verification Desk Executive</option>
-                    <option value="Regional Area Manager">Regional Area Manager</option>
+                    <option value="Area Sales Manager">Area Sales Manager</option>
+                    <option value="Verification Desk Officer">Verification Desk Officer</option>
                     <option value="Senior Technical Auditor">Senior Technical Auditor</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Department / Portal Access</label>
+                <select
+                  value={editStaffDepartment}
+                  onChange={e => setEditStaffDepartment(e.target.value)}
+                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="Sales">Field Sales Department</option>
+                  <option value="Verification">Verification &amp; KYC Desk</option>
+                </select>
               </div>
 
               <div>
@@ -1115,31 +1277,6 @@ export default function StaffManagement() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Email ID (Optional)</label>
-                  <input
-                    type="email"
-                    value={newCustEmail}
-                    onChange={e => setNewCustEmail(e.target.value)}
-                    placeholder="e.g. customer@example.com"
-                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment / Case Type</label>
-                  <select
-                    value={newCustFinanceType}
-                    onChange={e => setNewCustFinanceType(e.target.value)}
-                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-medium"
-                  >
-                    <option value="CASH">Residential (100% Cash / Self Payment)</option>
-                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
-                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Site Address</label>
                 <input
@@ -1180,24 +1317,53 @@ export default function StaffManagement() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Sanctioned Load (kW)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={newCustLoad}
-                    onChange={e => setNewCustLoad(e.target.value)}
-                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Project Category *</label>
+                  <select
+                    value={newCustCategory}
+                    onChange={e => setNewCustCategory(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Proposed Solar (kW)</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Proposed Solar (kW) *</label>
                   <input
                     type="number"
                     step="0.1"
+                    min="0.5"
                     value={newCustSolarKw}
                     onChange={e => setNewCustSolarKw(e.target.value)}
                     className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
+                </div>
+              </div>
+
+              {/* Customer Email & Payment / Case Type */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Customer Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    value={newCustEmail}
+                    onChange={e => setNewCustEmail(e.target.value)}
+                    placeholder="e.g. customer@example.com"
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Payment / Case Type</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={e => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-emerald-500 font-medium cursor-pointer"
+                  >
+                    <option value="CASH">100% Cash / Self Paid</option>
+                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
+                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
+                  </select>
                 </div>
               </div>
 
@@ -1476,19 +1642,30 @@ export default function StaffManagement() {
                             </div>
                           </div>
                         ) : (
-                          <label className="text-xs text-emerald-700 font-bold hover:underline cursor-pointer flex items-center gap-1.5 w-full justify-center py-1">
-                            <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                            <span>Upload Document {item.mandatory ? '' : '(Optional)'} (Max 2 MB)</span>
-                            <input
-                              type="file"
-                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const f = e.target.files?.[0];
-                                if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
-                              }}
-                            />
-                          </label>
+                          <div className="flex items-center gap-2 w-full">
+                            <label className="flex-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-xs">
+                              <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                              <span>Upload Document {item.mandatory ? '' : '(Optional)'}</span>
+                              <input
+                                type="file"
+                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) await handleUploadDoc(selectedFileForDocs.id, item.key, f);
+                                }}
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => setCameraTargetDoc(item)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
+                              title="Capture with Camera"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1537,6 +1714,17 @@ export default function StaffManagement() {
           addToast(`Selected bank: ${bankName}`, 'success');
         }}
       />
+
+      {/* CAMERA CAPTURE MODAL */}
+      {cameraTargetDoc && (
+        <CameraCaptureModal
+          isOpen={Boolean(cameraTargetDoc)}
+          docKey={cameraTargetDoc.key}
+          docLabel={cameraTargetDoc.label}
+          onCapture={handleCameraCapture}
+          onClose={() => setCameraTargetDoc(null)}
+        />
+      )}
     </div>
   );
 }
