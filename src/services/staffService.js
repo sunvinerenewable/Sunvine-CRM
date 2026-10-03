@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import bcrypt from 'bcryptjs';
 
 export const staffService = {
   /**
@@ -25,7 +26,7 @@ export const staffService = {
           email: s.email,
           zone: s.zone,
           city: s.city,
-          department: s.department || 'Sales',
+          department: s.department || (String(s.role || '').toLowerCase().includes('verification') ? 'Verification' : 'Sales'),
           status: s.status || 'Active',
           onboardedDate: s.onboarded_date || '2026-01-10',
           dealersCount: Number(s.dealers_count) || 0,
@@ -51,38 +52,63 @@ export const staffService = {
     }
 
     const cleanPhone = String(staff.phone).replace(/\D/g, '').slice(-10);
-    const staffId = staff.id || `STF-${Date.now().toString().slice(-3)}`;
+    const staffId = staff.id || `STF-${Date.now().toString().slice(-4)}`;
+    const plainPassword = String(staff.password || staff.accessCode || 'Sunvine@2026').trim();
+    const isVerification = String(staff.role || '').toLowerCase().includes('verification') || String(staff.department || '').toLowerCase().includes('verification');
+    const department = staff.department || (isVerification ? 'Verification' : 'Sales');
 
+    // 1. Try server-side secure manage-credentials endpoint
     try {
-      const { data, error } = await supabase.rpc('create_staff_secure', {
-        p_id: staffId,
-        p_name: staff.name,
-        p_role: staff.role || 'Solar Field Executive',
-        p_phone: cleanPhone,
-        p_email: staff.email || `${cleanPhone}@sunvine.in`,
-        p_password: staff.password || staff.accessCode || '',
-        p_zone: staff.zone || 'Gujarat',
-        p_city: staff.city || 'Ahmedabad',
-        p_department: staff.department || 'Sales'
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'create-staff',
+          payload: {
+            ...staff,
+            id: staffId,
+            phone: cleanPhone,
+            password: plainPassword,
+            department
+          }
+        })
       });
-
-      if (error) {
-        // Fallback direct upsert if RPC is not deployed
-        const payload = {
-          id: staffId,
-          name: staff.name,
-          role: staff.role || 'Solar Field Executive',
-          phone: cleanPhone,
-          email: staff.email || `${cleanPhone}@sunvine.in`,
-          zone: staff.zone || 'Gujarat',
-          city: staff.city || 'Ahmedabad',
-          department: staff.department || 'Sales',
-          status: staff.status || 'Active',
-          updated_at: new Date().toISOString()
-        };
-        await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          return { success: true, id: data.staff?.id || staffId };
+        }
       }
+    } catch (apiErr) {
+      console.warn('[staffService] Server credential creation failed, using client fallback:', apiErr.message);
+    }
 
+    // 2. Client fallback with Bcrypt hashing
+    try {
+      const passwordHash = bcrypt.hashSync(plainPassword, 10);
+      const payload = {
+        id: staffId,
+        name: staff.name,
+        role: staff.role || (isVerification ? 'Verification Desk Officer' : 'Solar Field Executive'),
+        phone: cleanPhone,
+        email: staff.email || `${cleanPhone}@sunvine.in`,
+        password_hash: passwordHash,
+        zone: staff.zone || 'Gujarat',
+        city: staff.city || 'Ahmedabad',
+        department: department,
+        status: staff.status || 'Active',
+        dealers_count: Number(staff.dealersCount) || 0,
+        direct_files_count: Number(staff.directFilesCount) || 0,
+        dealer_files_count: Number(staff.dealerFilesCount) || 0,
+        pipeline_kw: Number(staff.pipelineKw) || 0,
+        rating: Number(staff.rating) || 4.9,
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
+      if (error) {
+        console.warn('[staffService] Supabase upsert error:', error.message);
+      }
       return { success: true, id: staffId };
     } catch (err) {
       console.error('[staffService] Exception creating staff:', err);
@@ -109,7 +135,12 @@ export const staffService = {
     };
 
     if (fields.name !== undefined) payload.name = fields.name;
-    if (fields.role !== undefined) payload.role = fields.role;
+    if (fields.role !== undefined) {
+      payload.role = fields.role;
+      if (!fields.department) {
+        payload.department = fields.role.toLowerCase().includes('verification') ? 'Verification' : 'Sales';
+      }
+    }
     if (fields.phone !== undefined) payload.phone = String(fields.phone).replace(/\D/g, '').slice(-10);
     if (fields.email !== undefined) payload.email = fields.email;
     if (fields.zone !== undefined) payload.zone = fields.zone;
@@ -121,6 +152,34 @@ export const staffService = {
     if (fields.dealerFilesCount !== undefined) payload.dealer_files_count = Number(fields.dealerFilesCount);
     if (fields.pipelineKw !== undefined) payload.pipeline_kw = Number(fields.pipelineKw);
     if (fields.rating !== undefined) payload.rating = Number(fields.rating);
+
+    if (fields.password || fields.accessCode) {
+      const plainPassword = String(fields.password || fields.accessCode).trim();
+      payload.password_hash = bcrypt.hashSync(plainPassword, 10);
+    }
+
+    // Try server manage-credentials API if credentials changed
+    if (fields.password || fields.accessCode || fields.phone || fields.email || fields.name || fields.role) {
+      try {
+        await fetch('/api/auth/manage-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'update-staff-credentials',
+            payload: {
+              staffId,
+              name: fields.name,
+              phone: payload.phone,
+              email: fields.email,
+              role: fields.role,
+              department: payload.department || fields.department,
+              password: fields.password || fields.accessCode
+            }
+          })
+        });
+      } catch (_) {}
+    }
 
     try {
       const { data, error } = await supabase
@@ -144,17 +203,39 @@ export const staffService = {
    * Update staff password (Bcrypt Hash)
    */
   async updateStaffPassword(staffId, newPassword) {
+    if (!newPassword || newPassword.length < 1) {
+      return { success: false, error: 'Password cannot be empty.' };
+    }
+
+    // 1. Try server-side endpoint
     try {
-      const { data, error } = await supabase.rpc('update_user_password', {
-        p_user_type: 'staff',
-        p_identifier: staffId,
-        p_new_password: newPassword
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'update-staff-credentials',
+          payload: { staffId, password: newPassword }
+        })
       });
-
-      if (error || !data?.success) {
-        return { success: false, error: data?.error || 'Failed to update staff password.' };
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) return { success: true };
       }
+    } catch (_) {}
 
+    // 2. Client fallback with Bcrypt hashing
+    try {
+      const passwordHash = bcrypt.hashSync(newPassword, 10);
+      const { error } = await supabase
+        .from('staff_accounts')
+        .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
+        .eq('id', staffId);
+
+      if (error) {
+        console.warn('[staffService] Supabase update password error:', error.message);
+        return { success: false, error: error.message };
+      }
       return { success: true };
     } catch (err) {
       console.error('[staffService] Update staff password error:', err);
@@ -168,6 +249,20 @@ export const staffService = {
   async deleteStaff(staffId) {
     if (!staffId) return { success: false, error: 'Staff ID is required.' };
     try {
+      // 1. Try server-side delete
+      try {
+        await fetch('/api/auth/manage-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'delete-staff',
+            payload: { staffId }
+          })
+        });
+      } catch (_) {}
+
+      // 2. Direct Supabase delete
       const { error } = await supabase
         .from('staff_accounts')
         .delete()

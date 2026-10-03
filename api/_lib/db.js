@@ -8,6 +8,7 @@ const { Pool } = pg;
 let pool = null;
 
 export function ensureEnvLoaded() {
+  if (process.env.VERCEL) return;
   const envPath = path.resolve(process.cwd(), '.env');
   if (fs.existsSync(envPath)) {
     try {

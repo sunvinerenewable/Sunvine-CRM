@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import bcrypt from 'bcryptjs';
 
 async function invalidateCatalogCache(keys) {
   try {
@@ -20,7 +21,7 @@ export const dealerService = {
       const { data, error } = await supabase
         .from('dealer_accounts')
         .select('*')
-        .order('dealer_code', { ascending: true });
+        .order('updated_at', { ascending: false });
 
       if (error) {
         console.warn('[dealerService] Fetch dealers warning:', error.message);
@@ -63,48 +64,63 @@ export const dealerService = {
   },
 
   /**
-   * Create a new dealer securely in Supabase with Bcrypt Hashed password
+   * Create a new dealer securely with verified Bcrypt hashed credentials
    */
   async createDealer(dealer) {
     if (!dealer) return { success: false, error: 'Dealer details required' };
     const cleanPhone = String(dealer.mobile || dealer.mobileNumber || '').replace(/\D/g, '').slice(-10);
     const dealerCode = dealer.dealerCode || dealer.id || `SV-DLR-${Date.now().toString().slice(-4)}`;
+    const plainPassword = String(dealer.password || dealer.accessCode || 'Sunvine@2026').trim();
 
+    // 1. Try server-side secure manage-credentials endpoint first
     try {
-      const { data, error } = await supabase.rpc('create_dealer_secure', {
-        p_dealer_code: dealerCode,
-        p_firm_name: dealer.firmName || 'Gujarat Solar EPC',
-        p_contact_person: dealer.contactPerson || 'Authorized Partner',
-        p_mobile: cleanPhone,
-        p_email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
-        p_password: dealer.password || dealer.accessCode || '',
-        p_city: dealer.city || 'Ahmedabad',
-        p_state: dealer.state || 'Gujarat',
-        p_discom: dealer.discom || 'UGVCL',
-        p_tier: dealer.tier || 'Gold EPC',
-        p_max_margin: Number(dealer.maxMarginCapPerKw) || 6000
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'create-dealer',
+          payload: {
+            ...dealer,
+            dealerCode,
+            mobile: cleanPhone,
+            password: plainPassword
+          }
+        })
       });
-
-      if (error) {
-        // Fallback upsert if RPC is unavailable
-        const payload = {
-          dealer_code: dealerCode,
-          firm_name: dealer.firmName || 'Gujarat Solar EPC',
-          contact_person: dealer.contactPerson || 'Authorized Partner',
-          mobile_number: cleanPhone,
-          email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
-          city: dealer.city || 'Ahmedabad',
-          state: dealer.state || 'Gujarat',
-          discom: dealer.discom || 'UGVCL',
-          status: (dealer.status || 'active').toLowerCase(),
-          tier: dealer.tier || 'Gold EPC',
-          max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
-          updated_at: new Date().toISOString()
-        };
-        await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          return { success: true, id: data.dealer?.dealer_code || dealerCode };
+        }
       }
+    } catch (apiErr) {
+      console.warn('[dealerService] Server credential creation failed, using client fallback:', apiErr.message);
+    }
 
-      return { success: true, id: data?.id || dealerCode };
+    // 2. Client fallback with Bcrypt hashing
+    try {
+      const passwordHash = bcrypt.hashSync(plainPassword, 10);
+      const payload = {
+        dealer_code: dealerCode,
+        firm_name: dealer.firmName || 'Gujarat Solar EPC',
+        contact_person: dealer.contactPerson || 'Authorized Partner',
+        mobile_number: cleanPhone,
+        email: dealer.email || `${cleanPhone}@sunvinedealer.in`,
+        password_hash: passwordHash,
+        city: dealer.city || 'Ahmedabad',
+        state: dealer.state || 'Gujarat',
+        discom: dealer.discom || 'UGVCL',
+        status: (dealer.status || 'active').toLowerCase(),
+        tier: dealer.tier || 'Gold EPC',
+        max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
+        updated_at: new Date().toISOString()
+      };
+      const { data, error } = await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
+      if (error) {
+        console.warn('[dealerService] Supabase upsert error:', error.message);
+      }
+      return { success: true, id: dealerCode };
     } catch (err) {
       console.error('[dealerService] Exception creating dealer:', err);
       return { success: false, error: err.message };
@@ -147,6 +163,32 @@ export const dealerService = {
     if (fields.ifscCode !== undefined) updatePayload.ifsc_code = fields.ifscCode;
     if (fields.branch !== undefined) updatePayload.branch = fields.branch;
     if (fields.pricingConfig !== undefined) updatePayload.pricing_config = fields.pricingConfig;
+    if (fields.password || fields.accessCode) {
+      const plainPassword = String(fields.password || fields.accessCode).trim();
+      updatePayload.password_hash = bcrypt.hashSync(plainPassword, 10);
+    }
+
+    // Attempt server-side credential update if sensitive auth fields changed
+    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email) {
+      try {
+        await fetch('/api/auth/manage-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'update-dealer-credentials',
+            payload: {
+              dealerCode: dealerCodeOrId,
+              email: fields.email,
+              mobile: updatePayload.mobile_number,
+              password: fields.password || fields.accessCode,
+              firmName: fields.firmName,
+              name: fields.contactPerson
+            }
+          })
+        });
+      } catch (_) {}
+    }
 
     try {
       const { data, error } = await supabase
@@ -173,6 +215,20 @@ export const dealerService = {
   async deleteDealer(dealerCodeOrId) {
     if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
     try {
+      // 1. Try server-side delete
+      try {
+        await fetch('/api/auth/manage-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'delete-dealer',
+            payload: { dealerCode: dealerCodeOrId }
+          })
+        });
+      } catch (_) {}
+
+      // 2. Direct Supabase delete
       const { error } = await supabase
         .from('dealer_accounts')
         .delete()

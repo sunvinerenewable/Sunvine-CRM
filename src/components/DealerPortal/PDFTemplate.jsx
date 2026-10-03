@@ -213,7 +213,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
     });
   }, [multiBrandComparison, multiBrandPackages, resolvedCapKW, customerRatePerKW, subsidyAmount]);
 
-  const resolvedCoverSrc = customCoverUrl || coverImage || '/mirana_page1_original.jpg';
+  const resolvedCoverSrc = '/sunvine_quotation_cover.png';
 
   return (
     <div className="pdf-document font-sans text-[#0F1B2E] bg-white print:bg-white select-none">

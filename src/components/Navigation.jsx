@@ -87,7 +87,7 @@ export default function Navigation() {
     { id: 'hardware_master', label: 'Hardware Catalog', mobileLabel: 'Hardware', icon: 'memory' },
     { id: 'all_quotes', label: 'All Quotations', mobileLabel: 'All Quotes', icon: 'inventory_2' },
     { id: 'admin_docs', label: 'Documentation Hub', mobileLabel: 'Docs', icon: 'description' },
-    { id: 'admin_settings', label: 'Master Governance', mobileLabel: 'Settings', icon: 'settings' },
+    { id: 'admin_settings', label: 'Settings', mobileLabel: 'Settings', icon: 'settings' },
   ];
 
   const isVerificationStaff = Boolean(

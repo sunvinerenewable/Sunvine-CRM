@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
@@ -95,10 +95,73 @@ export default function DealerManagement() {
 
   // Password / Credentials Modal for Existing Dealers
   const [credModalDealer, setCredModalDealer] = useState(null);
+  const [editMobile, setEditMobile] = useState('');
+  const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [showEditPassword, setShowEditPassword] = useState(false);
   const [copiedCreds, setCopiedCreds] = useState(false);
   const [credSavedNotice, setCredSavedNotice] = useState(false);
+
+  const openCredModal = (d) => {
+    setCredModalDealer(d);
+    setEditMobile(d.mobile || '');
+    setEditEmail(d.email || '');
+    setEditPassword(d.password || '');
+    setShowEditPassword(false);
+    setCopiedCreds(false);
+    setCredSavedNotice(false);
+  };
+
+  const handleSaveDealerCredentials = () => {
+    if (!credModalDealer) return;
+    const cleanMobile = String(editMobile || '').replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      if (addToast) addToast({ title: 'Invalid Mobile', message: 'Enter a valid 10-digit mobile number.', type: 'error' });
+      return;
+    }
+    const cleanEmail = editEmail.trim();
+    const cleanPass = editPassword.trim();
+    if (!cleanPass) {
+      if (addToast) addToast({ title: 'Password Required', message: 'Password cannot be empty.', type: 'error' });
+      return;
+    }
+
+    const updatedDealer = {
+      ...credModalDealer,
+      mobile: cleanMobile,
+      email: cleanEmail || credModalDealer.email,
+      password: cleanPass
+    };
+
+    if (updateDealer) {
+      updateDealer(updatedDealer);
+    }
+    if (updateDealerPassword) {
+      updateDealerPassword(credModalDealer.id, cleanPass);
+    }
+
+    setCredSavedNotice(true);
+    if (addToast) {
+      addToast({
+        title: 'Credentials Saved',
+        message: `Updated login credentials for ${credModalDealer.firmName}.`,
+        type: 'success'
+      });
+    }
+    if (addNotification) {
+      addNotification({
+        title: 'Dealer Credentials Updated',
+        description: `Portal login credentials for ${credModalDealer.firmName} updated by Admin.`,
+        type: 'success',
+        icon: 'key',
+        audience: 'admin'
+      });
+    }
+    setTimeout(() => {
+      setCredModalDealer(null);
+      setCredSavedNotice(false);
+    }, 1200);
+  };
 
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#$';
@@ -133,8 +196,18 @@ export default function DealerManagement() {
   const suspendedDealersCount = (dealers || []).filter(d => d.status === 'Suspended').length;
   const totalCapacityMw = ((dealers || []).reduce((acc, d) => acc + (d.totalCapacityKw || 0), 0) / 1000).toFixed(1);
 
+  // Sort dealers: newly onboarded / updated dealers first
+  const sortedDealers = useMemo(() => {
+    return [...(dealers || [])].sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.updated_at || a.createdAt || a.created_at || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.updated_at || b.createdAt || b.created_at || 0).getTime();
+      if (timeA && timeB && timeA !== timeB) return timeB - timeA;
+      return String(b.id || b.dealerCode || '').localeCompare(String(a.id || a.dealerCode || ''));
+    });
+  }, [dealers]);
+
   // Filter dealers across Gujarat
-  const filteredDealers = (dealers || []).filter((d) => {
+  const filteredDealers = sortedDealers.filter((d) => {
     const term = searchTerm.toLowerCase().trim();
     const matchSearch =
       !term ||
@@ -1196,13 +1269,7 @@ export default function DealerManagement() {
                             <span>{d.pricingConfig?.pricingMode === 'custom' ? `₹${d.pricingConfig.customBaseRatePerWp}/Wp` : 'Pricing'}</span>
                           </button>
                           <button
-                            onClick={() => {
-                              setCredModalDealer(d);
-                              setEditPassword(d.password || '');
-                              setShowEditPassword(false);
-                              setCopiedCreds(false);
-                              setCredSavedNotice(false);
-                            }}
+                            onClick={() => openCredModal(d)}
                             className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-primary text-[#6CBF3D] hover:bg-[#6CBF3D]/10 flex items-center gap-1 transition-colors cursor-pointer"
                             title="Manage Password & Credentials"
                           >
@@ -1397,13 +1464,7 @@ export default function DealerManagement() {
                             <span className="material-symbols-outlined text-[17px]">tune</span>
                           </button>
                           <button
-                            onClick={() => {
-                              setCredModalDealer(d);
-                              setEditPassword(d.password || '');
-                              setShowEditPassword(false);
-                              setCopiedCreds(false);
-                              setCredSavedNotice(false);
-                            }}
+                            onClick={() => openCredModal(d)}
                             className="w-7 h-7 rounded hover:bg-surface-container text-[#6CBF3D] hover:text-[#4F9A2C] transition-colors flex items-center justify-center cursor-pointer"
                             title="Manage Password & Credentials"
                           >
@@ -1673,15 +1734,48 @@ export default function DealerManagement() {
                   <span className="text-xs font-semibold text-on-surface">{credModalDealer.contactPerson}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-secondary">Login Mobile ID</span>
-                  <span className="text-xs font-mono font-bold text-primary">{credModalDealer.mobile}</span>
+                  <span className="text-xs text-secondary">Dealer ID</span>
+                  <span className="text-xs font-mono font-bold text-primary">{credModalDealer.id}</span>
+                </div>
+              </div>
+
+              {/* Login Mobile ID field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-on-surface flex items-center justify-between">
+                  <span>Registered Mobile (Portal Login ID) <span className="text-error">*</span></span>
+                  <span className="text-[10px] text-secondary font-mono">10 digits</span>
+                </label>
+                <div className="relative flex items-center">
+                  <span className="material-symbols-outlined absolute left-3 text-secondary text-[18px]">phone</span>
+                  <input
+                    type="tel"
+                    value={editMobile}
+                    onChange={(e) => setEditMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    className="w-full h-10 pl-9 pr-3 bg-white border border-surface-container-highest rounded-lg font-mono text-sm font-semibold text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    placeholder="9825012345"
+                  />
+                </div>
+              </div>
+
+              {/* Official Email field */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-on-surface">Official Business Email</label>
+                <div className="relative flex items-center">
+                  <span className="material-symbols-outlined absolute left-3 text-secondary text-[18px]">mail</span>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full h-10 pl-9 pr-3 bg-white border border-surface-container-highest rounded-lg text-sm text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    placeholder="dealer@example.com"
+                  />
                 </div>
               </div>
 
               {/* Password field */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-on-surface">Portal Password</label>
+                  <label className="text-xs font-semibold text-on-surface">Portal Password <span className="text-error">*</span></label>
                   <button
                     type="button"
                     onClick={() => {
@@ -1714,14 +1808,14 @@ export default function DealerManagement() {
                   </button>
                 </div>
                 <p className="text-[11px] text-secondary">
-                  Dealers cannot change their password from the dealer portal. Only Super Admin can set or reset it.
+                  Login requires this Mobile Number and Password. Changes sync directly to PostgreSQL ledger.
                 </p>
               </div>
 
               {credSavedNotice && (
                 <div className="p-2.5 rounded-lg bg-green-50 border border-green-200 text-green-800 text-xs flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm text-green-600">check_circle</span>
-                  <span>Password updated successfully in Gujarat ledger!</span>
+                  <span>Credentials updated successfully!</span>
                 </div>
               )}
 
@@ -1730,8 +1824,8 @@ export default function DealerManagement() {
                 <button
                   type="button"
                   onClick={() => {
-                    const cleanPhone = String(credModalDealer.mobile).replace(/\D/g, '').slice(-10);
-                    const text = `Sunvine Dealer Portal Credentials:\nPortal: https://sunvine-dealer.vprotech.online\nMobile: ${cleanPhone}\nPassword: ${editPassword}`;
+                    const cleanPhone = String(editMobile || credModalDealer.mobile).replace(/\D/g, '').slice(-10);
+                    const text = `Sunvine Dealer Portal Credentials:\nPortal: https://sunvine-dealer.vprotech.online\nMobile: ${cleanPhone}\nEmail: ${editEmail || credModalDealer.email}\nPassword: ${editPassword}`;
                     navigator.clipboard.writeText(text);
                     setCopiedCreds(true);
                     setTimeout(() => setCopiedCreds(false), 3000);
@@ -1768,53 +1862,14 @@ export default function DealerManagement() {
                 >
                   Close
                 </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!editPassword.trim()) return;
-                  const currentPass = credModalDealer.password || '';
-                  if (editPassword.trim() === currentPass) {
-                    if (addToast) {
-                      addToast({
-                        title: 'No Changes Detected',
-                        message: 'Password was not modified.',
-                        type: 'info'
-                      });
-                    }
-                    setCredModalDealer(null);
-                    return;
-                  }
-
-                  if (updateDealerPassword) {
-                    updateDealerPassword(credModalDealer.id, editPassword.trim());
-                  }
-                  setCredSavedNotice(true);
-                  if (addNotification) {
-                    addNotification({
-                      title: 'Dealer Password Updated',
-                      description: `Portal login password for ${credModalDealer.firmName} was updated by Admin.`,
-                      type: 'success',
-                      icon: 'key',
-                      audience: 'admin'
-                    });
-                  }
-                  if (addToast) {
-                    addToast({
-                      title: 'Password Updated',
-                      message: `Login password for ${credModalDealer.firmName} updated.`,
-                      type: 'success'
-                    });
-                  }
-                  setTimeout(() => {
-                    setCredModalDealer(null);
-                    setCredSavedNotice(false);
-                  }, 1200);
-                }}
-                className="px-4 py-2 rounded-lg bg-primary hover:bg-[#4F9A2C] text-on-primary text-xs font-semibold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">save</span>
-                <span>Save Password</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={handleSaveDealerCredentials}
+                  className="px-4 py-2 rounded-lg bg-primary hover:bg-[#4F9A2C] text-on-primary text-xs font-semibold shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">save</span>
+                  <span>Save Credentials</span>
+                </button>
               </div>
             </div>
           </div>

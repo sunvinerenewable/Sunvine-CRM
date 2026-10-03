@@ -14,7 +14,7 @@ export default function StaffNewLead() {
   const [city, setCity] = useState(currentStaff?.city || 'Ahmedabad');
   const [discom, setDiscom] = useState('UGVCL');
   const [consumerNo, setConsumerNo] = useState('');
-  const [sanctionedLoadKw, setSanctionedLoadKw] = useState('5.0');
+  const [category, setCategory] = useState('residential');
   const [solarSystemKw, setSolarSystemKw] = useState('4.4');
   const [roofType, setRoofType] = useState('RCC Flat Roof');
   const [notes, setNotes] = useState('');
@@ -66,8 +66,9 @@ export default function StaffNewLead() {
       city: city,
       discom: discom,
       consumerNo: consumerNo.trim() || `${discom}-${Math.floor(100000 + Math.random() * 900000)}`,
-      sanctionedLoadKw: parseFloat(sanctionedLoadKw) || 5.0,
+      sanctionedLoadKw: parseFloat(solarSystemKw) || 5.0,
       solarSystemKw: parseFloat(solarSystemKw) || 3.3,
+      category: category || 'residential',
       roofType: roofType,
       amount: calculatedAmount,
       // Source & Attribution
@@ -402,14 +403,16 @@ export default function StaffNewLead() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-on-surface mb-1">Sanctioned Load (kW)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={sanctionedLoadKw}
-                  onChange={(e) => setSanctionedLoadKw(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:border-primary outline-none"
-                />
+                <label className="block text-xs font-bold text-on-surface mb-1">Project Category *</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface focus:border-primary outline-none cursor-pointer"
+                >
+                  <option value="residential">Residential Rooftop</option>
+                  <option value="commercial">Commercial & Industrial (C&I)</option>
+                  <option value="common_meter">Housing Society / Common Meter</option>
+                </select>
               </div>
             </div>
           </div>

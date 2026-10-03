@@ -13,6 +13,8 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
+import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { formatFileSize } from '../../utils/mediaOptimizer';
 
 export default function StaffFiles() {
   const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
@@ -24,6 +26,7 @@ export default function StaffFiles() {
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
+  const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
@@ -37,8 +40,8 @@ export default function StaffFiles() {
   const [newCustAddress, setNewCustAddress] = useState('');
   const [newCustDiscom, setNewCustDiscom] = useState('UGVCL');
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
-  const [newCustLoad, setNewCustLoad] = useState('5.0');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
+  const [newCustCategory, setNewCustCategory] = useState('residential');
   const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
   const [newCustDealerId, setNewCustDealerId] = useState('');
   const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
@@ -107,8 +110,9 @@ export default function StaffFiles() {
         address: newCustAddress.trim() || 'Gujarat, India',
         discom: newCustDiscom,
         consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
-        sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+        sanctionedLoadKw: parseFloat(newCustSolarKw) || 5.0,
         solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+        category: newCustCategory || 'residential',
         roofType: 'RCC Terrace',
         staffId: currentStaff?.id || 'STF-001',
         staffName: currentStaff?.name || 'Sales Officer',
@@ -137,7 +141,11 @@ export default function StaffFiles() {
       setNewCustAddress('');
       setNewCustConsumerNo('');
       setNewCustLoanRef('');
-      addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
+
+      // Auto-open Document Vault modal for the newly created customer file
+      setSelectedFileForDocs(newFile);
+
+      addToast(`New file ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
     } finally {
       hideLoader();
     }
@@ -257,6 +265,57 @@ export default function StaffFiles() {
     } catch (e) {
       console.error('[StaffFiles] handleDeleteDoc failed:', e);
       addToast(e.message || 'Failed to remove document', 'error');
+    } finally {
+      hideLoader();
+    }
+  };
+
+  const handleCameraCapture = async (stats) => {
+    if (!selectedFileForDocs || !cameraTargetDoc || !stats) return;
+    const fileId = selectedFileForDocs.id;
+    const docKey = cameraTargetDoc.key;
+
+    showLoader('Securing camera photo in Cloudflare R2 Vault...');
+    try {
+      let fileUrl = null;
+      let filename = stats.file?.name || `${docKey}_camera.jpg`;
+      let fileSize = stats.file?.size || 0;
+
+      if (stats.file) {
+        try {
+          const oldDoc = selectedFileForDocs.documents?.[docKey];
+          const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey, { oldDoc });
+          if (uploadRes?.success) {
+            fileUrl = uploadRes.publicUrl || uploadRes.url;
+            filename = uploadRes.filename || stats.file.name;
+            fileSize = uploadRes.fileSize || stats.file.size;
+          }
+        } catch (err) {
+          console.warn('[StaffFiles] Camera upload warning:', err);
+        }
+      }
+
+      const updatedDocs = {
+        ...(selectedFileForDocs.documents || {}),
+        [docKey]: {
+          uploaded: true,
+          filename,
+          url: fileUrl,
+          sizeBytes: fileSize,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          date: new Date().toISOString().split('T')[0]
+        }
+      };
+
+      updateCustomerFile(fileId, { documents: updatedDocs });
+
+      setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+      setCameraTargetDoc(null);
+      addToast(`Camera capture saved: ${filename}`, 'success');
+    } catch (err) {
+      console.error('[StaffFiles] Camera capture error:', err);
+      addToast(err.message || 'Camera capture failed', 'error');
     } finally {
       hideLoader();
     }
@@ -697,20 +756,23 @@ export default function StaffFiles() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Sanctioned Load (kW)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={newCustLoad}
-                    onChange={(e) => setNewCustLoad(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
-                  />
+                  <label className="block text-xs font-semibold text-secondary mb-1">Project Category *</label>
+                  <select
+                    value={newCustCategory}
+                    onChange={(e) => setNewCustCategory(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW)</label>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW) *</label>
                   <input
                     type="number"
                     step="0.1"
+                    min="0.5"
                     value={newCustSolarKw}
                     onChange={(e) => setNewCustSolarKw(e.target.value)}
                     className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
@@ -718,7 +780,7 @@ export default function StaffFiles() {
                 </div>
               </div>
 
-              {/* Source Type & Finance Type (Cash vs Bank Loan vs Finance Loan) */}
+              {/* Customer Email & Payment / Case Type */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-xs font-semibold text-secondary mb-1">Customer Email ID (Optional)</label>
@@ -735,9 +797,9 @@ export default function StaffFiles() {
                   <select
                     value={newCustFinanceType}
                     onChange={(e) => setNewCustFinanceType(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
                   >
-                    <option value="CASH">Residential (100% Cash / Self Paid)</option>
+                    <option value="CASH">100% Cash / Self Paid</option>
                     <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
                     <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
                   </select>
@@ -1001,6 +1063,16 @@ export default function StaffFiles() {
 
                               <button
                                 type="button"
+                                onClick={() => setCameraTargetDoc(doc)}
+                                className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-0.5"
+                                title="Capture new photo with Camera"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">photo_camera</span>
+                                <span>Camera</span>
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key)}
                                 className="text-[11px] text-error hover:underline font-medium cursor-pointer flex items-center gap-0.5"
                                 title="Delete document from Cloudflare R2 Vault"
@@ -1011,19 +1083,30 @@ export default function StaffFiles() {
                             </div>
                           </div>
                         ) : (
-                          <label className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1 w-full justify-center py-0.5">
-                            <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                            <span>Upload Document {doc.mandatory ? '' : '(Optional)'} (Max 2 MB)</span>
-                            <input
-                              type="file"
-                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const f = e.target.files?.[0];
-                                if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
-                              }}
-                            />
-                          </label>
+                          <div className="flex items-center gap-2 w-full">
+                            <label className="flex-1 py-1.5 px-2 bg-surface-container-high/60 hover:bg-surface-container-highest text-primary text-xs font-semibold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-colors">
+                              <span className="material-symbols-outlined text-[15px]">upload_file</span>
+                              <span>Upload Document {doc.mandatory ? '' : '(Optional)'}</span>
+                              <input
+                                type="file"
+                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
+                                }}
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="p-1.5 rounded-lg bg-surface-container-high/60 hover:bg-surface-container-highest text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
+                              title="Capture with Camera"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1044,9 +1127,10 @@ export default function StaffFiles() {
                 <button
                   type="button"
                   onClick={() => setSelectedFileForDocs(null)}
-                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
                 >
-                  Close Vault
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>Done / Skip (Upload Later)</span>
                 </button>
               </div>
             </div>
@@ -1077,6 +1161,17 @@ export default function StaffFiles() {
         selectedBankName={newCustLoanBank}
         onSelectBank={(selectedName) => setNewCustLoanBank(selectedName)}
       />
+
+      {/* CAMERA CAPTURE MODAL */}
+      {cameraTargetDoc && (
+        <CameraCaptureModal
+          isOpen={Boolean(cameraTargetDoc)}
+          onClose={() => setCameraTargetDoc(null)}
+          onCapture={handleCameraCapture}
+          documentLabel={cameraTargetDoc.label}
+          mode="photo"
+        />
+      )}
     </div>
   );
 }
