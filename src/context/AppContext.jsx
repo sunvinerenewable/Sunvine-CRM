@@ -49,6 +49,8 @@ import { settingsService } from '../services/settingsService';
 import { authService } from '../services/authService';
 import { supabase } from '../lib/supabase';
 import { generateFieldBOM } from '../data/standardBomData';
+import { cacheManager } from '../utils/cacheManager';
+import { TopProgressBar } from '../components/Shared/Skeleton';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
@@ -421,20 +423,20 @@ const safeSetItem = (key, value) => {
   const [pricingMaster, setPricingMaster] = useState(DEFAULT_PRICING_MASTER);
 
   // Benchmark Quotation Presets (Admin & Dealer Sync)
-  const [pricingPresets, setPricingPresets] = useState(DEFAULT_PRICING_MASTER.quotationPresets);
+  const [pricingPresets, setPricingPresets] = useState(() => cacheManager.get('pricing_presets', DEFAULT_PRICING_MASTER.quotationPresets));
 
   // Commission Margins & Protective Caps by Dealer Tier
-  const [tierMargins, setTierMargins] = useState(DEFAULT_PRICING_MASTER.tierMargins);
+  const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', DEFAULT_PRICING_MASTER.tierMargins));
 
   // Admin Master Governance & Policy Settings
   const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
 
-  // Solar Hardware Catalogs (Primary: Supabase DB)
-  const [modulesList, setModulesList] = useState(DEFAULT_MODULES);
-  const [invertersList, setInvertersList] = useState(DEFAULT_INVERTERS);
+  // Solar Hardware Catalogs (Primary: Supabase DB + SWR local memory)
+  const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', DEFAULT_MODULES));
+  const [invertersList, setInvertersList] = useState(() => cacheManager.get('inverters_list', DEFAULT_INVERTERS));
 
   const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
-  const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(false);
+  const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(true);
 
   // Determine if running in public proposal viewer mode
   const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
@@ -462,29 +464,54 @@ const safeSetItem = (key, value) => {
     });
   };
 
-  const ensureCustomerFileAttribution = (files) => {
-    return (files || []).map((f, idx) => {
-      if (!f) return f;
-      const hasDealer = Boolean(f.dealerId || f.dealerName);
-      const rawSource = (f.sourceType || f.source || '').toUpperCase();
-      const sourceType = rawSource.includes('DIRECT') ? 'DIRECT_STAFF' : (rawSource === 'DEALER' || hasDealer ? 'DEALER' : (idx % 2 === 0 ? 'DIRECT_STAFF' : 'DEALER'));
-      const rawFinance = (f.financeType || '').toUpperCase();
-      const financeType = rawFinance === 'LOAN' || Boolean(f.loanBank) ? 'LOAN' : (rawFinance === 'CASH' ? 'CASH' : (idx % 3 === 0 ? 'LOAN' : 'CASH'));
-      const loanBank = financeType === 'LOAN' ? (f.loanBank || 'State Bank of India') : null;
-      return {
-        ...f,
-        sourceType,
-        financeType,
-        loanBank,
-        staffId: f.staffId || f.staff_id || 'STF-001',
-        staffName: f.staffName || f.staff_name || 'Jayesh Patel',
-        documents: f.documents || {},
-        timeline: Array.isArray(f.timeline) ? f.timeline : []
-      };
-    });
+  const normalizeCustomerFileRow = (f, idx = 0) => {
+    if (!f || !f.id) return null;
+    const hasDealer = Boolean(f.dealerId || f.dealer_id || f.dealerName || f.dealer_name);
+    const rawSource = (f.sourceType || f.source_type || f.source || '').toUpperCase();
+    const sourceType = rawSource.includes('DIRECT') ? 'DIRECT_STAFF' : (rawSource === 'DEALER' || hasDealer ? 'DEALER' : (idx % 2 === 0 ? 'DIRECT_STAFF' : 'DEALER'));
+    const rawFinance = (f.financeType || f.finance_type || f.paymentMode || '').toUpperCase();
+    const financeType = rawFinance === 'LOAN' || Boolean(f.loanBank || f.loan_bank) ? 'LOAN' : (rawFinance === 'CASH' ? 'CASH' : 'CASH');
+    const loanBank = financeType === 'LOAN' ? (f.loanBank || f.loan_bank || 'State Bank of India') : null;
+
+    return {
+      id: f.id,
+      customerName: f.customer_name || f.customerName || 'Customer',
+      phone: f.phone || '',
+      address: f.address || '',
+      city: f.city || '',
+      discom: f.discom || 'PGVCL',
+      discomCircle: f.discom || 'PGVCL',
+      consumerNo: f.consumer_no || f.consumerNo || '',
+      consumerNumber: f.consumer_no || f.consumerNo || '',
+      sanctionedLoadKw: Number(f.sanctioned_load_kw || f.sanctionedLoadKw) || 0,
+      solarSystemKw: Number(f.solar_system_kw || f.solarSystemKw) || 0,
+      roofType: f.roof_type || f.roofType || 'RCC Flat',
+      sourceType,
+      source: sourceType,
+      dealerId: f.dealer_id || f.dealerId || null,
+      dealerName: f.dealer_name || f.dealerName || null,
+      staffId: f.staff_id || f.staffId || 'STF-001',
+      staffName: f.staff_name || f.staffName || 'Jayesh Patel',
+      financeType,
+      paymentMode: financeType,
+      loanBank,
+      loanAccountNo: f.loan_account_no || f.loanAccountNo || null,
+      loanRefNo: f.loan_account_no || f.loanAccountNo || null,
+      stage: f.stage || 'LEAD_SOURCED',
+      currentStage: f.stage || 'LEAD_SOURCED',
+      status: f.status || 'Sourced',
+      documents: (f.documents && typeof f.documents === 'object' && !Array.isArray(f.documents)) ? f.documents : {},
+      timeline: Array.isArray(f.timeline) ? f.timeline : [],
+      createdAt: f.created_at || f.createdAt || new Date().toISOString(),
+      updatedAt: f.updated_at || f.updatedAt || new Date().toISOString()
+    };
   };
 
-  // Live Universal Database Hydration (Async startup from Supabase PostgreSQL)
+  const ensureCustomerFileAttribution = (files) => {
+    return (files || []).map((f, idx) => normalizeCustomerFileRow(f, idx)).filter(Boolean);
+  };
+
+  // Live Universal Database Hydration (Async startup from Supabase PostgreSQL with SWR Cache)
   useEffect(() => {
     let isMounted = true;
     const hydrateAllFromSupabase = async () => {
@@ -528,35 +555,48 @@ const safeSetItem = (key, value) => {
 
         if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
           setModulesList(dbModules.value);
+          cacheManager.set('modules_list', dbModules.value);
           setIsHardwareDbConnected(true);
         }
         if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
           setInvertersList(dbInverters.value);
+          cacheManager.set('inverters_list', dbInverters.value);
           setIsHardwareDbConnected(true);
         }
         if (dbPresets.status === 'fulfilled' && dbPresets.value) {
           setPricingPresets(dbPresets.value);
+          cacheManager.set('pricing_presets', dbPresets.value);
         }
         if (dbBos.status === 'fulfilled' && Array.isArray(dbBos.value) && dbBos.value.length > 0) {
           setPdfBosMatrix(dbBos.value);
+          cacheManager.set('bos_matrix', dbBos.value);
         }
         if (dbBenchmarks.status === 'fulfilled' && Array.isArray(dbBenchmarks.value) && dbBenchmarks.value.length > 0) {
           setInverterBenchmarkMatrix(dbBenchmarks.value);
+          cacheManager.set('inverter_benchmarks', dbBenchmarks.value);
         }
         if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
           setTierMargins(dbTiers.value);
+          cacheManager.set('tier_margins', dbTiers.value);
         }
         if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value)) {
-          setDealers(ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS));
+          const attributed = ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS);
+          setDealers(attributed);
+          cacheManager.set('dealers_list', attributed);
         }
         if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
           setQuotations(dbQuotations.value);
+          cacheManager.set('quotations_feed', dbQuotations.value);
         }
         if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value)) {
-          setCustomerFiles(ensureCustomerFileAttribution(dbFiles.value));
+          const attributedFiles = ensureCustomerFileAttribution(dbFiles.value);
+          setCustomerFiles(attributedFiles);
+          cacheManager.set('customer_files', attributedFiles);
         }
         if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
-          setStaffList(dbStaff.value.length > 0 ? dbStaff.value : DEFAULT_STAFF);
+          const finalStaff = dbStaff.value.length > 0 ? dbStaff.value : DEFAULT_STAFF;
+          setStaffList(finalStaff);
+          cacheManager.set('staff_list', finalStaff);
         }
         if (dbSettings.status === 'fulfilled' && dbSettings.value) {
           setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
@@ -572,13 +612,16 @@ const safeSetItem = (key, value) => {
         }
         if (dbBanks.status === 'fulfilled' && Array.isArray(dbBanks.value) && dbBanks.value.length > 0) {
           setSolarBanks(dbBanks.value);
+          cacheManager.set('solar_banks', dbBanks.value);
         }
         if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value) && dbBomItems.value.length > 0) {
           setBomCatalog(prev => {
             const mergedMap = new Map();
             STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
             dbBomItems.value.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
-            return Array.from(mergedMap.values());
+            const list = Array.from(mergedMap.values());
+            cacheManager.set('bom_catalog', list);
+            return list;
           });
           setBomRates(prev => {
             const next = { ...prev };
@@ -618,15 +661,46 @@ const safeSetItem = (key, value) => {
           setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
         dealerService.getAllDealers().then(data => { if (data) setDealers(data); });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
         staffService.getAllStaff().then(data => { if (data) setStaffList(data); });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const formatted = normalizeCustomerFileRow(payload.new);
+          if (formatted) {
+            setCustomerFiles(prev => {
+              const next = [formatted, ...prev.filter(f => f.id !== formatted.id)];
+              cacheManager.set('customer_files', next);
+              return next;
+            });
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          const formatted = normalizeCustomerFileRow(payload.new);
+          if (formatted) {
+            setCustomerFiles(prev => {
+              const next = prev.map(f => f.id === formatted.id ? { ...f, ...formatted } : f);
+              cacheManager.set('customer_files', next);
+              return next;
+            });
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setCustomerFiles(prev => {
+            const next = prev.filter(f => f.id !== payload.old?.id);
+            cacheManager.set('customer_files', next);
+            return next;
+          });
+        }
+
+        // Silent relational sync with database
         customerFileService.getAllCustomerFiles().then(data => {
-          if (data && Array.isArray(data)) setCustomerFiles(ensureCustomerFileAttribution(data));
+          if (data && Array.isArray(data)) {
+            const attributed = ensureCustomerFileAttribution(data);
+            setCustomerFiles(attributed);
+            cacheManager.set('customer_files', attributed);
+          }
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
@@ -660,17 +734,98 @@ const safeSetItem = (key, value) => {
     };
   }, []);
 
-  // Solar Loan Partner Banks (Database Connected)
-  const [solarBanks, setSolarBanks] = useState([]);
+  // Multi-Tab Focus & Periodic Auto-Sync (Instant update when user adds rows in Supabase Table Editor or other tabs)
+  useEffect(() => {
+    const syncFreshData = async () => {
+      try {
+        const [files, quotes] = await Promise.allSettled([
+          customerFileService.getAllCustomerFiles(),
+          quotationService.getAllQuotations(100)
+        ]);
+        if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
+          const attributed = ensureCustomerFileAttribution(files.value);
+          setCustomerFiles(prev => {
+            const prevIds = (prev || []).map(f => f.id).join(',');
+            const nextIds = attributed.map(f => f.id).join(',');
+            if (prevIds !== nextIds || (prev || []).length !== attributed.length) {
+              cacheManager.set('customer_files', attributed);
+              return attributed;
+            }
+            return prev;
+          });
+        }
+        if (quotes.status === 'fulfilled' && Array.isArray(quotes.value) && quotes.value.length > 0) {
+          setQuotations(prev => {
+            const prevIds = (prev || []).map(q => q.id).join(',');
+            const nextIds = quotes.value.map(q => q.id).join(',');
+            if (prevIds !== nextIds || (prev || []).length !== quotes.value.length) {
+              cacheManager.set('quotations_feed', quotes.value);
+              return quotes.value;
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        // silent background sync
+      }
+    };
 
-  // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority)
-  const [dealers, setDealers] = useState(() => ensureDealerAttribution(INITIAL_DEALERS));
+    const handleFocus = () => {
+      syncFreshData();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncFreshData();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // Periodic silent sync heartbeat every 8 seconds when active tab
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncFreshData();
+      }
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearInterval(interval);
+    };
+  }, []);
+
+  const refreshCustomerFiles = async () => {
+    try {
+      const freshFiles = await customerFileService.getAllCustomerFiles();
+      if (freshFiles && Array.isArray(freshFiles)) {
+        const attributed = ensureCustomerFileAttribution(freshFiles);
+        setCustomerFiles(attributed);
+        cacheManager.set('customer_files', attributed);
+        return attributed;
+      }
+    } catch (err) {
+      console.warn('[AppContext] refreshCustomerFiles error:', err);
+    }
+    return customerFiles;
+  };
+
+  // Solar Loan Partner Banks (Database Connected + SWR Cache)
+  const [solarBanks, setSolarBanks] = useState(() => cacheManager.get('solar_banks', []));
+
+  // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority + SWR Cache)
+  const [dealers, setDealers] = useState(() => {
+    const cached = cacheManager.get('dealers_list', null);
+    return Array.isArray(cached) && cached.length > 0 ? ensureDealerAttribution(cached) : ensureDealerAttribution(INITIAL_DEALERS);
+  });
 
   // Real PDF BOS Reference Data
-  const [pdfBosMatrix, setPdfBosMatrix] = useState(PDF_BOS_PRICE_MATRIX);
+  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => cacheManager.get('bos_matrix', PDF_BOS_PRICE_MATRIX));
 
   // Dedicated Inverter Sizing & Benchmark Pricing Matrix
-  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState([
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => cacheManager.get('inverter_benchmarks', [
     { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
     { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
     { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
@@ -679,10 +834,10 @@ const safeSetItem = (key, value) => {
     { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
     { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
     { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
-  ]);
+  ]));
 
-  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync)
-  const [bomCatalog, setBomCatalog] = useState(STANDARD_BOM_CATALOG);
+  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync + SWR Cache)
+  const [bomCatalog, setBomCatalog] = useState(() => cacheManager.get('bom_catalog', STANDARD_BOM_CATALOG));
 
   // Standard BOM Item Rates (Admin Configurable)
   const defaultBomRates = useMemo(() => {
@@ -730,8 +885,8 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_seen_catalog_items', []);
   });
 
-  // Quotations List (Live Supabase Database)
-  const [quotations, setQuotations] = useState([]);
+  // Quotations List (Live Supabase Database + SWR Cache)
+  const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
 
   // Active quotation loaded in 4-Page Preview
   const [previewQuotation, setPreviewQuotation] = useState(null);
@@ -751,10 +906,13 @@ const safeSetItem = (key, value) => {
   });
 
   // Sales Staff Directory (Managed by Admin, logged in by Staff)
-  const [staffList, setStaffList] = useState(DEFAULT_STAFF);
+  const [staffList, setStaffList] = useState(() => cacheManager.get('staff_list', DEFAULT_STAFF));
 
-  // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority)
-  const [customerFiles, setCustomerFiles] = useState([]);
+  // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority + SWR Cache)
+  const [customerFiles, setCustomerFiles] = useState(() => {
+    const cached = cacheManager.get('customer_files', []);
+    return Array.isArray(cached) && cached.length > 0 ? ensureCustomerFileAttribution(cached) : [];
+  });
 
   // Master Dynamic System Settings
   const [systemSettings, setSystemSettings] = useState(DEFAULT_SYSTEM_SETTINGS);
@@ -1982,6 +2140,7 @@ const safeSetItem = (key, value) => {
         setStaffList,
         customerFiles,
         setCustomerFiles,
+        refreshCustomerFiles,
         addStaff,
         updateStaff,
         updateStaffPassword,
@@ -2103,6 +2262,7 @@ const safeSetItem = (key, value) => {
         solarBanks
       }}
     >
+      <TopProgressBar active={isHardwareDbSyncing} />
       {children}
     </AppContext.Provider>
   );

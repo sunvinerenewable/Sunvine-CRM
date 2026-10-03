@@ -1,11 +1,12 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
-import SplashScreen from './SplashScreen';
 import Navigation from './Navigation';
-import AppUpdateModal from './Shared/AppUpdateModal';
-import UpdateNotificationPopup from './Shared/UpdateNotificationPopup';
-import NetworkStatusBanner from './Shared/NetworkStatusBanner';
 import ViewSkeleton from './Shared/ViewSkeleton';
+
+const SplashScreen = lazy(() => import('./SplashScreen'));
+const AppUpdateModal = lazy(() => import('./Shared/AppUpdateModal'));
+const UpdateNotificationPopup = lazy(() => import('./Shared/UpdateNotificationPopup'));
+const NetworkStatusBanner = lazy(() => import('./Shared/NetworkStatusBanner'));
 
 // Top-Level Lazy-Loaded Authentication Views
 const DealerLogin = lazy(() => import('./Auth/DealerLogin'));
@@ -210,9 +211,6 @@ function PortalContent() {
 
       {/* Real-time Network Offline / Restored Status Banner */}
       <NetworkStatusBanner />
-
-      {/* Snappy Splash on first arrival */}
-      {!splashFinished && <SplashScreen onFinish={handleSplashFinish} />}
     </div>
   );
 }

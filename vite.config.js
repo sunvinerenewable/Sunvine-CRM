@@ -91,7 +91,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-        globPatterns: ['**/*.{css,html,ico,png,svg,woff,woff2}', '**/index*.js'],
+        globPatterns: ['**/*.{css,html,ico,png,webp,svg,woff,woff2}', '**/index*.js'],
         runtimeCaching: [
           {
             urlPattern: /\.(?:js|mjs)$/i,
@@ -138,9 +138,13 @@ export default defineConfig({
       includeAssets: [
         'favicon.ico',
         'sunvine-logo.png',
+        'sunvine-logo.webp',
         'sunvine-logo-darkmode.png',
+        'sunvine-logo-darkmode.webp',
         'sunvine_logo_transparent.png',
+        'sunvine_logo_transparent.webp',
         'sunvine_logo_white.png',
+        'sunvine_logo_white.webp',
         'pwa-192x192.png',
         'pwa-512x512.png',
         'fonts/material-symbols-outlined.woff2'

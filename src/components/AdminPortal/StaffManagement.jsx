@@ -6,6 +6,7 @@ import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
@@ -27,7 +28,9 @@ export default function StaffManagement() {
     deleteStaff,
     addCustomerFile,
     updateCustomerFile,
-    updateFileStatus
+    updateFileStatus,
+    isHardwareDbSyncing,
+    refreshCustomerFiles
   } = useApp();
 
   const { addToast } = useToast();
@@ -39,6 +42,7 @@ export default function StaffManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
 
   // Modals
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -601,25 +605,46 @@ export default function StaffManagement() {
                     className="bg-white border border-[#E4E7EB] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsManualSyncing(true);
+                    await refreshCustomerFiles();
+                    setIsManualSyncing(false);
+                    addToast('Live database sync complete', 'info');
+                  }}
+                  disabled={isManualSyncing}
+                  title="Live Database Sync"
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-600 hover:text-emerald-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+                >
+                  <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
+                    sync
+                  </span>
+                  <span className="hidden sm:inline text-[11px]">Sync DB</span>
+                </button>
               </div>
             </div>
 
             {/* Files Grid / Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredFiles.map(file => {
-                const docsCount = Object.values(file.documents || {}).filter(d => d.uploaded).length;
-                const statusColors = {
-                  'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
-                  'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
-                  'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
-                  'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                };
+            {customerFiles.length === 0 && isHardwareDbSyncing ? (
+              <CustomerCardSkeleton count={6} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredFiles.map(file => {
+                  const docsCount = Object.values(file.documents || {}).filter(d => d.uploaded).length;
+                  const statusColors = {
+                    'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
+                    'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
+                    'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
+                    'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  };
 
-                return (
-                  <div
-                    key={file.id}
-                    className="bg-white border border-[#E4E7EB] hover:border-slate-300 rounded-xl p-5 flex flex-col justify-between shadow-xs transition-all"
-                  >
+                  return (
+                    <div
+                      key={file.id}
+                      className="bg-white border border-[#E4E7EB] hover:border-slate-300 rounded-xl p-5 flex flex-col justify-between shadow-xs transition-all animate-in fade-in duration-200"
+                    >
                     <div>
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
@@ -758,8 +783,9 @@ export default function StaffManagement() {
                 );
               })}
             </div>
+          )}
 
-            {filteredFiles.length === 0 && (
+            {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
               <div className="bg-white border border-[#E4E7EB] rounded-xl p-12 text-center text-slate-500 shadow-xs">
                 <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">folder_off</span>
                 <p>No customer files match your search criteria.</p>

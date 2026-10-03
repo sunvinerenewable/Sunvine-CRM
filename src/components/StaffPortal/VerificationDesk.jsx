@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import { CustomerCardSkeleton } from '../Shared/Skeleton';
 import { getDocumentListForFile } from '../../data/defaultRequiredDocuments';
 
 export default function VerificationDesk() {
@@ -14,7 +15,8 @@ export default function VerificationDesk() {
     updateFileStatus,
     addCustomerFileTimelineEvent,
     currentStaff,
-    role
+    role,
+    isHardwareDbSyncing
   } = useApp();
   const { addToast } = useToast();
 
@@ -288,185 +290,189 @@ export default function VerificationDesk() {
       </div>
 
       {/* Verification Queue Cards */}
-      <div className="space-y-4">
-        {filteredFiles.map((file) => {
-          const isDealer = file.sourceType === 'DEALER' || file.source === 'DEALER';
-          const isLoan = file.financeType === 'LOAN' || file.paymentMode === 'LOAN';
-          const docs = file.documents || {};
+      {customerFiles.length === 0 && isHardwareDbSyncing ? (
+        <CustomerCardSkeleton count={4} />
+      ) : (
+        <div className="space-y-4">
+          {filteredFiles.map((file) => {
+            const isDealer = file.sourceType === 'DEALER' || file.source === 'DEALER';
+            const isLoan = file.financeType === 'LOAN' || file.paymentMode === 'LOAN';
+            const docs = file.documents || {};
 
-          return (
-            <div
-              key={file.id}
-              className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all space-y-4"
-            >
-              {/* Row 1: File Header & Badges */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="font-mono text-xs font-bold text-secondary uppercase">{file.id}</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                      isDealer
-                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                        : 'bg-blue-100 text-blue-800 border border-blue-200'
-                    }`}>
-                      {isDealer ? `Dealer: ${file.dealerName || file.dealerId || 'Channel'}` : 'Direct Staff'}
-                    </span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                      isLoan
-                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                    }`}>
-                      {isLoan ? `Solar Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
-                    </span>
-                    <span className="text-[11px] font-mono text-secondary">
-                      Assigned: <strong className="text-on-surface">{file.staffName}</strong>
-                    </span>
+            return (
+              <div
+                key={file.id}
+                className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all space-y-4"
+              >
+                {/* Row 1: File Header & Badges */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-surface-container-high">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="font-mono text-xs font-bold text-secondary uppercase">{file.id}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                        isDealer
+                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                      }`}>
+                        {isDealer ? `Dealer: ${file.dealerName || file.dealerId || 'Channel'}` : 'Direct Staff'}
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                        isLoan
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}>
+                        {isLoan ? `Solar Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
+                      </span>
+                      <span className="text-[11px] font-mono text-secondary">
+                        Assigned: <strong className="text-on-surface">{file.staffName}</strong>
+                      </span>
+                    </div>
+                    <h3 className="text-base font-bold text-on-surface">{file.customerName}</h3>
+                    <div className="flex items-center gap-3 text-xs text-secondary mt-0.5 flex-wrap">
+                      <span>{file.phone}</span>
+                      <span>&bull;</span>
+                      <span>{file.discom} &bull; Consumer #{file.consumerNo || 'Pending'}</span>
+                      <span>&bull;</span>
+                      <span className="font-bold text-emerald-700">{file.solarSystemKw} kW Solar</span>
+                    </div>
                   </div>
-                  <h3 className="text-base font-bold text-on-surface">{file.customerName}</h3>
-                  <div className="flex items-center gap-3 text-xs text-secondary mt-0.5 flex-wrap">
-                    <span>{file.phone}</span>
-                    <span>&bull;</span>
-                    <span>{file.discom} &bull; Consumer #{file.consumerNo || 'Pending'}</span>
-                    <span>&bull;</span>
-                    <span className="font-bold text-emerald-700">{file.solarSystemKw} kW Solar</span>
-                  </div>
-                </div>
 
-                {/* Quick Stage Controls */}
-                <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFileForTimeline(file)}
-                    className="px-3 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-primary">timeline</span>
-                    <span>Audit Trail</span>
-                  </button>
-
-                  {file.status === 'Sourced' && (
+                  {/* Quick Stage Controls */}
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => handleAdvanceStage(file.id, 'DOCUMENT_VERIFICATION', 'Verification')}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      onClick={() => setSelectedFileForTimeline(file)}
+                      className="px-3 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer text-on-surface"
                     >
-                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                      <span>Accept for Verification</span>
+                      <span className="material-symbols-outlined text-[16px] text-primary">timeline</span>
+                      <span>Audit Trail</span>
                     </button>
-                  )}
 
-                  {file.status === 'Verification' && (
-                    <button
-                      type="button"
-                      onClick={() => handleAdvanceStage(file.id, 'DISCOM_APPLICATION', 'DISCOM Registered')}
-                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">domain</span>
-                      <span>Mark DISCOM Registered</span>
-                    </button>
-                  )}
-
-                  {file.status === 'DISCOM Registered' && (
-                    <button
-                      type="button"
-                      onClick={() => handleAdvanceStage(file.id, 'SUBSIDY_CLAIM', 'Subsidized')}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">payments</span>
-                      <span>Clear DBT Subsidy</span>
-                    </button>
-                  )}
-
-                  <select
-                    value={file.status}
-                    onChange={(e) => updateFileStatus(file.id, e.target.value)}
-                    className="px-2.5 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface outline-none cursor-pointer"
-                  >
-                    <option value="Sourced">Sourced</option>
-                    <option value="Verification">Verification</option>
-                    <option value="DISCOM Registered">DISCOM Registered</option>
-                    <option value="Subsidized">Subsidized</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Row 2: Document Scrutiny Checklist */}
-              <div>
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span className="font-semibold text-secondary flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[15px] text-primary">fact_check</span>
-                    <span>Document Scrutiny (Review incoming client uploads)</span>
-                  </span>
-                  <span className="text-[11px] text-secondary">
-                    Documents are <strong>non-blocking</strong> &bull; Review as received
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                  {getDocumentListForFile(file).map((doc) => {
-                    const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
-                    const isUploaded = Boolean(docInfo?.uploaded);
-                    const isVerified = Boolean(docInfo?.verified);
-
-                    return (
-                      <div
-                        key={doc.key}
-                        className={`p-2.5 rounded-lg border flex flex-col justify-between text-xs ${
-                          isVerified
-                            ? 'bg-emerald-50/70 border-emerald-300'
-                            : isUploaded
-                            ? 'bg-amber-50/60 border-amber-300'
-                            : 'bg-surface-container-low border-surface-container-high'
-                        }`}
+                    {file.status === 'Sourced' && (
+                      <button
+                        type="button"
+                        onClick={() => handleAdvanceStage(file.id, 'DOCUMENT_VERIFICATION', 'Verification')}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
                       >
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-[11px] text-on-surface truncate">{doc.label}</span>
-                            {isVerified && (
-                              <span className="material-symbols-outlined text-emerald-600 text-[15px]" title="Office Verified">
-                                verified
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-secondary mt-0.5 truncate">
-                            {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached'}
-                          </p>
-                        </div>
+                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                        <span>Accept for Verification</span>
+                      </button>
+                    )}
 
-                        <div className="mt-2 pt-1.5 border-t border-surface-container-high/40 flex items-center justify-between">
-                          {isUploaded ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => setPreviewDoc({ title: doc.label, filename: docInfo.filename || 'document.pdf', url: docInfo.url || docInfo.dataUrl })}
-                                className="text-[10px] text-primary font-bold hover:underline cursor-pointer"
-                              >
-                                View
-                              </button>
-                              {!isVerified && (
+                    {file.status === 'Verification' && (
+                      <button
+                        type="button"
+                        onClick={() => handleAdvanceStage(file.id, 'DISCOM_APPLICATION', 'DISCOM Registered')}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">domain</span>
+                        <span>Mark DISCOM Registered</span>
+                      </button>
+                    )}
+
+                    {file.status === 'DISCOM Registered' && (
+                      <button
+                        type="button"
+                        onClick={() => handleAdvanceStage(file.id, 'SUBSIDY_CLAIM', 'Subsidized')}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">payments</span>
+                        <span>Clear DBT Subsidy</span>
+                      </button>
+                    )}
+
+                    <select
+                      value={file.status}
+                      onChange={(e) => updateFileStatus(file.id, e.target.value)}
+                      className="px-2.5 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-semibold text-on-surface outline-none cursor-pointer"
+                    >
+                      <option value="Sourced">Sourced</option>
+                      <option value="Verification">Verification</option>
+                      <option value="DISCOM Registered">DISCOM Registered</option>
+                      <option value="Subsidized">Subsidized</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Row 2: Document Scrutiny Checklist */}
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-semibold text-secondary flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-primary">fact_check</span>
+                      <span>Document Scrutiny (Review incoming client uploads)</span>
+                    </span>
+                    <span className="text-[11px] text-secondary">
+                      Documents are <strong>non-blocking</strong> &bull; Review as received
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                    {getDocumentListForFile(file).map((doc) => {
+                      const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
+                      const isUploaded = Boolean(docInfo?.uploaded);
+                      const isVerified = Boolean(docInfo?.verified);
+
+                      return (
+                        <div
+                          key={doc.key}
+                          className={`p-2.5 rounded-lg border flex flex-col justify-between text-xs ${
+                            isVerified
+                              ? 'bg-emerald-50/70 border-emerald-300'
+                              : isUploaded
+                              ? 'bg-amber-50/60 border-amber-300'
+                              : 'bg-surface-container-low border-surface-container-high'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[11px] text-on-surface truncate">{doc.label}</span>
+                              {isVerified && (
+                                <span className="material-symbols-outlined text-emerald-600 text-[15px]" title="Office Verified">
+                                  verified
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-secondary mt-0.5 truncate">
+                              {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached'}
+                            </p>
+                          </div>
+
+                          <div className="mt-2 pt-1.5 border-t border-surface-container-high/40 flex items-center justify-between">
+                            {isUploaded ? (
+                              <>
                                 <button
                                   type="button"
-                                  onClick={() => handleVerifyDocument(file.id, doc.key)}
-                                  className="text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700 cursor-pointer"
+                                  onClick={() => setPreviewDoc({ title: doc.label, filename: docInfo.filename || 'document.pdf', url: docInfo.url || docInfo.dataUrl })}
+                                  className="text-[10px] text-primary font-bold hover:underline cursor-pointer"
                                 >
-                                  Verify
+                                  View
                                 </button>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-[10px] text-secondary/60">Pending</span>
-                          )}
+                                {!isVerified && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVerifyDocument(file.id, doc.key)}
+                                    className="text-[10px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold hover:bg-emerald-700 cursor-pointer"
+                                  >
+                                    Verify
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-secondary/60">Pending</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
-      {filteredFiles.length === 0 && (
+      {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
         <div className="bg-surface rounded-xl p-12 text-center border border-surface-container-high text-secondary">
           <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">folder_off</span>
           <p className="text-sm font-semibold">No customer files matched your scrutiny filters.</p>

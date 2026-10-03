@@ -63,7 +63,8 @@ export default function DealerLogin() {
               className="h-8 w-auto object-contain"
               width="148"
               height="32"
-              src="/sunvine_logo_transparent.png"
+              src="/sunvine_logo_transparent.webp"
+              onError={(e) => { e.currentTarget.src = '/sunvine_logo_transparent.webp'; }}
             />
           </div>
           <div className="flex items-center gap-1.5 bg-secondary-container/60 px-2.5 py-1 rounded-full">
@@ -337,7 +338,8 @@ export default function DealerLogin() {
                     className="h-9 lg:h-10 w-auto object-contain brightness-110 drop-shadow-sm"
                     width="160"
                     height="40"
-                    src="/sunvine_logo_white.png"
+                    src="/sunvine_logo_white.webp"
+                    onError={(e) => { e.currentTarget.src = '/sunvine_logo_white.png'; }}
                   />
                 </div>
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-container/15 text-primary-fixed font-label-xs tracking-wider uppercase backdrop-blur-sm">
@@ -354,7 +356,7 @@ export default function DealerLogin() {
                 <span className="font-label-xs tracking-wide">Enterprise Commercial &amp; Residential Portal</span>
               </div>
               <h2 className="font-headline-xl text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-on-secondary leading-tight max-w-xl">
-                Powering Today. <br/>
+                Powering Today. <br />
                 <span className="text-primary-container">Protecting Tomorrow.</span>
               </h2>
               <p className="mt-2.5 font-body-sm text-secondary-fixed-dim max-w-lg leading-relaxed">
@@ -603,7 +605,7 @@ export default function DealerLogin() {
 
               {/* Portal Legal Notice */}
               <p className="mt-3 text-center font-body-xs text-secondary text-[11px] leading-tight">
-                © Sunvine Renewable Energy Private Limited. <br/>
+                © Sunvine Renewable Energy Private Limited. <br />
                 Authorized dealer access only. Unauthorized entry is logged.
               </p>
             </div>

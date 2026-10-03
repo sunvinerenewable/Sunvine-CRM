@@ -14,10 +14,11 @@ import {
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { formatFileSize } from '../../utils/mediaOptimizer';
 
 export default function StaffFiles() {
-  const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
+  const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile, isHardwareDbSyncing, refreshCustomerFiles } = useApp();
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
@@ -25,6 +26,7 @@ export default function StaffFiles() {
   const [financeFilter, setFinanceFilter] = useState('all'); // 'all', 'CASH', 'LOAN'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
@@ -375,16 +377,36 @@ export default function StaffFiles() {
             ))}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-64">
-            <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search customer, phone, consumer no..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-            />
+          {/* Search Input & Live Sync */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search customer, phone, consumer no..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setIsManualSyncing(true);
+                await refreshCustomerFiles();
+                setIsManualSyncing(false);
+                addToast('Live database sync complete', 'info');
+              }}
+              disabled={isManualSyncing}
+              title="Sync Live with Database"
+              className="px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-on-surface rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+            >
+              <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
+                sync
+              </span>
+              <span className="hidden sm:inline text-[11px]">Sync DB</span>
+            </button>
           </div>
         </div>
 
@@ -451,21 +473,24 @@ export default function StaffFiles() {
       </div>
 
       {/* Files Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredFiles.map((file) => {
-          const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
-          const statusColors = {
-            'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
-            'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
-            'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
-            'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
-          };
+      {customerFiles.length === 0 && isHardwareDbSyncing ? (
+        <CustomerCardSkeleton count={6} />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredFiles.map((file) => {
+            const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
+            const statusColors = {
+              'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
+              'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
+              'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
+              'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
+            };
 
-          return (
-            <div
-              key={file.id}
-              className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-            >
+            return (
+              <div
+                key={file.id}
+                className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between animate-in fade-in duration-200"
+              >
               <div>
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
@@ -664,8 +689,9 @@ export default function StaffFiles() {
           );
         })}
       </div>
+    )}
 
-      {filteredFiles.length === 0 && (
+      {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
         <div className="bg-surface rounded-xl p-12 text-center border border-surface-container-high text-secondary">
           <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">folder_off</span>
           <p className="text-sm">No customer files match your search criteria.</p>
