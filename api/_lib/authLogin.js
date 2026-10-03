@@ -132,7 +132,7 @@ export default async function handler(req, res) {
       let candidates = [];
 
       try {
-        const sql = 'SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw FROM dealer_accounts WHERE mobile_number = $1';
+        const sql = 'SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name, pricing_config FROM dealer_accounts WHERE mobile_number = $1';
         const qRes = await query(sql, [cleanMobile]);
         candidates = qRes.rows || [];
       } catch (dbErr) {
@@ -141,7 +141,7 @@ export default async function handler(req, res) {
           const db = getSupabaseServiceClient();
           const qRes = await db
             .from('dealer_accounts')
-            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw')
+            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, password_hash, status, city, state, discom, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name, pricing_config')
             .eq('mobile_number', cleanMobile);
           candidates = qRes.data || [];
         } catch (supErr) {
@@ -176,6 +176,7 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Account suspended. Contact Sunvine support.' });
       }
 
+      const isDirect = matchedDealer.assigned_staff_id === 'STF-DIRECT';
       userPayload = {
         id: matchedDealer.id,
         dealer_id: matchedDealer.id,
@@ -188,7 +189,10 @@ export default async function handler(req, res) {
         state: matchedDealer.state,
         discom: matchedDealer.discom,
         tier: matchedDealer.tier,
-        maxMarginCapPerKw: matchedDealer.max_margin_cap_per_kw || 6000
+        maxMarginCapPerKw: matchedDealer.max_margin_cap_per_kw || 6000,
+        assignedStaffId: matchedDealer.assigned_staff_id || 'STF-DIRECT',
+        assignedStaffName: matchedDealer.assigned_staff_name || (isDirect ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
+        pricingConfig: matchedDealer.pricing_config || {}
       };
 
     } else {

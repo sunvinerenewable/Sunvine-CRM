@@ -61,8 +61,10 @@ export default async function handler(req, res) {
         const cleanCity = city || 'Ahmedabad';
         const cleanState = state || 'Gujarat';
         const cleanDiscom = discom || 'UGVCL';
-        const assignedStaffId = payload.assignedStaffId || 'STF-801';
-        const assignedStaffName = payload.assignedStaffName || 'Sunvine Sales Staff';
+        const assignedStaffId = payload.assignedStaffId || 'STF-DIRECT';
+        const assignedStaffName = assignedStaffId === 'STF-DIRECT' 
+          ? 'Direct to Company (HQ Desk)' 
+          : (payload.assignedStaffName || 'Sunvine Sales Staff');
         const pricingConfig = JSON.stringify({
           ...(payload.pricingConfig || {}),
           assignedStaffId,
@@ -73,8 +75,8 @@ export default async function handler(req, res) {
           INSERT INTO dealer_accounts (
             dealer_code, firm_name, contact_person, mobile_number, email,
             password_hash, city, state, discom, tier, max_margin_cap_per_kw,
-            status, gst_number, pan_number, pricing_config, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NOW())
+            status, gst_number, pan_number, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW(), NOW())
           ON CONFLICT (dealer_code) DO UPDATE SET
             firm_name = EXCLUDED.firm_name,
             contact_person = EXCLUDED.contact_person,
@@ -89,9 +91,11 @@ export default async function handler(req, res) {
             status = EXCLUDED.status,
             gst_number = EXCLUDED.gst_number,
             pan_number = EXCLUDED.pan_number,
+            assigned_staff_id = EXCLUDED.assigned_staff_id,
+            assigned_staff_name = EXCLUDED.assigned_staff_name,
             pricing_config = EXCLUDED.pricing_config,
             updated_at = NOW()
-          RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw;
+          RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name;
         `;
 
         const qRes = await query(sql, [
@@ -109,6 +113,8 @@ export default async function handler(req, res) {
           cleanStatus,
           gstin || null,
           pan || null,
+          assignedStaffId,
+          assignedStaffName,
           pricingConfig
         ]);
 
@@ -163,6 +169,24 @@ export default async function handler(req, res) {
           params.push(status.toLowerCase());
         }
 
+        if (payload.assignedStaffId) {
+          updates.push(`assigned_staff_id = $${idx++}`);
+          params.push(payload.assignedStaffId);
+          const staffName = payload.assignedStaffId === 'STF-DIRECT'
+            ? 'Direct to Company (HQ Desk)'
+            : (payload.assignedStaffName || 'Sunvine Sales Staff');
+          updates.push(`assigned_staff_name = $${idx++}`);
+          params.push(staffName);
+        } else if (payload.assignedStaffName) {
+          updates.push(`assigned_staff_name = $${idx++}`);
+          params.push(payload.assignedStaffName);
+        }
+
+        if (payload.pricingConfig) {
+          updates.push(`pricing_config = $${idx++}::jsonb`);
+          params.push(JSON.stringify(payload.pricingConfig));
+        }
+
         updates.push(`updated_at = NOW()`);
 
         if (updates.length === 1) {
@@ -179,7 +203,7 @@ export default async function handler(req, res) {
           params.push(cleanMobile);
         }
 
-        const sql = `UPDATE dealer_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, dealer_code, firm_name, mobile_number, email, status;`;
+        const sql = `UPDATE dealer_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, dealer_code, firm_name, mobile_number, email, status, assigned_staff_id, assigned_staff_name;`;
         const qRes = await query(sql, params);
 
         return res.status(200).json({
@@ -352,7 +376,7 @@ export default async function handler(req, res) {
 
       case 'get-accounts': {
         const adminsRes = await query('SELECT id, email, full_name, role, mobile_number, two_factor_enabled, last_login, created_at FROM admin_accounts ORDER BY created_at ASC');
-        const dealersRes = await query('SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, created_at, updated_at FROM dealer_accounts ORDER BY updated_at DESC');
+        const dealersRes = await query('SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at FROM dealer_accounts ORDER BY updated_at DESC');
         const staffRes = await query('SELECT id, name, role, department, phone, email, status, onboarded_date, zone, city, created_at, updated_at FROM staff_accounts ORDER BY created_at ASC');
         return res.status(200).json({
           success: true,

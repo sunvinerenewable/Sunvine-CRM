@@ -75,8 +75,8 @@ export default function StaffNewLead() {
       sourceType: sourceType,
       dealerId: sourceType === 'DEALER' ? selectedDealerId : null,
       dealerName: sourceType === 'DEALER' ? (selectedDealer?.firmName || 'Authorized Partner') : null,
-      staffId: currentStaff?.id || 'STF-001',
-      staffName: currentStaff?.name || 'Jayesh Patel',
+      staffId: currentStaff?.id || 'STF-801',
+      staffName: currentStaff?.name || 'Sunvine Sales Staff',
       // Payment & Financing
       financeType: financeType,
       loanBank: financeType === 'LOAN' ? loanBank : null,

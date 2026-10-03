@@ -133,11 +133,15 @@ ON CONFLICT (id) DO UPDATE SET
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'dealer_accounts' AND column_name = 'assigned_staff_id') THEN
-        ALTER TABLE public.dealer_accounts ADD COLUMN assigned_staff_id VARCHAR(50) DEFAULT 'STF-801';
+        ALTER TABLE public.dealer_accounts ADD COLUMN assigned_staff_id VARCHAR(50) DEFAULT 'STF-DIRECT';
+    ELSE
+        ALTER TABLE public.dealer_accounts ALTER COLUMN assigned_staff_id SET DEFAULT 'STF-DIRECT';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'dealer_accounts' AND column_name = 'assigned_staff_name') THEN
-        ALTER TABLE public.dealer_accounts ADD COLUMN assigned_staff_name VARCHAR(255) DEFAULT 'Sunvine Sales Staff';
+        ALTER TABLE public.dealer_accounts ADD COLUMN assigned_staff_name VARCHAR(255) DEFAULT 'Direct to Company (HQ Desk)';
+    ELSE
+        ALTER TABLE public.dealer_accounts ALTER COLUMN assigned_staff_name SET DEFAULT 'Direct to Company (HQ Desk)';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'dealer_accounts' AND column_name = 'pricing_config') THEN

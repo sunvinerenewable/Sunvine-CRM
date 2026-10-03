@@ -128,7 +128,7 @@ export default function StaffFiles() {
         solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
         category: newCustCategory || 'residential',
         roofType: 'RCC Terrace',
-        staffId: currentStaff?.id || 'STF-001',
+        staffId: currentStaff?.id || 'STF-801',
         staffName: currentStaff?.name || 'Sales Officer',
         sourceType: newCustSourceType,
         source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',

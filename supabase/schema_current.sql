@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS public.dealer_accounts (
     max_margin_cap_per_kw NUMERIC(10,2) DEFAULT 6000.00,
     total_commissioned_mw NUMERIC(6,2) DEFAULT 0.0,
     pricing_config JSONB DEFAULT '{}'::jsonb,
+    assigned_staff_id VARCHAR(50) DEFAULT 'STF-DIRECT',
+    assigned_staff_name VARCHAR(255) DEFAULT 'Direct to Company (HQ Desk)',
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );

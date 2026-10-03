@@ -3,10 +3,10 @@ import { AppProvider, useApp } from '../context/AppContext';
 import Navigation from './Navigation';
 import ViewSkeleton from './Shared/ViewSkeleton';
 
-const SplashScreen = lazy(() => import('./SplashScreen'));
-const AppUpdateModal = lazy(() => import('./Shared/AppUpdateModal'));
-const UpdateNotificationPopup = lazy(() => import('./Shared/UpdateNotificationPopup'));
-const NetworkStatusBanner = lazy(() => import('./Shared/NetworkStatusBanner'));
+import SplashScreen from './SplashScreen';
+import AppUpdateModal from './Shared/AppUpdateModal';
+import UpdateNotificationPopup from './Shared/UpdateNotificationPopup';
+import NetworkStatusBanner from './Shared/NetworkStatusBanner';
 
 // Top-Level Lazy-Loaded Authentication Views
 const DealerLogin = lazy(() => import('./Auth/DealerLogin'));

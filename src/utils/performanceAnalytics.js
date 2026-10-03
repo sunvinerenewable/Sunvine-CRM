@@ -6,7 +6,7 @@
  */
 export function calculateSingleStaffPerformance(staff, customerFiles = [], quotations = [], dealers = []) {
   if (!staff) return null;
-  const staffId = staff.id || 'STF-001';
+  const staffId = staff.id || 'STF-801';
   const staffName = staff.name || 'Sales Executive';
 
   const myDealers = (dealers || []).filter(
@@ -143,7 +143,7 @@ export function calculateStaffPerformance(staffOrList, customerFiles = [], quota
     });
 
     return staffOrList.map(s => {
-      const staffId = s?.id || 'STF-001';
+      const staffId = s?.id || 'STF-801';
       const staffName = s?.name || 'Sales Executive';
 
       const sDealers = [
@@ -215,8 +215,8 @@ export function calculateSingleDealerPerformance(dealer, customerFiles = [], quo
     discom: dealer.discom || 'UGVCL',
     tier: dealer.tier || 'Silver',
     status: dealer.status || 'Active',
-    assignedStaffId: dealer.assignedStaffId || 'STF-001',
-    assignedStaffName: dealer.assignedStaffName || 'Jayesh Patel',
+    assignedStaffId: dealer.assignedStaffId || 'STF-DIRECT',
+    assignedStaffName: dealer.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (dealer.assignedStaffName || 'Sunvine Sales Staff'),
     onboardedDate: dealer.onboardedDate || '2026-01-15',
     // Volume & Counts
     quotationsCount: myQuotes.length,

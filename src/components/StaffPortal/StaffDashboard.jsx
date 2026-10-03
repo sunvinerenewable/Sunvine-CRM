@@ -23,7 +23,7 @@ export default function StaffDashboard() {
   // Strictly filter dealers: Sales officer only sees their assigned dealers
   const myDealers = useMemo(() => {
     const list = getAccessibleDealers ? getAccessibleDealers() : (dealers || []);
-    return list.filter(d => (d.assignedStaffId === currentStaff?.id) || (!d.assignedStaffId && currentStaff?.id === 'STF-001'));
+    return list.filter(d => d.assignedStaffId === currentStaff?.id);
   }, [getAccessibleDealers, dealers, currentStaff]);
 
   const [editingDealerId, setEditingDealerId] = useState(null);
@@ -83,7 +83,7 @@ export default function StaffDashboard() {
               Welcome back, {currentStaff?.name || 'Sales Officer'}!
             </h1>
             <p className="text-xs md:text-sm text-slate-500 max-w-xl">
-              Territory: <strong className="text-slate-800">{currentStaff?.zone || 'Gujarat Region'}</strong> | Staff ID: <strong className="text-emerald-700 font-mono font-bold">{currentStaff?.id || 'STF-001'}</strong> | Assigned Dealers: <strong className="text-emerald-700 font-bold">{myDealers.length} Partners</strong>
+              Territory: <strong className="text-slate-800">{currentStaff?.zone || 'Gujarat Region'}</strong> | Staff ID: <strong className="text-emerald-700 font-mono font-bold">{currentStaff?.id || 'STF-801'}</strong> | Assigned Dealers: <strong className="text-emerald-700 font-bold">{myDealers.length} Partners</strong>
             </p>
           </div>
 

@@ -26,8 +26,7 @@ export default function BusinessPerformance() {
     const sname = currentStaff?.name;
     return (dealers || []).filter(d => 
       (d.assignedStaffId && d.assignedStaffId === sid) ||
-      (d.assignedStaffName && d.assignedStaffName === sname) ||
-      (!d.assignedStaffId && sid === 'STF-001')
+      (d.assignedStaffName && d.assignedStaffName === sname)
     );
   }, [dealers, isStaffRole, currentStaff]);
 
@@ -459,8 +458,16 @@ export default function BusinessPerformance() {
                       </span>
                     </td>
                     <td className="py-3.5 px-3">
-                      <div className="font-medium text-on-surface">{d.assignedStaffName || 'Assigned'}</div>
-                      <div className="text-[10px] text-secondary font-mono">{d.assignedStaffId || 'STF-001'}</div>
+                      {d.assignedStaffId === 'STF-DIRECT' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200 text-xs font-semibold">
+                          Direct HQ
+                        </span>
+                      ) : (
+                        <>
+                          <div className="font-medium text-on-surface">{d.assignedStaffName || 'Sunvine Sales Staff'}</div>
+                          <div className="text-[10px] text-secondary font-mono">{d.assignedStaffId || 'STF-801'}</div>
+                        </>
+                      )}
                     </td>
                     <td className="py-3.5 px-3 text-center font-mono font-bold text-on-surface">{d.quotationsCount}</td>
                     <td className="py-3.5 px-3 text-center font-mono font-bold text-primary">{d.customerFilesCount}</td>

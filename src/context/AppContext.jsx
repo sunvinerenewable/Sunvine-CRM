@@ -192,7 +192,9 @@ export const AppProvider = ({ children }) => {
   const [authView, setAuthViewState] = useState(getInitialAuthViewFromUrl);
 
   const setAuthView = (newView, replace = false) => {
-    setAuthViewState(newView);
+    startTransition(() => {
+      setAuthViewState(newView);
+    });
     if (typeof window !== 'undefined') {
       let targetPath = '/login';
       if (newView === 'admin_login') targetPath = '/admin/login';
@@ -262,17 +264,23 @@ export const AppProvider = ({ children }) => {
         // Unauthenticated popstate navigation between login screens
         if (!isAuthenticated) {
           if (path.startsWith('/admin')) {
-            setAuthViewState('admin_login');
+            startTransition(() => {
+              setAuthViewState('admin_login');
+            });
             if (path !== '/admin/login') {
               window.history.replaceState({ authView: 'admin_login' }, '', '/admin/login');
             }
           } else if (path.startsWith('/staff')) {
-            setAuthViewState('staff_login');
+            startTransition(() => {
+              setAuthViewState('staff_login');
+            });
             if (path !== '/staff/login') {
               window.history.replaceState({ authView: 'staff_login' }, '', '/staff/login');
             }
           } else {
-            setAuthViewState('dealer_login');
+            startTransition(() => {
+              setAuthViewState('dealer_login');
+            });
             if (path !== '/login') {
               window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
             }
@@ -283,12 +291,16 @@ export const AppProvider = ({ children }) => {
         // Authenticated popstate navigation
         if (path === '/profile') {
           window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
-          setActiveTabState('dealer_settings');
+          startTransition(() => {
+            setActiveTabState('dealer_settings');
+          });
           return;
         }
         const matchedTab = PATH_TO_TAB[path];
         if (matchedTab) {
-          setActiveTabState(matchedTab === 'profile' ? 'dealer_settings' : matchedTab);
+          startTransition(() => {
+            setActiveTabState(matchedTab === 'profile' ? 'dealer_settings' : matchedTab);
+          });
         }
       }
     };
@@ -468,21 +480,37 @@ const safeSetItem = (key, value) => {
   const ensureDealerAttribution = (list) => {
     return (list || []).map(d => {
       if (!d) return d;
-      const assigned = (d.assignedStaffId && d.assignedStaffName) ? null : getAssignedStaffForDealer(d);
+      const assigned = getAssignedStaffForDealer(d);
+      const isLegacyMock = d.assignedStaffName === 'Jayesh Patel' || d.assignedStaffId === 'STF-001';
+      let assignedStaffId = (d.assignedStaffId && !isLegacyMock) 
+        ? d.assignedStaffId 
+        : (d.pricingConfig?.assignedStaffId && d.pricingConfig?.assignedStaffId !== 'STF-001' ? d.pricingConfig.assignedStaffId : (assigned?.assignedStaffId || 'STF-DIRECT'));
+      
+      let assignedStaffName = (d.assignedStaffName && !isLegacyMock) 
+        ? d.assignedStaffName 
+        : (d.pricingConfig?.assignedStaffName && d.pricingConfig?.assignedStaffName !== 'Jayesh Patel' ? d.pricingConfig.assignedStaffName : (assigned?.assignedStaffName || 'Direct to Company (HQ Desk)'));
+
+      if (assignedStaffId === 'STF-DIRECT') {
+        assignedStaffName = 'Direct to Company (HQ Desk)';
+      }
+
       const tierLower = (d.tier || '').toLowerCase();
       const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
       return {
         ...d,
-        assignedStaffId: d.assignedStaffId || assigned?.assignedStaffId || assigned?.staffId || 'STF-001',
-        assignedStaffName: d.assignedStaffName || assigned?.assignedStaffName || assigned?.staffName || 'Jayesh Patel',
+        assignedStaffId,
+        assignedStaffName,
         onboardedDate: d.onboardedDate || '2025-06-15',
-        pricingConfig: d.pricingConfig || {
-          pricingMode: 'standard',
-          customBaseRatePerWp: 18.00,
-          customBaseRatePerKw: 58000,
-          customMarginPerKw: defaultTierMargin,
-          customDiscountPercent: 0,
-          customNotes: ''
+        pricingConfig: {
+          ...(d.pricingConfig || {}),
+          assignedStaffId,
+          assignedStaffName,
+          pricingMode: d.pricingConfig?.pricingMode || 'standard',
+          customBaseRatePerWp: d.pricingConfig?.customBaseRatePerWp || 18.00,
+          customBaseRatePerKw: d.pricingConfig?.customBaseRatePerKw || 58000,
+          customMarginPerKw: d.pricingConfig?.customMarginPerKw || defaultTierMargin,
+          customDiscountPercent: d.pricingConfig?.customDiscountPercent || 0,
+          customNotes: d.pricingConfig?.customNotes || ''
         }
       };
     });
@@ -514,8 +542,8 @@ const safeSetItem = (key, value) => {
       source: sourceType,
       dealerId: f.dealer_id || f.dealerId || null,
       dealerName: f.dealer_name || f.dealerName || null,
-      staffId: f.staff_id || f.staffId || 'STF-001',
-      staffName: f.staff_name || f.staffName || 'Jayesh Patel',
+      staffId: f.staff_id || f.staffId || 'STF-801',
+      staffName: (f.staff_name === 'Jayesh Patel' || f.staffName === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (f.staff_name || f.staffName || 'Sunvine Sales Staff'),
       financeType,
       paymentMode: financeType,
       loanBank,
@@ -1227,26 +1255,30 @@ const safeSetItem = (key, value) => {
 
   // Auth Actions
   const login = (userRole, userProfile = null) => {
-    setIsAuthenticated(true);
-    setRole(userRole);
-    if (userRole === 'admin') {
-      setActiveTab('admin_dashboard');
-    } else if (userRole === 'staff') {
-      const isVerification = Boolean(
-        String(userProfile?.department || '').toLowerCase() === 'verification' ||
-        String(userProfile?.role || '').toLowerCase().includes('verification')
-      );
-      setActiveTab(isVerification ? 'verification_desk' : 'staff_dashboard');
-      if (userProfile) setCurrentStaff(userProfile);
-    } else {
-      setActiveTab('dashboard');
-      if (userProfile) setCurrentDealer(userProfile);
-    }
+    startTransition(() => {
+      setIsAuthenticated(true);
+      setRole(userRole);
+      if (userRole === 'admin') {
+        setActiveTab('admin_dashboard');
+      } else if (userRole === 'staff') {
+        const isVerification = Boolean(
+          String(userProfile?.department || '').toLowerCase() === 'verification' ||
+          String(userProfile?.role || '').toLowerCase().includes('verification')
+        );
+        setActiveTab(isVerification ? 'verification_desk' : 'staff_dashboard');
+        if (userProfile) setCurrentStaff(userProfile);
+      } else {
+        setActiveTab('dashboard');
+        if (userProfile) setCurrentDealer(userProfile);
+      }
+    });
   };
 
   const logout = () => {
-    setIsAuthenticated(false);
-    setAuthView('dealer_login', true);
+    startTransition(() => {
+      setIsAuthenticated(false);
+      setAuthView('dealer_login', true);
+    });
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
     if (typeof window !== 'undefined') {
@@ -1314,9 +1346,47 @@ const safeSetItem = (key, value) => {
 
   const deleteStaff = async (staffId) => {
     setStaffList(prev => prev.filter(s => s.id !== staffId));
+    // Reassign any dealers belonging to this deleted salesman to Direct to Company (STF-DIRECT)
+    setDealers(prev => prev.map(d => {
+      if (d.assignedStaffId === staffId) {
+        dealerService.updateDealer(d.id, {
+          assignedStaffId: 'STF-DIRECT',
+          assignedStaffName: 'Direct to Company (HQ Desk)'
+        }).catch(() => {});
+        return {
+          ...d,
+          assignedStaffId: 'STF-DIRECT',
+          assignedStaffName: 'Direct to Company (HQ Desk)',
+          pricingConfig: {
+            ...(d.pricingConfig || {}),
+            assignedStaffId: 'STF-DIRECT',
+            assignedStaffName: 'Direct to Company (HQ Desk)'
+          }
+        };
+      }
+      return d;
+    }));
+
+    // Reassign any customer files belonging to this deleted salesman to active sales desk STF-801
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.staffId === staffId) {
+        customerFileService.updateCustomerFile(f.id, {
+          staffId: 'STF-801',
+          staffName: 'Sunvine Sales Staff'
+        }).catch(() => {});
+        return {
+          ...f,
+          staffId: 'STF-801',
+          staffName: 'Sunvine Sales Staff'
+        };
+      }
+      return f;
+    }));
     try {
       await staffService.deleteStaff(staffId);
       broadcastDbEvent('SYNC_STAFF');
+      broadcastDbEvent('SYNC_DEALERS');
+      broadcastDbEvent('SYNC_FILES');
     } catch (e) {
       console.warn('[AppContext] Failed to delete staff in DB:', e);
     }
@@ -1324,7 +1394,7 @@ const safeSetItem = (key, value) => {
       action: 'DELETE_STAFF',
       module: 'STAFF_MANAGEMENT',
       recordId: staffId,
-      details: `Staff member ${staffId} deleted.`
+      details: `Staff member ${staffId} deleted. Any assigned dealers reassigned to Direct HQ.`
     });
   };
 
@@ -1693,10 +1763,30 @@ const safeSetItem = (key, value) => {
 
   const deleteDealer = async (id) => {
     setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
-    if (currentDealer?.id === id) {
+    if (currentDealer?.id === id || currentDealer?.dealerCode === id) {
       setCurrentDealer(INITIAL_DEALERS[0]);
     }
+    // Convert attached customer files from DEALER to DIRECT_STAFF
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.dealerId === id || f.dealer_id === id) {
+        customerFileService.updateCustomerFile(f.id, {
+          sourceType: 'DIRECT_STAFF',
+          source: 'DIRECT_STAFF',
+          dealerId: null,
+          dealerName: null
+        }).catch(() => {});
+        return {
+          ...f,
+          sourceType: 'DIRECT_STAFF',
+          source: 'DIRECT_STAFF',
+          dealerId: null,
+          dealerName: null
+        };
+      }
+      return f;
+    }));
     broadcastDbEvent('SYNC_DEALERS');
+    broadcastDbEvent('SYNC_FILES');
     try {
       await dealerService.deleteDealer(id);
       broadcastDbEvent('SYNC_DEALERS');
@@ -1707,7 +1797,7 @@ const safeSetItem = (key, value) => {
       action: 'DELETE_DEALER',
       module: 'DEALER_MANAGEMENT',
       recordId: id,
-      details: `Admin deleted dealer partner ${id} from network register.`
+      details: `Admin deleted dealer partner ${id} from network register. Attached customer files converted to Direct Staff.`
     });
   };
 
@@ -1992,8 +2082,9 @@ const safeSetItem = (key, value) => {
   const getAccessibleDealers = () => {
     if (role === 'admin') return dealers;
     if (role === 'staff') {
-      const staffId = currentStaff?.id || 'STF-001';
-      return dealers.filter(d => (d.assignedStaffId === staffId) || (!d.assignedStaffId && staffId === 'STF-001'));
+      if (currentStaff?.department === 'verification') return dealers;
+      const staffId = currentStaff?.id || 'STF-801';
+      return dealers.filter(d => d.assignedStaffId === staffId);
     }
     if (currentDealer) return [currentDealer];
     return dealers;

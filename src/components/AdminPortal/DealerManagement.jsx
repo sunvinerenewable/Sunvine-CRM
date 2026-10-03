@@ -239,7 +239,7 @@ export default function DealerManagement() {
     if (discomFilter !== 'all' && !(d.discom || '').toLowerCase().includes(discomFilter.toLowerCase())) return false;
     if (tierFilter !== 'all' && d.tier !== tierFilter) return false;
     if (salesmanFilter !== 'all') {
-      const sId = d.assignedStaffId || 'STF-801';
+      const sId = d.assignedStaffId || 'STF-DIRECT';
       const sName = (d.assignedStaffName || '').toLowerCase();
       if (salesmanFilter === 'STF-DIRECT') {
         if (sId !== 'STF-DIRECT' && !sName.includes('direct') && !sName.includes('corporate') && !sName.includes('company')) return false;
@@ -412,17 +412,18 @@ export default function DealerManagement() {
 
     // Derive salesman assignment and region
     const isDirectCompany = newAssignedStaffId === 'STF-DIRECT';
+    const foundStaff = (staffList || []).find(s => s.id === newAssignedStaffId) || (salesStaffList || []).find(s => s.id === newAssignedStaffId);
     const selectedStaff = isDirectCompany
       ? { id: 'STF-DIRECT', name: 'Direct to Company (HQ)', city: 'Ahmedabad', zone: 'Corporate All Gujarat Desk' }
-      : (staffList || []).find(s => s.id === newAssignedStaffId) || salesStaffList[0] || {
-          id: 'STF-801',
+      : foundStaff || {
+          id: newAssignedStaffId || 'STF-801',
           name: 'Sunvine Sales Staff',
           city: 'Ahmedabad',
           zone: 'Gujarat Sales Desk'
         };
 
-    const assignedStaffId = selectedStaff.id;
-    const assignedStaffName = selectedStaff.name;
+    const assignedStaffId = isDirectCompany ? 'STF-DIRECT' : (selectedStaff.id || newAssignedStaffId || 'STF-801');
+    const assignedStaffName = isDirectCompany ? 'Direct to Company (HQ Desk)' : (selectedStaff.name || 'Sunvine Sales Staff');
 
     const staffCity = selectedStaff.city || 'Ahmedabad';
     const staffZone = selectedStaff.zone || '';
@@ -449,9 +450,9 @@ export default function DealerManagement() {
         email: newEmail.trim() || editingDealer.email || 'partner@sunvinedealer.in',
         assignedStaffId,
         assignedStaffName,
-        city: cityDerived,
+        city: editingDealer.city || cityDerived,
         state: 'Gujarat',
-        discom: discomDerived,
+        discom: editingDealer.discom || discomDerived,
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim() || editingDealer.address,
@@ -471,7 +472,7 @@ export default function DealerManagement() {
         editingDealer.contactPerson === updatedDealerObj.contactPerson &&
         editingDealer.mobile === updatedDealerObj.mobile &&
         (editingDealer.email || '') === (updatedDealerObj.email || '') &&
-        (editingDealer.assignedStaffId || 'STF-801') === updatedDealerObj.assignedStaffId &&
+        (editingDealer.assignedStaffId || 'STF-DIRECT') === updatedDealerObj.assignedStaffId &&
         editingDealer.city === updatedDealerObj.city &&
         editingDealer.discom === updatedDealerObj.discom &&
         editingDealer.tier === updatedDealerObj.tier &&
@@ -854,7 +855,7 @@ export default function DealerManagement() {
                     <span className="material-symbols-outlined text-[20px]">price_check</span>
                   </div>
                   <div>
-                    <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">3. Commercial Controls &amp; Dealer Margin Governance</h2>
+                    <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">2. Commercial Controls &amp; Dealer Margin Governance</h2>
                     <p className="font-body-sm text-body-sm text-secondary">Enforce pricing safeguards, quote ceilings, and automated escrow payout workflows</p>
                   </div>
                 </div>
@@ -1368,19 +1369,25 @@ export default function DealerManagement() {
                           <span className="material-symbols-outlined text-[16px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
                           <span className="font-semibold truncate">⚡ Direct to Company (HQ Desk)</span>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2 bg-[#F6F8F7] px-2.5 py-1.5 rounded-lg text-xs border border-[#E4E7EB]/70">
-                          <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
-                            {(d.assignedStaffName || 'SS').slice(0, 2).toUpperCase()}
+                      ) : (() => {
+                        const matchedStaff = (staffList || []).find(s => s.id === d.assignedStaffId);
+                        const isLegacy = d.assignedStaffName === 'Jayesh Patel' || d.assignedStaffId === 'STF-001';
+                        const staffName = matchedStaff?.name || (!isLegacy && d.assignedStaffName) || salesStaffList[0]?.name || 'Sunvine Sales Staff';
+                        const staffId = matchedStaff?.id || (!isLegacy && d.assignedStaffId) || salesStaffList[0]?.id || 'STF-801';
+                        return (
+                          <div className="flex items-center gap-2 bg-[#F6F8F7] px-2.5 py-1.5 rounded-lg text-xs border border-[#E4E7EB]/70">
+                            <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                              {staffName.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1 flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-on-surface truncate">
+                                Salesman: <strong className="font-semibold text-primary">{staffName}</strong>
+                              </span>
+                              <span className="text-[10px] text-secondary font-mono ml-1 shrink-0">{staffId}</span>
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1 flex items-center justify-between">
-                            <span className="text-[11px] font-medium text-on-surface truncate">
-                              Salesman: <strong className="font-semibold text-primary">{d.assignedStaffName || 'Sunvine Sales Staff'}</strong>
-                            </span>
-                            <span className="text-[10px] text-secondary font-mono ml-1 shrink-0">{d.assignedStaffId || 'STF-801'}</span>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Metrics bar */}
                       <div className="grid grid-cols-2 gap-2 bg-[#F6F8F7] p-2.5 rounded-lg text-xs">
@@ -1542,21 +1549,27 @@ export default function DealerManagement() {
                             <span className="material-symbols-outlined text-[15px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
                             <span className="font-semibold whitespace-nowrap">Direct HQ</span>
                           </span>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/20">
-                              {(d.assignedStaffName || 'SS').slice(0, 2).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
-                                {d.assignedStaffName || 'Sunvine Sales Staff'}
+                        ) : (() => {
+                          const matchedStaff = (staffList || []).find(s => s.id === d.assignedStaffId);
+                          const isLegacy = d.assignedStaffName === 'Jayesh Patel' || d.assignedStaffId === 'STF-001';
+                          const staffName = matchedStaff?.name || (!isLegacy && d.assignedStaffName) || salesStaffList[0]?.name || 'Sunvine Sales Staff';
+                          const staffId = matchedStaff?.id || (!isLegacy && d.assignedStaffId) || salesStaffList[0]?.id || 'STF-801';
+                          return (
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/20">
+                                {staffName.slice(0, 2).toUpperCase()}
                               </div>
-                              <div className="text-[10px] text-secondary font-mono mt-0.5">
-                                {d.assignedStaffId || 'STF-801'}
+                              <div className="min-w-0">
+                                <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
+                                  {staffName}
+                                </div>
+                                <div className="text-[10px] text-secondary font-mono mt-0.5">
+                                  {staffId}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </td>
                       <td className="py-4 px-3 align-top">
                         {(() => {

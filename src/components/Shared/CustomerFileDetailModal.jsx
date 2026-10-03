@@ -340,7 +340,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     {file.staffName || 'Unassigned Staff'}
                   </p>
                   <p className="text-xs text-secondary font-mono">
-                    Staff ID: {file.staffId || 'STF-001'}
+                    Staff ID: {file.staffId || (file.sourceType === 'DEALER' ? 'STF-DIRECT' : 'STF-801')}
                   </p>
                   <p className="text-xs text-secondary">
                     Role: Field Solar Executive &bull; Regional Operations

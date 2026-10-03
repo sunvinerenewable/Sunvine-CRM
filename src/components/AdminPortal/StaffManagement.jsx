@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { useLoading } from '../../context/LoadingContext';
@@ -40,7 +40,50 @@ export default function StaffManagement() {
   const { addToast } = useToast();
 
   // Main UI section: 'files' (Customer Files) or 'staff' (Sales Team Directory)
-  const [activeView, setActiveView] = useState('files');
+  // Preserved across page refreshes via ?tab=staff / ?view=staff query parameter
+  const [activeView, setActiveView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const val = (params.get('tab') || params.get('view') || '').toLowerCase();
+      if (['staff', 'directory', 'logins', 'sales_team', 'sales'].includes(val)) {
+        return 'staff';
+      }
+      if (['files', 'customer_files', 'subsidies', 'pipeline'].includes(val)) {
+        return 'files';
+      }
+    }
+    return 'files';
+  });
+
+  // Keep URL query parameter synchronized with active view
+  const handleViewChange = (viewKey) => {
+    setActiveView(viewKey);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', viewKey);
+      if (url.searchParams.has('view')) {
+        url.searchParams.set('view', viewKey);
+      }
+      window.history.replaceState({ ...window.history.state, subtab: viewKey }, '', url.toString());
+    }
+  };
+
+  // Browser back/forward navigation sync
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const val = (params.get('tab') || params.get('view') || '').toLowerCase();
+        if (['staff', 'directory', 'logins', 'sales_team', 'sales'].includes(val)) {
+          setActiveView('staff');
+        } else if (['files', 'customer_files', 'subsidies', 'pipeline'].includes(val)) {
+          setActiveView('files');
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Files pipeline filter: 'all', 'Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'
   const [statusFilter, setStatusFilter] = useState('all');
@@ -147,7 +190,7 @@ export default function StaffManagement() {
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
   const [newCustCategory, setNewCustCategory] = useState('residential');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
-  const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-001');
+  const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-801');
   const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
   const [newCustDealerId, setNewCustDealerId] = useState('');
   const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
@@ -537,7 +580,7 @@ export default function StaffManagement() {
         {/* View Switcher: Files vs Staff Directory */}
         <div className="flex border-b border-[#E4E7EB] gap-6">
           <button
-            onClick={() => setActiveView('files')}
+            onClick={() => handleViewChange('files')}
             className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'files'
                 ? 'border-emerald-600 text-emerald-700'
@@ -549,7 +592,7 @@ export default function StaffManagement() {
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{(customerFiles || []).length}</span>
           </button>
           <button
-            onClick={() => setActiveView('staff')}
+            onClick={() => handleViewChange('staff')}
             className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'staff'
                 ? 'border-emerald-600 text-emerald-700'
@@ -946,7 +989,7 @@ export default function StaffManagement() {
                       <button
                         onClick={() => {
                           setStaffFilter(member.id);
-                          setActiveView('files');
+                          handleViewChange('files');
                         }}
                         className="text-emerald-600 hover:underline text-xs flex items-center gap-0.5 font-semibold cursor-pointer"
                       >

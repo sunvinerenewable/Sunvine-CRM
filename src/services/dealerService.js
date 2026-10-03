@@ -46,8 +46,26 @@ export const dealerService = {
           tier: d.tier || 'Gold EPC',
           maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
-          assignedStaffId: d.assigned_staff_id || d.pricing_config?.assignedStaffId || 'STF-801',
-          assignedStaffName: d.assigned_staff_name || d.pricing_config?.assignedStaffName || 'Sunvine Sales Staff',
+          assignedStaffId: (() => {
+            const rawId = d.assigned_staff_id || d.pricing_config?.assignedStaffId;
+            if (rawId === 'STF-001') {
+              return (d.pricing_config?.assignedStaffId && d.pricing_config?.assignedStaffId !== 'STF-001')
+                ? d.pricing_config.assignedStaffId
+                : 'STF-DIRECT';
+            }
+            return rawId || 'STF-DIRECT';
+          })(),
+          assignedStaffName: (() => {
+            const rawId = d.assigned_staff_id || d.pricing_config?.assignedStaffId;
+            if (rawId === 'STF-DIRECT') return 'Direct to Company (HQ Desk)';
+            const rawName = d.assigned_staff_name || d.pricing_config?.assignedStaffName;
+            if (rawName === 'Jayesh Patel') {
+              return (d.pricing_config?.assignedStaffName && d.pricing_config?.assignedStaffName !== 'Jayesh Patel')
+                ? d.pricing_config.assignedStaffName
+                : (rawId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff');
+            }
+            return rawName || 'Direct to Company (HQ Desk)';
+          })(),
           bankName: d.bank_name || 'State Bank of India',
           accountNumber: d.account_number || '394857201948',
           ifscCode: d.ifsc_code || 'SBIN0001234',
@@ -71,8 +89,10 @@ export const dealerService = {
     const cleanPhone = String(dealer.mobile || dealer.mobileNumber || '').replace(/\D/g, '').slice(-10);
     const dealerCode = dealer.dealerCode || dealer.id || `SV-DLR-${Date.now().toString().slice(-4)}`;
     const plainPassword = String(dealer.password || dealer.accessCode || 'Sunvine@2026').trim();
-    const assignedStaffId = dealer.assignedStaffId || 'STF-801';
-    const assignedStaffName = dealer.assignedStaffName || 'Sunvine Sales Staff';
+    const assignedStaffId = dealer.assignedStaffId || 'STF-DIRECT';
+    const assignedStaffName = assignedStaffId === 'STF-DIRECT'
+      ? 'Direct to Company (HQ Desk)'
+      : (dealer.assignedStaffName || 'Sunvine Sales Staff');
 
     // 1. Try server-side secure manage-credentials endpoint first
     try {
@@ -169,17 +189,30 @@ export const dealerService = {
     if (fields.status !== undefined) updatePayload.status = fields.status.toLowerCase();
     if (fields.tier !== undefined) updatePayload.tier = fields.tier;
     if (fields.maxMarginCapPerKw !== undefined) updatePayload.max_margin_cap_per_kw = Number(fields.maxMarginCapPerKw);
-    if (fields.assignedStaffId !== undefined) updatePayload.assigned_staff_id = fields.assignedStaffId;
-    if (fields.assignedStaffName !== undefined) updatePayload.assigned_staff_name = fields.assignedStaffName;
+    if (fields.assignedStaffId !== undefined) {
+      updatePayload.assigned_staff_id = fields.assignedStaffId;
+      if (fields.assignedStaffId === 'STF-DIRECT') {
+        updatePayload.assigned_staff_name = 'Direct to Company (HQ Desk)';
+      }
+    }
+    if (fields.assignedStaffName !== undefined) {
+      updatePayload.assigned_staff_name = fields.assignedStaffId === 'STF-DIRECT'
+        ? 'Direct to Company (HQ Desk)'
+        : fields.assignedStaffName;
+    }
     if (fields.bankName !== undefined) updatePayload.bank_name = fields.bankName;
     if (fields.accountNumber !== undefined) updatePayload.account_number = fields.accountNumber;
     if (fields.ifscCode !== undefined) updatePayload.ifsc_code = fields.ifscCode;
     if (fields.branch !== undefined) updatePayload.branch = fields.branch;
     if (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined) {
+      const finalStaffId = fields.assignedStaffId !== undefined ? fields.assignedStaffId : fields.pricingConfig?.assignedStaffId;
+      const finalStaffName = finalStaffId === 'STF-DIRECT'
+        ? 'Direct to Company (HQ Desk)'
+        : (fields.assignedStaffName !== undefined ? fields.assignedStaffName : fields.pricingConfig?.assignedStaffName);
       updatePayload.pricing_config = {
         ...(fields.pricingConfig || {}),
-        ...(fields.assignedStaffId ? { assignedStaffId: fields.assignedStaffId } : {}),
-        ...(fields.assignedStaffName ? { assignedStaffName: fields.assignedStaffName } : {})
+        ...(finalStaffId ? { assignedStaffId: finalStaffId } : {}),
+        ...(finalStaffName ? { assignedStaffName: finalStaffName } : {})
       };
     }
     if (fields.password || fields.accessCode) {
@@ -187,8 +220,8 @@ export const dealerService = {
       updatePayload.password_hash = bcrypt.hashSync(plainPassword, 10);
     }
 
-    // Attempt server-side credential update if sensitive auth fields changed
-    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email) {
+    // Attempt server-side credential update if sensitive auth fields or assigned staff changed
+    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email || fields.assignedStaffId) {
       try {
         await fetch('/api/auth/manage-credentials', {
           method: 'POST',
@@ -202,7 +235,10 @@ export const dealerService = {
               mobile: updatePayload.mobile_number,
               password: fields.password || fields.accessCode,
               firmName: fields.firmName,
-              name: fields.contactPerson
+              name: fields.contactPerson,
+              assignedStaffId: fields.assignedStaffId,
+              assignedStaffName: fields.assignedStaffName,
+              pricingConfig: updatePayload.pricing_config
             }
           })
         });
@@ -210,10 +246,15 @@ export const dealerService = {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('dealer_accounts')
-        .update(updatePayload)
-        .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(dealerCodeOrId || ''));
+      let query = supabase.from('dealer_accounts').update(updatePayload);
+      if (isUuid) {
+        query = query.eq('id', dealerCodeOrId);
+      } else {
+        query = query.eq('dealer_code', dealerCodeOrId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.warn('[dealerService] Update dealer warning:', error.message);
@@ -248,10 +289,15 @@ export const dealerService = {
       } catch (_) {}
 
       // 2. Direct Supabase delete
-      const { error } = await supabase
-        .from('dealer_accounts')
-        .delete()
-        .or(`dealer_code.eq.${dealerCodeOrId},id.eq.${dealerCodeOrId}`);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(dealerCodeOrId || ''));
+      let query = supabase.from('dealer_accounts').delete();
+      if (isUuid) {
+        query = query.eq('id', dealerCodeOrId);
+      } else {
+        query = query.eq('dealer_code', dealerCodeOrId);
+      }
+
+      const { error } = await query;
 
       invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
 

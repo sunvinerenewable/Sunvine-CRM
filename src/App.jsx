@@ -49,7 +49,9 @@ export default function App() {
               <PublicQuotationView publicQuoteId={publicQuoteId} />
             </Suspense>
           ) : (
-            <PortalApp />
+            <Suspense fallback={<PortalSkeleton />}>
+              <PortalApp />
+            </Suspense>
           )}
           <GlobalActionLoader />
         </ToastProvider>
