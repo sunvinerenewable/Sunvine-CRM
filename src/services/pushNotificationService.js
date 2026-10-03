@@ -158,6 +158,20 @@ export const pushNotificationService = {
   },
 
   /**
+   * Automatically re-synchronize push subscription in background if permission is already granted
+   */
+  async autoSyncIfPermitted({ userId, role } = {}) {
+    if (!this.isPushSupported()) return false;
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const res = await this.subscribeUser({ userId, role });
+        return res?.success || false;
+      }
+    } catch (_) {}
+    return false;
+  },
+
+  /**
    * Unsubscribe device from Push Notifications
    */
   async unsubscribeUser() {

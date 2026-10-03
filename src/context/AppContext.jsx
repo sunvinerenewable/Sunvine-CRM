@@ -53,6 +53,7 @@ import { dealerService } from '../services/dealerService';
 import { bankService } from '../services/bankService';
 import { settingsService } from '../services/settingsService';
 import { authService } from '../services/authService';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { supabase } from '../lib/supabase';
 import { generateFieldBOM } from '../data/standardBomData';
 import { cacheManager } from '../utils/cacheManager';
@@ -1300,6 +1301,7 @@ const safeSetItem = (key, value) => {
       setRole(userRole);
       if (userRole === 'admin') {
         setActiveTab('admin_dashboard');
+        pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
       } else if (userRole === 'staff') {
         const isVerification = Boolean(
           String(userProfile?.department || '').toLowerCase() === 'verification' ||
@@ -1307,6 +1309,7 @@ const safeSetItem = (key, value) => {
         );
         setActiveTab(isVerification ? 'verification_desk' : 'staff_dashboard');
         if (userProfile) setCurrentStaff(userProfile);
+        pushNotificationService.autoSyncIfPermitted({ userId: userProfile?.id || 'staff', role: 'staff' });
       } else {
         setActiveTab('dashboard');
         if (userProfile) setCurrentDealer(userProfile);
@@ -1439,18 +1442,48 @@ const safeSetItem = (key, value) => {
   };
 
   const addCustomerFile = async (newFile) => {
-    setCustomerFiles(prev => [newFile, ...prev]);
-    customerFileService.saveCustomerFile(newFile);
+    // 1. Resolve Dealer Attribution
+    const isDealerSourced = newFile.sourceType === 'DEALER' || newFile.source === 'DEALER' || role === 'dealer';
+    let fileToSave = { ...newFile };
+
+    if (isDealerSourced) {
+      const matchingDealer = (dealers || []).find(d => d.id === newFile.dealerId || d.dealerCode === newFile.dealerId) || currentDealer;
+      const assignedStaffId = newFile.staffId || matchingDealer?.assignedStaffId || 'STF-DIRECT';
+      const assignedStaffName = newFile.staffName || matchingDealer?.assignedStaffName || (assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff');
+
+      fileToSave = {
+        ...fileToSave,
+        sourceType: 'DEALER',
+        source: 'DEALER',
+        dealerId: fileToSave.dealerId || matchingDealer?.id || matchingDealer?.dealerCode || 'DLR-001',
+        dealerName: fileToSave.dealerName || matchingDealer?.firmName || matchingDealer?.name || 'Authorized Dealer',
+        staffId: assignedStaffId,
+        staffName: assignedStaffName
+      };
+
+      // 2. Dispatch OS-level Web Push notification to Admin & matching Salesman
+      pushNotificationService.sendApplicationCreatedPush({
+        fileId: fileToSave.id,
+        customerName: fileToSave.customerName,
+        solarKw: fileToSave.solarSystemKw,
+        dealerId: fileToSave.dealerId,
+        dealerName: fileToSave.dealerName,
+        assignedStaffId,
+        assignedStaffName
+      });
+    }
+
+    setCustomerFiles(prev => [fileToSave, ...prev]);
     // Also update staff totalFiles and pipelineKw
-    if (newFile.staffId) {
-      setStaffList(prev => prev.map(s => s.id === newFile.staffId ? {
+    if (fileToSave.staffId) {
+      setStaffList(prev => prev.map(s => s.id === fileToSave.staffId ? {
         ...s,
         totalFiles: (s.totalFiles || 0) + 1,
-        pipelineKw: Number(((s.pipelineKw || 0) + (newFile.solarSystemKw || 0)).toFixed(1))
+        pipelineKw: Number(((s.pipelineKw || 0) + (fileToSave.solarSystemKw || 0)).toFixed(1))
       } : s));
     }
     try {
-      await customerFileService.saveCustomerFile(newFile);
+      await customerFileService.saveCustomerFile(fileToSave);
     } catch (e) {
       console.warn('[AppContext] Failed to save customer file to DB:', e);
     }
