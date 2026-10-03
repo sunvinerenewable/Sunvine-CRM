@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function StaffDashboard() {
   const {
@@ -14,6 +15,60 @@ export default function StaffDashboard() {
   } = useApp();
 
   const { addToast } = useToast();
+
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (pushNotificationService.isPushSupported()) {
+      pushNotificationService.isSubscribed().then(setIsPushSubscribed);
+    }
+  }, []);
+
+  const handleTogglePush = async () => {
+    setIsPushLoading(true);
+    try {
+      if (isPushSubscribed) {
+        await pushNotificationService.unsubscribeUser();
+        setIsPushSubscribed(false);
+        addToast('OS Push notifications disabled on this device', 'info');
+      } else {
+        const res = await pushNotificationService.subscribeUser({
+          userId: currentStaff?.id || 'staff',
+          role: 'staff'
+        });
+        if (res.success) {
+          setIsPushSubscribed(true);
+          addToast('OS Push notifications enabled successfully!', 'success');
+        } else {
+          addToast(res.error || 'Failed to enable push notifications', 'error');
+        }
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setIsPushLoading(true);
+    try {
+      const res = await pushNotificationService.sendTestPush({
+        targetUserId: currentStaff?.id || 'staff',
+        role: 'staff'
+      });
+      if (res.success) {
+        addToast(`Test push alert dispatched! (${res.sentCount || 0} device notified)`, 'success');
+      } else {
+        addToast(res.error || 'Could not send test push', 'error');
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
 
   // Strictly filter files for THIS staff member only
   const myFiles = (customerFiles || []).filter(
@@ -113,6 +168,67 @@ export default function StaffDashboard() {
           </div>
         </div>
       </div>
+
+      {/* OS Push Notifications Status Banner */}
+      {pushNotificationService.isPushSupported() && (
+        <div className={`rounded-xl p-3.5 sm:p-4 border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          isPushSubscribed
+            ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200'
+            : 'bg-[#0D1527] border-slate-700/60 text-slate-300'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+              isPushSubscribed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+            }`}>
+              <span className="material-symbols-outlined text-xl">
+                {isPushSubscribed ? 'notifications_active' : 'notifications'}
+              </span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-bold text-white">
+                  {isPushSubscribed ? 'Desktop & Mobile Push Alerts Active' : 'Enable OS-Level Push Notifications'}
+                </span>
+                {isPushSubscribed && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Live
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {isPushSubscribed
+                  ? 'You will receive immediate system notifications whenever your assigned dealers register new applications.'
+                  : 'Receive instant Windows, Mac & Android banners when your dealers register customer applications.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isPushSubscribed && (
+              <button
+                type="button"
+                onClick={handleSendTestPush}
+                disabled={isPushLoading}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer disabled:opacity-50"
+              >
+                Send Test Alert
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleTogglePush}
+              disabled={isPushLoading}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50 ${
+                isPushSubscribed
+                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+              }`}
+            >
+              {isPushLoading ? 'Connecting...' : isPushSubscribed ? 'Unsubscribe' : 'Enable Alerts'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI Performance Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">

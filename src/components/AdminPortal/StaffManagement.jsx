@@ -34,7 +34,8 @@ export default function StaffManagement() {
     masterDocRegistry,
     categoryDocRules,
     getFileDocuments,
-    getFileDocsCompletion
+    getFileDocsCompletion,
+    highlightedFileId
   } = useApp();
 
   const { addToast } = useToast();
@@ -44,6 +45,7 @@ export default function StaffManagement() {
   const [activeView, setActiveView] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('openFile')) return 'files';
       const val = (params.get('tab') || params.get('view') || '').toLowerCase();
       if (['staff', 'directory', 'logins', 'sales_team', 'sales'].includes(val)) {
         return 'staff';
@@ -54,6 +56,19 @@ export default function StaffManagement() {
     }
     return 'files';
   });
+
+  // Auto-scroll to highlighted file from Push Notification
+  React.useEffect(() => {
+    if (highlightedFileId) {
+      setActiveView('files');
+      setTimeout(() => {
+        const el = document.getElementById(`admin-file-card-${highlightedFileId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [highlightedFileId]);
 
   // Keep URL query parameter synchronized with active view
   const handleViewChange = (viewKey) => {
@@ -691,12 +706,25 @@ export default function StaffManagement() {
                     'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
                   };
 
+                  const isHighlighted = file.id === highlightedFileId;
+
                   return (
                     <div
+                      id={`admin-file-card-${file.id}`}
                       key={file.id}
-                      className="bg-white border border-[#E4E7EB] hover:border-slate-300 rounded-xl p-5 flex flex-col justify-between shadow-xs transition-all animate-in fade-in duration-200"
+                      className={`rounded-xl p-5 flex flex-col justify-between transition-all animate-in fade-in duration-200 ${
+                        isHighlighted
+                          ? 'bg-emerald-50/60 border-2 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400'
+                          : 'bg-white border border-[#E4E7EB] hover:border-slate-300 shadow-xs'
+                      }`}
                     >
                     <div>
+                      {isHighlighted && (
+                        <div className="mb-3 px-3 py-1.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-800 flex items-center gap-1.5 animate-pulse">
+                          <span className="material-symbols-outlined text-sm text-emerald-700">notifications_active</span>
+                          <span>New Customer File Alert &bull; Opened from Push Notification</span>
+                        </div>
+                      )}
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>

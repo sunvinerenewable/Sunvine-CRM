@@ -90,6 +90,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
+        importScripts: ['/sw-push.js'],
         maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
         globPatterns: ['**/*.{css,html,ico,png,webp,svg,woff,woff2}', '**/index*.js'],
         runtimeCaching: [
@@ -137,6 +138,7 @@ export default defineConfig({
       },
       includeAssets: [
         'favicon.ico',
+        'sw-push.js',
         'sunvine-logo.png',
         'sunvine-logo.webp',
         'sunvine-logo-darkmode.png',
@@ -191,7 +193,8 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    host: true
+    host: true,
+    allowedHosts: true
   },
   build: {
     chunkSizeWarningLimit: 1200,

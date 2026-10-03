@@ -17,6 +17,7 @@ import {
 } from '../../data/defaultRequiredDocuments';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function MyApplications() {
   const {
@@ -397,6 +398,8 @@ export default function MyApplications() {
         source: 'DEALER',
         dealerId: currentDealer?.id || 'DLR-001',
         dealerName: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+        staffId: currentDealer?.assignedStaffId || 'STF-DIRECT',
+        staffName: currentDealer?.assignedStaffName || (currentDealer?.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
         financeType: newCustFinanceType,
         paymentMode: newCustFinanceType,
         loanBank: isLoanCase ? newCustLoanBank : null,
@@ -424,6 +427,18 @@ export default function MyApplications() {
       if (addCustomerFile) {
         await addCustomerFile(newFile);
       }
+
+      // Dispatch True OS-Level Web Push to Admin and Assigned Salesman (if not direct)
+      pushNotificationService.sendApplicationCreatedPush({
+        fileId: newFile.id,
+        customerName: newFile.customerName,
+        solarKw: newFile.solarSystemKw,
+        dealerId: newFile.dealerId,
+        dealerName: newFile.dealerName,
+        assignedStaffId: newFile.staffId,
+        assignedStaffName: newFile.staffName
+      });
+
       setShowAddFileModal(false);
       setNewCustName('');
       setNewCustPhone('');

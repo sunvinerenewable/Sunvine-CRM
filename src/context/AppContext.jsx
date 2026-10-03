@@ -255,6 +255,46 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Push Notification & Deep-link Target File Tracking
+  const [highlightedFileId, setHighlightedFileId] = useState(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('openFile') || null;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const openFile = params.get('openFile');
+    const tabParam = params.get('tab');
+
+    if (openFile) {
+      setHighlightedFileId(openFile);
+      if (role === 'admin') setActiveTab('staff_mgmt');
+      else if (role === 'staff') setActiveTab('staff_files');
+      else if (role === 'dealer') setActiveTab('my_applications');
+    } else if (tabParam === 'applications') {
+      if (role === 'admin') setActiveTab('staff_mgmt');
+      else if (role === 'staff') setActiveTab('staff_files');
+      else if (role === 'dealer') setActiveTab('my_applications');
+    }
+
+    if ('serviceWorker' in navigator) {
+      const handleSwMessage = (event) => {
+        if (event.data?.type === 'SUNVINE_OPEN_FILE' && event.data?.fileId) {
+          const fId = event.data.fileId;
+          setHighlightedFileId(fId);
+          if (role === 'admin') setActiveTab('staff_mgmt');
+          else if (role === 'staff') setActiveTab('staff_files');
+          else if (role === 'dealer') setActiveTab('my_applications');
+        }
+      };
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      return () => navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    }
+  }, [role]);
+
   // Browser back/forward button synchronization
   useEffect(() => {
     const handlePopState = () => {
@@ -2521,6 +2561,8 @@ const safeSetItem = (key, value) => {
         setRole,
         activeTab,
         setActiveTab,
+        highlightedFileId,
+        setHighlightedFileId,
         currentDealer,
         setCurrentDealer,
         updateDealerProfile,

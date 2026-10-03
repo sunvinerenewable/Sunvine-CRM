@@ -30,7 +30,8 @@ export default function StaffFiles() {
     masterDocRegistry,
     categoryDocRules,
     getFileDocuments,
-    getFileDocsCompletion
+    getFileDocsCompletion,
+    highlightedFileId
   } = useApp();
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
@@ -45,6 +46,18 @@ export default function StaffFiles() {
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
+
+  // Auto-scroll to highlighted file from Push Notification
+  React.useEffect(() => {
+    if (highlightedFileId) {
+      setTimeout(() => {
+        const el = document.getElementById(`file-card-${highlightedFileId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [highlightedFileId]);
 
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
@@ -498,12 +511,25 @@ export default function StaffFiles() {
               'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
             };
 
+            const isHighlighted = file.id === highlightedFileId;
+
             return (
               <div
+                id={`file-card-${file.id}`}
                 key={file.id}
-                className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between animate-in fade-in duration-200"
+                className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${
+                  isHighlighted
+                    ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
+                    : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
+                }`}
               >
               <div>
+                {isHighlighted && (
+                  <div className="mb-3 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                    <span className="material-symbols-outlined text-sm text-emerald-400">notifications_active</span>
+                    <span>New Application Alert &bull; Opened from Push Notification</span>
+                  </div>
+                )}
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div>

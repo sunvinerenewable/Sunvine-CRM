@@ -51,8 +51,10 @@ export const customerFileService = {
           source: f.source_type || 'DIRECT_STAFF',
           dealerId: f.dealer_id,
           dealerName: f.dealer_name,
-          staffId: f.staff_id || 'STF-801',
-          staffName: (f.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (f.staff_name || 'Sunvine Sales Staff'),
+          staffId: f.staff_id || (f.source_type === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
+          staffName: (f.staff_id === 'STF-DIRECT' || (!f.staff_id && f.source_type === 'DEALER'))
+            ? 'Direct to Company (HQ Desk)'
+            : (f.staff_name === 'Jayesh Patel' ? 'Sunvine Sales Staff' : (f.staff_name || 'Sunvine Sales Staff')),
           financeType: f.finance_type || 'CASH',
           paymentMode: f.finance_type || 'CASH',
           loanBank: f.loan_bank,
@@ -110,8 +112,10 @@ export const customerFileService = {
       source_type: file.sourceType || file.source || file.source_type || 'DIRECT_STAFF',
       dealer_id: file.dealerId || file.dealer_id || null,
       dealer_name: file.dealerName || file.dealer_name || null,
-      staff_id: file.staffId || file.staff_id || 'STF-801',
-      staff_name: (file.staffName === 'Jayesh Patel' || file.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (file.staffName || file.staff_name || 'Sunvine Sales Staff'),
+      staff_id: file.staffId || file.staff_id || (file.sourceType === 'DEALER' || file.source === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
+      staff_name: (file.staffId === 'STF-DIRECT' || file.staff_id === 'STF-DIRECT' || ((!file.staffId && !file.staff_id) && (file.sourceType === 'DEALER' || file.source === 'DEALER')))
+        ? 'Direct to Company (HQ Desk)'
+        : ((file.staffName === 'Jayesh Patel' || file.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (file.staffName || file.staff_name || 'Sunvine Sales Staff')),
       finance_type: file.financeType || file.paymentMode || file.finance_type || 'CASH',
       loan_bank: file.loanBank || file.loan_bank || null,
       loan_account_no: file.loanAccountNo || file.loanRefNo || file.loan_account_no || null,

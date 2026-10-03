@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, startTransition } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useToast } from '../Shared/Toast';
 import { adminAccountService } from '../../services/adminAccountService';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function AdminSettings() {
+  const { addToast } = useToast();
   const {
     currentAdmin,
     setStaffList,
@@ -47,6 +50,65 @@ export default function AdminSettings() {
 
   // Document Rules Tab State
   const [isSyncingDocs, setIsSyncingDocs] = useState(false);
+
+  // OS Push Notifications Console State
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(false);
+  const [permissionState, setPermissionState] = useState('default');
+
+  useEffect(() => {
+    if (pushNotificationService.isPushSupported()) {
+      pushNotificationService.isSubscribed().then(setIsPushSubscribed);
+      setPermissionState(pushNotificationService.getPermissionState());
+    }
+  }, []);
+
+  const handleToggleAdminPush = async () => {
+    setIsPushLoading(true);
+    try {
+      if (isPushSubscribed) {
+        await pushNotificationService.unsubscribeUser();
+        setIsPushSubscribed(false);
+        setPermissionState(pushNotificationService.getPermissionState());
+        addToast('OS Push notifications disabled on this device', 'info');
+      } else {
+        const res = await pushNotificationService.subscribeUser({
+          userId: currentAdmin?.id || 'admin',
+          role: 'admin'
+        });
+        if (res.success) {
+          setIsPushSubscribed(true);
+          setPermissionState('granted');
+          addToast('OS Push notifications enabled successfully for Admin!', 'success');
+        } else {
+          addToast(res.error || 'Failed to enable push notifications', 'error');
+        }
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
+
+  const handleSendAdminTestPush = async () => {
+    setIsPushLoading(true);
+    try {
+      const res = await pushNotificationService.sendTestPush({
+        targetUserId: 'admin',
+        role: 'admin'
+      });
+      if (res.success) {
+        addToast(`Admin test push sent! (${res.sentCount || 0} device notified)`, 'success');
+      } else {
+        addToast(res.error || 'Could not send test push', 'error');
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
 
   // Document Rules Tab State (URL Synchronized)
   const [selectedCategoryRule, setSelectedCategoryRule] = useState(() => {
@@ -1876,15 +1938,130 @@ export default function AdminSettings() {
       {/* ========================================================
           TAB CONTENT: 3. SYSTEM & PRESETS (Future Tab Placeholder)
           ======================================================== */}
+      {/* ========================================================
+          TAB CONTENT: 3. SYSTEM & OS PUSH NOTIFICATIONS
+          ======================================================== */}
       {settingsTab === 'system' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3 shadow-sm">
-          <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center mx-auto">
-            <span className="material-symbols-outlined text-2xl">settings_system_daydream</span>
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* OS Push Notification Management Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  isPushSubscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  <span className="material-symbols-outlined text-2xl">
+                    {isPushSubscribed ? 'notifications_active' : 'notifications'}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                      OS-Level Web Push Notifications (Desktop &amp; Mobile)
+                    </h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                      isPushSubscribed
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {isPushSubscribed ? 'Active & Connected' : 'Not Enabled on this Device'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                    Receive instant Windows 10/11 Action Center, macOS Notification Center, and mobile notifications when dealers create customer applications—even when your browser is completely closed.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                {isPushSubscribed && (
+                  <button
+                    type="button"
+                    onClick={handleSendAdminTestPush}
+                    disabled={isPushLoading}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-base">send</span>
+                    <span>Send Test Notification</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleToggleAdminPush}
+                  disabled={isPushLoading}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 ${
+                    isPushSubscribed
+                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-base">
+                    {isPushSubscribed ? 'notifications_off' : 'add_alert'}
+                  </span>
+                  <span>{isPushLoading ? 'Connecting...' : isPushSubscribed ? 'Unsubscribe Device' : 'Enable OS Notifications'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Diagnostic Badges & Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6">
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Standard &amp; Engine</span>
+                <span className="text-xs font-bold text-slate-800 mt-1 block">W3C Web Push &bull; RFC 8292 (VAPID)</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Service Worker: Active (sw-push.js)</span>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Browser OS Permission</span>
+                <span className={`text-xs font-bold mt-1 block capitalize ${
+                  permissionState === 'granted' ? 'text-emerald-700' : permissionState === 'denied' ? 'text-rose-600' : 'text-amber-700'
+                }`}>
+                  {permissionState === 'granted' ? 'Granted (Ready to Receive)' : permissionState === 'denied' ? 'Blocked in Browser Settings' : 'Prompt on Activation'}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Notification.permission API</span>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Target Recipient Rule</span>
+                <span className="text-xs font-bold text-emerald-800 mt-1 block">Admin HQ: All Files (100%)</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Salesmen: Assigned Files Only</span>
+              </div>
+            </div>
+
+            {/* Routing Rules Card */}
+            <div className="mt-5 p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/70 text-xs text-emerald-900 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                <span className="material-symbols-outlined text-sm text-emerald-600">verified</span>
+                <span>Automated Push Routing Logic</span>
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-slate-700 text-[11px]">
+                <li><strong>Dealer creates file:</strong> Admin receives OS desktop notification banner immediately.</li>
+                <li><strong>Assigned Salesman:</strong> If dealer is linked to a salesman (e.g. Mayank Vekariya, STF-802), that specific salesman receives the alert on their desktop/phone.</li>
+                <li><strong>Direct Company:</strong> If dealer is handled direct by company (STF-DIRECT), only Admin receives the push notification.</li>
+                <li><strong>Click to Navigate:</strong> Clicking the OS notification banner automatically opens the portal and highlights the new file in the Sales Team &amp; Files view.</li>
+              </ul>
+            </div>
           </div>
-          <h3 className="font-bold text-slate-900 text-base">System Settings &amp; Presets</h3>
-          <p className="text-xs text-slate-500 max-w-md mx-auto">
-            Hardware matrix, BOS benchmark pricing, and DISCOM presets are dynamically configured via Hardware &amp; Pricing Master consoles.
-          </p>
+
+          {/* Quick System Links */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h4 className="font-bold text-slate-900 text-sm mb-3">Master Configuration Quick Consoles</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('account_center'))}>
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
+                  <span className="material-symbols-outlined text-sm text-primary">badge</span>
+                  <span>Staff &amp; Dealer Accounts</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Manage dealer-to-salesman assignments and system credentials.</p>
+              </div>
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('document_rules'))}>
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
+                  <span className="material-symbols-outlined text-sm text-primary">folder_managed</span>
+                  <span>Document Vault Master</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Configure mandatory documents per category and loan requirements.</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
