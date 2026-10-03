@@ -65,9 +65,8 @@ export default function StaffFiles() {
   const [showBankModal, setShowBankModal] = useState(false);
 
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
 
   // If verification staff, oversee all office files; if salesperson, strictly their assigned files

@@ -46,9 +46,8 @@ const ComingSoonPlaceholder = lazy(() => import('./Shared/ComingSoonPlaceholder'
 function PortalContent() {
   const { isAuthenticated, authView, role, activeTab, currentStaff } = useApp();
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
   const [splashFinished, setSplashFinished] = useState(() => {
     return sessionStorage.getItem('sunvine_splash_shown') === 'true';

@@ -60,6 +60,16 @@ import { TopProgressBar } from '../components/Shared/Skeleton';
 
 const DB_VERSION = 'sunvine_gujarat_ledger_200_v1';
 
+function broadcastDbEvent(type) {
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('sunvine_db_sync');
+      bc.postMessage({ type });
+      bc.close();
+    }
+  } catch (_) {}
+}
+
 export const DEFAULT_GOVERNANCE_SETTINGS = {
   enforceAlmm: true,
   pmSuryaGharActive: true,
@@ -419,7 +429,9 @@ const safeSetItem = (key, value) => {
       'sunvine_master_doc_registry',
       'master_doc_registry',
       'sunvine_category_doc_rules',
-      'category_doc_rules'
+      'category_doc_rules',
+      // Staff is DB-only: purge any previously cached staff data
+      'sunvine_cache_staff_list'
     ];
     legacyBusinessKeys.forEach(k => {
       try { localStorage.removeItem(k); } catch (_) {}
@@ -608,9 +620,7 @@ const safeSetItem = (key, value) => {
           cacheManager.set('customer_files', attributedFiles);
         }
         if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
-          const finalStaff = dbStaff.value.length > 0 ? dbStaff.value : DEFAULT_STAFF;
-          setStaffList(finalStaff);
-          cacheManager.set('staff_list', finalStaff);
+          setStaffList(dbStaff.value);
         }
         if (dbSettings.status === 'fulfilled' && dbSettings.value) {
           setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
@@ -683,12 +693,7 @@ const safeSetItem = (key, value) => {
           setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
-        dealerService.getAllDealers().then(data => { if (data) setDealers(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
-        staffService.getAllStaff().then(data => { if (data) setStaffList(data); });
-      })
+
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, (payload) => {
         if (payload.eventType === 'INSERT') {
           const formatted = normalizeCustomerFileRow(payload.new);
@@ -743,6 +748,20 @@ const safeSetItem = (key, value) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_custom_pricing' }, () => {
         pricingService.getTierMargins().then(data => { if (data) setTierMargins(data); });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
+        dealerService.getAllDealers().then(data => {
+          if (data && data.length > 0) {
+            const attributed = ensureDealerAttribution(data);
+            setDealers(attributed);
+            cacheManager.set('dealers_list', attributed);
+          }
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
+        staffService.getAllStaff().then(data => {
+          if (data && data.length > 0) setStaffList(data);
+        });
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
         hardwareService.getAllBomItems().then(data => { if (data && data.length > 0) setBomCatalog(data); });
       })
@@ -771,10 +790,12 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes, docMaster] = await Promise.allSettled([
+        const [files, quotes, docMaster, freshStaff, freshDealers] = await Promise.allSettled([
           customerFileService.getAllCustomerFiles(),
           quotationService.getAllQuotations(100),
-          documentMasterService.fetchDocumentMaster()
+          documentMasterService.fetchDocumentMaster(),
+          staffService.getAllStaff(),
+          dealerService.getAllDealers()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
@@ -799,6 +820,15 @@ const safeSetItem = (key, value) => {
             return prev;
           });
         }
+        // Only update if DB returned actual rows; empty [] means network error — don't overwrite valid state
+        if (freshStaff.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
+          setStaffList(freshStaff.value);
+        }
+        if (freshDealers.status === 'fulfilled' && Array.isArray(freshDealers.value) && freshDealers.value.length > 0) {
+          const attributed = ensureDealerAttribution(freshDealers.value);
+          setDealers(attributed);
+          cacheManager.set('dealers_list', attributed);
+        }
         if (docMaster.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
           setMasterDocRegistry(docMaster.value.registry);
           if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
@@ -810,30 +840,47 @@ const safeSetItem = (key, value) => {
       }
     };
 
+    // Skip sync when tab is hidden (user is AFK) — Supabase Realtime handles pushes
     const handleFocus = () => {
-      syncFreshData();
+      if (document.visibilityState !== 'hidden') syncFreshData();
     };
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible') syncFreshData();
+    };
+
+    // Only re-sync on storage events for non-staff keys (staff is DB-only now)
+    const handleStorage = (e) => {
+      if (e.key && (e.key.includes('dealers_list') || e.key.includes('customer_files') || e.key.includes('quotations_feed'))) {
         syncFreshData();
       }
     };
 
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('storage', handleStorage);
     document.addEventListener('visibilitychange', handleVisibility);
 
-    // Periodic silent sync heartbeat every 8 seconds when active tab
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        syncFreshData();
+    // BroadcastChannel for sub-millisecond instant cross-tab synchronization
+    let broadcastChannel;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        broadcastChannel = new BroadcastChannel('sunvine_db_sync');
+        broadcastChannel.onmessage = (msg) => {
+          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL') {
+            syncFreshData();
+          }
+        };
       }
-    }, 8000);
+    } catch (_) {}
+
+    // No heartbeat poll — Supabase Realtime + focus/visibility events are sufficient
+    // (Removing setInterval prevents the 0→2→0 flicker on AFK tabs)
 
     return () => {
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('storage', handleStorage);
       document.removeEventListener('visibilitychange', handleVisibility);
-      clearInterval(interval);
+      if (broadcastChannel) broadcastChannel.close();
     };
   }, []);
 
@@ -951,8 +998,8 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
   });
 
-  // Sales Staff Directory (Managed by Admin, logged in by Staff)
-  const [staffList, setStaffList] = useState(() => cacheManager.get('staff_list', DEFAULT_STAFF));
+  // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
+  const [staffList, setStaffList] = useState([]);
 
   // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority + SWR Cache)
   const [customerFiles, setCustomerFiles] = useState(() => {
@@ -1186,9 +1233,8 @@ const safeSetItem = (key, value) => {
       setActiveTab('admin_dashboard');
     } else if (userRole === 'staff') {
       const isVerification = Boolean(
-        userProfile?.role?.toLowerCase().includes('verification') ||
-        userProfile?.department === 'verification' ||
-        userProfile?.id === 'STF-003'
+        String(userProfile?.department || '').toLowerCase() === 'verification' ||
+        String(userProfile?.role || '').toLowerCase().includes('verification')
       );
       setActiveTab(isVerification ? 'verification_desk' : 'staff_dashboard');
       if (userProfile) setCurrentStaff(userProfile);
@@ -1211,12 +1257,27 @@ const safeSetItem = (key, value) => {
 
   // Staff and Customer File Actions
   const addStaff = async (newStaff) => {
-    setStaffList(prev => [newStaff, ...prev]);
+    // 1. Optimistically add to state (no localStorage — DB is source of truth)
+    setStaffList(prev => [newStaff, ...prev.filter(s => s.id !== newStaff.id)]);
+
     try {
-      await staffService.createStaff(newStaff);
+      const res = await staffService.createStaff(newStaff);
+      if (res?.success) {
+        // Retrieve newly confirmed record from DB if available
+        const confirmedStaff = res.staff ? { ...newStaff, ...res.staff } : newStaff;
+        setStaffList(prev => [confirmedStaff, ...prev.filter(s => s.id !== newStaff.id && s.id !== confirmedStaff.id)]);
+      }
+      broadcastDbEvent('SYNC_STAFF');
     } catch (e) {
       console.warn('[AppContext] Failed to sync staff to DB:', e);
     }
+
+    logActivity({
+      action: 'CREATE_STAFF',
+      module: 'STAFF_MANAGEMENT',
+      recordId: newStaff.id,
+      details: `Staff member ${newStaff.name} (${newStaff.role} - ${newStaff.department}) onboarded.`
+    });
   };
 
   const updateStaff = async (staffId, updatedFields) => {
@@ -1226,15 +1287,26 @@ const safeSetItem = (key, value) => {
     }
     try {
       await staffService.updateStaff(staffId, updatedFields);
+      broadcastDbEvent('SYNC_STAFF');
     } catch (e) {
       console.warn('[AppContext] Failed to update staff in DB:', e);
     }
+    logActivity({
+      action: 'UPDATE_STAFF',
+      module: 'STAFF_MANAGEMENT',
+      recordId: staffId,
+      details: `Staff member ${staffId} updated.`
+    });
   };
 
   const updateStaffPassword = async (staffId, newPassword) => {
     setStaffList(prev => prev.map(s => s.id === staffId ? { ...s, password: newPassword } : s));
+    if (currentStaff?.id === staffId) {
+      setCurrentStaff(prev => ({ ...prev, password: newPassword }));
+    }
     try {
       await staffService.updateStaffPassword(staffId, newPassword);
+      broadcastDbEvent('SYNC_STAFF');
     } catch (e) {
       console.warn('[AppContext] Failed to update staff password in DB:', e);
     }
@@ -1244,6 +1316,7 @@ const safeSetItem = (key, value) => {
     setStaffList(prev => prev.filter(s => s.id !== staffId));
     try {
       await staffService.deleteStaff(staffId);
+      broadcastDbEvent('SYNC_STAFF');
     } catch (e) {
       console.warn('[AppContext] Failed to delete staff in DB:', e);
     }
@@ -1251,7 +1324,7 @@ const safeSetItem = (key, value) => {
       action: 'DELETE_STAFF',
       module: 'STAFF_MANAGEMENT',
       recordId: staffId,
-      details: `Admin deleted staff member ${staffId} from organization register.`
+      details: `Staff member ${staffId} deleted.`
     });
   };
 
@@ -1546,8 +1619,10 @@ const safeSetItem = (key, value) => {
 
   const addDealer = async (newDealer) => {
     setDealers(prev => [newDealer, ...prev]);
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.createDealer(newDealer);
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to create dealer in DB:', e);
     }
@@ -1558,8 +1633,10 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === updatedDealer.id) {
       setCurrentDealer(prev => ({ ...prev, ...updatedDealer }));
     }
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.updateDealer(updatedDealer.id || updatedDealer.dealerCode, updatedDealer);
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to update dealer in DB:', e);
     }
@@ -1574,8 +1651,10 @@ const safeSetItem = (key, value) => {
       }
       return d;
     }));
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.updateDealer(id, { status: nextStatus });
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to toggle dealer status in DB:', e);
     }
@@ -1589,8 +1668,10 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
     }
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.updateDealer(id, { maxMarginCapPerKw: numericCap });
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to update dealer margin in DB:', e);
     }
@@ -1601,8 +1682,10 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === id) {
       setCurrentDealer(prev => ({ ...prev, password: newPassword }));
     }
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await authService.updatePassword('dealer', id, newPassword);
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to update dealer password in DB:', e);
     }
@@ -1613,8 +1696,10 @@ const safeSetItem = (key, value) => {
     if (currentDealer?.id === id) {
       setCurrentDealer(INITIAL_DEALERS[0]);
     }
+    broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.deleteDealer(id);
+      broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to delete dealer in DB:', e);
     }

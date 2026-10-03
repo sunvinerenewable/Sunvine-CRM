@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import NotificationPanel from './Shared/NotificationPanel';
 
@@ -27,7 +27,9 @@ export default function Navigation() {
       if (clearEditingQuotation) clearEditingQuotation();
       if (tabId === 'create_quote' && clearActiveDraftQuote) clearActiveDraftQuote();
     }
-    setActiveTab(tabId);
+    startTransition(() => {
+      setActiveTab(tabId);
+    });
   };
 
   useEffect(() => {
@@ -91,9 +93,8 @@ export default function Navigation() {
   ];
 
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
 
   const verificationStaffMenu = [
@@ -129,7 +130,7 @@ export default function Navigation() {
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain cursor-pointer"
               src="/sunvine_logo_white.png"
-              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard')}
+              onClick={() => handleMenuClick(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard')}
             />
             <div className="flex flex-col">
               <span className="font-label-xs text-label-xs text-secondary-fixed-dim tracking-wider uppercase font-semibold">
@@ -259,7 +260,7 @@ export default function Navigation() {
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveTab(role === 'admin' ? 'admin_settings' : 'dealer_settings');
+                      handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
                       setDropdownOpen(false);
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-on-surface hover:bg-primary/10 hover:text-primary active:scale-[0.98] cursor-pointer transition-all duration-150"

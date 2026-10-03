@@ -61,13 +61,20 @@ export default async function handler(req, res) {
         const cleanCity = city || 'Ahmedabad';
         const cleanState = state || 'Gujarat';
         const cleanDiscom = discom || 'UGVCL';
+        const assignedStaffId = payload.assignedStaffId || 'STF-801';
+        const assignedStaffName = payload.assignedStaffName || 'Sunvine Sales Staff';
+        const pricingConfig = JSON.stringify({
+          ...(payload.pricingConfig || {}),
+          assignedStaffId,
+          assignedStaffName
+        });
 
         const sql = `
           INSERT INTO dealer_accounts (
             dealer_code, firm_name, contact_person, mobile_number, email,
             password_hash, city, state, discom, tier, max_margin_cap_per_kw,
-            status, gst_number, pan_number, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+            status, gst_number, pan_number, pricing_config, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NOW())
           ON CONFLICT (dealer_code) DO UPDATE SET
             firm_name = EXCLUDED.firm_name,
             contact_person = EXCLUDED.contact_person,
@@ -82,6 +89,7 @@ export default async function handler(req, res) {
             status = EXCLUDED.status,
             gst_number = EXCLUDED.gst_number,
             pan_number = EXCLUDED.pan_number,
+            pricing_config = EXCLUDED.pricing_config,
             updated_at = NOW()
           RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw;
         `;
@@ -100,7 +108,8 @@ export default async function handler(req, res) {
           cleanCap,
           cleanStatus,
           gstin || null,
-          pan || null
+          pan || null,
+          pricingConfig
         ]);
 
         return res.status(200).json({
@@ -194,19 +203,21 @@ export default async function handler(req, res) {
         const staffId = id || `STF-${String(Math.floor(100 + Math.random() * 899))}`;
         const staffRole = role || 'Field Sales Executive';
         const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
-        const finalDepartment = isVerification ? 'Verification' : (department || 'Sales');
+        const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
         const plainPassword = String(password || 'Sunvine@2026').trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
+        const cleanStatus = (status || 'active').toLowerCase();
 
         const sql = `
           INSERT INTO staff_accounts (
-            id, name, phone, email, role, department, zone, city,
+            id, name, phone, mobile_number, email, role, department, zone, city,
             status, password_hash, onboarded_date, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TO_CHAR(NOW(), 'YYYY-MM-DD'), NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TO_CHAR(NOW(), 'YYYY-MM-DD'), NOW(), NOW())
           ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             phone = EXCLUDED.phone,
+            mobile_number = EXCLUDED.mobile_number,
             email = EXCLUDED.email,
             role = EXCLUDED.role,
             department = EXCLUDED.department,
@@ -215,19 +226,20 @@ export default async function handler(req, res) {
             status = EXCLUDED.status,
             password_hash = EXCLUDED.password_hash,
             updated_at = NOW()
-          RETURNING id, name, phone, email, role, department, zone, city, status;
+          RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
         `;
 
         const qRes = await query(sql, [
           staffId,
           name.trim(),
           cleanPhone,
+          cleanPhone,
           cleanEmail,
           staffRole,
           finalDepartment,
           zone || 'Gujarat',
           city || 'Ahmedabad',
-          status || 'Active',
+          cleanStatus,
           passwordHash
         ]);
 
@@ -259,6 +271,8 @@ export default async function handler(req, res) {
           const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
           updates.push(`phone = $${idx++}`);
           params.push(cleanPhone);
+          updates.push(`mobile_number = $${idx++}`);
+          params.push(cleanPhone);
         }
 
         if (email) {
@@ -271,10 +285,10 @@ export default async function handler(req, res) {
           params.push(role);
           const isVerification = role.toLowerCase().includes('verification');
           updates.push(`department = $${idx++}`);
-          params.push(isVerification ? 'Verification' : (department || 'Sales'));
+          params.push(isVerification ? 'verification' : (String(department || 'sales').toLowerCase()));
         } else if (department) {
           updates.push(`department = $${idx++}`);
-          params.push(department);
+          params.push(String(department).toLowerCase());
         }
 
         if (zone) {
@@ -289,7 +303,7 @@ export default async function handler(req, res) {
 
         if (status) {
           updates.push(`status = $${idx++}`);
-          params.push(status);
+          params.push(String(status).toLowerCase());
         }
 
         if (password && String(password).trim().length >= 1) {
@@ -306,11 +320,11 @@ export default async function handler(req, res) {
           params.push(targetStaffId);
         } else {
           const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-          whereClause = `phone = $${idx}`;
+          whereClause = `phone = $${idx} OR mobile_number = $${idx}`;
           params.push(cleanPhone);
         }
 
-        const sql = `UPDATE staff_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, name, phone, email, role, department, status;`;
+        const sql = `UPDATE staff_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, name, phone, mobile_number, email, role, department, status;`;
         const qRes = await query(sql, params);
 
         return res.status(200).json({

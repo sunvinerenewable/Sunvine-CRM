@@ -4,12 +4,13 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab } = useApp();
+  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
   const [discomFilter, setDiscomFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
+  const [salesmanFilter, setSalesmanFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
   const [showAddModal, setShowAddModal] = useState(false);
@@ -17,6 +18,18 @@ export default function DealerManagement() {
   const [showTierModal, setShowTierModal] = useState(false);
   const [viewMode, setViewMode] = useTableViewMode('admin_dealer_mgmt');
   const [dealerToDelete, setDealerToDelete] = useState(null);
+
+  // Filter out Verification desk officers to only show Sales Team members
+  const salesStaffList = useMemo(() => {
+    const list = (staffList || []).filter(s => {
+      const dept = (s.department || '').toLowerCase();
+      const role = (s.role || '').toLowerCase();
+      return !dept.includes('verification') && !role.includes('verification');
+    });
+    return list.length > 0 ? list : [
+      { id: 'STF-801', name: 'Sunvine Sales Staff', role: 'Senior Solar Field Executive', city: 'Ahmedabad', zone: 'Gujarat Sales Desk', phone: '8000050580' }
+    ];
+  }, [staffList]);
 
   const handleConfirmDeleteDealer = () => {
     if (!dealerToDelete) return;
@@ -82,6 +95,7 @@ export default function DealerManagement() {
   const [newContact, setNewContact] = useState('');
   const [newMobile, setNewMobile] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newAssignedStaffId, setNewAssignedStaffId] = useState('STF-801');
   const [newZone, setNewZone] = useState('Rajkot & Saurashtra Zone (Western Gujarat)');
   const [newAddress, setNewAddress] = useState('');
   const [newGstin, setNewGstinState] = useState('');
@@ -224,6 +238,15 @@ export default function DealerManagement() {
 
     if (discomFilter !== 'all' && !(d.discom || '').toLowerCase().includes(discomFilter.toLowerCase())) return false;
     if (tierFilter !== 'all' && d.tier !== tierFilter) return false;
+    if (salesmanFilter !== 'all') {
+      const sId = d.assignedStaffId || 'STF-801';
+      const sName = (d.assignedStaffName || '').toLowerCase();
+      if (salesmanFilter === 'STF-DIRECT') {
+        if (sId !== 'STF-DIRECT' && !sName.includes('direct') && !sName.includes('corporate') && !sName.includes('company')) return false;
+      } else {
+        if (sId !== salesmanFilter && d.assignedStaffName !== salesmanFilter) return false;
+      }
+    }
 
     return true;
   });
@@ -245,6 +268,8 @@ export default function DealerManagement() {
       'Contact Person',
       'Mobile',
       'Email',
+      'Assigned Salesman ID',
+      'Assigned Salesman Name',
       'City',
       'State',
       'DISCOM Circle',
@@ -281,6 +306,8 @@ export default function DealerManagement() {
         escapeCsv(d.contactPerson),
         escapeCsv(d.mobile),
         escapeCsv(d.email),
+        escapeCsv(d.assignedStaffId || 'STF-801'),
+        escapeCsv(d.assignedStaffName || 'Sunvine Sales Staff'),
         escapeCsv(d.city || 'Gujarat'),
         escapeCsv('Gujarat'),
         escapeCsv((d.discom || '').includes('Circle') ? d.discom : `${d.discom || 'PGVCL'} Circle`),
@@ -313,6 +340,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewZone('Rajkot & Saurashtra Zone (Western Gujarat)');
     setNewAddress('');
     setNewGstinState('');
@@ -331,6 +359,7 @@ export default function DealerManagement() {
     setNewContact(dealer.contactPerson || '');
     setNewMobile(dealer.mobile || dealer.phone || '');
     setNewEmail(dealer.email || '');
+    setNewAssignedStaffId(dealer.assignedStaffId || salesStaffList[0]?.id || 'STF-801');
     const zone = (dealer.city || '').toLowerCase().includes('surat') ? 'Surat & South Gujarat Hub' :
                  (dealer.city || '').toLowerCase().includes('vadodara') ? 'Vadodara Industrial Corridor' :
                  (dealer.city || '').toLowerCase().includes('ahmedabad') ? 'Ahmedabad Central & Gandhinagar' :
@@ -359,6 +388,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewAddress('');
     setNewGstinState('');
     setNewPan('');
@@ -380,8 +410,35 @@ export default function DealerManagement() {
 
     const cleanCap = Number(String(newCap).replace(/[^0-9]/g, '')) || 5000;
 
-    const cityDerived = newZone.includes('Rajkot') ? 'Rajkot' : newZone.includes('Surat') ? 'Surat' : newZone.includes('Vadodara') ? 'Vadodara' : 'Ahmedabad';
-    const discomDerived = newZone.includes('Rajkot') ? 'PGVCL Circle' : newZone.includes('Surat') ? 'DGVCL Circle' : newZone.includes('Vadodara') ? 'MGVCL Circle' : 'UGVCL Circle';
+    // Derive salesman assignment and region
+    const isDirectCompany = newAssignedStaffId === 'STF-DIRECT';
+    const selectedStaff = isDirectCompany
+      ? { id: 'STF-DIRECT', name: 'Direct to Company (HQ)', city: 'Ahmedabad', zone: 'Corporate All Gujarat Desk' }
+      : (staffList || []).find(s => s.id === newAssignedStaffId) || salesStaffList[0] || {
+          id: 'STF-801',
+          name: 'Sunvine Sales Staff',
+          city: 'Ahmedabad',
+          zone: 'Gujarat Sales Desk'
+        };
+
+    const assignedStaffId = selectedStaff.id;
+    const assignedStaffName = selectedStaff.name;
+
+    const staffCity = selectedStaff.city || 'Ahmedabad';
+    const staffZone = selectedStaff.zone || '';
+    const cityDerived = isDirectCompany ? 'Ahmedabad' :
+                        staffCity.includes('Rajkot') ? 'Rajkot' :
+                        staffCity.includes('Surat') ? 'Surat' :
+                        staffCity.includes('Vadodara') ? 'Vadodara' :
+                        staffCity.includes('Gandhinagar') ? 'Gandhinagar' :
+                        staffCity.includes('Bhavnagar') ? 'Bhavnagar' :
+                        staffCity.includes('Jamnagar') ? 'Jamnagar' :
+                        staffCity.includes('Mehsana') ? 'Mehsana' : 'Ahmedabad';
+
+    const discomDerived = isDirectCompany ? 'Gujarat Corporate Circle' :
+                          staffZone.includes('PGVCL') || staffCity.includes('Rajkot') || staffCity.includes('Jamnagar') || staffCity.includes('Bhavnagar') ? 'PGVCL Circle' :
+                          staffZone.includes('DGVCL') || staffCity.includes('Surat') || staffCity.includes('Bharuch') || staffCity.includes('Navsari') ? 'DGVCL Circle' :
+                          staffZone.includes('MGVCL') || staffCity.includes('Vadodara') || staffCity.includes('Anand') ? 'MGVCL Circle' : 'UGVCL Circle';
 
     if (editingDealer) {
       const updatedDealerObj = {
@@ -390,6 +447,8 @@ export default function DealerManagement() {
         contactPerson: newContact.trim(),
         mobile: newMobile.trim(),
         email: newEmail.trim() || editingDealer.email || 'partner@sunvinedealer.in',
+        assignedStaffId,
+        assignedStaffName,
         city: cityDerived,
         state: 'Gujarat',
         discom: discomDerived,
@@ -399,7 +458,12 @@ export default function DealerManagement() {
         gstin: newGstin.trim() || editingDealer.gstin || '24AAECB1234F1Z5',
         pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || 'AAECB1234F'),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
-        password: newPassword.trim() || editingDealer.password || ''
+        password: newPassword.trim() || editingDealer.password || '',
+        pricingConfig: {
+          ...(editingDealer.pricingConfig || {}),
+          assignedStaffId,
+          assignedStaffName
+        }
       };
 
       const isUnchanged =
@@ -407,6 +471,7 @@ export default function DealerManagement() {
         editingDealer.contactPerson === updatedDealerObj.contactPerson &&
         editingDealer.mobile === updatedDealerObj.mobile &&
         (editingDealer.email || '') === (updatedDealerObj.email || '') &&
+        (editingDealer.assignedStaffId || 'STF-801') === updatedDealerObj.assignedStaffId &&
         editingDealer.city === updatedDealerObj.city &&
         editingDealer.discom === updatedDealerObj.discom &&
         editingDealer.tier === updatedDealerObj.tier &&
@@ -456,6 +521,8 @@ export default function DealerManagement() {
         contactPerson: newContact.trim(),
         mobile: newMobile.trim(),
         email: newEmail.trim() || 'partner@sunvinedealer.in',
+        assignedStaffId,
+        assignedStaffName,
         city: cityDerived,
         state: 'Gujarat',
         discom: discomDerived,
@@ -469,7 +536,11 @@ export default function DealerManagement() {
         totalCapacityKw: 0,
         status: 'Active',
         joinedDate: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date()),
-        password: newPassword.trim() || ''
+        password: newPassword.trim() || '',
+        pricingConfig: {
+          assignedStaffId,
+          assignedStaffName
+        }
       };
 
       if (addDealer) {
@@ -478,7 +549,7 @@ export default function DealerManagement() {
       if (addNotification) {
         addNotification({
           title: 'New EPC Dealer Onboarded',
-          description: `${newFirm.trim()} (${tierClean}) added with assigned login credentials.`,
+          description: `${newFirm.trim()} (${tierClean}) added under Salesman ${assignedStaffName}.`,
           type: 'success',
           icon: 'person_add',
           audience: 'admin'
@@ -494,10 +565,10 @@ export default function DealerManagement() {
     return (
       <div className="flex flex-col w-full pb-16">
         {/* Breadcrumb Header */}
-        <section className="bg-surface-container-lowest border-b border-surface-container-highest px-8 py-5 -mt-4 -mx-6 mb-6">
-          <div className="max-w-[1520px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <section className="bg-surface-container-lowest border-b border-surface-container-highest px-4 sm:px-8 py-4 sm:py-5 -mt-4 -mx-4 sm:-mx-6 mb-6">
+          <div className="max-w-[1520px] mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <button
                   onClick={handleDiscardModal}
                   className="inline-flex items-center gap-1 font-label-sm text-label-sm text-tertiary hover:text-primary transition-colors font-semibold cursor-pointer"
@@ -505,8 +576,8 @@ export default function DealerManagement() {
                   <span className="material-symbols-outlined text-[16px]">arrow_back</span>
                   <span>Back to Dealer Management</span>
                 </button>
-                <span className="text-secondary/40 text-xs">/</span>
-                <nav className="flex items-center gap-1.5 text-secondary font-label-xs text-label-xs">
+                <span className="text-secondary/40 text-xs hidden sm:inline">/</span>
+                <nav className="hidden sm:flex items-center gap-1.5 text-secondary font-label-xs text-label-xs">
                   <button
                     onClick={() => setActiveTab('admin_dashboard')}
                     className="hover:text-primary transition-colors cursor-pointer"
@@ -535,23 +606,23 @@ export default function DealerManagement() {
                   : 'Create authorized dealer profile, configure margin caps, DISCOM empanelment, and issue authenticated portal credentials.'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
               <button
                 onClick={handleDiscardModal}
-                className="px-4 py-2 font-label-md text-label-md text-secondary hover:text-error transition-colors rounded-lg cursor-pointer"
+                className="flex-1 sm:flex-initial px-4 py-2 font-label-md text-label-md text-secondary hover:text-error transition-colors rounded-lg cursor-pointer text-center"
                 type="button"
               >
                 Discard Changes
               </button>
               <button
                 onClick={handleSaveDealer}
-                className="px-4 py-2 bg-primary-container text-on-primary font-label-md text-label-md rounded-lg hover:bg-primary transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                className="flex-1 sm:flex-initial px-4 py-2 bg-primary-container text-on-primary font-label-md text-label-md rounded-lg hover:bg-primary transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer font-semibold"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px]">
                   {editingDealer ? 'save' : 'person_add'}
                 </span>
-                <span>{editingDealer ? 'Save & Update Partner' : 'Save & Onboard Partner'}</span>
+                <span>{editingDealer ? 'Save & Update' : 'Save & Onboard'}</span>
               </button>
             </div>
           </div>
@@ -562,10 +633,10 @@ export default function DealerManagement() {
           {/* Left Column (8 cols) */}
           <div className="col-span-12 xl:col-span-8 flex flex-col gap-6">
             {/* Section 1: Firm & Agency Profile */}
-            <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.06)]">
-              <div className="flex items-center justify-between pb-5 border-b border-surface-container-highest">
+            <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest p-4 sm:p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.06)]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-5 border-b border-surface-container-highest">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-primary-container/15 flex items-center justify-center text-primary font-bold">
+                  <div className="w-9 h-9 rounded-lg bg-primary-container/15 flex items-center justify-center text-primary font-bold shrink-0">
                     <span className="material-symbols-outlined text-[20px]">apartment</span>
                   </div>
                   <div>
@@ -573,13 +644,13 @@ export default function DealerManagement() {
                     <p className="font-body-sm text-body-sm text-secondary">Statutory operational business identity and primary communications point</p>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-label-xs font-label-xs bg-primary-container/15 text-primary font-semibold flex items-center gap-1">
+                <span className="self-start sm:self-auto px-2.5 py-1 rounded-full text-label-xs font-label-xs bg-primary-container/15 text-primary font-semibold flex items-center gap-1 shrink-0">
                   <span className="material-symbols-outlined text-[14px]">check_circle</span>
                   Verified Entity
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-6">
-                <div className="col-span-2">
+                <div className="col-span-1 md:col-span-2">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Firm / Agency Trade Name <span className="text-error">*</span>
                   </label>
@@ -596,7 +667,7 @@ export default function DealerManagement() {
                   </div>
                   <p className="mt-1 font-body-sm text-body-sm text-secondary">Registered under Registrar of Companies (ROC - Ahmedabad)</p>
                 </div>
-                <div>
+                <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Authorized Signatory / Person <span className="text-error">*</span>
                   </label>
@@ -607,9 +678,9 @@ export default function DealerManagement() {
                     onChange={(e) => setNewContact(e.target.value)}
                   />
                 </div>
-                <div>
+                <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
-                    <span>Registered Mobile (OTP &amp; Login) <span className="text-error">*</span></span>
+                    <span>Registered Mobile <span className="text-error">*</span></span>
                     <span className="font-label-xs text-label-xs text-secondary flex items-center gap-1">
                       <span className="material-symbols-outlined text-[12px]">lock</span> Auth Key
                     </span>
@@ -622,7 +693,7 @@ export default function DealerManagement() {
                   />
                   <p className="mt-1 font-body-sm text-body-sm text-secondary">Primary authentication identifier for portal sign-in and signature OTPs</p>
                 </div>
-                <div>
+                <div className="col-span-1 md:col-span-2">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Official Business Email <span className="text-error">*</span>
                   </label>
@@ -633,28 +704,135 @@ export default function DealerManagement() {
                     onChange={(e) => setNewEmail(e.target.value)}
                   />
                 </div>
-                <div>
-                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
-                    Territory &amp; Region Hub <span className="text-error">*</span>
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={newZone}
-                      onChange={(e) => setNewZone(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none"
-                    >
-                      <option>Rajkot &amp; Saurashtra Zone (Western Gujarat)</option>
-                      <option>Ahmedabad Central &amp; Gandhinagar</option>
-                      <option>Surat &amp; South Gujarat Hub</option>
-                      <option>Vadodara Industrial Corridor</option>
-                      <option>North Gujarat Zone (UGVCL / Mehsana)</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-secondary">
-                      <span className="material-symbols-outlined text-[20px]">unfold_more</span>
-                    </div>
+                {/* Sales Channel & Salesman Assignment (with Direct to Company Primary Option) */}
+                <div className="col-span-1 md:col-span-2 flex flex-col gap-2.5 pt-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                    <label className="block font-label-sm text-label-sm font-semibold text-on-surface">
+                      Sales Channel &amp; Account Alignment <span className="text-error">*</span>
+                    </label>
+                    <span className="text-[11px] text-secondary">Choose whether this partner deals directly with Sunvine HQ or is managed by a Field Salesman</span>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Primary Button 1: DIRECT TO COMPANY */}
+                    <button
+                      type="button"
+                      onClick={() => setNewAssignedStaffId('STF-DIRECT')}
+                      className={`p-3.5 rounded-xl border transition-all text-left flex items-start gap-3 cursor-pointer relative ${
+                        newAssignedStaffId === 'STF-DIRECT'
+                          ? 'bg-gradient-to-br from-indigo-50 via-white to-indigo-50/40 border-indigo-500 shadow-sm ring-2 ring-indigo-500/25'
+                          : 'bg-surface-container-lowest border-surface-container-highest hover:border-surface-container-high'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        newAssignedStaffId === 'STF-DIRECT'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-surface-container text-secondary'
+                      }`}>
+                        <span className="material-symbols-outlined text-[22px]" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <strong className={`font-semibold text-[13px] ${newAssignedStaffId === 'STF-DIRECT' ? 'text-indigo-950 font-poppins' : 'text-on-surface font-poppins'}`}>
+                            ⚡ Direct to Company
+                          </strong>
+                          {newAssignedStaffId === 'STF-DIRECT' && (
+                            <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                              SELECTED
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary mt-1 leading-snug">
+                          Dealer buys complete sets/BOS directly from Sunvine HQ or brings direct customer files. No field sales intermediary.
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Primary Button 2: ASSIGNED FIELD SALES EXECUTIVE */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newAssignedStaffId === 'STF-DIRECT') {
+                          const firstField = salesStaffList.find(s => s.id !== 'STF-DIRECT') || salesStaffList[0];
+                          setNewAssignedStaffId(firstField?.id || 'STF-801');
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border transition-all text-left flex items-start gap-3 cursor-pointer relative ${
+                        newAssignedStaffId !== 'STF-DIRECT'
+                          ? 'bg-gradient-to-br from-emerald-50/70 via-white to-emerald-50/30 border-primary shadow-sm ring-2 ring-primary/25'
+                          : 'bg-surface-container-lowest border-surface-container-highest hover:border-surface-container-high'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        newAssignedStaffId !== 'STF-DIRECT'
+                          ? 'bg-primary text-on-primary shadow-xs'
+                          : 'bg-surface-container text-secondary'
+                      }`}>
+                        <span className="material-symbols-outlined text-[22px]">person</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <strong className={`font-semibold text-[13px] ${newAssignedStaffId !== 'STF-DIRECT' ? 'text-primary font-poppins' : 'text-on-surface font-poppins'}`}>
+                            👤 Field Sales Executive
+                          </strong>
+                          {newAssignedStaffId !== 'STF-DIRECT' && (
+                            <span className="bg-primary text-on-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0">
+                              SELECTED
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary mt-1 leading-snug">
+                          Dealer is assigned to a regional Sunvine Sales Executive who tracks their pipeline and visits.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Context-aware details below the choice */}
+                  {newAssignedStaffId === 'STF-DIRECT' ? (
+                    <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-lg flex items-start sm:items-center gap-2.5 text-xs text-indigo-950">
+                      <span className="material-symbols-outlined text-indigo-700 text-[18px] shrink-0 mt-0.5 sm:mt-0" style={{ fontVariationSettings: "'FILL' 1" }}>verified</span>
+                      <span className="leading-snug">
+                        <strong>Direct Corporate Account (STF-DIRECT):</strong> All solar kit quotations, factory inventory allotments, and escrow settlements are routed directly via Sunvine Central HQ Desk (Ahmedabad).
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5 pt-1">
+                      <label className="block font-label-xs text-label-xs font-semibold text-secondary">
+                        Choose Regional Sales Executive <span className="text-error">*</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={newAssignedStaffId}
+                          onChange={(e) => setNewAssignedStaffId(e.target.value)}
+                          className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 appearance-none font-medium cursor-pointer"
+                        >
+                          {salesStaffList.filter(st => st.id !== 'STF-DIRECT').map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.name} ({st.id})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-secondary">
+                          <span className="material-symbols-outlined text-[20px]">unfold_more</span>
+                        </div>
+                      </div>
+                      {(() => {
+                        const s = (staffList || []).find(st => st.id === newAssignedStaffId) || salesStaffList[0];
+                        if (!s || s.id === 'STF-DIRECT') return null;
+                        return (
+                          <div className="flex items-center gap-2 text-[11px] text-secondary bg-surface-container-low px-2.5 py-1.5 rounded border border-surface-container-highest">
+                            <span className="material-symbols-outlined text-[15px] text-primary shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>badge</span>
+                            <span className="truncate">
+                              <strong className="text-on-surface font-semibold">{s.name}</strong> ({s.id}) • {s.role || 'Sales Executive'} • {s.city || 'Ahmedabad'} ({s.phone || '8000050580'})
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 md:col-span-2">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Registered Office Physical Address <span className="text-error">*</span>
                   </label>
@@ -668,79 +846,11 @@ export default function DealerManagement() {
               </div>
             </div>
 
-            {/* Section 2: Statutory KYC & DISCOM Empanelment */}
-            <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.06)]">
-              <div className="flex items-center justify-between pb-5 border-b border-surface-container-highest">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-tertiary/15 flex items-center justify-center text-tertiary font-bold">
-                    <span className="material-symbols-outlined text-[20px]">verified_user</span>
-                  </div>
-                  <div>
-                    <h2 className="font-headline-sm text-headline-sm font-bold text-on-surface">2. Statutory KYC &amp; DISCOM Empanelment</h2>
-                    <p className="font-body-sm text-body-sm text-secondary">Government tax compliance and utility board grid-synchronization licenses</p>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-full text-label-xs font-label-xs bg-tertiary/15 text-tertiary font-semibold flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[14px]">shield</span>
-                  KYC Tier-1 Passed
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-6">
-                <div>
-                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
-                    GSTIN Number <span className="text-error">*</span>
-                  </label>
-                  <input
-                    className="w-full px-3.5 py-2.5 font-mono uppercase bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-semibold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
-                    type="text"
-                    value={newGstin}
-                    onChange={(e) => setNewGstin(e.target.value)}
-                  />
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-primary-container/15 text-primary">
-                      <span className="material-symbols-outlined text-[12px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
-                      Verified via GSTN API
-                    </span>
-                    <span className="text-[11px] text-secondary font-medium">Active • Regular Taxpayer</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
-                    Business PAN <span className="text-error">*</span>
-                  </label>
-                  <input
-                    className="w-full px-3.5 py-2.5 font-mono uppercase bg-surface-container-low border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-semibold focus:outline-none cursor-not-allowed"
-                    readOnly
-                    type="text"
-                    value={newPan}
-                  />
-                  <p className="mt-1.5 font-body-sm text-body-sm text-secondary">Auto-extracted from verified GSTIN record (Income Tax Dept sync)</p>
-                </div>
-                <div className="col-span-2">
-                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
-                    DISCOM Vendor Empanelment Code <span className="text-error">*</span>
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      className="flex-1 px-3.5 py-2.5 font-mono bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-semibold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
-                      type="text"
-                      value={newDiscomCode}
-                      onChange={(e) => setNewDiscomCode(e.target.value)}
-                    />
-                    <span className="px-3 py-2 bg-surface-container-low text-secondary border border-surface-container-highest rounded-lg text-label-sm font-semibold flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-primary">check</span>
-                      Verified Rooftop Vendor
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Section 3: Commercial Controls & Dealer Margin Governance */}
-            <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.06)]">
-              <div className="flex items-center justify-between pb-5 border-b border-surface-container-highest">
+            <div className="bg-surface-container-lowest rounded-xl border border-surface-container-highest p-4 sm:p-6 shadow-[0px_2px_8px_rgba(0,0,0,0.06)]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-5 border-b border-surface-container-highest">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-secondary-container/50 flex items-center justify-center text-on-secondary-container font-bold">
+                  <div className="w-9 h-9 rounded-lg bg-secondary-container/50 flex items-center justify-center text-on-secondary-container font-bold shrink-0">
                     <span className="material-symbols-outlined text-[20px]">price_check</span>
                   </div>
                   <div>
@@ -748,19 +858,19 @@ export default function DealerManagement() {
                     <p className="font-body-sm text-body-sm text-secondary">Enforce pricing safeguards, quote ceilings, and automated escrow payout workflows</p>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-label-xs font-label-xs bg-secondary-container text-on-secondary-fixed font-semibold">
+                <span className="self-start sm:self-auto px-2.5 py-1 rounded-full text-label-xs font-label-xs bg-secondary-container text-on-secondary-fixed font-semibold shrink-0">
                   Audit Policy Active
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-6">
-                <div>
+                <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Assigned Partner Tier <span className="text-error">*</span>
                   </label>
                   <select
                     value={newTier}
                     onChange={(e) => setNewTier(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 font-semibold"
+                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 font-semibold cursor-pointer"
                   >
                     <option>Gold EPC Partner (Quarterly Cap: 1.5 MW)</option>
                     <option>Platinum Tier (Quarterly Cap: &gt; 3.0 MW)</option>
@@ -768,7 +878,7 @@ export default function DealerManagement() {
                     <option>Bronze Associate (Speculative)</option>
                   </select>
                 </div>
-                <div>
+                <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Minimum Quote Enforced Floor (Turnkey Base) <span className="text-error">*</span>
                   </label>
@@ -780,7 +890,7 @@ export default function DealerManagement() {
                   />
                   <p className="mt-1 font-body-sm text-body-sm text-secondary">System-wide quality protection floor to prevent sub-standard module delivery</p>
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 md:col-span-2">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
                     <span>Max Allowed Dealer Margin Addition Cap <span className="text-error">*</span></span>
                     <span className="font-label-xs text-label-xs text-primary font-bold">Standard Cap: ₹ 5,000</span>
@@ -792,7 +902,7 @@ export default function DealerManagement() {
                     onChange={(e) => setNewCap(e.target.value)}
                   />
                   <div className="mt-3 p-3.5 rounded-lg bg-amber-50 border border-amber-200/80 flex items-start gap-3">
-                    <span className="material-symbols-outlined text-amber-700 text-[20px] mt-0.5">policy</span>
+                    <span className="material-symbols-outlined text-amber-700 text-[20px] mt-0.5 shrink-0">policy</span>
                     <p className="font-body-sm text-body-sm text-amber-900 leading-relaxed">
                       <strong className="font-semibold">Protective Regulatory Threshold:</strong> Prevents predatory consumer overcharging. Any customer quote generated with a margin addition exceeding <strong className="font-bold">₹5,000/kW</strong> will be paused and routed to the Sunvine Super Admin Desk for mandatory pricing review.
                     </p>
@@ -1073,9 +1183,20 @@ export default function DealerManagement() {
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <select
+              value={salesmanFilter}
+              onChange={(e) => { setSalesmanFilter(e.target.value); setCurrentPage(1); }}
+              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none cursor-pointer"
+            >
+              <option value="all">All Sales Channels (Company &amp; Field)</option>
+              <option value="STF-DIRECT">⚡ Direct to Company (HQ Desk)</option>
+              {salesStaffList.filter(st => st.id !== 'STF-DIRECT').map((st) => (
+                <option key={st.id} value={st.id}>{st.name} ({st.id})</option>
+              ))}
+            </select>
+            <select
               value={discomFilter}
               onChange={(e) => { setDiscomFilter(e.target.value); setCurrentPage(1); }}
-              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none"
+              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none cursor-pointer"
             >
               <option value="all">Region / DISCOM Circle (All Circles)</option>
               <option value="PGVCL">PGVCL - Paschim Gujarat</option>
@@ -1087,7 +1208,7 @@ export default function DealerManagement() {
             <select
               value={tierFilter}
               onChange={(e) => { setTierFilter(e.target.value); setCurrentPage(1); }}
-              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none"
+              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none cursor-pointer"
             >
               <option value="all">Margin Slab Tier (All Tiers)</option>
               <option value="Platinum Partner">Platinum Partner (₹7.5k/kW)</option>
@@ -1101,9 +1222,10 @@ export default function DealerManagement() {
                 setActiveTabFilter('all');
                 setDiscomFilter('all');
                 setTierFilter('all');
+                setSalesmanFilter('all');
                 setCurrentPage(1);
               }}
-              className="h-10 px-3 rounded-lg text-secondary hover:text-[#0F1B2E] hover:bg-[#F6F8F7] text-label-sm flex items-center gap-1 transition-colors"
+              className="h-10 px-3 rounded-lg text-secondary hover:text-[#0F1B2E] hover:bg-[#F6F8F7] text-label-sm flex items-center gap-1 transition-colors cursor-pointer"
               title="Reset Filters"
             >
               <span className="material-symbols-outlined text-[18px]">restart_alt</span>
@@ -1240,6 +1362,26 @@ export default function DealerManagement() {
                         </div>
                       </div>
 
+                      {/* Assigned Salesman */}
+                      {d.assignedStaffId === 'STF-DIRECT' ? (
+                        <div className="flex items-center gap-2 bg-indigo-50/90 px-2.5 py-1.5 rounded-lg text-xs border border-indigo-200 text-indigo-950">
+                          <span className="material-symbols-outlined text-[16px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
+                          <span className="font-semibold truncate">⚡ Direct to Company (HQ Desk)</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 bg-[#F6F8F7] px-2.5 py-1.5 rounded-lg text-xs border border-[#E4E7EB]/70">
+                          <div className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                            {(d.assignedStaffName || 'SS').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1 flex items-center justify-between">
+                            <span className="text-[11px] font-medium text-on-surface truncate">
+                              Salesman: <strong className="font-semibold text-primary">{d.assignedStaffName || 'Sunvine Sales Staff'}</strong>
+                            </span>
+                            <span className="text-[10px] text-secondary font-mono ml-1 shrink-0">{d.assignedStaffId || 'STF-801'}</span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Metrics bar */}
                       <div className="grid grid-cols-2 gap-2 bg-[#F6F8F7] p-2.5 rounded-lg text-xs">
                         <div>
@@ -1318,6 +1460,7 @@ export default function DealerManagement() {
                 <th className="py-3 px-3.5 font-semibold text-left whitespace-nowrap min-w-[120px]">Dealer ID</th>
                 <th className="py-3 px-3.5 font-semibold text-left min-w-[210px]">Dealer / Firm Name</th>
                 <th className="py-3 px-3 font-semibold text-left min-w-[130px]">Region &amp; DISCOM</th>
+                <th className="py-3 px-3 font-semibold text-left min-w-[150px]">Assigned Salesman</th>
                 <th className="py-3 px-3 font-semibold text-left min-w-[135px]">Pricing &amp; Margin</th>
                 <th className="py-3 px-3 font-semibold text-right min-w-[95px]">Quotes Issued</th>
                 <th className="py-3 px-3 font-semibold text-right min-w-[110px]">Capacity Sold</th>
@@ -1329,7 +1472,7 @@ export default function DealerManagement() {
             <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
               {paginatedDealers.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-secondary">
+                  <td colSpan="10" className="py-12 text-center text-secondary">
                     <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
                     No Gujarat dealers match your current filter criteria.
                   </td>
@@ -1392,6 +1535,28 @@ export default function DealerManagement() {
                         <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 whitespace-nowrap">
                           {discomText}
                         </span>
+                      </td>
+                      <td className="py-4 px-3 align-top">
+                        {d.assignedStaffId === 'STF-DIRECT' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium text-[11px] shadow-xs">
+                            <span className="material-symbols-outlined text-[15px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
+                            <span className="font-semibold whitespace-nowrap">Direct HQ</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/20">
+                              {(d.assignedStaffName || 'SS').slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
+                                {d.assignedStaffName || 'Sunvine Sales Staff'}
+                              </div>
+                              <div className="text-[10px] text-secondary font-mono mt-0.5">
+                                {d.assignedStaffId || 'STF-801'}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className="py-4 px-3 align-top">
                         {(() => {

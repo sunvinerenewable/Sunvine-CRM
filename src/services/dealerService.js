@@ -46,8 +46,8 @@ export const dealerService = {
           tier: d.tier || 'Gold EPC',
           maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
-          assignedStaffId: d.assigned_staff_id || 'STF-001',
-          assignedStaffName: d.assigned_staff_name || 'Jayesh Patel',
+          assignedStaffId: d.assigned_staff_id || d.pricing_config?.assignedStaffId || 'STF-801',
+          assignedStaffName: d.assigned_staff_name || d.pricing_config?.assignedStaffName || 'Sunvine Sales Staff',
           bankName: d.bank_name || 'State Bank of India',
           accountNumber: d.account_number || '394857201948',
           ifscCode: d.ifsc_code || 'SBIN0001234',
@@ -71,6 +71,8 @@ export const dealerService = {
     const cleanPhone = String(dealer.mobile || dealer.mobileNumber || '').replace(/\D/g, '').slice(-10);
     const dealerCode = dealer.dealerCode || dealer.id || `SV-DLR-${Date.now().toString().slice(-4)}`;
     const plainPassword = String(dealer.password || dealer.accessCode || 'Sunvine@2026').trim();
+    const assignedStaffId = dealer.assignedStaffId || 'STF-801';
+    const assignedStaffName = dealer.assignedStaffName || 'Sunvine Sales Staff';
 
     // 1. Try server-side secure manage-credentials endpoint first
     try {
@@ -84,7 +86,9 @@ export const dealerService = {
             ...dealer,
             dealerCode,
             mobile: cleanPhone,
-            password: plainPassword
+            password: plainPassword,
+            assignedStaffId,
+            assignedStaffName
           }
         })
       });
@@ -114,6 +118,13 @@ export const dealerService = {
         status: (dealer.status || 'active').toLowerCase(),
         tier: dealer.tier || 'Gold EPC',
         max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
+        assigned_staff_id: assignedStaffId,
+        assigned_staff_name: assignedStaffName,
+        pricing_config: {
+          ...(dealer.pricingConfig || {}),
+          assignedStaffId,
+          assignedStaffName
+        },
         updated_at: new Date().toISOString()
       };
       const { data, error } = await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
@@ -158,11 +169,19 @@ export const dealerService = {
     if (fields.status !== undefined) updatePayload.status = fields.status.toLowerCase();
     if (fields.tier !== undefined) updatePayload.tier = fields.tier;
     if (fields.maxMarginCapPerKw !== undefined) updatePayload.max_margin_cap_per_kw = Number(fields.maxMarginCapPerKw);
+    if (fields.assignedStaffId !== undefined) updatePayload.assigned_staff_id = fields.assignedStaffId;
+    if (fields.assignedStaffName !== undefined) updatePayload.assigned_staff_name = fields.assignedStaffName;
     if (fields.bankName !== undefined) updatePayload.bank_name = fields.bankName;
     if (fields.accountNumber !== undefined) updatePayload.account_number = fields.accountNumber;
     if (fields.ifscCode !== undefined) updatePayload.ifsc_code = fields.ifscCode;
     if (fields.branch !== undefined) updatePayload.branch = fields.branch;
-    if (fields.pricingConfig !== undefined) updatePayload.pricing_config = fields.pricingConfig;
+    if (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined) {
+      updatePayload.pricing_config = {
+        ...(fields.pricingConfig || {}),
+        ...(fields.assignedStaffId ? { assignedStaffId: fields.assignedStaffId } : {}),
+        ...(fields.assignedStaffName ? { assignedStaffName: fields.assignedStaffName } : {})
+      };
+    }
     if (fields.password || fields.accessCode) {
       const plainPassword = String(fields.password || fields.accessCode).trim();
       updatePayload.password_hash = bcrypt.hashSync(plainPassword, 10);

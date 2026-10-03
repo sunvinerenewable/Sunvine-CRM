@@ -76,7 +76,7 @@ export default function StaffManagement() {
     setEditStaffPhone(member.phone || '');
     setEditStaffEmail(member.email || '');
     setEditStaffRole(member.role || 'Field Sales Executive');
-    const isVer = (member.department === 'Verification') || (member.role && member.role.toLowerCase().includes('verification')) || member.id === 'STF-003' || member.id === 'STF-800';
+    const isVer = String(member.department || '').toLowerCase() === 'verification' || String(member.role || '').toLowerCase().includes('verification');
     setEditStaffDepartment(isVer ? 'Verification' : (member.department || 'Sales'));
     setEditStaffZone(member.zone || '');
     setEditStaffPassword(member.password || 'Sunvine@2026');
@@ -328,7 +328,11 @@ export default function StaffManagement() {
       addToast('Please enter a valid 10-digit mobile number.', 'error');
       return;
     }
-    const newId = `STF-${String((staffList || []).length + 1).padStart(3, '0')}`;
+    const existingNums = (staffList || [])
+      .map(s => parseInt(String(s.id).replace(/\D/g, ''), 10))
+      .filter(n => !isNaN(n));
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+    const newId = `STF-${String(nextNum).padStart(3, '0')}`;
     const isVerification = newStaffRole.toLowerCase().includes('verification');
     const newStaff = {
       id: newId,
@@ -800,7 +804,7 @@ export default function StaffManagement() {
 
         {/* VIEW 2: SALES TEAM DIRECTORY & LOGINS */}
         {activeView === 'staff' && (() => {
-          const isVerDesk = (m) => (m.department === 'Verification') || (m.role && m.role.toLowerCase().includes('verification')) || m.id === 'STF-003' || m.id === 'STF-800';
+          const isVerDesk = (m) => String(m.department || '').toLowerCase() === 'verification' || String(m.role || '').toLowerCase().includes('verification');
           const displayedStaff = (staffList || []).filter(member => {
             if (staffDepartmentFilter === 'verification') return isVerDesk(member);
             if (staffDepartmentFilter === 'sales') return !isVerDesk(member);

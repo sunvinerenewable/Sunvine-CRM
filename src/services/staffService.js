@@ -55,7 +55,7 @@ export const staffService = {
     const staffId = staff.id || `STF-${Date.now().toString().slice(-4)}`;
     const plainPassword = String(staff.password || staff.accessCode || 'Sunvine@2026').trim();
     const isVerification = String(staff.role || '').toLowerCase().includes('verification') || String(staff.department || '').toLowerCase().includes('verification');
-    const department = staff.department || (isVerification ? 'Verification' : 'Sales');
+    const department = staff.department || (isVerification ? 'verification' : 'sales');
 
     // 1. Try server-side secure manage-credentials endpoint
     try {
@@ -69,8 +69,10 @@ export const staffService = {
             ...staff,
             id: staffId,
             phone: cleanPhone,
+            mobile: cleanPhone,
             password: plainPassword,
-            department
+            department: String(department).toLowerCase(),
+            status: 'active'
           }
         })
       });
@@ -92,12 +94,13 @@ export const staffService = {
         name: staff.name,
         role: staff.role || (isVerification ? 'Verification Desk Officer' : 'Solar Field Executive'),
         phone: cleanPhone,
+        mobile_number: cleanPhone,
         email: staff.email || `${cleanPhone}@sunvine.in`,
         password_hash: passwordHash,
         zone: staff.zone || 'Gujarat',
         city: staff.city || 'Ahmedabad',
-        department: department,
-        status: staff.status || 'Active',
+        department: String(department).toLowerCase(),
+        status: 'active',
         dealers_count: Number(staff.dealersCount) || 0,
         direct_files_count: Number(staff.directFilesCount) || 0,
         dealer_files_count: Number(staff.dealerFilesCount) || 0,
@@ -105,11 +108,12 @@ export const staffService = {
         rating: Number(staff.rating) || 4.9,
         updated_at: new Date().toISOString()
       };
-      const { error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' });
+      const { data, error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' }).select();
       if (error) {
         console.warn('[staffService] Supabase upsert error:', error.message);
+        return { success: false, error: error.message };
       }
-      return { success: true, id: staffId };
+      return { success: true, id: staffId, staff: data?.[0] || payload };
     } catch (err) {
       console.error('[staffService] Exception creating staff:', err);
       return { success: false, error: err.message };
@@ -138,15 +142,19 @@ export const staffService = {
     if (fields.role !== undefined) {
       payload.role = fields.role;
       if (!fields.department) {
-        payload.department = fields.role.toLowerCase().includes('verification') ? 'Verification' : 'Sales';
+        payload.department = fields.role.toLowerCase().includes('verification') ? 'verification' : 'sales';
       }
     }
-    if (fields.phone !== undefined) payload.phone = String(fields.phone).replace(/\D/g, '').slice(-10);
+    if (fields.phone !== undefined) {
+      const cleanPhone = String(fields.phone).replace(/\D/g, '').slice(-10);
+      payload.phone = cleanPhone;
+      payload.mobile_number = cleanPhone;
+    }
     if (fields.email !== undefined) payload.email = fields.email;
     if (fields.zone !== undefined) payload.zone = fields.zone;
     if (fields.city !== undefined) payload.city = fields.city;
-    if (fields.department !== undefined) payload.department = fields.department;
-    if (fields.status !== undefined) payload.status = fields.status;
+    if (fields.department !== undefined) payload.department = String(fields.department).toLowerCase();
+    if (fields.status !== undefined) payload.status = String(fields.status).toLowerCase();
     if (fields.dealersCount !== undefined) payload.dealers_count = Number(fields.dealersCount);
     if (fields.directFilesCount !== undefined) payload.direct_files_count = Number(fields.directFilesCount);
     if (fields.dealerFilesCount !== undefined) payload.dealer_files_count = Number(fields.dealerFilesCount);
