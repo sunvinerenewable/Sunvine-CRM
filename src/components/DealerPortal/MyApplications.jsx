@@ -28,7 +28,11 @@ export default function MyApplications() {
     addCustomerFile,
     addCustomerFileTimelineEvent,
     requiredDocuments,
-    setActiveTab
+    setActiveTab,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion
   } = useApp();
 
   // Search & Filter State
@@ -995,8 +999,8 @@ export default function MyApplications() {
 
       {/* 7. MODAL: QUICK DOCUMENT MANAGEMENT (FULL RESPONSIVE VISIBILITY) */}
       {uploadTargetFile && (() => {
-        const docList = getDocumentListForFile(uploadTargetFile);
-        const docCompletion = getDocumentCompletion(uploadTargetFile);
+        const docList = getFileDocuments ? getFileDocuments(uploadTargetFile) : getDocumentListForFile(uploadTargetFile, masterDocRegistry, categoryDocRules);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(uploadTargetFile) : getDocumentCompletion(uploadTargetFile, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(uploadTargetFile);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
 

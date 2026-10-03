@@ -30,7 +30,11 @@ export default function StaffManagement() {
     updateCustomerFile,
     updateFileStatus,
     isHardwareDbSyncing,
-    refreshCustomerFiles
+    refreshCustomerFiles,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion
   } = useApp();
 
   const { addToast } = useToast();
@@ -707,8 +711,8 @@ export default function StaffManagement() {
 
                       {/* Document Badges (Dynamic by Category: Residential, Bank Loan, Finance Loan) */}
                       {(() => {
-                        const docCompletion = getDocumentCompletion(file);
-                        const docList = getDocumentListForFile(file);
+                        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                        const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
                         const schemaKey = getDocumentSchemaKey(file);
                         const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
 
@@ -1542,10 +1546,10 @@ export default function StaffManagement() {
 
       {/* MODAL 4: DYNAMIC DOCUMENT VAULT (Residential, Bank Loan, Finance Loan) */}
       {selectedFileForDocs && (() => {
-        const docList = getDocumentListForFile(selectedFileForDocs);
+        const docList = getFileDocuments ? getFileDocuments(selectedFileForDocs) : getDocumentListForFile(selectedFileForDocs, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
-        const docCompletion = getDocumentCompletion(selectedFileForDocs);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(selectedFileForDocs) : getDocumentCompletion(selectedFileForDocs, masterDocRegistry, categoryDocRules);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">

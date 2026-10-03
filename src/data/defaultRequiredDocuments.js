@@ -1,12 +1,12 @@
-// Sunvine Renewable Energy — Master Document Requirements Configuration
-// Categorized by customer application type (Residential, Bank Loan, Finance / NBFC Loan)
+// Sunvine Renewable Energy — Master Document Requirements Configuration & Schema Engine
+// Dynamic rules for Residential, Bank Loan, Finance / NBFC Loan, Commercial & Industrial, and Housing Society
 
 export const APPLICATION_CATEGORIES = [
-  { id: 'residential', label: 'Residential Rooftop (Cash / Self)', icon: 'home', desc: 'Individual domestic connections under PM Surya Ghar Muft Bijli Yojana' },
-  { id: 'bank_loan', label: 'Nationalized Bank Solar Loan (SBI, BoB, etc.)', icon: 'account_balance', desc: 'Bank loan with pre-inspection, property tax, and co-applicant docs' },
-  { id: 'finance_loan', label: 'Finance / NBFC Solar Loan (Ecofy, Credit Fair, etc.)', icon: 'payments', desc: 'FinTech loan with separate applicant and co-applicant KYC vaults' },
-  { id: 'commercial', label: 'Commercial & Industrial (C&I)', icon: 'corporate_fare', desc: 'Offices, factories, warehouses, and non-domestic grid connections' },
-  { id: 'common_meter', label: 'Housing Society / Common Meter', icon: 'apartment', desc: 'Residential welfare associations (RWA), high-rises, and common utility meters' }
+  { id: 'residential', key: 'RESIDENTIAL', label: 'Residential Rooftop (Cash / Self)', shortLabel: 'Residential Cash', icon: 'home', desc: 'Individual domestic connections under PM Surya Ghar Muft Bijli Yojana' },
+  { id: 'bank_loan', key: 'BANK_LOAN', label: 'Nationalized Bank Solar Loan (SBI, BoB, etc.)', shortLabel: 'Bank Loan', icon: 'account_balance', desc: 'Bank loan with pre-inspection, property tax, and co-applicant docs' },
+  { id: 'finance_loan', key: 'FINANCE_LOAN', label: 'Finance / NBFC Solar Loan (Ecofy, Credit Fair, etc.)', shortLabel: 'Finance Loan', icon: 'payments', desc: 'FinTech loan with separate applicant and co-applicant KYC vaults' },
+  { id: 'commercial', key: 'COMMERCIAL', label: 'Commercial & Industrial (C&I)', shortLabel: 'Commercial & C&I', icon: 'corporate_fare', desc: 'Offices, factories, warehouses, and non-domestic grid connections' },
+  { id: 'common_meter', key: 'COMMON_METER', label: 'Housing Society / Common Meter', shortLabel: 'Housing Society', icon: 'apartment', desc: 'Residential welfare associations (RWA), high-rises, and common utility meters' }
 ];
 
 export const DEFAULT_PIPELINE_STAGES = [
@@ -23,10 +23,154 @@ export const DEFAULT_PIPELINE_STAGES = [
 ];
 
 /**
+ * Master Registry of All Document Types across the Enterprise Portal
+ */
+export const DEFAULT_MASTER_DOCUMENT_REGISTRY = [
+  { key: 'aadhaarCard', label: 'Aadhaar Card', category: 'Applicant KYC', description: 'Front & back copy of consumer UIDAI identity proof', icon: 'badge', alias: 'applicantAadhaar' },
+  { key: 'bankDetails', label: 'Bank Details / Passbook', category: 'Bank & Financial', description: 'Bank passbook copy or cancelled cheque for subsidy / disbursement', icon: 'account_balance', alias: 'bankPassbook' },
+  { key: 'lightBill', label: 'Light / Electricity Bill', category: 'Utility & Property', description: 'Latest DISCOM electricity power bill copy', icon: 'bolt', alias: 'electricityBill' },
+  { key: 'panCard', label: 'PAN Card (Owner / Entity)', category: 'Applicant KYC', description: 'Income tax PAN card copy of primary applicant / entity owner', icon: 'credit_card', alias: 'pan' },
+  { key: 'veraBill', label: 'Vera Bill (Property Tax)', category: 'Utility & Property', description: 'Municipal property tax paid receipt / Vera bill / Index-2 copy', icon: 'apartment', alias: 'propertyTax' },
+  { key: 'sitePhotos', label: 'Pre-Installation Site Photo', category: 'Technical & Approvals', description: 'Terrace structure and shadow-free rooftop installation area', icon: 'photo_camera', alias: 'rooftopPhoto' },
+  { key: 'coApplicantAadhaar', label: 'Co-Applicant Aadhaar Card', category: 'Co-Applicant KYC', description: 'Aadhaar card copy of loan co-applicant / spouse', icon: 'badge' },
+  { key: 'coApplicantPan', label: 'Co-Applicant PAN Card', category: 'Co-Applicant KYC', description: 'PAN card copy of loan co-applicant / spouse / co-owner', icon: 'credit_card' },
+  { key: 'coApplicantBank', label: 'Co-Applicant Bank Detail', category: 'Co-Applicant KYC', description: 'Co-borrower bank passbook or 6-month statement', icon: 'account_balance' },
+  { key: 'passportPhoto', label: 'Passport Size Photo', category: 'Applicant KYC', description: 'Recent passport size photo of applicant / authorized signatory', icon: 'photo_camera' },
+  { key: 'msmeCertificate', label: 'MSME / Udyam Registration', category: 'Commercial & Legal', description: 'Udyam registration certificate for MSME solar concession', icon: 'assignment' },
+  { key: 'gstCertificate', label: 'GST Registration Certificate', category: 'Commercial & Legal', description: 'GST registration certificate (Form GST REG-06) for C&I projects', icon: 'receipt_long' },
+  { key: 'undertaking', label: 'Customer Undertaking / Declaration', category: 'Commercial & Legal', description: 'Signed customer undertaking / declaration document', icon: 'contract' },
+  { key: 'rentNoc', label: 'NOC Required (If on Rent)', category: 'Commercial & Legal', description: 'Landlord / Society No-Objection Certificate for rented premises', icon: 'domain' },
+  { key: 'firmPanBank', label: 'Firm PAN Card / Bank Details', category: 'Commercial & Legal', description: 'Commercial firm PAN card and current account bank statement', icon: 'account_balance' },
+  { key: 'ownershipDoc', label: 'Ownership Document (Registry / Index-2)', category: 'Utility & Property', description: 'Registered sale deed / property index-2 / title clearance', icon: 'apartment' },
+  { key: 'partnershipDeed', label: 'Partnership Deed / MOA-AOA', category: 'Commercial & Legal', description: 'Partnership deed, LLP agreement, or Memorandum of Association', icon: 'description' },
+  { key: 'factoryLayout', label: 'Factory Layout & Roof Structural Certificate', category: 'Technical & Approvals', description: 'Plant blueprint and structural engineer stability certificate', icon: 'factory' },
+  { key: 'ceiApproval', label: 'CEI Electrical Safety Approval', category: 'Technical & Approvals', description: 'Chief Electrical Inspectorate clearance for >10kW solar system', icon: 'verified' },
+  { key: 'societyNoc', label: 'Society NOC & Committee Resolution', category: 'Commercial & Legal', description: 'Housing Society / RWA No-Objection Certificate for common meter', icon: 'domain' }
+];
+
+/**
+ * Default Category Document Rules Matrix:
+ * 'mandatory' -> Required (Red/Amber pill)
+ * 'optional'  -> Optional (Sky/Slate pill)
+ * 'disabled'  -> Not applicable / Hidden for this category
+ */
+export const DEFAULT_CATEGORY_DOC_RULES = {
+  RESIDENTIAL: {
+    aadhaarCard: 'mandatory',
+    bankDetails: 'mandatory',
+    lightBill: 'mandatory',
+    panCard: 'mandatory',
+    veraBill: 'mandatory',
+    sitePhotos: 'mandatory',
+    passportPhoto: 'optional',
+    coApplicantAadhaar: 'optional',
+    coApplicantPan: 'optional',
+    coApplicantBank: 'disabled',
+    undertaking: 'optional',
+    societyNoc: 'optional',
+    rentNoc: 'optional',
+    ownershipDoc: 'optional',
+    msmeCertificate: 'disabled',
+    gstCertificate: 'disabled',
+    firmPanBank: 'disabled',
+    partnershipDeed: 'disabled',
+    factoryLayout: 'disabled',
+    ceiApproval: 'disabled'
+  },
+  BANK_LOAN: {
+    sitePhotos: 'mandatory',
+    veraBill: 'mandatory',
+    aadhaarCard: 'mandatory',
+    panCard: 'mandatory',
+    coApplicantAadhaar: 'mandatory',
+    coApplicantPan: 'mandatory',
+    bankDetails: 'mandatory',
+    lightBill: 'mandatory',
+    coApplicantBank: 'optional',
+    passportPhoto: 'optional',
+    undertaking: 'optional',
+    societyNoc: 'optional',
+    msmeCertificate: 'disabled',
+    gstCertificate: 'disabled',
+    rentNoc: 'disabled',
+    firmPanBank: 'disabled',
+    ownershipDoc: 'disabled',
+    partnershipDeed: 'disabled',
+    factoryLayout: 'disabled',
+    ceiApproval: 'disabled'
+  },
+  NBFC_LOAN: {
+    aadhaarCard: 'mandatory',
+    panCard: 'mandatory',
+    bankDetails: 'mandatory',
+    coApplicantAadhaar: 'mandatory',
+    coApplicantPan: 'mandatory',
+    coApplicantBank: 'mandatory',
+    lightBill: 'mandatory',
+    sitePhotos: 'optional',
+    veraBill: 'optional',
+    passportPhoto: 'optional',
+    undertaking: 'optional',
+    societyNoc: 'optional',
+    msmeCertificate: 'disabled',
+    gstCertificate: 'disabled',
+    rentNoc: 'disabled',
+    firmPanBank: 'disabled',
+    ownershipDoc: 'disabled',
+    partnershipDeed: 'disabled',
+    factoryLayout: 'disabled',
+    ceiApproval: 'disabled'
+  },
+  COMMERCIAL: {
+    aadhaarCard: 'mandatory',
+    bankDetails: 'mandatory',
+    lightBill: 'mandatory',
+    panCard: 'mandatory',
+    passportPhoto: 'mandatory',
+    veraBill: 'mandatory',
+    undertaking: 'mandatory',
+    rentNoc: 'mandatory',
+    msmeCertificate: 'optional',
+    gstCertificate: 'optional',
+    sitePhotos: 'optional',
+    factoryLayout: 'mandatory',
+    ceiApproval: 'optional',
+    societyNoc: 'optional',
+    coApplicantAadhaar: 'disabled',
+    coApplicantPan: 'disabled',
+    coApplicantBank: 'disabled',
+    firmPanBank: 'disabled',
+    ownershipDoc: 'disabled',
+    partnershipDeed: 'disabled'
+  },
+  HOUSING_SOCIETY: {
+    aadhaarCard: 'mandatory',
+    bankDetails: 'mandatory',
+    lightBill: 'mandatory',
+    panCard: 'mandatory',
+    firmPanBank: 'mandatory',
+    passportPhoto: 'mandatory',
+    veraBill: 'mandatory',
+    msmeCertificate: 'mandatory',
+    gstCertificate: 'mandatory',
+    ownershipDoc: 'mandatory',
+    partnershipDeed: 'mandatory',
+    undertaking: 'mandatory',
+    rentNoc: 'mandatory',
+    societyNoc: 'mandatory',
+    sitePhotos: 'optional',
+    factoryLayout: 'disabled',
+    ceiApproval: 'disabled',
+    coApplicantAadhaar: 'disabled',
+    coApplicantPan: 'disabled',
+    coApplicantBank: 'disabled'
+  }
+};
+
+/**
  * Master Document Schemas by Customer Application Mode
  */
 export const DOCUMENT_SCHEMAS = {
-  // 1. RESIDENTIAL DOCUMENT LIST
   RESIDENTIAL: {
     id: 'RESIDENTIAL',
     label: 'Residential (100% Cash / Self Payment)',
@@ -46,8 +190,6 @@ export const DOCUMENT_SCHEMAS = {
       { key: 'phone', label: 'Mobile Number', required: true, icon: 'phone' }
     ]
   },
-
-  // 2. BANK LOAN DOC LIST
   BANK_LOAN: {
     id: 'BANK_LOAN',
     label: 'Bank Loan (Nationalized / Commercial Banks)',
@@ -69,8 +211,6 @@ export const DOCUMENT_SCHEMAS = {
       { key: 'email', label: 'Email ID', required: true, icon: 'mail' }
     ]
   },
-
-  // 3. FINANCE LOAN DOC LIST
   FINANCE_LOAN: {
     id: 'FINANCE_LOAN',
     label: 'Finance Loan (NBFC / FinTech Partner)',
@@ -78,23 +218,57 @@ export const DOCUMENT_SCHEMAS = {
     badge: 'NBFC Loan',
     description: 'NBFC Solar loans (Credit Fair, Ecofy, Metafin, SolarSquare, etc.)',
     documents: [
-      // APPLICANT DOCS
-      { key: 'applicantAadhaar', label: 'Applicant Aadhaar Card', category: 'Applicant Documents', description: 'Primary borrower Aadhaar card copy', icon: 'badge', mandatory: true, alias: 'aadhaar' },
-      { key: 'applicantPan', label: 'Applicant PAN Card', category: 'Applicant Documents', description: 'Primary borrower PAN card copy', icon: 'credit_card', mandatory: true, alias: 'panCard' },
-      { key: 'applicantBank', label: 'Applicant Bank Detail', category: 'Applicant Documents', description: 'Applicant bank statement or passbook', icon: 'account_balance', mandatory: true, alias: 'bankDetails' },
-      
-      // CO-APPLICANT DOCS
+      { key: 'aadhaar', label: 'Applicant Aadhaar Card', category: 'Applicant Documents', description: 'Primary borrower Aadhaar card copy', icon: 'badge', mandatory: true, alias: 'applicantAadhaar' },
+      { key: 'panCard', label: 'Applicant PAN Card', category: 'Applicant Documents', description: 'Primary borrower PAN card copy', icon: 'credit_card', mandatory: true, alias: 'applicantPan' },
+      { key: 'bankDetails', label: 'Applicant Bank Detail', category: 'Applicant Documents', description: 'Applicant bank statement or passbook', icon: 'account_balance', mandatory: true, alias: 'applicantBank' },
       { key: 'coApplicantAadhaar', label: 'Co-Applicant Aadhaar Card', category: 'Co-Applicant Documents', description: 'Co-borrower Aadhaar card copy', icon: 'badge', mandatory: true },
       { key: 'coApplicantPan', label: 'Co-Applicant PAN Card', category: 'Co-Applicant Documents', description: 'Co-borrower PAN card copy', icon: 'credit_card', mandatory: true },
       { key: 'coApplicantBank', label: 'Co-Applicant Bank Detail', category: 'Co-Applicant Documents', description: 'Co-borrower bank passbook or statement', icon: 'account_balance', mandatory: true },
-      
-      // PREMISES DOC
       { key: 'lightBill', label: 'Light Bill', category: 'Premises Documents', description: 'Latest electricity connection bill', icon: 'electric_bolt', mandatory: true, alias: 'electricityBill' }
     ],
     metadataFields: [
       { key: 'phone', label: 'Applicant Mobile Number', required: true, icon: 'phone' },
       { key: 'email', label: 'Applicant Email ID', required: true, icon: 'mail' },
       { key: 'coApplicantPhone', label: 'Co-Applicant Mobile Number', required: false, icon: 'phone' }
+    ]
+  },
+  COMMERCIAL: {
+    id: 'COMMERCIAL',
+    label: 'Commercial & Industrial (C&I)',
+    shortLabel: 'Commercial & C&I',
+    badge: 'C&I Project',
+    description: 'Commercial solar installations for MSMEs, corporate offices, and factories',
+    documents: [
+      { key: 'gstCertificate', label: 'GST Certificate', category: 'Legal & Entity', description: 'Entity GST registration certificate', icon: 'receipt_long', mandatory: true },
+      { key: 'lightBill', label: 'HT / LT Electricity Bill', category: 'Premises', description: 'Latest DISCOM industrial/commercial power bill', icon: 'electric_bolt', mandatory: true, alias: 'electricityBill' },
+      { key: 'panCard', label: 'Company / Firm PAN', category: 'Legal & Entity', description: 'PAN card copy of company / director / proprietor', icon: 'credit_card', mandatory: true, alias: 'pan' },
+      { key: 'sitePhoto', label: 'Rooftop Site Survey Photos', category: 'Site Inspection', description: 'Terrace structure and shadow-free industrial shed roof', icon: 'photo_camera', mandatory: true, alias: 'rooftopPhoto' },
+      { key: 'factoryLayout', label: 'Factory / Plant Layout', category: 'Technical CAD', description: 'Architectural structural drawing and electrical layout', icon: 'architecture', mandatory: true },
+      { key: 'bankDetails', label: 'Current Bank Account Details', category: 'Financials', description: 'Bank passbook or cancelled cheque for billing', icon: 'account_balance', mandatory: true, alias: 'bankPassbook' },
+      { key: 'msmeCertificate', label: 'MSME / Udyam Certificate', category: 'Legal & Entity', description: 'Udyam registration certificate for priority tariff', icon: 'domain', mandatory: false },
+      { key: 'ceiApproval', label: 'CEI Drawing / Safety Approval', category: 'Statutory Approvals', description: 'Chief Electrical Inspectorate safety approval', icon: 'verified', mandatory: false }
+    ],
+    metadataFields: [
+      { key: 'phone', label: 'Authorized Person Mobile', required: true, icon: 'phone' },
+      { key: 'email', label: 'Official Email ID', required: true, icon: 'mail' }
+    ]
+  },
+  COMMON_METER: {
+    id: 'COMMON_METER',
+    label: 'Housing Society / Common Meter',
+    shortLabel: 'Housing Society',
+    badge: 'Society Solar',
+    description: 'Rooftop solar for apartment common utilities (pumps, lifts, common lights)',
+    documents: [
+      { key: 'societyNoc', label: 'Society NOC / Resolution', category: 'Legal & Society', description: 'Managing committee resolution approving solar plant', icon: 'corporate_fare', mandatory: true },
+      { key: 'lightBill', label: 'Common Meter Electricity Bill', category: 'Premises', description: 'Latest DISCOM common utility meter power bill', icon: 'electric_bolt', mandatory: true, alias: 'electricityBill' },
+      { key: 'panCard', label: 'Society / RWA PAN Card', category: 'Legal & Society', description: 'PAN card copy of registered cooperative housing society', icon: 'credit_card', mandatory: true, alias: 'pan' },
+      { key: 'sitePhoto', label: 'Common Terrace Site Photos', category: 'Site Inspection', description: 'Apartment building terrace inspection photographs', icon: 'photo_camera', mandatory: true, alias: 'rooftopPhoto' },
+      { key: 'bankDetails', label: 'Society Bank Account Details', category: 'Financials', description: 'Society bank passbook or cancelled cheque', icon: 'account_balance', mandatory: true, alias: 'bankPassbook' },
+      { key: 'veraBill', label: 'Society Property Tax Bill', category: 'Ownership Proof', description: 'Municipal property tax paid receipt for society premises', icon: 'home_work', mandatory: false, alias: 'propertyTax' }
+    ],
+    metadataFields: [
+      { key: 'phone', label: 'Society Chairman/Secretary Mobile', required: true, icon: 'phone' }
     ]
   }
 };
@@ -104,6 +278,10 @@ export const DOCUMENT_SCHEMAS = {
  */
 export function getDocumentSchemaKey(file) {
   if (!file) return 'RESIDENTIAL';
+
+  const category = String(file.category || file.projectCategory || '').toUpperCase();
+  if (category === 'COMMERCIAL' || category === 'C&I' || category === 'INDUSTRIAL') return 'COMMERCIAL';
+  if (category === 'COMMON_METER' || category === 'HOUSING_SOCIETY' || category === 'SOCIETY') return 'COMMON_METER';
 
   const financeType = String(file.financeType || file.finance_type || '').toUpperCase();
   const loanBank = String(file.loanBank || file.loan_bank || '').toUpperCase();
@@ -133,23 +311,55 @@ export function getDocumentSchemaKey(file) {
     return 'BANK_LOAN';
   }
 
+  if (category === 'RESIDENTIAL') return 'RESIDENTIAL';
+
   return 'RESIDENTIAL';
 }
 
 /**
- * Returns the active document checklist for a customer file
+ * Returns the active document checklist for a customer file, dynamically resolved
+ * using admin registry and category rules matrix.
  */
-export function getDocumentListForFile(file) {
+export function getDocumentListForFile(file, dynamicRegistry = null, dynamicRules = null) {
   const schemaKey = getDocumentSchemaKey(file);
+  const normalizedKey = schemaKey === 'FINANCE_LOAN' ? 'NBFC_LOAN' : (schemaKey === 'COMMON_METER' ? 'HOUSING_SOCIETY' : schemaKey);
+
+  // If custom dynamic rules and registry are present, resolve dynamically
+  if (Array.isArray(dynamicRegistry) && dynamicRegistry.length > 0 && dynamicRules) {
+    const rulesForCat = dynamicRules[schemaKey] || dynamicRules[normalizedKey];
+    if (rulesForCat && typeof rulesForCat === 'object') {
+      const resolved = [];
+
+      dynamicRegistry.forEach(doc => {
+        const rule = rulesForCat[doc.key];
+        if (rule && rule !== 'disabled') {
+          resolved.push({
+            ...doc,
+            mandatory: rule === 'mandatory'
+          });
+        }
+      });
+
+      if (resolved.length > 0) {
+        resolved.sort((a, b) => {
+          if (a.mandatory && !b.mandatory) return -1;
+          if (!a.mandatory && b.mandatory) return 1;
+          return 0;
+        });
+        return resolved;
+      }
+    }
+  }
+
   return DOCUMENT_SCHEMAS[schemaKey]?.documents || DOCUMENT_SCHEMAS.RESIDENTIAL.documents;
 }
 
 /**
  * Calculates document completion for a file based on its required documents
  */
-export function getDocumentCompletion(file) {
+export function getDocumentCompletion(file, dynamicRegistry = null, dynamicRules = null) {
   if (!file) return { total: 3, uploaded: 0, percent: 0, isComplete: false };
-  const docList = getDocumentListForFile(file);
+  const docList = getDocumentListForFile(file, dynamicRegistry, dynamicRules);
   const docs = file.documents || {};
 
   let uploadedCount = 0;
@@ -169,97 +379,24 @@ export function getDocumentCompletion(file) {
 }
 
 /**
- * Legacy export for backward compatibility with settings and governance modals
+ * Legacy export for backward compatibility
  */
-export const DEFAULT_REQUIRED_DOCUMENTS = [
-  {
-    id: 'doc-light-bill',
-    key: 'lightBill',
-    label: 'Electricity / Light Bill',
-    description: 'Latest DISCOM electricity bill copy (within past 2 months)',
-    icon: 'electric_bolt',
-    categories: ['residential', 'commercial', 'common_meter'],
-    categoryMandatory: { residential: true, commercial: true, common_meter: true },
-    mandatoryCategories: ['residential', 'commercial', 'common_meter'],
-    mandatory: true,
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'both'
-  },
-  {
-    id: 'doc-aadhaar',
-    key: 'aadhaar',
-    label: 'Customer Aadhaar Card (KYC)',
-    description: 'Front & back copy of consumer UIDAI identity proof',
-    icon: 'badge',
-    categories: ['residential', 'common_meter'],
-    categoryMandatory: { residential: true, common_meter: true, commercial: false },
-    mandatoryCategories: ['residential', 'common_meter'],
-    mandatory: true,
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'image'
-  },
-  {
-    id: 'doc-bank-passbook',
-    key: 'bankDetails',
-    label: 'Bank Passbook / Cheque',
-    description: 'Bank details for PM Surya Ghar direct DBT subsidy transfer',
-    icon: 'account_balance',
-    categories: ['residential', 'commercial'],
-    categoryMandatory: { residential: true, commercial: false },
-    mandatoryCategories: ['residential'],
-    mandatory: true,
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'both'
-  },
-  {
-    id: 'doc-pan',
-    key: 'panCard',
-    label: 'PAN Card Copy',
-    description: 'Required for bank loan verification and direct DBT transfer',
-    icon: 'credit_card',
-    categories: ['residential', 'commercial'],
-    categoryMandatory: { residential: false, commercial: true },
-    mandatoryCategories: ['commercial'],
-    mandatory: false,
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'image'
-  },
-  {
-    id: 'doc-property-tax',
-    key: 'veraBill',
-    label: 'Vera Bill (Property Tax / Index-2)',
-    description: 'Proof of premises ownership / municipal house tax paid receipt',
-    icon: 'home_work',
-    categories: ['residential', 'commercial'],
-    categoryMandatory: { residential: false, commercial: false },
-    mandatoryCategories: [],
-    mandatory: false,
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'both'
-  },
-  {
-    id: 'doc-rooftop-survey',
-    key: 'sitePhoto',
-    label: 'Pre-Installation Rooftop Site Photo',
-    description: 'Clear photograph of terrace shadow area and mounting location',
-    icon: 'photo_camera',
-    categories: ['residential', 'commercial', 'common_meter'],
-    categoryMandatory: { residential: false, commercial: true, common_meter: false },
-    mandatoryCategories: ['commercial'],
-    mandatory: false,
-    allowedExtensions: ['.jpg', '.jpeg', '.png'],
-    captureMode: 'both'
-  }
-];
+export const DEFAULT_REQUIRED_DOCUMENTS = DEFAULT_MASTER_DOCUMENT_REGISTRY.map(d => ({
+  id: `doc-${d.key}`,
+  key: d.key,
+  label: d.label,
+  description: d.description,
+  icon: d.icon,
+  mandatory: true
+}));
 
-export function isDocMandatoryForCategory(doc, categoryId) {
+export function isDocMandatoryForCategory(doc, categoryId, dynamicRules = null) {
   if (!doc) return false;
-  if (!categoryId) return Boolean(doc.mandatory);
-  if (doc.categoryMandatory && typeof doc.categoryMandatory[categoryId] === 'boolean') {
-    return doc.categoryMandatory[categoryId];
+  if (dynamicRules && categoryId) {
+    const catKey = categoryId.toUpperCase();
+    const normalizedKey = catKey === 'FINANCE_LOAN' ? 'NBFC_LOAN' : (catKey === 'COMMON_METER' ? 'HOUSING_SOCIETY' : catKey);
+    const rule = dynamicRules[catKey]?.[doc.key] || dynamicRules[normalizedKey]?.[doc.key];
+    if (rule) return rule === 'mandatory';
   }
-  if (Array.isArray(doc.mandatoryCategories)) {
-    return doc.mandatoryCategories.includes(categoryId);
-  }
-  return Boolean(doc.mandatory && (doc.categories || []).includes(categoryId));
+  return Boolean(doc.mandatory);
 }

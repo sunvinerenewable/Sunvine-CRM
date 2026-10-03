@@ -10,11 +10,14 @@ export const systemSettingsService = {
         .single();
 
       if (!error && data) {
+        const tw = data.terms_and_warranties || {};
         return {
           companyProfile: data.company_profile,
           bankDetails: data.bank_details,
-          termsAndWarranties: data.terms_and_warranties,
-          statutoryTaxes: data.statutory_taxes
+          termsAndWarranties: tw,
+          statutoryTaxes: data.statutory_taxes,
+          masterDocRegistry: tw.masterDocRegistry || data.master_doc_registry || null,
+          categoryDocRules: tw.categoryDocRules || data.category_doc_rules || null
         };
       }
     } catch (err) {
@@ -46,6 +49,39 @@ export const systemSettingsService = {
       }
       return { success: true, data };
     } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  async saveDocumentRules(masterDocRegistry, categoryDocRules) {
+    try {
+      const { data: curr } = await supabase
+        .from('system_settings')
+        .select('*')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+
+      const tw = curr?.terms_and_warranties || {};
+      tw.masterDocRegistry = masterDocRegistry;
+      tw.categoryDocRules = categoryDocRules;
+
+      const payload = {
+        id: 'global_settings',
+        company_profile: curr?.company_profile || {},
+        bank_details: curr?.bank_details || {},
+        terms_and_warranties: tw,
+        statutory_taxes: curr?.statutory_taxes || {},
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert([payload], { onConflict: 'id' });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data };
+    } catch (err) {
+      console.warn('[systemSettingsService] Save doc rules fallback:', err);
       return { success: false, error: err.message };
     }
   }

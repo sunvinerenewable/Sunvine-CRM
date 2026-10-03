@@ -16,7 +16,10 @@ export default function VerificationDesk() {
     addCustomerFileTimelineEvent,
     currentStaff,
     role,
-    isHardwareDbSyncing
+    isHardwareDbSyncing,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments
   } = useApp();
   const { addToast } = useToast();
 
@@ -407,7 +410,7 @@ export default function VerificationDesk() {
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-                    {getDocumentListForFile(file).map((doc) => {
+                    {(getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules)).map((doc) => {
                       const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
                       const isUploaded = Boolean(docInfo?.uploaded);
                       const isVerified = Boolean(docInfo?.verified);

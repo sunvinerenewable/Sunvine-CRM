@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, startTransition } from 'react';
 import {
   DEFAULT_PRICING_MASTER,
   DEFAULT_MODULES,
@@ -29,6 +29,11 @@ import {
   DEFAULT_REQUIRED_DOCUMENTS,
   APPLICATION_CATEGORIES,
   DEFAULT_PIPELINE_STAGES,
+  DEFAULT_MASTER_DOCUMENT_REGISTRY,
+  DEFAULT_CATEGORY_DOC_RULES,
+  DOCUMENT_SCHEMAS,
+  getDocumentListForFile,
+  getDocumentCompletion,
   isDocMandatoryForCategory
 } from '../data/defaultRequiredDocuments';
 import {
@@ -42,6 +47,7 @@ import { pricingService } from '../services/pricingService';
 import { customerFileService } from '../services/customerFileService';
 import { staffService } from '../services/staffService';
 import { systemSettingsService } from '../services/systemSettingsService';
+import { documentMasterService } from '../services/documentMasterService';
 import { auditLogService } from '../services/auditLogService';
 import { dealerService } from '../services/dealerService';
 import { bankService } from '../services/bankService';
@@ -198,7 +204,9 @@ export const AppProvider = ({ children }) => {
 
   const setActiveTab = (newTab, replace = false) => {
     const effectiveTab = newTab === 'profile' ? 'dealer_settings' : newTab;
-    setActiveTabState(effectiveTab);
+    startTransition(() => {
+      setActiveTabState(effectiveTab);
+    });
     safeSetItem('sunvine_tab', effectiveTab);
 
     if (typeof window !== 'undefined') {
@@ -407,7 +415,11 @@ const safeSetItem = (key, value) => {
       'sunvine_preview_quotation',
       'sunvine_required_documents',
       'sunvine_application_stages',
-      'sunvine_governance_settings'
+      'sunvine_governance_settings',
+      'sunvine_master_doc_registry',
+      'master_doc_registry',
+      'sunvine_category_doc_rules',
+      'category_doc_rules'
     ];
     legacyBusinessKeys.forEach(k => {
       try { localStorage.removeItem(k); } catch (_) {}
@@ -529,6 +541,7 @@ const safeSetItem = (key, value) => {
           dbFiles,
           dbStaff,
           dbSettings,
+          dbDocMaster,
           dbLogs,
           dbNotifs,
           dbBanks,
@@ -545,6 +558,7 @@ const safeSetItem = (key, value) => {
           customerFileService.getAllCustomerFiles(),
           staffService.getAllStaff(),
           systemSettingsService.getSystemSettings(),
+          documentMasterService.fetchDocumentMaster(),
           auditLogService.getAuditLogs(100),
           auditLogService.getNotifications(),
           bankService.getAllSolarBanks(),
@@ -602,6 +616,14 @@ const safeSetItem = (key, value) => {
           setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
           if (dbSettings.value.governanceSettings) {
             setGovernanceSettings(dbSettings.value.governanceSettings);
+          }
+        }
+        if (dbDocMaster.status === 'fulfilled' && dbDocMaster.value) {
+          if (Array.isArray(dbDocMaster.value.registry) && dbDocMaster.value.registry.length > 0) {
+            setMasterDocRegistry(dbDocMaster.value.registry);
+          }
+          if (dbDocMaster.value.rules && typeof dbDocMaster.value.rules === 'object') {
+            setCategoryDocRules(dbDocMaster.value.rules);
           }
         }
         if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value)) {
@@ -727,6 +749,17 @@ const safeSetItem = (key, value) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
         auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_master' }, async () => {
+        try {
+          const freshDocs = await documentMasterService.fetchDocumentMaster();
+          if (freshDocs && Array.isArray(freshDocs.registry) && freshDocs.registry.length > 0) {
+            setMasterDocRegistry(freshDocs.registry);
+            if (freshDocs.rules) setCategoryDocRules(freshDocs.rules);
+          }
+        } catch (err) {
+          console.warn('[AppContext] Realtime document_master sync error:', err);
+        }
+      })
       .subscribe();
 
     return () => {
@@ -738,9 +771,10 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes] = await Promise.allSettled([
+        const [files, quotes, docMaster] = await Promise.allSettled([
           customerFileService.getAllCustomerFiles(),
-          quotationService.getAllQuotations(100)
+          quotationService.getAllQuotations(100),
+          documentMasterService.fetchDocumentMaster()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
@@ -764,6 +798,12 @@ const safeSetItem = (key, value) => {
             }
             return prev;
           });
+        }
+        if (docMaster.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
+          setMasterDocRegistry(docMaster.value.registry);
+          if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
+            setCategoryDocRules(docMaster.value.rules);
+          }
         }
       } catch (err) {
         // silent background sync
@@ -811,6 +851,12 @@ const safeSetItem = (key, value) => {
     }
     return customerFiles;
   };
+
+  // Dynamic Master Document Registry (Supabase Live DB Authority - No localStorage)
+  const [masterDocRegistry, setMasterDocRegistry] = useState(DEFAULT_MASTER_DOCUMENT_REGISTRY);
+
+  // Dynamic Category Document Rules Matrix (Supabase Live DB Authority - No localStorage)
+  const [categoryDocRules, setCategoryDocRules] = useState(DEFAULT_CATEGORY_DOC_RULES);
 
   // Solar Loan Partner Banks (Database Connected + SWR Cache)
   const [solarBanks, setSolarBanks] = useState(() => cacheManager.get('solar_banks', []));
@@ -2119,6 +2165,174 @@ const safeSetItem = (key, value) => {
     });
   };
 
+  // Master Document Registry & Dynamic Category Rules Engine
+  const addMasterDocument = async (newDoc) => {
+    if (!newDoc || !newDoc.key) return;
+    const cleanKey = newDoc.key.trim().replace(/[^a-zA-Z0-9_]/g, '');
+    const docItem = {
+      key: cleanKey,
+      label: newDoc.label?.trim() || cleanKey,
+      category: newDoc.category || 'General KYC',
+      description: newDoc.description?.trim() || 'Required customer document',
+      icon: newDoc.icon || 'description',
+      allowedExtensions: newDoc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png', '.webp'],
+      isCustom: true
+    };
+
+    let nextRegistry;
+    let nextRules;
+
+    setMasterDocRegistry(prev => {
+      const exists = prev.some(d => d.key === docItem.key);
+      nextRegistry = exists ? prev.map(d => d.key === docItem.key ? { ...d, ...docItem } : d) : [...prev, docItem];
+      return nextRegistry;
+    });
+
+    setCategoryDocRules(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(catKey => {
+        if (!updated[catKey][docItem.key]) {
+          updated[catKey] = { ...updated[catKey], [docItem.key]: 'optional' };
+        }
+      });
+      nextRules = updated;
+      return updated;
+    });
+
+    const rulesForDoc = {
+      RESIDENTIAL: 'optional',
+      BANK_LOAN: 'optional',
+      NBFC_LOAN: 'optional',
+      COMMERCIAL: 'optional',
+      HOUSING_SOCIETY: 'optional'
+    };
+
+    try {
+      await documentMasterService.upsertDocument(docItem, rulesForDoc);
+      if (nextRegistry && nextRules) {
+        await systemSettingsService.saveDocumentRules(nextRegistry, nextRules);
+      }
+    } catch (err) {
+      console.warn('Sync add document error:', err);
+    }
+  };
+
+  const updateMasterDocument = async (docKey, updatedFields) => {
+    let updatedDoc;
+    setMasterDocRegistry(prev => {
+      const next = prev.map(d => {
+        if (d.key === docKey) {
+          updatedDoc = { ...d, ...updatedFields };
+          return updatedDoc;
+        }
+        return d;
+      });
+      return next;
+    });
+
+    try {
+      if (updatedDoc) {
+        const rulesForDoc = {
+          RESIDENTIAL: categoryDocRules.RESIDENTIAL?.[docKey] || 'mandatory',
+          BANK_LOAN: categoryDocRules.BANK_LOAN?.[docKey] || 'mandatory',
+          NBFC_LOAN: categoryDocRules.NBFC_LOAN?.[docKey] || 'mandatory',
+          COMMERCIAL: categoryDocRules.COMMERCIAL?.[docKey] || 'mandatory',
+          HOUSING_SOCIETY: categoryDocRules.HOUSING_SOCIETY?.[docKey] || 'mandatory'
+        };
+        await documentMasterService.upsertDocument(updatedDoc, rulesForDoc);
+      }
+      await systemSettingsService.saveDocumentRules(masterDocRegistry, categoryDocRules);
+    } catch (err) {
+      console.warn('Sync update document error:', err);
+    }
+  };
+
+  const deleteMasterDocument = async (docKey) => {
+    let nextRegistry;
+    let nextRules;
+
+    setMasterDocRegistry(prev => {
+      nextRegistry = prev.filter(d => d.key !== docKey);
+      return nextRegistry;
+    });
+
+    setCategoryDocRules(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(catKey => {
+        const catCopy = { ...updated[catKey] };
+        delete catCopy[docKey];
+        updated[catKey] = catCopy;
+      });
+      nextRules = updated;
+      return updated;
+    });
+
+    try {
+      await documentMasterService.deleteDocument(docKey);
+      if (nextRegistry && nextRules) {
+        await systemSettingsService.saveDocumentRules(nextRegistry, nextRules);
+      }
+    } catch (err) {
+      console.warn('Sync delete document error:', err);
+    }
+  };
+
+  const updateCategoryDocRule = async (categoryKey, docKey, ruleStatus) => {
+    let updatedRules;
+    setCategoryDocRules(prev => {
+      updatedRules = {
+        ...prev,
+        [categoryKey]: {
+          ...(prev[categoryKey] || {}),
+          [docKey]: ruleStatus // 'mandatory' | 'optional' | 'disabled'
+        }
+      };
+      return updatedRules;
+    });
+
+    try {
+      await documentMasterService.updateDocumentCategoryRule(docKey, categoryKey, ruleStatus);
+      if (updatedRules) {
+        await systemSettingsService.saveDocumentRules(masterDocRegistry, updatedRules);
+      }
+    } catch (err) {
+      console.warn('Sync rule error:', err);
+    }
+  };
+
+  const resetDocumentRulesToDefault = async () => {
+    setMasterDocRegistry(DEFAULT_MASTER_DOCUMENT_REGISTRY);
+    setCategoryDocRules(DEFAULT_CATEGORY_DOC_RULES);
+    try {
+      await documentMasterService.seedDefaultRegistry();
+      await systemSettingsService.saveDocumentRules(DEFAULT_MASTER_DOCUMENT_REGISTRY, DEFAULT_CATEGORY_DOC_RULES);
+    } catch (err) {
+      console.warn('Sync reset error:', err);
+    }
+  };
+
+  const refreshMasterDocuments = async () => {
+    try {
+      const freshDocs = await documentMasterService.fetchDocumentMaster();
+      if (freshDocs && Array.isArray(freshDocs.registry) && freshDocs.registry.length > 0) {
+        setMasterDocRegistry(freshDocs.registry);
+        if (freshDocs.rules) setCategoryDocRules(freshDocs.rules);
+        return freshDocs;
+      }
+    } catch (err) {
+      console.warn('[AppContext] refreshMasterDocuments error:', err);
+    }
+    return null;
+  };
+
+  const getFileDocuments = (file) => {
+    return getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
+  };
+
+  const getFileDocsCompletion = (file) => {
+    return getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -2237,11 +2451,17 @@ const safeSetItem = (key, value) => {
         systemSettings,
         updateSystemSettings,
         // Dynamic Required Documents Management
-        requiredDocuments,
-        addRequiredDocument,
-        updateRequiredDocument,
-        deleteRequiredDocument,
-        resetRequiredDocuments,
+        requiredDocuments: DEFAULT_REQUIRED_DOCUMENTS,
+        masterDocRegistry,
+        categoryDocRules,
+        addMasterDocument,
+        updateMasterDocument,
+        deleteMasterDocument,
+        updateCategoryDocRule,
+        resetDocumentRulesToDefault,
+        refreshMasterDocuments,
+        getFileDocuments,
+        getFileDocsCompletion,
         applicationCategories: APPLICATION_CATEGORIES,
         isDocMandatoryForCategory,
         // Master Dynamic Application Stages
