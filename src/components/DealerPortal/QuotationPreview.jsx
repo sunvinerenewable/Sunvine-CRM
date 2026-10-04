@@ -766,8 +766,8 @@ export default function QuotationPreview({
           pointerEvents: 'none'
         }}
       >
-        <div ref={pdfExportRef}>
-          <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage="all" />
+        <div ref={pdfExportRef} className="pdf-export-container">
+          <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
         </div>
       </div>
 

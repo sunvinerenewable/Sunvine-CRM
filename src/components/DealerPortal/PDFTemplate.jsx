@@ -101,7 +101,7 @@ export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverte
   return 'MNRE / BIS Approved';
 }
 
-export default function PDFTemplate({ quotation, activePage = 'all' }) {
+export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport = false }) {
   if (!quotation) return null;
 
   const {
@@ -213,25 +213,33 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
     });
   }, [multiBrandComparison, multiBrandPackages, resolvedCapKW, customerRatePerKW, subsidyAmount]);
 
-  const resolvedCoverSrc = '/sunvine_quotation_cover.png';
+  const resolvedCoverSrc = customCoverUrl || coverImage || '/sunvine_quotation_cover.png';
 
   return (
     <div className="pdf-document font-sans text-[#0F1B2E] bg-white print:bg-white select-none">
       {/* ========================================================
           PAGE 1: DYNAMIC SUNVINE PROPOSAL COVER PAGE (SR-34)
           ======================================================== */}
-      <div className={`pdf-page pdf-page-cover relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!p-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden items-center justify-center box-border ${activePage === 'all' || activePage === 1 ? 'flex' : 'hidden print:flex'}`}>
+      <div
+        className={`pdf-page pdf-page-cover relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto bg-white ${
+          isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'
+        } print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!p-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden items-center justify-center box-border ${
+          activePage === 'all' || activePage === 1 ? 'flex' : 'hidden print:flex'
+        }`}
+        style={isPdfExport ? { width: '210mm', height: '297mm', maxHeight: '297mm', margin: 0, padding: 0 } : undefined}
+      >
         <img
           src={resolvedCoverSrc}
           alt="Sunvine Quotation Cover"
-          className="w-full h-full object-cover block select-none"
+          className="w-full h-full object-fill block select-none"
+          style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
         />
       </div>
 
       {/* ========================================================
           PAGE 2: EXECUTIVE COMMERCIAL PROPOSAL & SYSTEM SPECIFICATION
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 2 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 2 ? 'flex' : 'hidden print:flex'}`}>
         <div>
           {/* Top Header with Corporate Identity */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
@@ -596,7 +604,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
       {/* ========================================================
           PAGE 3: ENGINEERING BILL OF MATERIALS (BOM) & COMPLIANCE
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
         <div>
           {/* Top Header */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
@@ -857,7 +865,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
       {/* ========================================================
           PAGE 4: TERMS & CONDITIONS (EXACT UNTOUCHED TEXT)
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white border border-gray-300 shadow-xl print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] mb-8 overflow-hidden box-border ${activePage === 'all' || activePage === 4 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 4 ? 'flex' : 'hidden print:flex'}`}>
         <div>
           {/* Top Header */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
