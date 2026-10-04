@@ -49,3 +49,11 @@ Before writing any new code, stop at the first rung of the **Decision Ladder**:
 - All changes, commits, and pushes MUST be made to the `sumit-updates` branch on GitHub / Vercel.
 - NEVER push directly to the `main` branch.
 - Deploying to production (`main`) requires explicit confirmation from the user. Never auto-push to `main`.
+
+---
+
+## 5. DIRECT DATABASE PERSISTENCE PROTOCOL (Single Source of Truth)
+- **Zero Cache-Only / Zero LocalStorage-Only Data**: Any data created, added, modified, or deleted in this project MUST be saved directly to the database (Supabase / PostgreSQL) via backend APIs or database services.
+- **Direct Database Fetch on Mount & Hard Refresh**: The app MUST fetch active data directly from the database upon mount and hard refresh (`Ctrl + Shift + R`). Data must NEVER disappear or revert on hard refresh.
+- **Mandatory Enforcement**: On EVERY prompt and feature update, the assistant MUST strictly uphold this database-first rule.
+
