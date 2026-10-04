@@ -3,6 +3,14 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 export default function DocumentPreviewModal({ doc, onClose }) {
   if (!doc) return null;
 
+  const files = Array.isArray(doc.files) && doc.files.length > 0 ? doc.files : null;
+  const [activeFileIndex, setActiveFileIndex] = useState(() => {
+    if (files && doc.initialIndex >= 0 && doc.initialIndex < files.length) {
+      return doc.initialIndex;
+    }
+    return 0;
+  });
+
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -10,23 +18,46 @@ export default function DocumentPreviewModal({ doc, onClose }) {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Sync index when doc prop changes
+  useEffect(() => {
+    if (files && doc.initialIndex >= 0 && doc.initialIndex < files.length) {
+      setActiveFileIndex(doc.initialIndex);
+    } else {
+      setActiveFileIndex(0);
+    }
+  }, [doc]);
+
+  const currentFile = files ? (files[activeFileIndex] || files[0]) : doc;
+  const currentTitle = doc.title || doc.label || currentFile.title || 'Document Inspection';
+  const currentUrl = currentFile?.url;
+  const currentFilename = currentFile?.filename || doc.filename || 'document.pdf';
+  const currentSize = currentFile?.size || doc.size;
+  const currentFileType = currentFile?.fileType || doc.fileType;
+
   const isPdf = Boolean(
-    doc.url?.toLowerCase().includes('.pdf') ||
-    doc.filename?.toLowerCase().endsWith('.pdf') ||
-    doc.fileType === 'application/pdf'
+    currentUrl?.toLowerCase().includes('.pdf') ||
+    currentFilename?.toLowerCase().endsWith('.pdf') ||
+    currentFileType === 'application/pdf'
   );
 
-  // Reset zoom/rotation when doc changes
+  // Reset zoom/rotation when doc or active file changes
   useEffect(() => {
     setZoom(1);
     setRotation(0);
     setPosition({ x: 0, y: 0 });
-  }, [doc]);
+  }, [doc, activeFileIndex]);
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose();
+      if (files && files.length > 1) {
+        if (e.key === 'ArrowLeft') {
+          setActiveFileIndex(prev => Math.max(0, prev - 1));
+        } else if (e.key === 'ArrowRight') {
+          setActiveFileIndex(prev => Math.min(files.length - 1, prev + 1));
+        }
+      }
       if (!isPdf) {
         if (e.key === '+' || e.key === '=') setZoom(prev => Math.min(prev + 0.25, 4));
         if (e.key === '-') setZoom(prev => Math.max(prev - 0.25, 0.5));
@@ -40,7 +71,7 @@ export default function DocumentPreviewModal({ doc, onClose }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, isPdf]);
+  }, [onClose, isPdf, files]);
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 4));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
@@ -81,12 +112,12 @@ export default function DocumentPreviewModal({ doc, onClose }) {
 
   const handleDownload = (e) => {
     if (e) e.preventDefault();
-    if (!doc.url || isDownloading) return;
+    if (!currentUrl || isDownloading) return;
 
     setIsDownloading(true);
     try {
-      const downloadName = doc.filename || (isPdf ? 'document.pdf' : 'document.jpg');
-      const downloadEndpoint = `/api/storage-download?url=${encodeURIComponent(doc.url)}&filename=${encodeURIComponent(downloadName)}`;
+      const downloadName = currentFilename || (isPdf ? 'document.pdf' : 'document.jpg');
+      const downloadEndpoint = `/api/storage-download?url=${encodeURIComponent(currentUrl)}&filename=${encodeURIComponent(downloadName)}`;
 
       const a = document.createElement('a');
       a.style.display = 'none';
@@ -133,20 +164,45 @@ export default function DocumentPreviewModal({ doc, onClose }) {
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <h3 className="font-bold text-xs sm:text-sm text-slate-100 truncate">
-                  {doc.title || doc.label || 'Document Inspection'}
+                  {currentTitle}
                 </h3>
                 <span className="hidden sm:inline-block text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-mono font-semibold bg-slate-800 text-emerald-400 border border-emerald-500/20 uppercase shrink-0">
                   {isPdf ? 'PDF Document' : 'Photo'}
                 </span>
+                {files && files.length > 1 && (
+                  <div className="flex items-center gap-1 bg-slate-900 border border-emerald-500/30 rounded-lg px-2 py-0.5 text-xs shrink-0">
+                    <button
+                      type="button"
+                      disabled={activeFileIndex <= 0}
+                      onClick={() => setActiveFileIndex(prev => Math.max(0, prev - 1))}
+                      className="text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center"
+                      title="Previous document (Left Arrow)"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">chevron_left</span>
+                    </button>
+                    <span className="font-mono text-emerald-400 font-bold px-1 select-none text-[11px]">
+                      {activeFileIndex + 1} / {files.length}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={activeFileIndex >= files.length - 1}
+                      onClick={() => setActiveFileIndex(prev => Math.min(files.length - 1, prev + 1))}
+                      className="text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center"
+                      title="Next document (Right Arrow)"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+                    </button>
+                  </div>
+                )}
               </div>
               <p className="text-[10px] sm:text-xs text-slate-400 font-mono truncate mt-0.5">
-                {doc.filename || 'document.pdf'} {doc.size ? `• ${doc.size}` : ''}
+                {currentFilename} {currentSize ? `• ${currentSize}` : ''}
               </p>
             </div>
           </div>
 
           {/* Center (Desktop only >= md): Zoom, Scale & Rotate Controls Pill */}
-          {!isPdf && doc.url && (
+          {!isPdf && currentUrl && (
             <div className="hidden md:flex items-center justify-center shrink-0">
               <div className="h-9 flex items-center bg-slate-900/90 border border-slate-700/80 rounded-xl p-1 gap-1 shadow-inner">
                 <button
@@ -199,7 +255,7 @@ export default function DocumentPreviewModal({ doc, onClose }) {
             </button>
 
             {/* Direct Save / Download */}
-            {doc.url && (
+            {currentUrl && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -230,14 +286,14 @@ export default function DocumentPreviewModal({ doc, onClose }) {
           className="flex-1 bg-[#050A14] relative overflow-hidden flex items-center justify-center select-none"
           onWheel={handleWheel}
         >
-          {doc.url ? (
+          {currentUrl ? (
             isPdf ? (
               /* PDF VIEWER */
               <div className="w-full h-full bg-slate-900">
                 <iframe
-                  src={`${doc.url}#toolbar=1&view=FitH`}
+                  src={`${currentUrl}#toolbar=1&view=FitH`}
                   className="w-full h-full border-0"
-                  title={doc.title || doc.filename || 'PDF Viewer'}
+                  title={currentTitle || currentFilename || 'PDF Viewer'}
                 />
               </div>
             ) : (
@@ -294,8 +350,8 @@ export default function DocumentPreviewModal({ doc, onClose }) {
                   className="flex items-center justify-center max-w-full max-h-full p-4"
                 >
                   <img
-                    src={doc.url}
-                    alt={doc.title || doc.filename || 'Document Preview'}
+                    src={currentUrl}
+                    alt={currentTitle || currentFilename || 'Document Preview'}
                     className="max-h-[75vh] max-w-[90vw] object-contain rounded-lg shadow-2xl ring-1 ring-slate-800/80 pointer-events-none"
                     draggable={false}
                   />

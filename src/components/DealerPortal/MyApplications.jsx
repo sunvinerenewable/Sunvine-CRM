@@ -7,6 +7,7 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
 import {
   DOCUMENT_SCHEMAS,
   getDocumentListForFile,
@@ -200,62 +201,73 @@ export default function MyApplications() {
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
-  // File upload handler (Cloudflare R2 + Supabase)
-  const handleUploadDocument = async (docKey, file) => {
-    if (!uploadTargetFile || !file) return;
+  // Multi-document upload handler (Cloudflare R2 + Supabase)
+  const handleUploadDocument = async (docKey, filesInput) => {
+    if (!uploadTargetFile || !filesInput) return;
+    const fileList = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (fileList.length === 0) return;
 
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-    const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
     const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
 
-    if (!isAllowed) {
-      addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-      addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
-      return;
-    }
-
-    showLoader('Securing document in Cloudflare R2 Vault...');
+    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
     try {
-      let fileUrl = null;
-      let filename = file.name;
-      let fileSize = file.size;
+      const uploadedDocsList = [];
 
-      try {
-        const oldDoc = uploadTargetFile.documents?.[docKey];
-        const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey, { oldDoc });
-        if (uploadRes?.success) {
-          fileUrl = uploadRes.publicUrl || uploadRes.url;
-          filename = uploadRes.filename || file.name;
-          fileSize = uploadRes.fileSize || file.size;
+      for (const file of fileList) {
+        const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+        const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
+
+        if (!isAllowed) {
+          addToast(`File "${file.name}" invalid format. Only PDF & Images are allowed.`, 'error');
+          continue;
         }
-      } catch (err) {
-        console.warn('[MyApplications] Cloudflare R2 upload warning:', err);
-        addToast(err.message || 'Upload failed', 'error');
-        return;
+
+        if (file.size > 2 * 1024 * 1024) {
+          const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+          addToast(`File "${file.name}" (${sizeMB} MB) exceeds maximum 2 MB limit allowed.`, 'error');
+          continue;
+        }
+
+        try {
+          const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey);
+          if (uploadRes?.success) {
+            uploadedDocsList.push({
+              filename: uploadRes.filename || file.name,
+              url: uploadRes.publicUrl || uploadRes.url,
+              size: formatFileSize(uploadRes.fileSize || file.size),
+              uploaded: true,
+              date: new Date().toISOString().split('T')[0]
+            });
+          }
+        } catch (err) {
+          console.warn('[MyApplications] Cloudflare R2 upload warning for', file.name, err);
+          addToast(err.message || `Failed to upload ${file.name}`, 'error');
+        }
       }
 
-      const updatedDocs = {
-        ...(uploadTargetFile.documents || {}),
-        [docKey]: {
-          filename,
-          url: fileUrl,
-          size: formatFileSize(fileSize),
-          uploaded: true,
-          date: new Date().toISOString().split('T')[0]
-        }
-      };
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = uploadTargetFile.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
 
-      if (updateCustomerFile) {
-        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        const updatedDocs = {
+          ...(uploadTargetFile.documents || {}),
+          [docKey]: updatedSlot
+        };
+
+        if (updateCustomerFile) {
+          await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        }
+        setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} documents added to vault`
+            : `Document uploaded: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      addToast(`Document uploaded to R2: ${filename}`, 'success');
     } catch (e) {
       console.error('[MyApplications] Upload error:', e);
       addToast(e.message || 'Upload failed', 'error');
@@ -265,16 +277,40 @@ export default function MyApplications() {
   };
 
   // Delete document handler (Cloudflare R2 + Supabase)
-  const handleDeleteDocument = async (docKey) => {
+  const handleDeleteDocument = async (docKey, targetDocIdOrUrl = null) => {
     if (!uploadTargetFile) return;
-    const doc = uploadTargetFile.documents?.[docKey];
+    const slotData = uploadTargetFile.documents?.[docKey];
+    if (!slotData) return;
 
     showLoader('Removing document from Cloudflare R2 Vault...');
     try {
-      await storageService.deleteCustomerDocument(docKey, uploadTargetFile.id, 'sunvine-documents', doc);
+      const fileList = normalizeDocList(slotData);
+      const targetDoc = targetDocIdOrUrl
+        ? fileList.find(f => f.id === targetDocIdOrUrl || f.url === targetDocIdOrUrl || f.filename === targetDocIdOrUrl)
+        : null;
 
-      const updatedDocs = { ...(uploadTargetFile.documents || {}) };
-      delete updatedDocs[docKey];
+      if (targetDoc && (targetDoc.url || targetDoc.path)) {
+        await storageService.deleteDocument(targetDoc.url || targetDoc.path);
+      } else if (!targetDocIdOrUrl) {
+        for (const f of fileList) {
+          if (f.url || f.path) {
+            await storageService.deleteDocument(f.url || f.path);
+          }
+        }
+        await storageService.deleteCustomerDocument(docKey, uploadTargetFile.id, 'sunvine-documents', slotData);
+      }
+
+      let updatedDocs = { ...(uploadTargetFile.documents || {}) };
+      if (targetDocIdOrUrl) {
+        const updatedSlot = removeDocFromFileList(slotData, targetDocIdOrUrl);
+        if (!updatedSlot.uploaded || updatedSlot.files.length === 0) {
+          delete updatedDocs[docKey];
+        } else {
+          updatedDocs[docKey] = updatedSlot;
+        }
+      } else {
+        delete updatedDocs[docKey];
+      }
 
       if (updateCustomerFile) {
         await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
@@ -289,7 +325,7 @@ export default function MyApplications() {
     }
   };
 
-  // Camera capture handler
+  // Camera capture handler (Appends multiple photo captures)
   const handleCameraCapture = async (stats) => {
     if (!uploadTargetFile || !cameraTargetDoc || !stats) return;
     const docKey = cameraTargetDoc.key;
@@ -297,13 +333,12 @@ export default function MyApplications() {
     showLoader('Securing camera photo in Cloudflare R2 Vault...');
     try {
       let fileUrl = null;
-      let filename = stats.file?.name || `${docKey}_camera.jpg`;
+      let filename = stats.file?.name || `${docKey}_photo_${Date.now().toString(36)}.jpg`;
       let fileSize = stats.file?.size || 0;
 
       if (stats.file) {
         try {
-          const oldDoc = uploadTargetFile.documents?.[docKey];
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey, { oldDoc });
+          const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
           if (uploadRes?.success) {
             fileUrl = uploadRes.publicUrl || uploadRes.url;
             filename = uploadRes.filename || stats.file.name;
@@ -314,18 +349,23 @@ export default function MyApplications() {
         }
       }
 
+      const newDocRecord = {
+        filename,
+        url: fileUrl,
+        size: stats.compressedFormatted || formatFileSize(fileSize),
+        originalSize: stats.originalFormatted,
+        reduction: stats.reduction,
+        dataUrl: fileUrl ? undefined : stats.dataUrl,
+        uploaded: true,
+        date: new Date().toISOString().split('T')[0]
+      };
+
+      const existingSlot = uploadTargetFile.documents?.[docKey];
+      const updatedSlot = appendDocsToFileList(existingSlot, newDocRecord);
+
       const updatedDocs = {
         ...(uploadTargetFile.documents || {}),
-        [docKey]: {
-          filename,
-          url: fileUrl,
-          size: stats.compressedFormatted || formatFileSize(fileSize),
-          originalSize: stats.originalFormatted,
-          reduction: stats.reduction,
-          dataUrl: fileUrl ? undefined : stats.dataUrl,
-          uploaded: true,
-          date: new Date().toISOString().split('T')[0]
-        }
+        [docKey]: updatedSlot
       };
 
       if (updateCustomerFile) {
@@ -1065,7 +1105,8 @@ export default function MyApplications() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                 {docList.map(doc => {
                   const docState = uploadTargetFile.documents?.[doc.key] || (doc.alias ? uploadTargetFile.documents?.[doc.alias] : null);
-                  const isUploaded = Boolean(docState?.uploaded);
+                  const attachedFiles = normalizeDocList(docState);
+                  const isUploaded = attachedFiles.length > 0;
 
                   return (
                     <div
@@ -1078,7 +1119,7 @@ export default function MyApplications() {
                             : 'bg-surface-container-lowest border-surface-container-high'
                       }`}
                     >
-                      <div>
+                      <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="material-symbols-outlined text-primary text-base shrink-0">
@@ -1096,67 +1137,90 @@ export default function MyApplications() {
                                 ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
                                 : 'bg-surface-container text-secondary border border-surface-container-high'
                           }`}>
-                            {isUploaded ? 'Uploaded' : (doc.mandatory ? 'Mandatory' : 'Optional')}
+                            {isUploaded ? (attachedFiles.length > 1 ? `${attachedFiles.length} Files Attached` : 'Uploaded') : (doc.mandatory ? 'Mandatory' : 'Optional')}
                           </span>
                         </div>
 
-                        {/* UPLOADED FILE STATUS WITH ZERO CLIPPING */}
+                        {/* LIST OF ATTACHED DOCUMENTS WITH INDIVIDUAL PREVIEW & REMOVE */}
                         {isUploaded && (
-                          <div className="mt-2.5 p-2 rounded-lg bg-surface-container-lowest border border-surface-container space-y-1">
-                            <div className="flex items-center gap-1.5 text-primary text-[11px] font-bold">
-                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                              <span>File Uploaded</span>
-                            </div>
-                            <div className="break-all text-[11px] font-mono text-on-surface leading-tight select-all">
-                              {docState.filename}
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-secondary font-mono pt-1">
-                              <span>{docState.size || 'Optimized (Max 2 MB)'}</span>
-                              <span>{docState.date || 'Today'}</span>
-                            </div>
+                          <div className="space-y-1.5 pt-1">
+                            {attachedFiles.map((fileItem, fIdx) => (
+                              <div
+                                key={fileItem.id || fileItem.url || fIdx}
+                                className="p-2 rounded-lg bg-surface-container-lowest border border-surface-container flex items-center justify-between gap-2 text-xs hover:border-primary/30 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="material-symbols-outlined text-primary text-[16px] shrink-0">
+                                    {fileItem.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-all text-[11px] font-mono text-on-surface font-semibold leading-tight truncate" title={fileItem.filename}>
+                                      {fileItem.filename}
+                                    </div>
+                                    <div className="text-[10px] text-secondary font-mono flex items-center gap-2 mt-0.5">
+                                      <span>{fileItem.size || 'Optimized'}</span>
+                                      <span>&bull;</span>
+                                      <span>{fileItem.date || 'Today'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({
+                                      title: `${doc.label} (${fileItem.filename})`,
+                                      filename: fileItem.filename || 'document.pdf',
+                                      url: fileItem.url || fileItem.dataUrl
+                                    })}
+                                    className="p-1 rounded-md text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                    title="Preview file"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDocument(doc.key, fileItem.id || fileItem.url || fileItem.filename)}
+                                    className="p-1 rounded-md text-error hover:bg-error/10 transition-colors cursor-pointer"
+                                    title="Remove this file"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
 
-                      {/* Upload & Preview Controls */}
+                      {/* Upload & Multi-Doc Controls */}
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-container text-[11px]">
                         {isUploaded ? (
-                          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+                          <div className="flex items-center gap-2 w-full">
+                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
+                              <span className="material-symbols-outlined text-[15px] text-primary">add_circle</span>
+                              <span>Add Another Photo / File</span>
+                              <input
+                                type="file"
+                                multiple
+                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={(e) => {
+                                  handleUploadDocument(doc.key, e.target.files);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+
                             <button
                               type="button"
-                              onClick={() => setPreviewDoc({
-                                title: doc.label,
-                                filename: docState.filename || 'document.pdf',
-                                url: docState.url || docState.dataUrl
-                              })}
-                              className="px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-center cursor-pointer transition-colors flex items-center gap-1"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 border border-surface-container-highest"
+                              title="Capture another photo with camera"
                             >
-                              <span className="material-symbols-outlined text-[15px]">visibility</span>
-                              <span>Preview</span>
+                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="hidden sm:inline text-[11px]">Camera</span>
                             </button>
-
-                            <div className="flex items-center gap-2">
-                              <label className="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[14px]">sync</span>
-                                <span>Replace</span>
-                                <input
-                                  type="file"
-                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadDocument(doc.key, e.target.files?.[0])}
-                                />
-                              </label>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteDocument(doc.key)}
-                                className="px-2 py-1.5 rounded-lg text-error hover:bg-error/10 font-semibold cursor-pointer transition-colors flex items-center gap-0.5"
-                                title="Delete document from Cloudflare R2 Vault"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">delete</span>
-                                <span>Delete</span>
-                              </button>
-                            </div>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 w-full">
@@ -1165,9 +1229,13 @@ export default function MyApplications() {
                               <span>Upload {doc.mandatory ? 'Document' : '(Optional)'}</span>
                               <input
                                 type="file"
+                                multiple
                                 accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                                 className="hidden"
-                                onChange={(e) => handleUploadDocument(doc.key, e.target.files?.[0])}
+                                onChange={(e) => {
+                                  handleUploadDocument(doc.key, e.target.files);
+                                  e.target.value = '';
+                                }}
                               />
                             </label>
 

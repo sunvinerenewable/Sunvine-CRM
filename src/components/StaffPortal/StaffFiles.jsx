@@ -16,6 +16,7 @@ import {
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { formatFileSize } from '../../utils/mediaOptimizer';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
 
 export default function StaffFiles() {
   const {
@@ -201,86 +202,127 @@ export default function StaffFiles() {
     addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
   };
 
-  const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
+  const handleUploadDoc = async (fileId, docKey, filesInput = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
-    if (!file) return;
+    if (!file || !filesInput) return;
 
-    if (!fileOrName) return;
+    const fileList = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (fileList.length === 0) return;
 
-    // Strict PDF & Image (JPG, PNG, WEBP) & 2 MB Validation
-    if (typeof fileOrName === 'object') {
-      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const fileExt = fileOrName.name?.split('.').pop()?.toLowerCase() || '';
-      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(fileOrName.type?.toLowerCase());
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-      if (!isAllowed) {
-        addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
-        return;
-      }
-      if (fileOrName.size > 2 * 1024 * 1024) {
-        const sizeMB = (fileOrName.size / 1024 / 1024).toFixed(2);
-        addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
-        return;
-      }
-    }
-
-    let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
-    let fileUrl = null;
-    let fileSize = typeof fileOrName === 'object' ? fileOrName.size : null;
-
-    showLoader('Securing document in Cloudflare R2 Vault...');
+    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
     try {
-      if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
-        try {
-          const oldDoc = file?.documents?.[docKey];
-          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey, { oldDoc });
-          if (uploadRes?.success) {
-            filename = uploadRes.filename || fileOrName.name;
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            fileSize = uploadRes.fileSize || fileOrName.size;
+      const uploadedDocsList = [];
+
+      for (const item of fileList) {
+        if (typeof item === 'object' && item.name) {
+          const fileExt = item.name?.split('.').pop()?.toLowerCase() || '';
+          const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(item.type?.toLowerCase());
+
+          if (!isAllowed) {
+            addToast(`File "${item.name}" invalid format. Only PDF & Images allowed.`, 'error');
+            continue;
           }
-        } catch (err) {
-          console.warn('[StaffFiles] Cloudflare R2 upload error:', err);
-          addToast(err.message || 'Upload failed', 'error');
-          return;
+          if (item.size > 2 * 1024 * 1024) {
+            const sizeMB = (item.size / 1024 / 1024).toFixed(2);
+            addToast(`File "${item.name}" (${sizeMB} MB) exceeds maximum 2 MB limit allowed.`, 'error');
+            continue;
+          }
+
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey);
+            if (uploadRes?.success) {
+              uploadedDocsList.push({
+                filename: uploadRes.filename || item.name,
+                url: uploadRes.publicUrl || uploadRes.url,
+                sizeBytes: uploadRes.fileSize || item.size,
+                size: formatFileSize(uploadRes.fileSize || item.size),
+                uploaded: true,
+                date: new Date().toISOString().split('T')[0]
+              });
+            }
+          } catch (err) {
+            console.warn('[StaffFiles] Cloudflare R2 upload error for', item.name, err);
+            addToast(err.message || `Failed to upload ${item.name}`, 'error');
+          }
+        } else if (typeof item === 'string') {
+          uploadedDocsList.push({
+            filename: item,
+            url: null,
+            sizeBytes: null,
+            size: 'Attached',
+            uploaded: true,
+            date: new Date().toISOString().split('T')[0]
+          });
         }
       }
 
-      const updatedDocs = {
-        ...file.documents,
-        [docKey]: {
-          uploaded: true,
-          filename: filename || `${docKey}_document.pdf`,
-          url: fileUrl,
-          sizeBytes: fileSize,
-          date: new Date().toISOString().split('T')[0]
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = file.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+
+        const updatedDocs = {
+          ...file.documents,
+          [docKey]: updatedSlot
+        };
+
+        updateCustomerFile(fileId, { documents: updatedDocs });
+
+        if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+          setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
         }
-      };
 
-      updateCustomerFile(fileId, { documents: updatedDocs });
-
-      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
-        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} documents attached`
+            : `Document attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-
-      addToast(`Document attached: ${filename}`, 'success');
     } finally {
       hideLoader();
     }
   };
 
-  const handleDeleteDoc = async (fileId, docKey) => {
+  const handleDeleteDoc = async (fileId, docKey, targetDocIdOrUrl = null) => {
     const file = customerFiles.find(f => f.id === fileId);
     if (!file) return;
-    const doc = file.documents?.[docKey];
+    const slotData = file.documents?.[docKey];
+    if (!slotData) return;
 
     showLoader('Removing document from Cloudflare R2 Vault...');
     try {
-      await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', doc);
+      const fileList = normalizeDocList(slotData);
+      const targetDoc = targetDocIdOrUrl
+        ? fileList.find(f => f.id === targetDocIdOrUrl || f.url === targetDocIdOrUrl || f.filename === targetDocIdOrUrl)
+        : null;
 
-      const updatedDocs = { ...(file.documents || {}) };
-      delete updatedDocs[docKey];
+      if (targetDoc && (targetDoc.url || targetDoc.path)) {
+        await storageService.deleteDocument(targetDoc.url || targetDoc.path);
+      } else if (!targetDocIdOrUrl) {
+        for (const f of fileList) {
+          if (f.url || f.path) {
+            await storageService.deleteDocument(f.url || f.path);
+          }
+        }
+        await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', slotData);
+      }
+
+      let updatedDocs = { ...(file.documents || {}) };
+      if (targetDocIdOrUrl) {
+        const updatedSlot = removeDocFromFileList(slotData, targetDocIdOrUrl);
+        if (!updatedSlot.uploaded || updatedSlot.files.length === 0) {
+          delete updatedDocs[docKey];
+        } else {
+          updatedDocs[docKey] = updatedSlot;
+        }
+      } else {
+        delete updatedDocs[docKey];
+      }
 
       updateCustomerFile(fileId, { documents: updatedDocs });
 
@@ -305,13 +347,12 @@ export default function StaffFiles() {
     showLoader('Securing camera photo in Cloudflare R2 Vault...');
     try {
       let fileUrl = null;
-      let filename = stats.file?.name || `${docKey}_camera.jpg`;
+      let filename = stats.file?.name || `${docKey}_photo_${Date.now().toString(36)}.jpg`;
       let fileSize = stats.file?.size || 0;
 
       if (stats.file) {
         try {
-          const oldDoc = selectedFileForDocs.documents?.[docKey];
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey, { oldDoc });
+          const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
           if (uploadRes?.success) {
             fileUrl = uploadRes.publicUrl || uploadRes.url;
             filename = uploadRes.filename || stats.file.name;
@@ -322,17 +363,22 @@ export default function StaffFiles() {
         }
       }
 
+      const newDocRecord = {
+        uploaded: true,
+        filename,
+        url: fileUrl,
+        sizeBytes: fileSize,
+        size: stats.compressedFormatted || formatFileSize(fileSize),
+        dataUrl: fileUrl ? undefined : stats.dataUrl,
+        date: new Date().toISOString().split('T')[0]
+      };
+
+      const existingSlot = selectedFileForDocs.documents?.[docKey];
+      const updatedSlot = appendDocsToFileList(existingSlot, newDocRecord);
+
       const updatedDocs = {
         ...(selectedFileForDocs.documents || {}),
-        [docKey]: {
-          uploaded: true,
-          filename,
-          url: fileUrl,
-          sizeBytes: fileSize,
-          size: stats.compressedFormatted || formatFileSize(fileSize),
-          dataUrl: fileUrl ? undefined : stats.dataUrl,
-          date: new Date().toISOString().split('T')[0]
-        }
+        [docKey]: updatedSlot
       };
 
       updateCustomerFile(fileId, { documents: updatedDocs });
@@ -1058,18 +1104,17 @@ export default function StaffFiles() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                 {docList.map((doc) => {
                   const dData = selectedFileForDocs.documents?.[doc.key] || (doc.alias ? selectedFileForDocs.documents?.[doc.alias] : null);
-                  const isUp = Boolean(dData?.uploaded);
-                  const sizeLabel = dData?.sizeBytes ? ` (${(dData.sizeBytes / 1024).toFixed(0)} KB)` : '';
-                  const isPdf = dData?.filename?.toLowerCase().endsWith('.pdf');
+                  const attachedFiles = normalizeDocList(dData);
+                  const isUp = attachedFiles.length > 0;
 
                   return (
                     <div
                       key={doc.key}
                       className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-                        isUp ? 'bg-emerald-50/50 border-emerald-300' : 'bg-surface-container-low border-surface-container-high'
+                        isUp ? 'bg-surface-container-low/90 border-primary/40' : 'bg-surface-container-low border-surface-container-high'
                       }`}
                     >
-                      <div>
+                      <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
@@ -1080,84 +1125,86 @@ export default function StaffFiles() {
                               <p className="text-[10px] text-secondary leading-tight">{doc.category} &bull; {doc.description}</p>
                             </div>
                           </div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
                             isUp
-                              ? 'bg-emerald-200 text-emerald-800'
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                               : doc.mandatory
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
                                 : 'bg-surface-container text-secondary border border-surface-container-high'
                           }`}>
-                            {isUp ? `${isPdf ? 'PDF' : 'Photo'} Attached${sizeLabel}` : (doc.mandatory ? 'Pending' : 'Optional')}
+                            {isUp ? (attachedFiles.length > 1 ? `${attachedFiles.length} Attached` : 'Attached') : (doc.mandatory ? 'Pending' : 'Optional')}
                           </span>
                         </div>
 
+                        {/* LIST OF ATTACHED DOCUMENTS WITH INDIVIDUAL PREVIEW & REMOVE */}
                         {isUp && (
-                          <p className="text-[11px] font-mono text-primary mt-2 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">
-                            {dData?.filename}
-                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {attachedFiles.map((fileItem, fIdx) => (
+                              <div
+                                key={fileItem.id || fileItem.url || fIdx}
+                                className="p-2 rounded-lg bg-surface-container-lowest border border-surface-container flex items-center justify-between gap-2 text-xs hover:border-primary/30 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="material-symbols-outlined text-primary text-[16px] shrink-0">
+                                    {fileItem.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-all text-[11px] font-mono text-on-surface font-semibold leading-tight truncate" title={fileItem.filename}>
+                                      {fileItem.filename}
+                                    </div>
+                                    <div className="text-[10px] text-secondary font-mono flex items-center gap-2 mt-0.5">
+                                      <span>{fileItem.size || 'Optimized'}</span>
+                                      <span>&bull;</span>
+                                      <span>{fileItem.date || 'Today'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({
+                                      title: `${doc.label} (${fileItem.filename})`,
+                                      filename: fileItem.filename || 'document.pdf',
+                                      url: fileItem.url || fileItem.dataUrl
+                                    })}
+                                    className="p-1 rounded-md text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                    title="View Preview"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key, fileItem.id || fileItem.url || fileItem.filename)}
+                                    className="p-1 rounded-md text-error hover:bg-error/10 transition-colors cursor-pointer"
+                                    title="Remove this document"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between gap-2">
+                      {/* Action buttons (Add file / Camera) */}
+                      <div className="mt-3 pt-2 border-t border-surface-container flex items-center gap-2 text-[11px]">
                         {isUp ? (
-                          <div className="flex items-center gap-3 w-full justify-between">
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
-                              className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">visibility</span>
-                              <span>View Preview</span>
-                            </button>
-
-                            <div className="flex items-center gap-3">
-                              <label className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[13px]">sync</span>
-                                <span>Replace</span>
-                                <input
-                                  type="file"
-                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
-                                  }}
-                                />
-                              </label>
-
-                              <button
-                                type="button"
-                                onClick={() => setCameraTargetDoc(doc)}
-                                className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-0.5"
-                                title="Capture new photo with Camera"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">photo_camera</span>
-                                <span>Camera</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key)}
-                                className="text-[11px] text-error hover:underline font-medium cursor-pointer flex items-center gap-0.5"
-                                title="Delete document from Cloudflare R2 Vault"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">delete</span>
-                                <span>Delete</span>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 py-1.5 px-2 bg-surface-container-high/60 hover:bg-surface-container-highest text-primary text-xs font-semibold rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-colors">
-                              <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                              <span>Upload Document {doc.mandatory ? '' : '(Optional)'}</span>
+                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
+                              <span className="material-symbols-outlined text-[15px] text-primary">add_circle</span>
+                              <span>Add Another Photo / File</span>
                               <input
                                 type="file"
+                                multiple
                                 accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
                                 className="hidden"
                                 onChange={async (e) => {
-                                  const f = e.target.files?.[0];
-                                  if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
+                                  if (e.target.files?.length) {
+                                    await handleUploadDoc(selectedFileForDocs.id, doc.key, e.target.files);
+                                    e.target.value = '';
+                                  }
                                 }}
                               />
                             </label>
@@ -1165,7 +1212,36 @@ export default function StaffFiles() {
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="p-1.5 rounded-lg bg-surface-container-high/60 hover:bg-surface-container-highest text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
+                              className="py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 border border-surface-container-highest"
+                              title="Capture another photo with Camera"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="hidden sm:inline text-[11px]">Camera</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 w-full">
+                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
+                              <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
+                              <span>Upload Document {doc.mandatory ? '' : '(Optional)'}</span>
+                              <input
+                                type="file"
+                                multiple
+                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  if (e.target.files?.length) {
+                                    await handleUploadDoc(selectedFileForDocs.id, doc.key, e.target.files);
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
                               title="Capture with Camera"
                             >
                               <span className="material-symbols-outlined text-[16px]">photo_camera</span>

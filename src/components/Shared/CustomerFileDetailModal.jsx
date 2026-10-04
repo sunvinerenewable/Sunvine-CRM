@@ -8,6 +8,7 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
+import { normalizeDocList } from '../../utils/documentUtils';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -432,54 +433,73 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {(getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules)).map((doc) => {
                   const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
-                  const isUploaded = Boolean(docInfo?.uploaded);
-                  const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';
+                  const filesList = normalizeDocList(docInfo);
+                  const isUploaded = filesList.length > 0;
 
                   return (
                     <div
                       key={doc.key}
-                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3 text-xs"
+                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex flex-col gap-2.5 text-xs"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
-                          {doc.icon || 'description'}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-on-surface truncate">{doc.label}</p>
-                          <p className="text-[11px] text-secondary">
-                            {isUploaded ? (
-                              <span className="font-mono text-primary break-all select-all font-medium">
-                                Document Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
-                              </span>
-                            ) : (
-                              `${doc.category} \u2022 Optional (Max 2 MB)`
-                            )}
-                          </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                            {doc.icon || 'description'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-on-surface truncate">{doc.label}</p>
+                            <p className="text-[11px] text-secondary">
+                              {isUploaded ? (
+                                <span className="font-mono text-primary font-medium">
+                                  {filesList.length > 1 ? `${filesList.length} Files Attached` : '1 Document Attached'}
+                                </span>
+                              ) : (
+                                `${doc.category} \u2022 Optional (Max 2 MB)`
+                              )}
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        {isUploaded && docInfo?.url && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDoc({
-                              title: doc.label,
-                              filename: docInfo.filename || 'document.pdf',
-                              url: docInfo.url
-                            })}
-                            className="p-1.5 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded-lg transition-colors flex items-center cursor-pointer"
-                            title="Inspect & Download Document"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                          </button>
-                        )}
-
-                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
+                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] shrink-0 ${
                           isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
                         }`}>
                           {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
                         </span>
                       </div>
+
+                      {isUploaded && (
+                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-surface-container-high/60">
+                          {filesList.map((f, fIdx) => (
+                            <div key={f.id || fIdx} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-surface-container-low text-[11px]">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="material-symbols-outlined text-xs text-secondary shrink-0">
+                                  {f.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                </span>
+                                <span className="font-mono text-on-surface truncate" title={f.filename}>
+                                  {f.filename || `File ${fIdx + 1}`}
+                                </span>
+                                {f.size && <span className="text-[10px] text-secondary shrink-0 font-mono">({f.size})</span>}
+                              </div>
+                              {f.url && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewDoc({
+                                    title: `${doc.label} (${f.filename || fIdx + 1})`,
+                                    filename: f.filename || 'document.pdf',
+                                    url: f.url,
+                                    files: filesList,
+                                    initialIndex: fIdx
+                                  })}
+                                  className="p-1 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded transition-colors flex items-center shrink-0 cursor-pointer"
+                                  title="Inspect & Download"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">visibility</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

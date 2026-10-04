@@ -189,7 +189,9 @@ export const storageService = {
 
     const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
     const folder = `customers/${cleanCustomerId}`;
-    const customFileName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
+    const baseCustomName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
+    const uniqueSuffix = options.isReplace ? '' : `_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const customFileName = options.customFileName || `${baseCustomName}${uniqueSuffix}`;
 
     return await this.uploadWithPresignedUrl(file, {
       bucket: 'sunvine-documents',

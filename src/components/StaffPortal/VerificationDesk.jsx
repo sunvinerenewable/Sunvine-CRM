@@ -5,6 +5,7 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import { CustomerCardSkeleton } from '../Shared/Skeleton';
 import { getDocumentListForFile } from '../../data/defaultRequiredDocuments';
+import { normalizeDocList } from '../../utils/documentUtils';
 
 export default function VerificationDesk() {
   const {
@@ -412,7 +413,8 @@ export default function VerificationDesk() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                     {(getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules)).map((doc) => {
                       const docInfo = docs[doc.key] || (doc.alias ? docs[doc.alias] : null);
-                      const isUploaded = Boolean(docInfo?.uploaded);
+                      const filesList = normalizeDocList(docInfo);
+                      const isUploaded = filesList.length > 0;
                       const isVerified = Boolean(docInfo?.verified);
 
                       return (
@@ -436,7 +438,9 @@ export default function VerificationDesk() {
                               )}
                             </div>
                             <p className="text-[10px] text-secondary mt-0.5 truncate">
-                              {isUploaded ? docInfo?.filename || 'Document attached' : 'Not attached'}
+                              {isUploaded ? (
+                                filesList.length > 1 ? `${filesList.length} Files Attached` : (filesList[0]?.filename || 'Document attached')
+                              ) : 'Not attached'}
                             </p>
                           </div>
 
@@ -445,10 +449,16 @@ export default function VerificationDesk() {
                               <>
                                 <button
                                   type="button"
-                                  onClick={() => setPreviewDoc({ title: doc.label, filename: docInfo.filename || 'document.pdf', url: docInfo.url || docInfo.dataUrl })}
+                                  onClick={() => setPreviewDoc({
+                                    title: doc.label,
+                                    filename: filesList[0]?.filename || docInfo?.filename || 'document.pdf',
+                                    url: filesList[0]?.url || docInfo?.url || docInfo?.dataUrl,
+                                    files: filesList,
+                                    initialIndex: 0
+                                  })}
                                   className="text-[10px] text-primary font-bold hover:underline cursor-pointer"
                                 >
-                                  View
+                                  {filesList.length > 1 ? `View (${filesList.length})` : 'View'}
                                 </button>
                                 {!isVerified && (
                                   <button
