@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { useLoading } from '../../context/LoadingContext';
@@ -6,6 +6,7 @@ import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
@@ -27,18 +28,83 @@ export default function StaffManagement() {
     deleteStaff,
     addCustomerFile,
     updateCustomerFile,
-    updateFileStatus
+    updateFileStatus,
+    isHardwareDbSyncing,
+    refreshCustomerFiles,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion,
+    highlightedFileId
   } = useApp();
 
   const { addToast } = useToast();
 
   // Main UI section: 'files' (Customer Files) or 'staff' (Sales Team Directory)
-  const [activeView, setActiveView] = useState('files');
+  // Preserved across page refreshes via ?tab=staff / ?view=staff query parameter
+  const [activeView, setActiveView] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('openFile')) return 'files';
+      const val = (params.get('tab') || params.get('view') || '').toLowerCase();
+      if (['staff', 'directory', 'logins', 'sales_team', 'sales'].includes(val)) {
+        return 'staff';
+      }
+      if (['files', 'customer_files', 'subsidies', 'pipeline'].includes(val)) {
+        return 'files';
+      }
+    }
+    return 'files';
+  });
+
+  // Auto-scroll to highlighted file from Push Notification
+  React.useEffect(() => {
+    if (highlightedFileId) {
+      setActiveView('files');
+      setTimeout(() => {
+        const el = document.getElementById(`admin-file-card-${highlightedFileId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [highlightedFileId]);
+
+  // Keep URL query parameter synchronized with active view
+  const handleViewChange = (viewKey) => {
+    setActiveView(viewKey);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', viewKey);
+      if (url.searchParams.has('view')) {
+        url.searchParams.set('view', viewKey);
+      }
+      window.history.replaceState({ ...window.history.state, subtab: viewKey }, '', url.toString());
+    }
+  };
+
+  // Browser back/forward navigation sync
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const val = (params.get('tab') || params.get('view') || '').toLowerCase();
+        if (['staff', 'directory', 'logins', 'sales_team', 'sales'].includes(val)) {
+          setActiveView('staff');
+        } else if (['files', 'customer_files', 'subsidies', 'pipeline'].includes(val)) {
+          setActiveView('files');
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Files pipeline filter: 'all', 'Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
 
   // Modals
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
@@ -68,7 +134,7 @@ export default function StaffManagement() {
     setEditStaffPhone(member.phone || '');
     setEditStaffEmail(member.email || '');
     setEditStaffRole(member.role || 'Field Sales Executive');
-    const isVer = (member.department === 'Verification') || (member.role && member.role.toLowerCase().includes('verification')) || member.id === 'STF-003' || member.id === 'STF-800';
+    const isVer = String(member.department || '').toLowerCase() === 'verification' || String(member.role || '').toLowerCase().includes('verification');
     setEditStaffDepartment(isVer ? 'Verification' : (member.department || 'Sales'));
     setEditStaffZone(member.zone || '');
     setEditStaffPassword(member.password || 'Sunvine@2026');
@@ -139,7 +205,7 @@ export default function StaffManagement() {
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
   const [newCustCategory, setNewCustCategory] = useState('residential');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
-  const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-001');
+  const [newCustStaffId, setNewCustStaffId] = useState(staffList?.[0]?.id || 'STF-801');
   const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
   const [newCustDealerId, setNewCustDealerId] = useState('');
   const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
@@ -320,7 +386,11 @@ export default function StaffManagement() {
       addToast('Please enter a valid 10-digit mobile number.', 'error');
       return;
     }
-    const newId = `STF-${String((staffList || []).length + 1).padStart(3, '0')}`;
+    const existingNums = (staffList || [])
+      .map(s => parseInt(String(s.id).replace(/\D/g, ''), 10))
+      .filter(n => !isNaN(n));
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+    const newId = `STF-${String(nextNum).padStart(3, '0')}`;
     const isVerification = newStaffRole.toLowerCase().includes('verification');
     const newStaff = {
       id: newId,
@@ -525,7 +595,7 @@ export default function StaffManagement() {
         {/* View Switcher: Files vs Staff Directory */}
         <div className="flex border-b border-[#E4E7EB] gap-6">
           <button
-            onClick={() => setActiveView('files')}
+            onClick={() => handleViewChange('files')}
             className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'files'
                 ? 'border-emerald-600 text-emerald-700'
@@ -537,7 +607,7 @@ export default function StaffManagement() {
             <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{(customerFiles || []).length}</span>
           </button>
           <button
-            onClick={() => setActiveView('staff')}
+            onClick={() => handleViewChange('staff')}
             className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
               activeView === 'staff'
                 ? 'border-emerald-600 text-emerald-700'
@@ -601,26 +671,60 @@ export default function StaffManagement() {
                     className="bg-white border border-[#E4E7EB] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
                   />
                 </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsManualSyncing(true);
+                    await refreshCustomerFiles();
+                    setIsManualSyncing(false);
+                    addToast('Live database sync complete', 'info');
+                  }}
+                  disabled={isManualSyncing}
+                  title="Live Database Sync"
+                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-600 hover:text-emerald-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+                >
+                  <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
+                    sync
+                  </span>
+                  <span className="hidden sm:inline text-[11px]">Sync DB</span>
+                </button>
               </div>
             </div>
 
             {/* Files Grid / Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredFiles.map(file => {
-                const docsCount = Object.values(file.documents || {}).filter(d => d.uploaded).length;
-                const statusColors = {
-                  'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
-                  'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
-                  'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
-                  'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                };
+            {customerFiles.length === 0 && isHardwareDbSyncing ? (
+              <CustomerCardSkeleton count={6} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredFiles.map(file => {
+                  const docsCount = Object.values(file.documents || {}).filter(d => d.uploaded).length;
+                  const statusColors = {
+                    'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
+                    'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
+                    'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
+                    'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  };
 
-                return (
-                  <div
-                    key={file.id}
-                    className="bg-white border border-[#E4E7EB] hover:border-slate-300 rounded-xl p-5 flex flex-col justify-between shadow-xs transition-all"
-                  >
+                  const isHighlighted = file.id === highlightedFileId;
+
+                  return (
+                    <div
+                      id={`admin-file-card-${file.id}`}
+                      key={file.id}
+                      className={`rounded-xl p-5 flex flex-col justify-between transition-all animate-in fade-in duration-200 ${
+                        isHighlighted
+                          ? 'bg-emerald-50/60 border-2 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400'
+                          : 'bg-white border border-[#E4E7EB] hover:border-slate-300 shadow-xs'
+                      }`}
+                    >
                     <div>
+                      {isHighlighted && (
+                        <div className="mb-3 px-3 py-1.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-800 flex items-center gap-1.5 animate-pulse">
+                          <span className="material-symbols-outlined text-sm text-emerald-700">notifications_active</span>
+                          <span>New Customer File Alert &bull; Opened from Push Notification</span>
+                        </div>
+                      )}
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -682,8 +786,8 @@ export default function StaffManagement() {
 
                       {/* Document Badges (Dynamic by Category: Residential, Bank Loan, Finance Loan) */}
                       {(() => {
-                        const docCompletion = getDocumentCompletion(file);
-                        const docList = getDocumentListForFile(file);
+                        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                        const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
                         const schemaKey = getDocumentSchemaKey(file);
                         const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
 
@@ -758,8 +862,9 @@ export default function StaffManagement() {
                 );
               })}
             </div>
+          )}
 
-            {filteredFiles.length === 0 && (
+            {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
               <div className="bg-white border border-[#E4E7EB] rounded-xl p-12 text-center text-slate-500 shadow-xs">
                 <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">folder_off</span>
                 <p>No customer files match your search criteria.</p>
@@ -770,7 +875,7 @@ export default function StaffManagement() {
 
         {/* VIEW 2: SALES TEAM DIRECTORY & LOGINS */}
         {activeView === 'staff' && (() => {
-          const isVerDesk = (m) => (m.department === 'Verification') || (m.role && m.role.toLowerCase().includes('verification')) || m.id === 'STF-003' || m.id === 'STF-800';
+          const isVerDesk = (m) => String(m.department || '').toLowerCase() === 'verification' || String(m.role || '').toLowerCase().includes('verification');
           const displayedStaff = (staffList || []).filter(member => {
             if (staffDepartmentFilter === 'verification') return isVerDesk(member);
             if (staffDepartmentFilter === 'sales') return !isVerDesk(member);
@@ -912,7 +1017,7 @@ export default function StaffManagement() {
                       <button
                         onClick={() => {
                           setStaffFilter(member.id);
-                          setActiveView('files');
+                          handleViewChange('files');
                         }}
                         className="text-emerald-600 hover:underline text-xs flex items-center gap-0.5 font-semibold cursor-pointer"
                       >
@@ -1516,10 +1621,10 @@ export default function StaffManagement() {
 
       {/* MODAL 4: DYNAMIC DOCUMENT VAULT (Residential, Bank Loan, Finance Loan) */}
       {selectedFileForDocs && (() => {
-        const docList = getDocumentListForFile(selectedFileForDocs);
+        const docList = getFileDocuments ? getFileDocuments(selectedFileForDocs) : getDocumentListForFile(selectedFileForDocs, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
-        const docCompletion = getDocumentCompletion(selectedFileForDocs);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(selectedFileForDocs) : getDocumentCompletion(selectedFileForDocs, masterDocRegistry, categoryDocRules);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">

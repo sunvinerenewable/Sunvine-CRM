@@ -207,7 +207,7 @@ export default function StaffRadarMap() {
       sanctionedLoadKw: 5.0,
       solarSystemKw: 3.3,
       roofType: 'RCC Flat Roof',
-      staffId: currentStaff?.id || 'STF-001',
+      staffId: currentStaff?.id || 'STF-801',
       staffName: currentStaff?.name || 'Solar Field Executive',
       createdDate: new Date().toISOString().split('T')[0],
       status: 'Sourced',

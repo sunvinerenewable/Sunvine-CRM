@@ -165,8 +165,8 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
   const sgstAmount = bomTotals?.sgstTotal !== undefined ? bomTotals.sgstTotal : (isInterState ? 0 : gstAmount - cgstAmount);
   const igstAmount = bomTotals?.igstTotal !== undefined ? bomTotals.igstTotal : (isInterState ? gstAmount : 0);
 
-  const subsidyAmount = quotation.subsidyAmount !== undefined 
-    ? quotation.subsidyAmount 
+  const subsidyAmount = quotation.subsidyAmount !== undefined
+    ? quotation.subsidyAmount
     : calculateSubsidy(resolvedCapKW, projectType);
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
@@ -236,7 +236,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
           {/* Top Header with Corporate Identity */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <img src="/sunvine_logo_transparent.webp" alt="Sunvine" className="h-10 object-contain" />
               <div>
                 <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
                   SUNVINE RENEWABLE ENERGY
@@ -279,7 +279,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
                 {resolvedCapKW} kW On-Grid Solar PV Plant
               </div>
               <div className="text-[11px] text-gray-700 mt-0.5">
-                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({((resolvedCount * resolvedWatt)/1000).toFixed(2)} kWp)
+                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({((resolvedCount * resolvedWatt) / 1000).toFixed(2)} kWp)
               </div>
               <div className="text-[10px] text-gray-600 mt-0.5">
                 Inverter: {inverterType.split('(')[0]?.trim() || inverterType} • Roof: ~{resolvedArea} Sq. Ft.
@@ -601,7 +601,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
           {/* Top Header */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <img src="/sunvine_logo_transparent.webp" alt="Sunvine" className="h-10 object-contain" />
               <div>
                 <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
                   BILL OF MATERIALS &amp; TECHNICAL STANDARDS
@@ -862,7 +862,7 @@ export default function PDFTemplate({ quotation, activePage = 'all' }) {
           {/* Top Header */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
             <div className="flex items-center gap-3">
-              <img src="/sunvine_logo_transparent.png" alt="Sunvine" className="h-10 object-contain" />
+              <img src="/sunvine_logo_transparent.webp" alt="Sunvine" className="h-10 object-contain" />
               <div>
                 <h1 className="text-lg font-black text-[#0B2545] tracking-tight uppercase leading-none">
                   TERMS &amp; CONDITIONS

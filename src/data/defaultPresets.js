@@ -449,6 +449,8 @@ export const INITIAL_DEALERS = [
     maxMarginCapPerKw: 6000,
     totalQuotes: 0,
     totalCapacityKw: 0,
+    assignedStaffId: "STF-801",
+    assignedStaffName: "Sunvine Sales Staff",
     status: "Active",
     joinedDate: "2026-10-02"
   }

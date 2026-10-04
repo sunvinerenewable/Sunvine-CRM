@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, startTransition } from 'react';
 import { useApp } from '../context/AppContext';
 import NotificationPanel from './Shared/NotificationPanel';
 
@@ -27,7 +27,9 @@ export default function Navigation() {
       if (clearEditingQuotation) clearEditingQuotation();
       if (tabId === 'create_quote' && clearActiveDraftQuote) clearActiveDraftQuote();
     }
-    setActiveTab(tabId);
+    startTransition(() => {
+      setActiveTab(tabId);
+    });
   };
 
   useEffect(() => {
@@ -91,9 +93,8 @@ export default function Navigation() {
   ];
 
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
 
   const verificationStaffMenu = [
@@ -129,7 +130,7 @@ export default function Navigation() {
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain cursor-pointer"
               src="/sunvine_logo_white.png"
-              onClick={() => setActiveTab(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard')}
+              onClick={() => handleMenuClick(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard')}
             />
             <div className="flex flex-col">
               <span className="font-label-xs text-label-xs text-secondary-fixed-dim tracking-wider uppercase font-semibold">
@@ -181,11 +182,10 @@ export default function Navigation() {
                 setNotificationsOpen(!notificationsOpen);
                 setDropdownOpen(false);
               }}
-              className={`relative p-2 rounded-xl transition-all cursor-pointer ${
-                notificationsOpen
+              className={`relative p-2 rounded-xl transition-all cursor-pointer ${notificationsOpen
                   ? 'bg-primary-container/15 text-primary ring-2 ring-primary/20'
                   : 'text-secondary hover:text-on-surface hover:bg-surface-container-low'
-              }`}
+                }`}
               type="button"
               title="Notifications"
               aria-label="Toggle notifications panel"
@@ -209,11 +209,10 @@ export default function Navigation() {
                 setDropdownOpen(!dropdownOpen);
                 setNotificationsOpen(false);
               }}
-              className={`flex items-center gap-2 sm:gap-space-sm cursor-pointer select-none px-2 py-1.5 rounded-xl transition-all duration-200 ${
-                dropdownOpen
+              className={`flex items-center gap-2 sm:gap-space-sm cursor-pointer select-none px-2 py-1.5 rounded-xl transition-all duration-200 ${dropdownOpen
                   ? 'bg-surface-container-low ring-1 ring-primary/20'
                   : 'hover:bg-surface-container-lowest hover:shadow-xs'
-              }`}
+                }`}
             >
               <img
                 src={currentDealer?.avatar || '/dealer_avatar.jpg'}
@@ -225,21 +224,20 @@ export default function Navigation() {
                   {role === 'admin'
                     ? 'Admin Desk'
                     : role === 'staff'
-                    ? currentStaff?.name || 'Field Solar Executive'
-                    : currentDealer?.firmName || 'Rajesh Solar Solutions'}
+                      ? currentStaff?.name || 'Field Solar Executive'
+                      : currentDealer?.firmName || 'Rajesh Solar Solutions'}
                 </span>
                 <span className="font-label-xs text-label-xs text-secondary leading-tight truncate">
                   {role === 'admin'
                     ? 'System Administrator'
                     : role === 'staff'
-                    ? currentStaff?.role || 'Sales Representative'
-                    : 'Authorized Dealer'}
+                      ? currentStaff?.role || 'Sales Representative'
+                      : 'Authorized Dealer'}
                 </span>
               </div>
               <span
-                className={`material-symbols-outlined text-[20px] shrink-0 transition-transform duration-200 ease-out ${
-                  dropdownOpen ? 'rotate-180 text-primary' : 'rotate-0 text-secondary'
-                }`}
+                className={`material-symbols-outlined text-[20px] shrink-0 transition-transform duration-200 ease-out ${dropdownOpen ? 'rotate-180 text-primary' : 'rotate-0 text-secondary'
+                  }`}
               >
                 keyboard_arrow_down
               </span>
@@ -262,7 +260,7 @@ export default function Navigation() {
                   <button
                     type="button"
                     onClick={() => {
-                      setActiveTab(role === 'admin' ? 'admin_settings' : 'dealer_settings');
+                      handleMenuClick(role === 'admin' ? 'admin_settings' : 'dealer_settings');
                       setDropdownOpen(false);
                     }}
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-on-surface hover:bg-primary/10 hover:text-primary active:scale-[0.98] cursor-pointer transition-all duration-150"
@@ -307,7 +305,7 @@ export default function Navigation() {
           <img
             alt="Brand logo"
             className="h-7 sm:h-8 w-auto object-contain cursor-pointer shrink-0"
-            src="/sunvine_logo_transparent.png"
+            src="/sunvine_logo_transparent.webp"
             onClick={() => {
               handleMenuClick(role === 'admin' ? 'admin_dashboard' : role === 'staff' ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'dashboard');
             }}
@@ -327,11 +325,10 @@ export default function Navigation() {
           <div className="relative" ref={mobileNotificationRef}>
             <button
               aria-label="Notifications"
-              className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors relative cursor-pointer ${
-                notificationsOpen
+              className={`w-9 h-9 flex items-center justify-center rounded-full transition-colors relative cursor-pointer ${notificationsOpen
                   ? 'bg-primary-container/20 text-primary'
                   : 'text-secondary hover:bg-surface-container-high'
-              }`}
+                }`}
               onClick={() => setNotificationsOpen(!notificationsOpen)}
             >
               <span className="material-symbols-outlined text-[20px]">notifications</span>
@@ -380,18 +377,16 @@ export default function Navigation() {
           ======================================================== */}
       {/* Backdrop with Fade Transition */}
       <div
-        className={`fixed inset-0 z-50 bg-black/70 backdrop-blur-xs transition-opacity duration-300 md:hidden ${
-          mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed inset-0 z-50 bg-black/70 backdrop-blur-xs transition-opacity duration-300 md:hidden ${mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
         onClick={() => setMobileOpen(false)}
         aria-hidden={!mobileOpen}
       />
 
       {/* Slide-out Sidebar Panel */}
       <aside
-        className={`no-print fixed top-0 bottom-0 left-0 w-[290px] max-w-[85vw] h-full z-50 bg-on-secondary-fixed text-white shadow-2xl flex flex-col justify-between transition-transform duration-300 ease-in-out md:hidden select-none ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`no-print fixed top-0 bottom-0 left-0 w-[290px] max-w-[85vw] h-full z-50 bg-on-secondary-fixed text-white shadow-2xl flex flex-col justify-between transition-transform duration-300 ease-in-out md:hidden select-none ${mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
         aria-label="Mobile Navigation Drawer"
       >
         <div className="flex flex-col flex-1 overflow-hidden min-h-0">
@@ -437,16 +432,14 @@ export default function Navigation() {
                     handleMenuClick(item.id);
                     setMobileOpen(false);
                   }}
-                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all text-left cursor-pointer min-h-[44px] w-full min-w-0 ${
-                    isActive
+                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all text-left cursor-pointer min-h-[44px] w-full min-w-0 ${isActive
                       ? 'bg-gradient-to-r from-emerald-600/30 to-teal-500/15 border-l-4 border-emerald-400 text-white font-semibold shadow-xs'
                       : 'text-secondary-fixed-dim hover:bg-white/5 hover:text-white'
-                  }`}
+                    }`}
                 >
                   <span
-                    className={`material-symbols-outlined text-[20px] shrink-0 ${
-                      isActive ? 'text-emerald-400' : 'text-white/60'
-                    }`}
+                    className={`material-symbols-outlined text-[20px] shrink-0 ${isActive ? 'text-emerald-400' : 'text-white/60'
+                      }`}
                     style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}
                   >
                     {item.icon}

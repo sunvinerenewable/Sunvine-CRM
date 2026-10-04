@@ -141,8 +141,9 @@ export default function AllQuotations() {
     const matchedDealer = (dealers || []).find(d => d.id === q.dealerId || d.dealerCode === q.dealerId || d.firmName === q.dealerName);
     const dealerName = q.dealerName || matchedDealer?.firmName || 'Gujarat Solar Tech';
     const dealerId = q.dealerId || matchedDealer?.id || 'SV-DLR-0001';
-    const staffName = q.staffName || q.assignedStaffName || matchedDealer?.assignedStaffName || 'Jayesh Patel';
-    const staffId = q.staffId || q.assignedStaffId || matchedDealer?.assignedStaffId || 'STF-001';
+    const isLegacy = (q.staffName === 'Jayesh Patel' || q.assignedStaffName === 'Jayesh Patel' || matchedDealer?.assignedStaffName === 'Jayesh Patel');
+    const staffName = isLegacy ? 'Sunvine Sales Staff' : (q.staffName || q.assignedStaffName || matchedDealer?.assignedStaffName || 'Sunvine Sales Staff');
+    const staffId = (isLegacy || q.staffId === 'STF-001') ? 'STF-801' : (q.staffId || q.assignedStaffId || matchedDealer?.assignedStaffId || 'STF-801');
     return { dealerName, dealerId, staffName, staffId };
   };
 

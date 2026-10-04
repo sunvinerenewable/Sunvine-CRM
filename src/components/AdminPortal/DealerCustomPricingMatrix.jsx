@@ -38,8 +38,8 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
   const accessibleDealers = useMemo(() => {
     if (getAccessibleDealers) return getAccessibleDealers();
     if (role === 'staff') {
-      const staffId = currentStaff?.id || 'STF-001';
-      return (dealers || []).filter(d => (d.assignedStaffId === staffId) || (!d.assignedStaffId && staffId === 'STF-001'));
+      const staffId = currentStaff?.id || 'STF-801';
+      return (dealers || []).filter(d => d.assignedStaffId === staffId);
     }
     return dealers || [];
   }, [dealers, role, currentStaff, getAccessibleDealers]);

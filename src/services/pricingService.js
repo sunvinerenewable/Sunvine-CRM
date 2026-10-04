@@ -412,13 +412,21 @@ export const pricingService = {
 
     try {
       const targetIdentifier = dealerCode || dealerId;
-      const { error } = await supabase
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(targetIdentifier || ''));
+      let query = supabase
         .from('dealer_accounts')
         .update({
           pricing_config: pricingData,
           updated_at: new Date().toISOString()
-        })
-        .or(`dealer_code.eq.${targetIdentifier},id.eq.${targetIdentifier}`);
+        });
+
+      if (isUuid) {
+        query = query.eq('id', targetIdentifier);
+      } else {
+        query = query.eq('dealer_code', targetIdentifier);
+      }
+
+      const { error } = await query;
 
       if (error) {
         console.warn('Supabase save dealer pricing notice:', error.message);

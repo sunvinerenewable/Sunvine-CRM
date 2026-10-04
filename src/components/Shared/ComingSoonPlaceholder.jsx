@@ -17,9 +17,8 @@ export default function ComingSoonPlaceholder({
       setActiveTab('admin_dashboard');
     } else if (role === 'staff') {
       const isVerificationStaff = Boolean(
-        currentStaff?.role?.toLowerCase().includes('verification') ||
-        currentStaff?.department === 'verification' ||
-        currentStaff?.id === 'STF-003'
+        String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+        String(currentStaff?.role || '').toLowerCase().includes('verification')
       );
       setActiveTab(isVerificationStaff ? 'verification_desk' : 'staff_dashboard');
     } else {

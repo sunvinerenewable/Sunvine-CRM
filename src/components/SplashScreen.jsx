@@ -4,14 +4,14 @@ export default function SplashScreen({ onFinish }) {
   const [fadeState, setFadeState] = useState('in');
 
   useEffect(() => {
-    // Fast 400ms display, then smooth fade out (completed by 650ms)
+    // Ultra-snappy fade out as soon as React hydrates (150ms fade)
     const timer = setTimeout(() => {
       setFadeState('out');
-    }, 400);
+    }, 100);
 
     const finishTimer = setTimeout(() => {
       onFinish();
-    }, 650);
+    }, 250);
 
     return () => {
       clearTimeout(timer);
@@ -21,7 +21,10 @@ export default function SplashScreen({ onFinish }) {
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-screen z-[99999] flex flex-col justify-between items-center bg-[#0F1B2E] text-white overflow-hidden selection:bg-[#6CBF3D] selection:text-[#0F1B2E] transition-opacity duration-300 ${
+      onClick={onFinish}
+      role="button"
+      tabIndex={0}
+      className={`fixed inset-0 w-screen h-screen z-[99999] flex flex-col justify-between items-center bg-[#0F1B2E] text-white overflow-hidden selection:bg-[#6CBF3D] selection:text-[#0F1B2E] transition-opacity duration-200 cursor-pointer ${
         fadeState === 'out' ? 'opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >

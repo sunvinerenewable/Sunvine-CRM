@@ -16,7 +16,10 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     updateCustomerFile,
     role,
     currentStaff,
-    applicationStages
+    applicationStages,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments
   } = useApp();
   const { addToast } = useToast();
 
@@ -337,7 +340,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     {file.staffName || 'Unassigned Staff'}
                   </p>
                   <p className="text-xs text-secondary font-mono">
-                    Staff ID: {file.staffId || 'STF-001'}
+                    Staff ID: {file.staffId || (file.sourceType === 'DEALER' ? 'STF-DIRECT' : 'STF-801')}
                   </p>
                   <p className="text-xs text-secondary">
                     Role: Field Solar Executive &bull; Regional Operations
@@ -427,7 +430,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {getDocumentListForFile(file).map((doc) => {
+                {(getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules)).map((doc) => {
                   const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
                   const isUploaded = Boolean(docInfo?.uploaded);
                   const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';

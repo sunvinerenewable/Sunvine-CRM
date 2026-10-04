@@ -192,10 +192,20 @@ export const authService = {
     try {
       const passwordHash = bcrypt.hashSync(newPassword, 10);
       if (userType === 'dealer') {
-        const { error } = await supabase
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(identifier || ''));
+        let query = supabase
           .from('dealer_accounts')
-          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
-          .or(`dealer_code.eq.${identifier},id.eq.${identifier},mobile_number.eq.${identifier}`);
+          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() });
+
+        if (isUuid) {
+          query = query.eq('id', identifier);
+        } else if (String(identifier).startsWith('SV-DLR')) {
+          query = query.eq('dealer_code', identifier);
+        } else {
+          query = query.eq('mobile_number', identifier);
+        }
+
+        const { error } = await query;
 
         if (error) {
           console.warn('[authService] Dealer password update warning:', error.message);

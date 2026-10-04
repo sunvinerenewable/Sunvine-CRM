@@ -17,6 +17,7 @@ import {
 } from '../../data/defaultRequiredDocuments';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function MyApplications() {
   const {
@@ -28,7 +29,11 @@ export default function MyApplications() {
     addCustomerFile,
     addCustomerFileTimelineEvent,
     requiredDocuments,
-    setActiveTab
+    setActiveTab,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion
   } = useApp();
 
   // Search & Filter State
@@ -393,6 +398,8 @@ export default function MyApplications() {
         source: 'DEALER',
         dealerId: currentDealer?.id || 'DLR-001',
         dealerName: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+        staffId: currentDealer?.assignedStaffId || 'STF-DIRECT',
+        staffName: currentDealer?.assignedStaffName || (currentDealer?.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
         financeType: newCustFinanceType,
         paymentMode: newCustFinanceType,
         loanBank: isLoanCase ? newCustLoanBank : null,
@@ -420,6 +427,18 @@ export default function MyApplications() {
       if (addCustomerFile) {
         await addCustomerFile(newFile);
       }
+
+      // Dispatch True OS-Level Web Push to Admin and Assigned Salesman (if not direct)
+      pushNotificationService.sendApplicationCreatedPush({
+        fileId: newFile.id,
+        customerName: newFile.customerName,
+        solarKw: newFile.solarSystemKw,
+        dealerId: newFile.dealerId,
+        dealerName: newFile.dealerName,
+        assignedStaffId: newFile.staffId,
+        assignedStaffName: newFile.staffName
+      });
+
       setShowAddFileModal(false);
       setNewCustName('');
       setNewCustPhone('');
@@ -995,8 +1014,8 @@ export default function MyApplications() {
 
       {/* 7. MODAL: QUICK DOCUMENT MANAGEMENT (FULL RESPONSIVE VISIBILITY) */}
       {uploadTargetFile && (() => {
-        const docList = getDocumentListForFile(uploadTargetFile);
-        const docCompletion = getDocumentCompletion(uploadTargetFile);
+        const docList = getFileDocuments ? getFileDocuments(uploadTargetFile) : getDocumentListForFile(uploadTargetFile, masterDocRegistry, categoryDocRules);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(uploadTargetFile) : getDocumentCompletion(uploadTargetFile, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(uploadTargetFile);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
 

@@ -58,17 +58,29 @@ export const STAFF_ZONE_MAP = {
 };
 
 export function getAssignedStaffForDealer(dealer) {
-  if (dealer.assignedStaffId) {
-    const s = DEFAULT_STAFF.find(st => st.id === dealer.assignedStaffId);
+  if (!dealer) {
     return {
-      assignedStaffId: dealer.assignedStaffId,
+      assignedStaffId: 'STF-DIRECT',
+      assignedStaffName: 'Direct to Company (HQ Desk)'
+    };
+  }
+  const targetId = dealer.assignedStaffId || dealer.pricingConfig?.assignedStaffId;
+  if (targetId === 'STF-DIRECT') {
+    return {
+      assignedStaffId: 'STF-DIRECT',
+      assignedStaffName: 'Direct to Company (HQ Desk)'
+    };
+  }
+  if (targetId && targetId !== 'STF-001') {
+    const s = DEFAULT_STAFF.find(st => st.id === targetId);
+    return {
+      assignedStaffId: targetId,
       assignedStaffName: dealer.assignedStaffName || (s ? s.name : 'Sunvine Sales Staff')
     };
   }
-  const staff = DEFAULT_STAFF.find(s => s.id === 'STF-801') || DEFAULT_STAFF[0];
   return {
-    assignedStaffId: staff.id,
-    assignedStaffName: staff.name
+    assignedStaffId: 'STF-DIRECT',
+    assignedStaffName: 'Direct to Company (HQ Desk)'
   };
 }
 

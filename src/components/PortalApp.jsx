@@ -1,11 +1,12 @@
 import React, { useState, Suspense, lazy } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
-import SplashScreen from './SplashScreen';
 import Navigation from './Navigation';
+import ViewSkeleton from './Shared/ViewSkeleton';
+
+import SplashScreen from './SplashScreen';
 import AppUpdateModal from './Shared/AppUpdateModal';
 import UpdateNotificationPopup from './Shared/UpdateNotificationPopup';
 import NetworkStatusBanner from './Shared/NetworkStatusBanner';
-import ViewSkeleton from './Shared/ViewSkeleton';
 
 // Top-Level Lazy-Loaded Authentication Views
 const DealerLogin = lazy(() => import('./Auth/DealerLogin'));
@@ -45,9 +46,8 @@ const ComingSoonPlaceholder = lazy(() => import('./Shared/ComingSoonPlaceholder'
 function PortalContent() {
   const { isAuthenticated, authView, role, activeTab, currentStaff } = useApp();
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
   const [splashFinished, setSplashFinished] = useState(() => {
     return sessionStorage.getItem('sunvine_splash_shown') === 'true';
@@ -210,9 +210,6 @@ function PortalContent() {
 
       {/* Real-time Network Offline / Restored Status Banner */}
       <NetworkStatusBanner />
-
-      {/* Snappy Splash on first arrival */}
-      {!splashFinished && <SplashScreen onFinish={handleSplashFinish} />}
     </div>
   );
 }

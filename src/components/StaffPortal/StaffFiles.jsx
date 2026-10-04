@@ -14,10 +14,25 @@ import {
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { formatFileSize } from '../../utils/mediaOptimizer';
 
 export default function StaffFiles() {
-  const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
+  const {
+    currentStaff,
+    customerFiles,
+    dealers,
+    updateFileStatus,
+    updateCustomerFile,
+    addCustomerFile,
+    isHardwareDbSyncing,
+    refreshCustomerFiles,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion,
+    highlightedFileId
+  } = useApp();
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
@@ -25,11 +40,24 @@ export default function StaffFiles() {
   const [financeFilter, setFinanceFilter] = useState('all'); // 'all', 'CASH', 'LOAN'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
+
+  // Auto-scroll to highlighted file from Push Notification
+  React.useEffect(() => {
+    if (highlightedFileId) {
+      setTimeout(() => {
+        const el = document.getElementById(`file-card-${highlightedFileId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [highlightedFileId]);
 
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
@@ -50,9 +78,8 @@ export default function StaffFiles() {
   const [showBankModal, setShowBankModal] = useState(false);
 
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
 
   // If verification staff, oversee all office files; if salesperson, strictly their assigned files
@@ -114,7 +141,7 @@ export default function StaffFiles() {
         solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
         category: newCustCategory || 'residential',
         roofType: 'RCC Terrace',
-        staffId: currentStaff?.id || 'STF-001',
+        staffId: currentStaff?.id || 'STF-801',
         staffName: currentStaff?.name || 'Sales Officer',
         sourceType: newCustSourceType,
         source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',
@@ -375,16 +402,36 @@ export default function StaffFiles() {
             ))}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-64">
-            <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search customer, phone, consumer no..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-            />
+          {/* Search Input & Live Sync */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search customer, phone, consumer no..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setIsManualSyncing(true);
+                await refreshCustomerFiles();
+                setIsManualSyncing(false);
+                addToast('Live database sync complete', 'info');
+              }}
+              disabled={isManualSyncing}
+              title="Sync Live with Database"
+              className="px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-on-surface rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+            >
+              <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
+                sync
+              </span>
+              <span className="hidden sm:inline text-[11px]">Sync DB</span>
+            </button>
           </div>
         </div>
 
@@ -451,22 +498,38 @@ export default function StaffFiles() {
       </div>
 
       {/* Files Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredFiles.map((file) => {
-          const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
-          const statusColors = {
-            'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
-            'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
-            'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
-            'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
-          };
+      {customerFiles.length === 0 && isHardwareDbSyncing ? (
+        <CustomerCardSkeleton count={6} />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredFiles.map((file) => {
+            const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
+            const statusColors = {
+              'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
+              'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
+              'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
+              'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
+            };
 
-          return (
-            <div
-              key={file.id}
-              className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-            >
+            const isHighlighted = file.id === highlightedFileId;
+
+            return (
+              <div
+                id={`file-card-${file.id}`}
+                key={file.id}
+                className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${
+                  isHighlighted
+                    ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
+                    : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
+                }`}
+              >
               <div>
+                {isHighlighted && (
+                  <div className="mb-3 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                    <span className="material-symbols-outlined text-sm text-emerald-400">notifications_active</span>
+                    <span>New Application Alert &bull; Opened from Push Notification</span>
+                  </div>
+                )}
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -579,8 +642,8 @@ export default function StaffFiles() {
 
                 {/* Document Status - Dynamic by Category */}
                 {(() => {
-                  const docCompletion = getDocumentCompletion(file);
-                  const docList = getDocumentListForFile(file);
+                  const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                  const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
                   const schemaKey = getDocumentSchemaKey(file);
                   const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
 
@@ -664,8 +727,9 @@ export default function StaffFiles() {
           );
         })}
       </div>
+    )}
 
-      {filteredFiles.length === 0 && (
+      {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
         <div className="bg-surface rounded-xl p-12 text-center border border-surface-container-high text-secondary">
           <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">folder_off</span>
           <p className="text-sm">No customer files match your search criteria.</p>
@@ -943,10 +1007,10 @@ export default function StaffFiles() {
 
       {/* DYNAMIC DOCUMENT VAULT MODAL (Residential, Bank Loan, Finance Loan) */}
       {selectedFileForDocs && (() => {
-        const docList = getDocumentListForFile(selectedFileForDocs);
+        const docList = getFileDocuments ? getFileDocuments(selectedFileForDocs) : getDocumentListForFile(selectedFileForDocs, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
-        const docCompletion = getDocumentCompletion(selectedFileForDocs);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(selectedFileForDocs) : getDocumentCompletion(selectedFileForDocs, masterDocRegistry, categoryDocRules);
 
         return (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
