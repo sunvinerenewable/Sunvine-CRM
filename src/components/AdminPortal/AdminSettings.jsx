@@ -234,7 +234,9 @@ export default function AdminSettings() {
     tier: 'Gold EPC',
     maxMarginCapPerKw: 6000,
     status: 'Active',
-    password: ''
+    password: '',
+    assignedStaffId: 'STF-DIRECT',
+    assignedStaffName: 'Direct to Company (HQ Desk)'
   });
 
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -547,7 +549,9 @@ export default function AdminSettings() {
       tier: 'Gold EPC',
       maxMarginCapPerKw: 6000,
       status: 'Active',
-      password: ''
+      password: '',
+      assignedStaffId: 'STF-DIRECT',
+      assignedStaffName: 'Direct to Company (HQ Desk)'
     });
     setError('');
     setShowDealerModal(true);
@@ -568,7 +572,9 @@ export default function AdminSettings() {
       tier: dealer.tier || 'Gold EPC',
       maxMarginCapPerKw: dealer.max_margin_cap_per_kw || dealer.maxMarginCapPerKw || 6000,
       status: dealer.status || 'Active',
-      password: ''
+      password: '',
+      assignedStaffId: dealer.assigned_staff_id || dealer.assignedStaffId || 'STF-DIRECT',
+      assignedStaffName: dealer.assigned_staff_name || dealer.assignedStaffName || 'Direct to Company (HQ Desk)'
     });
     setError('');
     setShowDealerModal(true);
@@ -608,7 +614,9 @@ export default function AdminSettings() {
           tier: dealerForm.tier,
           maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
           status: dealerForm.status,
-          password: dealerForm.password ? dealerForm.password.trim() : undefined
+          password: dealerForm.password ? dealerForm.password.trim() : undefined,
+          assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
+          assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to update dealer');
         setSuccessToast(`Dealer ${dealerForm.firmName} updated in live database.`);
@@ -625,7 +633,9 @@ export default function AdminSettings() {
           tier: dealerForm.tier,
           maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
           status: dealerForm.status,
-          password: dealerForm.password.trim()
+          password: dealerForm.password.trim(),
+          assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
+          assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to create dealer');
         setSuccessToast(`Dealer ${dealerForm.firmName} created in live database.`);
@@ -1069,7 +1079,7 @@ export default function AdminSettings() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Super Admins</div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admins</div>
                   <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{adminsList.length}</div>
                   <div className="text-xs text-purple-700 font-medium mt-1 flex items-center gap-1">
                     <span className="material-symbols-outlined text-sm">verified_user</span>
@@ -1379,10 +1389,20 @@ export default function AdminSettings() {
                                 </div>
                                 <div>
                                   <div className="font-semibold text-slate-900">{firm}</div>
-                                  <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
                                     <span>{contact}</span>
                                     <span>•</span>
                                     <span className="font-mono text-emerald-700 font-semibold">{code}</span>
+                                    <span>•</span>
+                                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                      (!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                      {(!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'Direct to Company'
+                                        : `Sales: ${dealer.assigned_staff_name || dealer.assignedStaffName || 'Sales Staff'}`}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -2295,6 +2315,98 @@ export default function AdminSettings() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Official Business Email <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="partner@sunvinedealer.in"
+                  value={dealerForm.email}
+                  onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Sales Channel & Salesman Alignment */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Sales Channel &amp; Account Alignment
+                  </label>
+                  <span className="text-[11px] text-slate-400">Direct to HQ or Assigned Salesman</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDealerForm(prev => ({
+                      ...prev,
+                      assignedStaffId: 'STF-DIRECT',
+                      assignedStaffName: 'Direct to Company (HQ Desk)'
+                    }))}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                      dealerForm.assignedStaffId === 'STF-DIRECT'
+                        ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-400/20 text-indigo-900'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-lg text-indigo-600 mt-0.5">bolt</span>
+                    <div>
+                      <div className="text-xs font-bold">Direct to Company</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Deals with Sunvine HQ directly</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                      setDealerForm(prev => ({
+                        ...prev,
+                        assignedStaffId: firstStaff?.id || 'STF-801',
+                        assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
+                      }));
+                    }}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                      dealerForm.assignedStaffId !== 'STF-DIRECT'
+                        ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-400/20 text-emerald-900'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-lg text-emerald-600 mt-0.5">person</span>
+                    <div>
+                      <div className="text-xs font-bold">Field Sales Executive</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Managed by field sales staff</div>
+                    </div>
+                  </button>
+                </div>
+
+                {dealerForm.assignedStaffId !== 'STF-DIRECT' && (
+                  <div className="pt-1.5 animate-fadeIn">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Select Assigned Sales Representative</label>
+                    <select
+                      value={dealerForm.assignedStaffId}
+                      onChange={(e) => {
+                        const sId = e.target.value;
+                        const match = (staffListState || []).find(s => s.id === sId);
+                        setDealerForm(prev => ({
+                          ...prev,
+                          assignedStaffId: sId,
+                          assignedStaffName: match?.name || 'Sunvine Sales Staff'
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      {(staffListState || []).map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   {editingDealer ? 'New Password (optional)' : 'Initial Password'}
                 </label>
                 <input
@@ -2416,11 +2528,22 @@ export default function AdminSettings() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
                   <input
                     type="text"
+                    list="adminSettingsRolesList"
                     required
                     value={staffForm.role}
                     onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                    placeholder="Type or select designation..."
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
+                  <datalist id="adminSettingsRolesList">
+                    <option value="Field Sales Executive" />
+                    <option value="Area Sales Manager" />
+                    <option value="Regional Solar Lead" />
+                    <option value="Senior Solar Field Executive" />
+                    <option value="Verification Desk Officer" />
+                    <option value="Senior Technical Auditor" />
+                    <option value="Document Verification Lead" />
+                  </datalist>
                 </div>
               </div>
 

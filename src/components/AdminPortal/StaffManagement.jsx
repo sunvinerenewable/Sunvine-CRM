@@ -188,10 +188,10 @@ export default function StaffManagement() {
 
   // New Staff Form State
   const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffDepartment, setNewStaffDepartment] = useState('Sales');
   const [newStaffRole, setNewStaffRole] = useState('Field Sales Executive');
   const [newStaffPhone, setNewStaffPhone] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffZone, setNewStaffZone] = useState('Ahmedabad & Gandhinagar (UGVCL)');
   const [newStaffPassword, setNewStaffPassword] = useState('Sunvine@2026');
 
   // New File Form State
@@ -391,16 +391,15 @@ export default function StaffManagement() {
       .filter(n => !isNaN(n));
     const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
     const newId = `STF-${String(nextNum).padStart(3, '0')}`;
-    const isVerification = newStaffRole.toLowerCase().includes('verification');
+    const isVerification = newStaffDepartment === 'Verification' || newStaffRole.toLowerCase().includes('verification');
     const newStaff = {
       id: newId,
       name: newStaffName.trim(),
-      role: newStaffRole,
+      role: newStaffRole.trim() || (isVerification ? 'Verification Desk Officer' : 'Field Sales Executive'),
       department: isVerification ? 'Verification' : 'Sales',
       phone: cleanPhone,
       email: newStaffEmail.trim() || `${newStaffName.toLowerCase().replace(/\s+/g, '.')}@sunvine.in`,
       password: newStaffPassword.trim() || 'Sunvine@2026',
-      zone: newStaffZone,
       totalFiles: 0,
       registeredFiles: 0,
       subsidizedFiles: 0,
@@ -414,6 +413,8 @@ export default function StaffManagement() {
     setNewStaffName('');
     setNewStaffPhone('');
     setNewStaffEmail('');
+    setNewStaffRole('Field Sales Executive');
+    setNewStaffDepartment('Sales');
     setNewStaffPassword('Sunvine@2026');
     addToast(`Staff member "${newStaff.name}" onboarded with ID: ${newId}!`, 'success');
   };
@@ -1036,19 +1037,66 @@ export default function StaffManagement() {
 
       {/* MODAL 1: ADD NEW STAFF MEMBER */}
       {showAddStaffModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E4E7EB] rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-900">
-            <div className="flex items-center justify-between border-b border-[#E4E7EB] pb-3">
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">person_add</span>
-                <span>Register Sales Executive</span>
-              </h2>
-              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-700 cursor-pointer">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">group_add</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Add New Staff Member
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAddStaffModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleCreateStaff} className="space-y-3">
+            <form onSubmit={handleCreateStaff} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                  <select
+                    value={newStaffDepartment}
+                    onChange={(e) => {
+                      const dept = e.target.value;
+                      setNewStaffDepartment(dept);
+                      setNewStaffRole(dept === 'Verification' ? 'Verification Desk Officer' : 'Field Sales Executive');
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Sales">Field Sales</option>
+                    <option value="Verification">Verification Desk</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Designation / Role
+                  </label>
+                  <input
+                    type="text"
+                    list="staffRolesList"
+                    required
+                    value={newStaffRole}
+                    onChange={e => setNewStaffRole(e.target.value)}
+                    placeholder="Type or pick role..."
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                  <datalist id="staffRolesList">
+                    <option value="Field Sales Executive" />
+                    <option value="Area Sales Manager" />
+                    <option value="Regional Solar Lead" />
+                    <option value="Senior Solar Field Executive" />
+                    <option value="Verification Desk Officer" />
+                    <option value="Senior Technical Auditor" />
+                    <option value="Document Verification Lead" />
+                  </datalist>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name *</label>
                 <input
@@ -1057,20 +1105,36 @@ export default function StaffManagement() {
                   value={newStaffName}
                   onChange={e => setNewStaffName(e.target.value)}
                   placeholder="e.g. Suresh V. Solanki"
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number *</label>
-                <input
-                  type="tel"
-                  required
-                  value={newStaffPhone}
-                  onChange={e => setNewStaffPhone(e.target.value)}
-                  placeholder="9825012345"
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits) *</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    value={newStaffPhone}
+                    onChange={e => setNewStaffPhone(e.target.value.replace(/\D/g, ''))}
+                    placeholder="9825012345"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Email <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={newStaffEmail}
+                    onChange={e => setNewStaffEmail(e.target.value)}
+                    placeholder="staff@sunvine.in"
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1081,51 +1145,24 @@ export default function StaffManagement() {
                   value={newStaffPassword}
                   onChange={e => setNewStaffPassword(e.target.value)}
                   placeholder="Sunvine@2026"
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 font-mono"
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
-                <select
-                  value={newStaffRole}
-                  onChange={e => setNewStaffRole(e.target.value)}
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                >
-                  <option value="Field Sales Executive">Field Sales Executive (Sales)</option>
-                  <option value="Area Sales Manager">Area Sales Manager (Sales)</option>
-                  <option value="Verification Desk Officer">Verification Desk Officer (Verification)</option>
-                  <option value="Senior Technical Auditor">Senior Technical Auditor (Verification)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Zone / Territory</label>
-                <select
-                  value={newStaffZone}
-                  onChange={e => setNewStaffZone(e.target.value)}
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="Ahmedabad & Gandhinagar (UGVCL)">Ahmedabad &amp; Gandhinagar (UGVCL)</option>
-                  <option value="Rajkot & Saurashtra (PGVCL)">Rajkot &amp; Saurashtra (PGVCL)</option>
-                  <option value="Surat & South Gujarat (DGVCL)">Surat &amp; South Gujarat (DGVCL)</option>
-                  <option value="Vadodara & Anand (MGVCL)">Vadodara &amp; Anand (MGVCL)</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-[#E4E7EB]">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddStaffModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-bold text-xs rounded-lg shadow-sm cursor-pointer"
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95"
                 >
-                  Create Staff Account
+                  <span>Create Staff Account</span>
                 </button>
               </div>
             </form>
@@ -1193,7 +1230,9 @@ export default function StaffManagement() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Role / Designation</label>
-                  <select
+                  <input
+                    type="text"
+                    list="staffRolesList"
                     value={editStaffRole}
                     onChange={e => {
                       const newRole = e.target.value;
@@ -1204,13 +1243,9 @@ export default function StaffManagement() {
                         setEditStaffDepartment('Sales');
                       }
                     }}
-                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="Field Sales Executive">Field Sales Executive</option>
-                    <option value="Area Sales Manager">Area Sales Manager</option>
-                    <option value="Verification Desk Officer">Verification Desk Officer</option>
-                    <option value="Senior Technical Auditor">Senior Technical Auditor</option>
-                  </select>
+                    placeholder="Type or pick role..."
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
@@ -1224,17 +1259,6 @@ export default function StaffManagement() {
                   <option value="Sales">Field Sales Department</option>
                   <option value="Verification">Verification &amp; KYC Desk</option>
                 </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Territory / Zone</label>
-                <input
-                  type="text"
-                  value={editStaffZone}
-                  onChange={e => setEditStaffZone(e.target.value)}
-                  placeholder="e.g. Rajkot &amp; Saurashtra (PGVCL)"
-                  className="w-full bg-white border border-[#E4E7EB] rounded-lg px-3 py-2 text-slate-900 text-xs focus:outline-none focus:border-emerald-500"
-                />
               </div>
 
               <div>

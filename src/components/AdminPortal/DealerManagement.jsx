@@ -696,11 +696,12 @@ export default function DealerManagement() {
                 </div>
                 <div className="col-span-1 md:col-span-2">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
-                    Official Business Email <span className="text-error">*</span>
+                    Official Business Email <span className="text-xs text-secondary font-normal">(Optional)</span>
                   </label>
                   <input
                     className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
                     type="email"
+                    placeholder="partner@sunvinedealer.in"
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                   />
