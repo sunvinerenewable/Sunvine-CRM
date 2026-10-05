@@ -33,7 +33,35 @@ export const hardwareService = {
    * Fetch all solar modules from Supabase
    */
   async getAllModules() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
+    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
+    try {
+      const { data, error } = await supabase
+        .from('solar_modules')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(row => ({
+          id: row.id,
+          brand: row.brand,
+          model: row.model,
+          wattage: Number(row.wattage) || 550,
+          cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
+          efficiency: row.efficiency || '22.6%',
+          ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
+          warranty: row.warranty || '30 Years Performance',
+          dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
+          isArchived: !!row.is_archived,
+          isDefault: !!row.is_default,
+          isNew: !!row.is_new,
+          createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+        }));
+      }
+    } catch (err) {
+      console.warn('[hardwareService] Direct Supabase fetch notice:', err);
+    }
+
+    // 2. Serverless catalog fallback
     try {
       const res = await fetch('/api/catalog?type=hardware');
       if (res.ok) {
@@ -58,41 +86,7 @@ export const hardwareService = {
       }
     } catch (_) {}
 
-    // 2. Direct Supabase Query Fallback
-    try {
-      const { data, error } = await supabase
-        .from('solar_modules')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.warn('[hardwareService] Supabase modules fetch notice:', error.message);
-        return null;
-      }
-
-      if (!data || data.length === 0) {
-        return null;
-      }
-
-      return data.map(row => ({
-        id: row.id,
-        brand: row.brand,
-        model: row.model,
-        wattage: Number(row.wattage) || 550,
-        cellTech: row.cell_tech || 'TOPCon Mono Bifacial',
-        efficiency: row.efficiency || '22.6%',
-        ratePerWp: row.rate_per_wp || '₹ 19.20/Wp',
-        warranty: row.warranty || '30 Years Performance',
-        dimensions: row.dimensions || '2278 × 1134 × 30 mm | 28 kg',
-        isArchived: !!row.is_archived,
-        isDefault: !!row.is_default,
-        isNew: !!row.is_new,
-        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-      }));
-    } catch (err) {
-      console.error('[hardwareService] Error fetching modules:', err);
-      return null;
-    }
+    return null;
   },
 
   /**
@@ -258,7 +252,34 @@ export const hardwareService = {
    * Fetch all string inverters from Supabase
    */
   async getAllInverters() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
+    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
+    try {
+      const { data, error } = await supabase
+        .from('solar_inverters')
+        .select('*')
+        .order('capacity_kw', { ascending: true });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data.map(row => ({
+          id: row.id,
+          brand: row.brand,
+          model: row.model,
+          capacity: row.capacity || `${row.capacity_kw} kW`,
+          capacityKW: Number(row.capacity_kw) || 5.0,
+          phase: row.phase || 'Three Phase',
+          efficiency: row.efficiency || '98.4%',
+          warranty: row.warranty || '8 Years Comprehensive',
+          basePrice: row.base_price || '₹ 54,000',
+          isArchived: !!row.is_archived,
+          isDefault: !!row.is_default,
+          createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
+        }));
+      }
+    } catch (err) {
+      console.warn('[hardwareService] Direct Supabase inverters fetch notice:', err);
+    }
+
+    // 2. Serverless catalog fallback
     try {
       const res = await fetch('/api/catalog?type=hardware');
       if (res.ok) {
@@ -282,40 +303,7 @@ export const hardwareService = {
       }
     } catch (_) {}
 
-    // 2. Direct Supabase Query Fallback
-    try {
-      const { data, error } = await supabase
-        .from('solar_inverters')
-        .select('*')
-        .order('capacity_kw', { ascending: true });
-
-      if (error) {
-        console.warn('[hardwareService] Supabase inverters fetch notice:', error.message);
-        return null;
-      }
-
-      if (!data || data.length === 0) {
-        return null;
-      }
-
-      return data.map(row => ({
-        id: row.id,
-        brand: row.brand,
-        model: row.model,
-        capacity: row.capacity || `${row.capacity_kw} kW`,
-        capacityKW: Number(row.capacity_kw) || 5.0,
-        phase: row.phase || 'Three Phase',
-        efficiency: row.efficiency || '98.4%',
-        warranty: row.warranty || '8 Years Comprehensive',
-        basePrice: row.base_price || '₹ 54,000',
-        isArchived: !!row.is_archived,
-        isDefault: !!row.is_default,
-        createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
-      }));
-    } catch (err) {
-      console.error('[hardwareService] Error fetching inverters:', err);
-      return null;
-    }
+    return null;
   },
 
   /**

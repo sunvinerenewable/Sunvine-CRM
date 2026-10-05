@@ -535,7 +535,11 @@ export default function AdminSettings() {
   // Dealer Modal Handlers
   const handleOpenAddDealer = () => {
     setEditingDealer(null);
-    const nextCode = `SV-DLR-${String(Math.floor(8000 + Math.random() * 900))}`;
+    const existingNums = (dealerListState || [])
+      .map(d => parseInt(String(d.dealer_code || d.dealerCode || d.id || '').replace(/\D/g, ''), 10))
+      .filter(n => !isNaN(n));
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 800;
+    const nextCode = `SV-DLR-${String(maxNum + 1).padStart(4, '0')}`;
     setDealerForm({
       id: nextCode,
       dealerCode: nextCode,
@@ -653,7 +657,11 @@ export default function AdminSettings() {
   // Staff Modal Handlers
   const handleOpenAddStaff = () => {
     setEditingStaff(null);
-    const nextCode = `STF-${String(staffListState.length + 802).padStart(3, '0')}`;
+    const existingNums = (staffListState || [])
+      .map(s => parseInt(String(s.id || s.staffId || '').replace(/\D/g, ''), 10))
+      .filter(n => !isNaN(n));
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 805;
+    const nextCode = `STF-${String(maxNum + 1).padStart(3, '0')}`;
     setStaffForm({
       id: nextCode,
       name: '',
