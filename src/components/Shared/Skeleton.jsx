@@ -149,91 +149,74 @@ export function TopProgressBar({ active = true }) {
 
 // Customer File Card Grid Skeleton (Pixel-Perfect 1:1 match with live Customer File Card)
 export function CustomerCardSkeleton({ count = 3 }) {
+  // Mirrors the real customer file card in StaffManagement (same paddings, rows, 13-chip / 8-col doc grid, footer)
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full" aria-busy="true" aria-label="Loading customer files">
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={`cust-skel-${i}`}
           className="bg-white border border-[#E4E7EB] rounded-xl p-5 flex flex-col justify-between shadow-xs animate-pulse"
         >
           <div>
-            {/* Top Row: Ref ID + Source Pill + Payment Pill + Status Badge */}
+            {/* Header: ID + Source pill + Finance pill + Status badge */}
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <div className="h-4 w-16 bg-slate-200/80 rounded text-[11px] font-mono" />
-                  <div className="h-4 w-24 bg-purple-50 border border-purple-200/70 rounded" />
-                  <div className="h-4 w-16 bg-emerald-50 border border-emerald-200/70 rounded" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <div className="h-4 w-24 bg-slate-200 rounded" />
+                  <div className="h-5 w-40 bg-purple-50 border border-purple-200/70 rounded" />
+                  <div className="h-5 w-20 bg-emerald-50 border border-emerald-200/70 rounded" />
                 </div>
-                {/* Customer Title */}
-                <div className="h-5 w-32 bg-slate-300/80 rounded mt-1.5" />
+                <div className="h-6 w-36 bg-slate-300/80 rounded mt-1.5" />
               </div>
-              <div className="h-5 w-16 bg-amber-50 border border-amber-200 rounded-full" />
+              <div className="h-6 w-16 bg-amber-50 border border-amber-200 rounded-full shrink-0" />
             </div>
 
-            {/* 2-Column Specs Box: DISCOM / Load */}
+            {/* Info pills: DISCOM / System & Load */}
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1">
-                <span className="text-slate-400 block text-[10px] font-medium">DISCOM / Consumer No</span>
-                <div className="h-3.5 w-14 bg-slate-300 rounded" />
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1.5">
+                <div className="h-2.5 w-24 bg-slate-200 rounded" />
+                <div className="h-4 w-14 bg-slate-300 rounded" />
                 <div className="h-3 w-20 bg-slate-200 rounded" />
               </div>
-              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1">
-                <span className="text-slate-400 block text-[10px] font-medium">System &amp; Load</span>
-                <div className="h-3.5 w-20 bg-emerald-200/80 rounded" />
-                <div className="h-3 w-16 bg-slate-200 rounded" />
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1.5">
+                <div className="h-2.5 w-20 bg-slate-200 rounded" />
+                <div className="h-4 w-24 bg-emerald-200/80 rounded" />
+                <div className="h-3 w-14 bg-slate-200 rounded" />
               </div>
             </div>
 
-            {/* Contact & Sales Executive Meta */}
-            <div className="mt-3 space-y-1.5 text-xs text-slate-500">
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
-                <div className="h-3.5 w-24 bg-slate-200 rounded" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-400">person</span>
-                <div className="h-3.5 w-36 bg-slate-200 rounded" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-400">location_on</span>
-                <div className="h-3.5 w-40 bg-slate-200 rounded" />
-              </div>
+            {/* Contact / Assigned / Address */}
+            <div className="mt-3 space-y-1.5 text-xs">
+              {[['call', 'w-28'], ['person', 'w-52'], ['location_on', 'w-40']].map(([icon, w]) => (
+                <div key={icon} className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-slate-300">{icon}</span>
+                  <div className={`h-3.5 ${w} max-w-full bg-slate-200 rounded`} />
+                </div>
+              ))}
             </div>
 
-            {/* Document Badges (Dynamic 7-Chip Strip) */}
+            {/* Documents: label row + 13 chips on an 8-col grid */}
             <div className="mt-4 pt-3 border-t border-slate-100">
               <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-slate-500 font-medium flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[14px] text-emerald-600">folder_open</span>
-                  <div className="h-3 w-24 bg-slate-200 rounded" />
+                <span className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px] text-emerald-200">folder_open</span>
+                  <div className="h-3 w-28 bg-slate-200 rounded" />
                 </span>
-                <div className="h-3 w-16 bg-emerald-100 rounded" />
+                <div className="h-3 w-20 bg-emerald-100 rounded" />
               </div>
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 text-center">
-                {['Aadhaar', 'Bank', 'Light', 'PAN', 'Vera', 'Pre-Inst.', 'Co-App.'].map((label, idx) => (
-                  <div
-                    key={idx}
-                    className="py-1 px-1 rounded flex flex-col items-center justify-center text-[9px] border border-slate-200 bg-slate-50 text-slate-400"
-                  >
-                    <span className="truncate w-full">{label}</span>
-                  </div>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                {Array.from({ length: 13 }).map((_, idx) => (
+                  <div key={idx} className="h-6 rounded border border-slate-200 bg-slate-50" />
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Action Footer */}
+          {/* Action footer: Timeline / Docs / Status select */}
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-            <div className="py-1.5 px-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1">
-              <span className="material-symbols-outlined text-[15px]">timeline</span>
-              <span>Timeline</span>
-            </div>
-            <div className="flex-1 py-1.5 px-3 bg-white border border-[#E4E7EB] text-slate-600 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5">
-              <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
-              <span>Docs (Optional)</span>
-            </div>
-            <div className="h-7 w-20 bg-slate-100 border border-slate-200 rounded-lg" />
+            <div className="h-8 w-24 bg-emerald-50 border border-emerald-200 rounded-lg" />
+            <div className="h-8 flex-1 min-w-[96px] bg-white border border-[#E4E7EB] rounded-lg" />
+            <div className="h-8 w-24 bg-white border border-[#E4E7EB] rounded-lg" />
           </div>
         </div>
       ))}

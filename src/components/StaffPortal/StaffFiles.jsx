@@ -87,8 +87,8 @@ export default function StaffFiles() {
   const myFiles = isVerificationStaff
     ? (customerFiles || [])
     : (customerFiles || []).filter(
-        (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
-      );
+      (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
+    );
 
   const filteredFiles = myFiles.filter((f) => {
     const term = searchTerm.toLowerCase().trim();
@@ -100,7 +100,7 @@ export default function StaffFiles() {
       f.id.toLowerCase().includes(term);
 
     const matchStatus = statusFilter === 'all' || f.status === statusFilter;
-    
+
     const isDealer = f.sourceType === 'DEALER' || f.source === 'DEALER';
     const matchSource =
       sourceFilter === 'all' ||
@@ -437,11 +437,10 @@ export default function StaffFiles() {
               <button
                 key={t.key}
                 onClick={() => setStatusFilter(t.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  statusFilter === t.key
-                    ? 'bg-primary text-on-primary shadow-xs'
-                    : 'bg-surface-container-low text-secondary hover:text-on-surface'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${statusFilter === t.key
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'bg-surface-container-low text-secondary hover:text-on-surface'
+                  }`}
               >
                 {t.label}
               </button>
@@ -467,7 +466,7 @@ export default function StaffFiles() {
                 setIsManualSyncing(true);
                 await refreshCustomerFiles();
                 setIsManualSyncing(false);
-                addToast('Live database sync complete', 'info');
+                addToast('Live refresh completed.', 'info');
               }}
               disabled={isManualSyncing}
               title="Sync Live with Database"
@@ -476,7 +475,7 @@ export default function StaffFiles() {
               <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
                 sync
               </span>
-              <span className="hidden sm:inline text-[11px]">Sync DB</span>
+              <span className="hidden sm:inline text-[11px]">Refresh</span>
             </button>
           </div>
         </div>
@@ -489,25 +488,22 @@ export default function StaffFiles() {
           <div className="inline-flex rounded-lg border border-surface-container-high p-0.5 bg-surface-container-low">
             <button
               onClick={() => setSourceFilter('all')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
+                }`}
             >
               All Sources
             </button>
             <button
               onClick={() => setSourceFilter('DIRECT_STAFF')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'DIRECT_STAFF' ? 'bg-blue-600 text-white shadow-2xs' : 'text-blue-700 hover:text-blue-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'DIRECT_STAFF' ? 'bg-blue-600 text-white shadow-2xs' : 'text-blue-700 hover:text-blue-900'
+                }`}
             >
               Direct Staff
             </button>
             <button
               onClick={() => setSourceFilter('DEALER')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'DEALER' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'DEALER' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-900'
+                }`}
             >
               Dealer Files
             </button>
@@ -517,25 +513,22 @@ export default function StaffFiles() {
           <div className="inline-flex rounded-lg border border-surface-container-high p-0.5 bg-surface-container-low">
             <button
               onClick={() => setFinanceFilter('all')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
+                }`}
             >
               All Modes
             </button>
             <button
               onClick={() => setFinanceFilter('CASH')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'CASH' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:text-emerald-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'CASH' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:text-emerald-900'
+                }`}
             >
               Cash Case
             </button>
             <button
               onClick={() => setFinanceFilter('LOAN')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'LOAN' ? 'bg-amber-600 text-white shadow-2xs' : 'text-amber-800 hover:text-amber-950'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'LOAN' ? 'bg-amber-600 text-white shadow-2xs' : 'text-amber-800 hover:text-amber-950'
+                }`}
             >
               Solar Loan
             </button>
@@ -563,217 +556,212 @@ export default function StaffFiles() {
               <div
                 id={`file-card-${file.id}`}
                 key={file.id}
-                className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${
-                  isHighlighted
-                    ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
-                    : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
-                }`}
+                className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${isHighlighted
+                  ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
+                  : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
+                  }`}
               >
-              <div>
-                {isHighlighted && (
-                  <div className="mb-3 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5 animate-pulse">
-                    <span className="material-symbols-outlined text-sm text-emerald-400">notifications_active</span>
-                    <span>New Application Alert &bull; Opened from Push Notification</span>
-                  </div>
-                )}
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      <span className="text-[11px] font-mono font-bold text-secondary">{file.id}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                        file.sourceType === 'DEALER' || file.source === 'DEALER'
-                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                          : 'bg-blue-100 text-blue-800 border border-blue-200'
-                      }`}>
-                        {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
-                      </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                        file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}>
-                        {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors">
-                      {file.customerName}
-                    </h3>
-                  </div>
-                  <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status]}`}>
-                    {file.status}
-                  </span>
-                </div>
-
-                {/* Office Pipeline Stage Tracker */}
-                <div className="mt-3 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/70 space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-secondary flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[13px] text-primary">account_tree</span>
-                      <span>Office Stage Tracking:</span>
-                    </span>
-                    <span className="font-bold text-primary font-mono text-[10px] uppercase truncate max-w-[140px]" title={file.currentStage || file.status}>
-                      {file.currentStage ? file.currentStage.replace(/_/g, ' ') : file.status}
-                    </span>
-                  </div>
-                  {/* Progress Step Bar */}
-                  <div className="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
-                    {[
-                      { step: 1, label: 'Sourced', key: 'Sourced' },
-                      { step: 2, label: 'Verify', key: 'Verification' },
-                      { step: 3, label: 'DISCOM', key: 'DISCOM Registered' },
-                      { step: 4, label: 'Subsidy', key: 'Subsidized' }
-                    ].map((st) => {
-                      const stageOrder = ['Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'];
-                      const currentIdx = stageOrder.indexOf(file.status);
-                      const stepIdx = stageOrder.indexOf(st.key);
-                      const isCompleted = stepIdx < currentIdx;
-                      const isCurrent = stepIdx === currentIdx;
-
-                      return (
-                        <div
-                          key={st.key}
-                          className={`py-1 px-1 rounded flex items-center justify-center gap-0.5 border ${
-                            isCompleted
-                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                              : isCurrent
-                              ? 'bg-primary text-white border-primary shadow-2xs font-extrabold'
-                              : 'bg-white/80 border-surface-container-high text-secondary/70'
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <span className="material-symbols-outlined text-[11px] leading-none">check</span>
-                          ) : (
-                            <span>{st.step}.</span>
-                          )}
-                          <span className="truncate">{st.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Key Specs */}
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-surface-container-low p-2 rounded-lg">
-                    <span className="text-[10px] text-secondary block">Connection / DISCOM</span>
-                    <span className="font-bold text-on-surface">{file.discom}</span>
-                    <span className="text-[11px] text-secondary block truncate">{file.consumerNo || 'No Consumer No'}</span>
-                  </div>
-                  <div className="bg-surface-container-low p-2 rounded-lg">
-                    <span className="text-[10px] text-secondary block">System Capacity</span>
-                    <span className="font-bold text-emerald-600">{file.solarSystemKw} kW Solar</span>
-                    <span className="text-[11px] text-secondary block">{file.sanctionedLoadKw} kW Load</span>
-                  </div>
-                </div>
-
-                {/* Contact & Location */}
-                <div className="mt-3 space-y-1.5 text-xs text-secondary">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-primary">call</span>
-                    <a href={`tel:${file.phone}`} className="hover:underline text-on-surface font-semibold">
-                      {file.phone}
-                    </a>
-                  </div>
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="material-symbols-outlined text-[15px] text-secondary">location_on</span>
-                    <span className="truncate">{file.address}</span>
-                  </div>
-                  {file.notes && (
-                    <div className="p-2 rounded bg-amber-50/70 border border-amber-200/50 text-amber-900 text-[11px] mt-2">
-                      <strong>Note:</strong> {file.notes}
+                <div>
+                  {isHighlighted && (
+                    <div className="mb-3 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                      <span className="material-symbols-outlined text-sm text-emerald-400">notifications_active</span>
+                      <span>New Application Alert &bull; Opened from Push Notification</span>
                     </div>
                   )}
-                </div>
-
-                {/* Document Status - Dynamic by Category */}
-                {(() => {
-                  const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
-                  const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
-                  const schemaKey = getDocumentSchemaKey(file);
-                  const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
-
-                  return (
-                    <div className="mt-4 pt-3 border-t border-surface-container-high">
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span className="text-secondary font-medium flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-primary">folder_open</span>
-                          <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="text-[11px] font-mono font-bold text-secondary">{file.id}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.sourceType === 'DEALER' || file.source === 'DEALER'
+                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          }`}>
+                          {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
                         </span>
-                        <span className="text-emerald-700 font-bold text-[11px]">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}>
+                          {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
+                        </span>
                       </div>
-                      <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
-                        {docList.map((doc) => {
-                          const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
-                          return (
-                            <div
-                              key={doc.key}
-                              title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
-                              className={`py-1 px-1 rounded text-[9px] font-semibold border truncate ${
-                                isUp
+                      <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors">
+                        {file.customerName}
+                      </h3>
+                    </div>
+                    <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status]}`}>
+                      {file.status}
+                    </span>
+                  </div>
+
+                  {/* Office Pipeline Stage Tracker */}
+                  <div className="mt-3 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/70 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-secondary flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px] text-primary">account_tree</span>
+                        <span>Office Stage Tracking:</span>
+                      </span>
+                      <span className="font-bold text-primary font-mono text-[10px] uppercase truncate max-w-[140px]" title={file.currentStage || file.status}>
+                        {file.currentStage ? file.currentStage.replace(/_/g, ' ') : file.status}
+                      </span>
+                    </div>
+                    {/* Progress Step Bar */}
+                    <div className="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
+                      {[
+                        { step: 1, label: 'Sourced', key: 'Sourced' },
+                        { step: 2, label: 'Verify', key: 'Verification' },
+                        { step: 3, label: 'DISCOM', key: 'DISCOM Registered' },
+                        { step: 4, label: 'Subsidy', key: 'Subsidized' }
+                      ].map((st) => {
+                        const stageOrder = ['Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'];
+                        const currentIdx = stageOrder.indexOf(file.status);
+                        const stepIdx = stageOrder.indexOf(st.key);
+                        const isCompleted = stepIdx < currentIdx;
+                        const isCurrent = stepIdx === currentIdx;
+
+                        return (
+                          <div
+                            key={st.key}
+                            className={`py-1 px-1 rounded flex items-center justify-center gap-0.5 border ${isCompleted
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                              : isCurrent
+                                ? 'bg-primary text-white border-primary shadow-2xs font-extrabold'
+                                : 'bg-white/80 border-surface-container-high text-secondary/70'
+                              }`}
+                          >
+                            {isCompleted ? (
+                              <span className="material-symbols-outlined text-[11px] leading-none">check</span>
+                            ) : (
+                              <span>{st.step}.</span>
+                            )}
+                            <span className="truncate">{st.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Key Specs */}
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-surface-container-low p-2 rounded-lg">
+                      <span className="text-[10px] text-secondary block">Connection / DISCOM</span>
+                      <span className="font-bold text-on-surface">{file.discom}</span>
+                      <span className="text-[11px] text-secondary block truncate">{file.consumerNo || 'No Consumer No'}</span>
+                    </div>
+                    <div className="bg-surface-container-low p-2 rounded-lg">
+                      <span className="text-[10px] text-secondary block">System Capacity</span>
+                      <span className="font-bold text-emerald-600">{file.solarSystemKw} kW Solar</span>
+                      <span className="text-[11px] text-secondary block">{file.sanctionedLoadKw} kW Load</span>
+                    </div>
+                  </div>
+
+                  {/* Contact & Location */}
+                  <div className="mt-3 space-y-1.5 text-xs text-secondary">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] text-primary">call</span>
+                      <a href={`tel:${file.phone}`} className="hover:underline text-on-surface font-semibold">
+                        {file.phone}
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="material-symbols-outlined text-[15px] text-secondary">location_on</span>
+                      <span className="truncate">{file.address}</span>
+                    </div>
+                    {file.notes && (
+                      <div className="p-2 rounded bg-amber-50/70 border border-amber-200/50 text-amber-900 text-[11px] mt-2">
+                        <strong>Note:</strong> {file.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Document Status - Dynamic by Category */}
+                  {(() => {
+                    const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                    const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
+                    const schemaKey = getDocumentSchemaKey(file);
+                    const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
+
+                    return (
+                      <div className="mt-4 pt-3 border-t border-surface-container-high">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="text-secondary font-medium flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-primary">folder_open</span>
+                            <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                          </span>
+                          <span className="text-emerald-700 font-bold text-[11px]">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                        </div>
+                        <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
+                          {docList.map((doc) => {
+                            const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
+                            return (
+                              <div
+                                key={doc.key}
+                                title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
+                                className={`py-1 px-1 rounded text-[9px] font-semibold border truncate ${isUp
                                   ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
                                   : 'bg-surface-container-low border-surface-container-high text-secondary/60'
-                              }`}
-                            >
-                              <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
-                            </div>
-                          );
-                        })}
+                                  }`}
+                              >
+                                <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFileForTimeline(file)}
+                    className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    title="View Timeline & Advance Stage"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">timeline</span>
+                    <span>Timeline</span>
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedFileForDocs(file)}
+                    className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
+                    <span>Docs (Optional)</span>
+                  </button>
+
+                  <select
+                    value={file.status}
+                    onChange={(e) => {
+                      updateFileStatus(file.id, e.target.value);
+                      addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
+                    }}
+                    className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value="Sourced">Sourced</option>
+                    <option value="Verification">Verification</option>
+                    <option value="DISCOM Registered">DISCOM Reg.</option>
+                    <option value="Subsidized">Subsidized</option>
+                  </select>
+
+                  <a
+                    href={`https://wa.me/${file.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(file.customerName)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Officer')}%20from%20Sunvine%20Renewable%20regarding%20your%20${file.solarSystemKw}kW%20rooftop%20solar%20file.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-lg transition-colors"
+                    title="WhatsApp"
+                  >
+                    <span className="material-symbols-outlined text-[17px]">chat</span>
+                  </a>
+                </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setSelectedFileForTimeline(file)}
-                  className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                  title="View Timeline & Advance Stage"
-                >
-                  <span className="material-symbols-outlined text-[15px]">timeline</span>
-                  <span>Timeline</span>
-                </button>
-
-                <button
-                  onClick={() => setSelectedFileForDocs(file)}
-                  className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
-                  <span>Docs (Optional)</span>
-                </button>
-
-                <select
-                  value={file.status}
-                  onChange={(e) => {
-                    updateFileStatus(file.id, e.target.value);
-                    addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
-                  }}
-                  className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                >
-                  <option value="Sourced">Sourced</option>
-                  <option value="Verification">Verification</option>
-                  <option value="DISCOM Registered">DISCOM Reg.</option>
-                  <option value="Subsidized">Subsidized</option>
-                </select>
-
-                <a
-                  href={`https://wa.me/${file.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(file.customerName)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Officer')}%20from%20Sunvine%20Renewable%20regarding%20your%20${file.solarSystemKw}kW%20rooftop%20solar%20file.`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-lg transition-colors"
-                  title="WhatsApp"
-                >
-                  <span className="material-symbols-outlined text-[17px]">chat</span>
-                </a>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    )}
+            );
+          })}
+        </div>
+      )}
 
       {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
         <div className="bg-surface rounded-xl p-12 text-center border border-surface-container-high text-secondary">
@@ -1110,9 +1098,8 @@ export default function StaffFiles() {
                   return (
                     <div
                       key={doc.key}
-                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-                        isUp ? 'bg-surface-container-low/90 border-primary/40' : 'bg-surface-container-low border-surface-container-high'
-                      }`}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${isUp ? 'bg-surface-container-low/90 border-primary/40' : 'bg-surface-container-low border-surface-container-high'
+                        }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -1125,13 +1112,12 @@ export default function StaffFiles() {
                               <p className="text-[10px] text-secondary leading-tight">{doc.category} &bull; {doc.description}</p>
                             </div>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
-                            isUp
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                              : doc.mandatory
-                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
-                                : 'bg-surface-container text-secondary border border-surface-container-high'
-                          }`}>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${isUp
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                            : doc.mandatory
+                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                              : 'bg-surface-container text-secondary border border-surface-container-high'
+                            }`}>
                             {isUp ? (attachedFiles.length > 1 ? `${attachedFiles.length} Attached` : 'Attached') : (doc.mandatory ? 'Pending' : 'Optional')}
                           </span>
                         </div>

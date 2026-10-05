@@ -4,7 +4,7 @@ export const customerFileService = {
   /**
    * Fetch all customer files from serverless API (Supabase PostgreSQL + Redis cache), or direct Supabase query
    */
-  async getAllCustomerFiles() {
+  async getAllCustomerFiles({ throwOnError = false } = {}) {
     try {
       const res = await fetch('/api/customer-files', {
         method: 'GET',
@@ -17,8 +17,13 @@ export const customerFileService = {
         if (json.success && Array.isArray(json.data)) {
           return json.data;
         }
+      } else if (res.status === 401) {
+        // Session cookie missing/expired: the anon fallback is blocked by RLS and would look like "no data".
+        if (throwOnError) throw new Error('SESSION_EXPIRED');
+        return [];
       }
     } catch (apiErr) {
+      if (apiErr?.message === 'SESSION_EXPIRED') throw apiErr;
       console.warn('[customerFileService] API fetch notice, checking database direct:', apiErr);
     }
 
@@ -30,6 +35,7 @@ export const customerFileService = {
 
       if (error) {
         console.warn('[customerFileService] Supabase direct notice:', error.message);
+        if (throwOnError) throw error;
         return [];
       }
 
@@ -71,6 +77,7 @@ export const customerFileService = {
       }
     } catch (err) {
       console.warn('[customerFileService] Direct fetch exception:', err);
+      if (throwOnError) throw err;
     }
 
     return [];

@@ -32,6 +32,7 @@ export default function StaffManagement() {
     updateFileStatus,
     isHardwareDbSyncing,
     refreshCustomerFiles,
+    customerFilesError,
     masterDocRegistry,
     categoryDocRules,
     getFileDocuments,
@@ -646,11 +647,10 @@ export default function StaffManagement() {
         <div className="flex border-b border-[#E4E7EB] gap-6">
           <button
             onClick={() => handleViewChange('files')}
-            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeView === 'files'
-                ? 'border-emerald-600 text-emerald-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${activeView === 'files'
+              ? 'border-emerald-600 text-emerald-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             <span className="material-symbols-outlined text-[18px]">folder</span>
             <span>Customer Files &amp; Subsidies</span>
@@ -658,11 +658,10 @@ export default function StaffManagement() {
           </button>
           <button
             onClick={() => handleViewChange('staff')}
-            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
-              activeView === 'staff'
-                ? 'border-emerald-600 text-emerald-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`pb-3 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${activeView === 'staff'
+              ? 'border-emerald-600 text-emerald-700'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             <span className="material-symbols-outlined text-[18px]">groups</span>
             <span>Sales Team Directory &amp; Logins</span>
@@ -674,9 +673,9 @@ export default function StaffManagement() {
         {activeView === 'files' && (
           <div className="space-y-4">
             {/* Filter & Search Bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-3.5 sm:p-4 rounded-xl border border-[#E4E7EB] shadow-xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-xl border border-[#E4E7EB] shadow-xs">
               {/* Pipeline Tabs */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none shrink-0">
                 {[
                   { key: 'all', label: 'All Files' },
                   { key: 'Sourced', label: 'Sourced' },
@@ -686,12 +685,12 @@ export default function StaffManagement() {
                 ].map(t => (
                   <button
                     key={t.key}
+                    type="button"
                     onClick={() => setStatusFilter(t.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                      statusFilter === t.key
-                        ? 'bg-[#0F1B2E] text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${statusFilter === t.key
+                      ? 'bg-[#0F1B2E] text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
                   >
                     {t.label}
                   </button>
@@ -699,26 +698,26 @@ export default function StaffManagement() {
               </div>
 
               {/* Staff and Search filters */}
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full lg:w-auto">
                 <select
                   value={staffFilter}
                   onChange={e => setStaffFilter(e.target.value)}
-                  className="bg-white border border-[#E4E7EB] rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 cursor-pointer h-9 shrink-0 max-w-[160px] sm:max-w-none"
                 >
                   <option value="all">All Sales Staff</option>
                   {(staffList || []).map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.zone?.split(' ')[0]})</option>
+                    <option key={s.id} value={s.id}>{s.name} ({s.zone?.split(' ')[0] || 'HQ'})</option>
                   ))}
                 </select>
 
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-slate-400">search</span>
+                <div className="relative flex-1 sm:w-56 md:w-64 min-w-[140px]">
+                  <span className="material-symbols-outlined absolute left-2.5 top-2.5 text-[16px] text-slate-400">search</span>
                   <input
                     type="text"
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    placeholder="Search name, consumer no, mobile..."
-                    className="bg-white border border-[#E4E7EB] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 w-48 md:w-60"
+                    placeholder="Search name, phone, consumer no..."
+                    className="w-full bg-white border border-[#E4E7EB] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 h-9"
                   />
                 </div>
 
@@ -728,22 +727,22 @@ export default function StaffManagement() {
                     setIsManualSyncing(true);
                     await refreshCustomerFiles();
                     setIsManualSyncing(false);
-                    addToast('Live database sync complete', 'info');
+                    addToast('Live refresh completed.', 'info');
                   }}
                   disabled={isManualSyncing}
                   title="Live Database Sync"
-                  className="px-2.5 py-1.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-600 hover:text-emerald-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+                  className="h-9 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-600 hover:text-emerald-600 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs shrink-0"
                 >
                   <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
                     sync
                   </span>
-                  <span className="hidden sm:inline text-[11px]">Sync DB</span>
+                  <span className="hidden sm:inline text-[11px] font-medium">Refresh</span>
                 </button>
               </div>
             </div>
 
             {/* Files Grid / Cards */}
-            {customerFiles.length === 0 && isHardwareDbSyncing ? (
+            {customerFiles.length === 0 && (isHardwareDbSyncing || isManualSyncing) ? (
               <CustomerCardSkeleton count={6} />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -762,162 +761,202 @@ export default function StaffManagement() {
                     <div
                       id={`admin-file-card-${file.id}`}
                       key={file.id}
-                      className={`rounded-xl p-5 flex flex-col justify-between transition-all animate-in fade-in duration-200 ${
-                        isHighlighted
-                          ? 'bg-emerald-50/60 border-2 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400'
-                          : 'bg-white border border-[#E4E7EB] hover:border-slate-300 shadow-xs'
-                      }`}
+                      className={`rounded-xl p-5 flex flex-col justify-between transition-all animate-in fade-in duration-200 ${isHighlighted
+                        ? 'bg-emerald-50/60 border-2 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400'
+                        : 'bg-white border border-[#E4E7EB] hover:border-slate-300 shadow-xs'
+                        }`}
                     >
-                    <div>
-                      {isHighlighted && (
-                        <div className="mb-3 px-3 py-1.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-800 flex items-center gap-1.5 animate-pulse">
-                          <span className="material-symbols-outlined text-sm text-emerald-700">notifications_active</span>
-                          <span>New Customer File Alert &bull; Opened from Push Notification</span>
-                        </div>
-                      )}
-                      {/* Card Header */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                            <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                              file.sourceType === 'DEALER' || file.source === 'DEALER'
+                      <div>
+                        {isHighlighted && (
+                          <div className="mb-3 px-3 py-1.5 bg-emerald-100 border border-emerald-300 rounded-lg text-xs font-bold text-emerald-800 flex items-center gap-1.5 animate-pulse">
+                            <span className="material-symbols-outlined text-sm text-emerald-700">notifications_active</span>
+                            <span>New Customer File Alert &bull; Opened from Push Notification</span>
+                          </div>
+                        )}
+                        {/* Card Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                              <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.sourceType === 'DEALER' || file.source === 'DEALER'
                                 ? 'bg-purple-50 text-purple-700 border border-purple-200'
                                 : 'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}>
-                              {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
-                            </span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                              file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
+                                }`}>
+                                {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
+                              </span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
                                 ? 'bg-amber-50 text-amber-800 border border-amber-200'
                                 : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            }`}>
-                              {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
-                            </span>
-                          </div>
-                          <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors">
-                            {file.customerName}
-                          </h3>
-                        </div>
-                        <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                          {file.status}
-                        </span>
-                      </div>
-
-                      {/* Info Pills */}
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                          <span className="text-slate-500 block text-[10px] font-medium">DISCOM / Consumer No</span>
-                          <span className="font-bold text-slate-800">{file.discom}</span>
-                          <span className="text-[11px] text-slate-500 block truncate">{file.consumerNo || 'Pending'}</span>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                          <span className="text-slate-500 block text-[10px] font-medium">System &amp; Load</span>
-                          <span className="font-bold text-emerald-700">{file.solarSystemKw} kW Solar</span>
-                          <span className="text-[11px] text-slate-500 block">{file.sanctionedLoadKw} kW Load</span>
-                        </div>
-                      </div>
-
-                      {/* Contact & Sales Executive */}
-                      <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
-                          <a href={`tel:${file.phone}`} className="hover:underline text-slate-800 font-semibold">{file.phone}</a>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <span className="material-symbols-outlined text-[15px] text-slate-400">person</span>
-                          <span>Assigned: <strong className="text-slate-800">{file.staffName}</strong></span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-slate-500 truncate">
-                          <span className="material-symbols-outlined text-[15px] text-slate-400">location_on</span>
-                          <span className="truncate">{file.address}</span>
-                        </div>
-                      </div>
-
-                      {/* Document Badges (Dynamic by Category: Residential, Bank Loan, Finance Loan) */}
-                      {(() => {
-                        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
-                        const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
-                        const schemaKey = getDocumentSchemaKey(file);
-                        const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
-
-                        return (
-                          <div className="mt-4 pt-3 border-t border-slate-100">
-                            <div className="flex items-center justify-between text-xs mb-2">
-                              <span className="text-slate-500 font-medium flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[14px] text-emerald-600">folder_open</span>
-                                <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                                }`}>
+                                {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
                               </span>
-                              <span className="font-bold text-emerald-700">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
                             </div>
-                            <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
-                              {docList.map(doc => {
-                                const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
-                                return (
-                                  <div
-                                    key={doc.key}
-                                    title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
-                                    className={`py-1 px-1 rounded flex flex-col items-center justify-center text-[9px] border transition-all ${
-                                      isUp
+                            <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors">
+                              {file.customerName}
+                            </h3>
+                          </div>
+                          <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                            {file.status}
+                          </span>
+                        </div>
+
+                        {/* Info Pills */}
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                            <span className="text-slate-500 block text-[10px] font-medium">DISCOM / Consumer No</span>
+                            <span className="font-bold text-slate-800">{file.discom}</span>
+                            <span className="text-[11px] text-slate-500 block truncate">{file.consumerNo || 'Pending'}</span>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                            <span className="text-slate-500 block text-[10px] font-medium">System &amp; Load</span>
+                            <span className="font-bold text-emerald-700">{file.solarSystemKw} kW Solar</span>
+                            <span className="text-[11px] text-slate-500 block">{file.sanctionedLoadKw} kW Load</span>
+                          </div>
+                        </div>
+
+                        {/* Contact & Sales Executive */}
+                        <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
+                            <a href={`tel:${file.phone}`} className="hover:underline text-slate-800 font-semibold">{file.phone}</a>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="material-symbols-outlined text-[15px] text-slate-400">person</span>
+                            <span>Assigned: <strong className="text-slate-800">{file.staffName}</strong></span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500 truncate">
+                            <span className="material-symbols-outlined text-[15px] text-slate-400">location_on</span>
+                            <span className="truncate">{file.address}</span>
+                          </div>
+                        </div>
+
+                        {/* Document Badges (Dynamic by Category: Residential, Bank Loan, Finance Loan) */}
+                        {(() => {
+                          const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                          const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
+                          const schemaKey = getDocumentSchemaKey(file);
+                          const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
+
+                          return (
+                            <div className="mt-4 pt-3 border-t border-slate-100">
+                              <div className="flex items-center justify-between text-xs mb-2">
+                                <span className="text-slate-500 font-medium flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">folder_open</span>
+                                  <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                                </span>
+                                <span className="font-bold text-emerald-700">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                              </div>
+                              <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
+                                {docList.map(doc => {
+                                  const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
+                                  return (
+                                    <div
+                                      key={doc.key}
+                                      title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
+                                      className={`py-1 px-1 rounded flex flex-col items-center justify-center text-[9px] border transition-all ${isUp
                                         ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-bold'
                                         : 'bg-slate-50 border-slate-200 text-slate-400'
-                                    }`}
-                                  >
-                                    <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
-                                  </div>
-                                );
-                              })}
+                                        }`}
+                                    >
+                                      <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
+                      </div>
+
+                      {/* Action Footer */}
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFileForTimeline(file)}
+                          className="py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                          title="View Timeline & Advance Stage"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">timeline</span>
+                          <span>Timeline</span>
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedFileForDocs(file)}
+                          className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
+                          <span>Docs (Optional)</span>
+                        </button>
+
+                        {/* Quick Status Advance */}
+                        <select
+                          value={file.status}
+                          onChange={e => {
+                            updateFileStatus(file.id, e.target.value);
+                            addToast(`Updated status to "${e.target.value}"`, 'success');
+                          }}
+                          className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+                        >
+                          <option value="Sourced">Sourced</option>
+                          <option value="Verification">Verification</option>
+                          <option value="DISCOM Registered">DISCOM Reg.</option>
+                          <option value="Subsidized">Subsidized</option>
+                        </select>
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    {/* Action Footer */}
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedFileForTimeline(file)}
-                        className="py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                        title="View Timeline & Advance Stage"
-                      >
-                        <span className="material-symbols-outlined text-[15px]">timeline</span>
-                        <span>Timeline</span>
-                      </button>
-
-                      <button
-                        onClick={() => setSelectedFileForDocs(file)}
-                        className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                      >
-                        <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
-                        <span>Docs (Optional)</span>
-                      </button>
-
-                      {/* Quick Status Advance */}
-                      <select
-                        value={file.status}
-                        onChange={e => {
-                          updateFileStatus(file.id, e.target.value);
-                          addToast(`Updated status to "${e.target.value}"`, 'success');
-                        }}
-                        className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
-                      >
-                        <option value="Sourced">Sourced</option>
-                        <option value="Verification">Verification</option>
-                        <option value="DISCOM Registered">DISCOM Reg.</option>
-                        <option value="Subsidized">Subsidized</option>
-                      </select>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-            {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
-              <div className="bg-white border border-[#E4E7EB] rounded-xl p-12 text-center text-slate-500 shadow-xs">
-                <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">folder_off</span>
-                <p>No customer files match your search criteria.</p>
+            {filteredFiles.length === 0 && !(customerFiles.length === 0 && (isHardwareDbSyncing || isManualSyncing)) && (
+              <div className="bg-white border border-[#E4E7EB] rounded-xl p-10 sm:p-14 text-center shadow-xs flex flex-col items-center justify-center max-w-2xl mx-auto my-4">
+                <div className={`w-14 h-14 rounded-2xl border flex items-center justify-center mb-4 ${customerFiles.length === 0 && customerFilesError ? 'bg-red-50 border-red-200 text-red-600'
+                  : customerFiles.length === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                    : 'bg-slate-100 border-slate-200 text-slate-400'
+                  }`}>
+                  <span className="material-symbols-outlined text-3xl">
+                    {customerFiles.length === 0 && customerFilesError ? 'cloud_off' : customerFiles.length === 0 ? 'folder_open' : 'search_off'}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-1">
+                  {customerFiles.length === 0 && customerFilesError ? "Couldn't Load Customer Files"
+                    : customerFiles.length === 0 ? 'No Customer Files Found'
+                      : 'No Matching Customer Files'}
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+                  {customerFiles.length === 0 && customerFilesError
+                    ? 'The database could not be reached. Check your connection and try again.'
+                    : customerFiles.length === 0
+                      ? 'No customer solar files have been registered yet. Register the first customer file to get started.'
+                      : 'No customer files match your search criteria or active filters.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (customerFiles.length === 0 && customerFilesError) {
+                      setIsManualSyncing(true);
+                      await refreshCustomerFiles();
+                      setIsManualSyncing(false);
+                    } else if (customerFiles.length === 0) {
+                      setShowAddFileModal(true);
+                    } else {
+                      setSearchTerm('');
+                      setStatusFilter('all');
+                      setStaffFilter('all');
+                    }
+                  }}
+                  className="min-h-[44px] px-5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {customerFiles.length === 0 && customerFilesError ? 'refresh' : customerFiles.length === 0 ? 'note_add' : 'filter_alt_off'}
+                  </span>
+                  <span>
+                    {customerFiles.length === 0 && customerFilesError ? 'Retry'
+                      : customerFiles.length === 0 ? '+ New Customer File'
+                        : 'Clear Filters & Search'}
+                  </span>
+                </button>
               </div>
             )}
           </div>
@@ -940,27 +979,24 @@ export default function StaffManagement() {
                   <button
                     type="button"
                     onClick={() => setStaffDepartmentFilter('all')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      staffDepartmentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${staffDepartmentFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     All Staff ({(staffList || []).length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStaffDepartmentFilter('sales')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      staffDepartmentFilter === 'sales' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${staffDepartmentFilter === 'sales' ? 'bg-white text-emerald-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     Field Sales ({(staffList || []).filter(m => !isVerDesk(m)).length})
                   </button>
                   <button
                     type="button"
                     onClick={() => setStaffDepartmentFilter('verification')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      staffDepartmentFilter === 'verification' ? 'bg-white text-amber-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${staffDepartmentFilter === 'verification' ? 'bg-white text-amber-800 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
                   >
                     Verification Desk ({(staffList || []).filter(isVerDesk).length})
                   </button>
@@ -970,118 +1006,144 @@ export default function StaffManagement() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {displayedStaff.map(member => {
                   const isMemberVer = isVerDesk(member);
-                // Compute live individual salesperson metrics
-                const sFiles = (customerFiles || []).filter(f => f.staffId === member.id || f.staffName === member.name);
-                const totalBrought = sFiles.length;
-                const inProg = sFiles.filter(f => f.status === 'Verification' || f.status === 'DISCOM Registered').length;
-                const successDone = sFiles.filter(f => f.status === 'Subsidized').length;
-                const sKw = sFiles.reduce((acc, f) => acc + (f.solarSystemKw || 0), 0).toFixed(1);
+                  // Compute live individual salesperson metrics
+                  const sFiles = (customerFiles || []).filter(f => f.staffId === member.id || f.staffName === member.name);
+                  const totalBrought = sFiles.length;
+                  const inProg = sFiles.filter(f => f.status === 'Verification' || f.status === 'DISCOM Registered').length;
+                  const successDone = sFiles.filter(f => f.status === 'Subsidized').length;
+                  const sKw = sFiles.reduce((acc, f) => acc + (f.solarSystemKw || 0), 0).toFixed(1);
 
-                return (
-                  <div
-                    key={member.id}
-                    className="bg-white border border-[#E4E7EB] rounded-xl p-5 flex flex-col justify-between shadow-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold flex items-center justify-center text-base">
-                            {member.name.split(' ').map(n => n[0]).join('')}
+                  return (
+                    <div
+                      key={member.id}
+                      className="bg-white border border-[#E4E7EB] rounded-xl p-5 flex flex-col justify-between shadow-xs"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-11 h-11 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold flex items-center justify-center text-base">
+                              {member.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-slate-900 text-base">{member.name}</h3>
+                              <p className="text-[11px] text-slate-500 font-mono font-semibold">{member.id}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-bold text-slate-900 text-base">{member.name}</h3>
-                            <p className="text-[11px] text-slate-500 font-mono font-semibold">{member.id}</p>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleOpenStaffCreds(member)}
+                              className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
+                              title="Manage Profile & Credentials"
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-amber-500">edit_square</span>
+                            </button>
+                            <button
+                              onClick={() => setStaffToDelete(member)}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
+                              title="Delete Staff Member"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleOpenStaffCreds(member)}
-                            className="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
-                            title="Manage Profile & Credentials"
-                          >
-                            <span className="material-symbols-outlined text-[16px] text-amber-500">edit_square</span>
-                          </button>
-                          <button
-                            onClick={() => setStaffToDelete(member)}
-                            className="p-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg text-xs flex items-center justify-center transition-colors cursor-pointer"
-                            title="Delete Staff Member"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[11px] font-semibold ${isMemberVer ? 'text-amber-700' : 'text-emerald-700'}`}>
-                            {member.role}
-                          </span>
-                          {isMemberVer && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                              Verification Desk
+                        <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[11px] font-semibold ${isMemberVer ? 'text-amber-700' : 'text-emerald-700'}`}>
+                              {member.role}
                             </span>
-                          )}
+                            {isMemberVer && (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                Verification Desk
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="material-symbols-outlined text-[14px]">call</span>
+                            <a href={`tel:${member.phone}`} className="hover:underline text-slate-800 font-mono font-medium">{member.phone}</a>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-slate-500 truncate">
+                            <span className="material-symbols-outlined text-[14px]">location_on</span>
+                            <span className="truncate">{member.zone}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <span className="material-symbols-outlined text-[14px]">call</span>
-                          <a href={`tel:${member.phone}`} className="hover:underline text-slate-800 font-mono font-medium">{member.phone}</a>
+
+                        {/* Live 3-Column Salesperson Metrics */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-center text-xs">
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                            <div className="text-slate-500 text-[10px] font-medium">Total Files</div>
+                            <div className="font-bold text-slate-900 text-sm mt-0.5">{totalBrought}</div>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                            <div className="text-blue-600 text-[10px] font-medium">In Progress</div>
+                            <div className="font-bold text-blue-700 text-sm mt-0.5">{inProg}</div>
+                          </div>
+                          <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
+                            <div className="text-emerald-700 text-[10px] font-medium">Success</div>
+                            <div className="font-bold text-emerald-700 text-sm mt-0.5">{successDone}</div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-500 truncate">
-                          <span className="material-symbols-outlined text-[14px]">location_on</span>
-                          <span className="truncate">{member.zone}</span>
+
+                        <div className="mt-2 text-center text-[11px] text-slate-500">
+                          Pipeline Capacity: <strong className="text-slate-900">{sKw} kW</strong>
                         </div>
                       </div>
 
-                      {/* Live 3-Column Salesperson Metrics */}
-                      <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-center text-xs">
-                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                          <div className="text-slate-500 text-[10px] font-medium">Total Files</div>
-                          <div className="font-bold text-slate-900 text-sm mt-0.5">{totalBrought}</div>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                          <div className="text-blue-600 text-[10px] font-medium">In Progress</div>
-                          <div className="font-bold text-blue-700 text-sm mt-0.5">{inProg}</div>
-                        </div>
-                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80">
-                          <div className="text-emerald-700 text-[10px] font-medium">Success</div>
-                          <div className="font-bold text-emerald-700 text-sm mt-0.5">{successDone}</div>
-                        </div>
-                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+                        <button
+                          onClick={() => handleCopyCredentials(member)}
+                          className="py-1 px-2.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-[11px] font-semibold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                          title="Copy WhatsApp Login Message"
+                        >
+                          <span className="material-symbols-outlined text-[14px] text-emerald-600">share</span>
+                          <span>Credentials</span>
+                        </button>
 
-                      <div className="mt-2 text-center text-[11px] text-slate-500">
-                        Pipeline Capacity: <strong className="text-slate-900">{sKw} kW</strong>
+                        <button
+                          onClick={() => {
+                            setStaffFilter(member.id);
+                            handleViewChange('files');
+                          }}
+                          className="text-emerald-600 hover:underline text-xs flex items-center gap-0.5 font-semibold cursor-pointer"
+                        >
+                          <span>View Files</span>
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-                      <button
-                        onClick={() => handleCopyCredentials(member)}
-                        className="py-1 px-2.5 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-[11px] font-semibold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                        title="Copy WhatsApp Login Message"
-                      >
-                        <span className="material-symbols-outlined text-[14px] text-emerald-600">share</span>
-                        <span>Credentials</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setStaffFilter(member.id);
-                          handleViewChange('files');
-                        }}
-                        className="text-emerald-600 hover:underline text-xs flex items-center gap-0.5 font-semibold cursor-pointer"
-                      >
-                        <span>View Files</span>
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </button>
-                    </div>
+              {displayedStaff.length === 0 && (
+                <div className="bg-white border border-[#E4E7EB] rounded-xl p-10 sm:p-14 text-center shadow-xs flex flex-col items-center justify-center max-w-2xl mx-auto">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 flex items-center justify-center mb-4">
+                    <span className="material-symbols-outlined text-3xl">group_off</span>
                   </div>
-                );
-              })}
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-1">
+                    {(staffList || []).length === 0 ? 'No Sales Staff Registered' : 'No Staff in Selected Department'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+                    {(staffList || []).length === 0
+                      ? 'Register sales executives and verification desk members to start assigning customer files.'
+                      : 'No staff members found under the selected department filter.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => (staffList || []).length === 0 ? setShowAddStaffModal(true) : setStaffDepartmentFilter('all')}
+                    className="min-h-[44px] px-4 bg-white border border-[#E4E7EB] hover:border-emerald-600 text-slate-900 font-semibold rounded-lg transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px] text-emerald-600">
+                      {(staffList || []).length === 0 ? 'person_add' : 'groups'}
+                    </span>
+                    <span>{(staffList || []).length === 0 ? 'Register Sales Executive' : 'Show All Staff'}</span>
+                  </button>
+                </div>
+              )}
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
       </div>
 
       {/* MODAL 1: ADD NEW STAFF MEMBER */}
@@ -1748,9 +1810,8 @@ export default function StaffManagement() {
                   return (
                     <div
                       key={item.key}
-                      className={`p-3.5 sm:p-4 rounded-xl border flex flex-col justify-between transition-all ${
-                        isUploaded ? 'bg-emerald-50/50 border-emerald-300 shadow-xs' : 'bg-slate-50/80 border-slate-200 border-dashed hover:border-slate-300'
-                      }`}
+                      className={`p-3.5 sm:p-4 rounded-xl border flex flex-col justify-between transition-all ${isUploaded ? 'bg-emerald-50/50 border-emerald-300 shadow-xs' : 'bg-slate-50/80 border-slate-200 border-dashed hover:border-slate-300'
+                        }`}
                     >
                       <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
@@ -1763,13 +1824,12 @@ export default function StaffManagement() {
                               <p className="text-[11px] text-slate-500 leading-tight">{item.category} &bull; {item.description}</p>
                             </div>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                            isUploaded
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : item.mandatory
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                : 'bg-slate-100 text-slate-500 border border-slate-200'
-                          }`}>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${isUploaded
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : item.mandatory
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                              : 'bg-slate-100 text-slate-500 border border-slate-200'
+                            }`}>
                             {isUploaded ? (attachedFiles.length > 1 ? `${attachedFiles.length} Attached` : 'Uploaded') : (item.mandatory ? 'Pending' : 'Optional')}
                           </span>
                         </div>

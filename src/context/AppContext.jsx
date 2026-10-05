@@ -512,7 +512,8 @@ const safeSetItem = (key, value) => {
   const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', DEFAULT_MODULES));
   const [invertersList, setInvertersList] = useState(() => cacheManager.get('inverters_list', DEFAULT_INVERTERS));
 
-  const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(false);
+  const [isHardwareDbSyncing, setIsHardwareDbSyncing] = useState(true);
+  const [customerFilesError, setCustomerFilesError] = useState(null);
   const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(true);
 
   // Determine if running in public proposal viewer mode
@@ -636,7 +637,7 @@ const safeSetItem = (key, value) => {
           pricingService.getTierMargins(),
           dealerService.getAllDealers(),
           quotationService.getAllQuotations(100),
-          customerFileService.getAllCustomerFiles(),
+          customerFileService.getAllCustomerFiles({ throwOnError: true }),
           staffService.getAllStaff(),
           systemSettingsService.getSystemSettings(),
           documentMasterService.fetchDocumentMaster(),
@@ -687,6 +688,10 @@ const safeSetItem = (key, value) => {
           const attributedFiles = ensureCustomerFileAttribution(dbFiles.value);
           setCustomerFiles(attributedFiles);
           cacheManager.set('customer_files', attributedFiles);
+          setCustomerFilesError(null);
+        } else if (dbFiles.status === 'rejected') {
+          if (dbFiles.reason?.message === 'SESSION_EXPIRED') logout();
+          else setCustomerFilesError(dbFiles.reason?.message || 'Failed to load customer files');
         }
         if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
           setStaffList(dbStaff.value);
@@ -909,61 +914,60 @@ const safeSetItem = (key, value) => {
       }
     };
 
-    // Skip sync when tab is hidden (user is AFK) — Supabase Realtime handles pushes
-    const handleFocus = () => {
-      if (document.visibilityState !== 'hidden') syncFreshData();
-    };
+    let lastSyncTime = 0;
+    const MIN_SYNC_INTERVAL_MS = 10000; // 10 seconds minimum cooldown between focus syncs
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') syncFreshData();
-    };
-
-    // Only re-sync on storage events for non-staff keys (staff is DB-only now)
-    const handleStorage = (e) => {
-      if (e.key && (e.key.includes('dealers_list') || e.key.includes('customer_files') || e.key.includes('quotations_feed'))) {
+    // Throttled sync to prevent request storms on rapid window/tab focus switches
+    const throttledSync = () => {
+      const now = Date.now();
+      if (now - lastSyncTime < MIN_SYNC_INTERVAL_MS) return;
+      lastSyncTime = now;
+      if (document.visibilityState !== 'hidden') {
         syncFreshData();
       }
     };
 
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('storage', handleStorage);
-    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', throttledSync);
+    document.addEventListener('visibilitychange', throttledSync);
 
-    // BroadcastChannel for sub-millisecond instant cross-tab synchronization
+    // BroadcastChannel for instant intentional cross-tab updates (when user actively edits data)
     let broadcastChannel;
     try {
       if (typeof BroadcastChannel !== 'undefined') {
         broadcastChannel = new BroadcastChannel('sunvine_db_sync');
         broadcastChannel.onmessage = (msg) => {
-          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL') {
-            syncFreshData();
+          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL' || msg?.data?.type === 'SYNC_FILES') {
+            const now = Date.now();
+            if (now - lastSyncTime >= 3000) {
+              lastSyncTime = now;
+              syncFreshData();
+            }
           }
         };
       }
     } catch (_) {}
 
-    // No heartbeat poll — Supabase Realtime + focus/visibility events are sufficient
-    // (Removing setInterval prevents the 0→2→0 flicker on AFK tabs)
-
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('storage', handleStorage);
-      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', throttledSync);
+      document.removeEventListener('visibilitychange', throttledSync);
       if (broadcastChannel) broadcastChannel.close();
     };
   }, []);
 
   const refreshCustomerFiles = async () => {
     try {
-      const freshFiles = await customerFileService.getAllCustomerFiles();
+      const freshFiles = await customerFileService.getAllCustomerFiles({ throwOnError: true });
       if (freshFiles && Array.isArray(freshFiles)) {
         const attributed = ensureCustomerFileAttribution(freshFiles);
         setCustomerFiles(attributed);
         cacheManager.set('customer_files', attributed);
+        setCustomerFilesError(null);
         return attributed;
       }
     } catch (err) {
       console.warn('[AppContext] refreshCustomerFiles error:', err);
+      if (err?.message === 'SESSION_EXPIRED') { logout(); return customerFiles; }
+      setCustomerFilesError(err?.message || 'Failed to load customer files');
     }
     return customerFiles;
   };
@@ -1329,6 +1333,16 @@ const safeSetItem = (key, value) => {
     }
     authService.logout().catch(() => {});
   };
+
+  // The UI flag (localStorage) can outlive the HttpOnly JWT cookie (24h). Validate on load;
+  // only a definite 401 logs the user out (network errors are ignored so offline use still works).
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetch('/api/auth/verify', { credentials: 'include' })
+      .then(res => { if (res.status === 401) logout(); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Staff and Customer File Actions
   const addStaff = async (newStaff) => {
@@ -2606,6 +2620,7 @@ const safeSetItem = (key, value) => {
         customerFiles,
         setCustomerFiles,
         refreshCustomerFiles,
+        customerFilesError,
         addStaff,
         updateStaff,
         updateStaffPassword,
