@@ -535,11 +535,16 @@ export default function AdminSettings() {
   // Dealer Modal Handlers
   const handleOpenAddDealer = () => {
     setEditingDealer(null);
-    const existingNums = (dealerListState || [])
-      .map(d => parseInt(String(d.dealer_code || d.dealerCode || d.id || '').replace(/\D/g, ''), 10))
-      .filter(n => !isNaN(n));
+    const existingNums = (dealersList || [])
+      .map(d => {
+        const codeStr = String(d?.dealer_code || d?.dealerCode || (String(d?.id || '').startsWith('SV-DLR') ? d.id : ''));
+        const match = codeStr.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(n => n !== null && !isNaN(n) && n > 0 && n < 100000);
     const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 800;
-    const nextCode = `SV-DLR-${String(maxNum + 1).padStart(4, '0')}`;
+    const nextNum = maxNum + 1;
+    const nextCode = `SV-DLR-${String(nextNum).padStart(4, '0')}`;
     setDealerForm({
       id: nextCode,
       dealerCode: nextCode,
@@ -658,8 +663,12 @@ export default function AdminSettings() {
   const handleOpenAddStaff = () => {
     setEditingStaff(null);
     const existingNums = (staffListState || [])
-      .map(s => parseInt(String(s.id || s.staffId || '').replace(/\D/g, ''), 10))
-      .filter(n => !isNaN(n));
+      .map(s => {
+        const codeStr = String(s?.id || s?.staffId || '');
+        const match = codeStr.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(n => n !== null && !isNaN(n) && n > 0 && n < 100000);
     const maxNum = existingNums.length > 0 ? Math.max(...existingNums) : 805;
     const nextCode = `STF-${String(maxNum + 1).padStart(3, '0')}`;
     setStaffForm({
