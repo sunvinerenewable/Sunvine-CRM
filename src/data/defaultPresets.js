@@ -438,10 +438,10 @@ export const INITIAL_DEALERS = [
   {
     id: "SV-DLR-8000",
     dealerCode: "SV-DLR-8000",
-    firmName: "xx solar",
-    contactPerson: "mr. x",
+    firmName: "Sunvine Solar Partner",
+    contactPerson: "Authorized Partner",
     mobile: "8000050580",
-    email: "partner8000@sunvinedealer.in",
+    email: "partner@sunvinedealer.in",
     city: "Ahmedabad",
     state: "Gujarat",
     discom: "UGVCL",
