@@ -1,4 +1,6 @@
 import { supabase } from '../lib/supabase';
+import { storageService } from './storageService';
+import { extractAllFileDocUrls, getCancellationRetentionStatus } from '../utils/documentUtils';
 
 let apiRateLimitedUntil = 0;
 
@@ -332,10 +334,18 @@ export const customerFileService = {
   },
 
   /**
-   * Restore a cancelled customer file back to active Sourced pipeline
+   * Restore a cancelled customer file back to active Sourced pipeline (Within 14 days)
    */
-  async restoreCustomerFile(fileId) {
+  async restoreCustomerFile(fileId, fileData = null) {
     if (!fileId) return { success: false, error: 'File ID required' };
+
+    // Client-side 14-day validation
+    if (fileData?.cancelledAt) {
+      const retention = getCancellationRetentionStatus(fileData.cancelledAt);
+      if (retention.isExpired) {
+        return { success: false, error: 'Restoration locked: The 14-day recovery window for this file has expired.' };
+      }
+    }
 
     try {
       const res = await fetch('/api/customer-files', {
@@ -348,6 +358,9 @@ export const customerFileService = {
       if (res.ok) {
         const json = await res.json();
         if (json.success) return json;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        if (errJson.error) return { success: false, error: errJson.error };
       }
     } catch (apiErr) {
       console.warn('[customerFileService] API restore notice, falling back to direct:', apiErr);
@@ -376,10 +389,20 @@ export const customerFileService = {
   },
 
   /**
-   * Delete customer file from database in real time (Super Admin hard delete)
+   * Delete customer file from database and purge all linked documents from Cloudflare R2
    */
-  async deleteCustomerFile(fileId) {
+  async deleteCustomerFile(fileId, fileData = null) {
     if (!fileId) return { success: false, error: 'File ID required' };
+
+    // 1. Purge all attached documents from Cloudflare R2 / Supabase Storage
+    try {
+      const docUrls = extractAllFileDocUrls(fileData?.documents);
+      if (docUrls.length > 0) {
+        await storageService.deleteDocument(docUrls);
+      }
+    } catch (docErr) {
+      console.warn('[customerFileService] Storage purge notice during hard delete:', docErr);
+    }
 
     let apiSucceeded = false;
     try {

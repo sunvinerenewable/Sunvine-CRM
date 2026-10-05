@@ -172,13 +172,25 @@ export default function CancelCustomerFileModal({
                   required={selectedReason.includes('Other')}
                 />
               </div>
+
+              {/* 14-Day Policy Notice */}
+              <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5">timer</span>
+                <div>
+                  <strong className="block font-bold mb-0.5 text-amber-950">14-Day Restoration Policy</strong>
+                  This customer file can only be recovered within <strong>14 days from today</strong>. Once 14 days have passed, recovery is permanently locked and all attached documents will be purged from Cloudflare R2 storage.
+                </div>
+              </div>
             </div>
           )}
 
           {deleteMode === 'hard_delete' && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs">
-              <strong className="block font-bold mb-0.5">⚠️ Warning: Irreversible Action</strong>
-              This will permanently delete customer <strong>{file.customerName}</strong> and all linked documents and timeline history from the live PostgreSQL database.
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">delete_forever</span>
+              <div>
+                <strong className="block font-bold mb-0.5 text-red-950">⚠️ Warning: Permanent Purge</strong>
+                This will permanently purge customer <strong>{file.customerName}</strong> ({file.id}) from PostgreSQL and immediately delete all attached documents from Cloudflare R2 storage. This action cannot be undone.
+              </div>
             </div>
           )}
 

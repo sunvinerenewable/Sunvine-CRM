@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { verifyJwt } from './_lib/jwt.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
@@ -17,6 +18,60 @@ function getDb() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceKey) throw new Error('Supabase database configuration missing.');
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+}
+
+function extractAllDocPaths(documents) {
+  if (!documents || typeof documents !== 'object') return [];
+  const paths = [];
+  for (const key of Object.keys(documents)) {
+    const val = documents[key];
+    if (!val) continue;
+    if (typeof val === 'string') {
+      paths.push(val);
+    } else if (Array.isArray(val)) {
+      val.forEach(item => {
+        if (typeof item === 'string') paths.push(item);
+        else if (item?.url) paths.push(item.url);
+        else if (item?.path) paths.push(item.path);
+      });
+    } else if (typeof val === 'object') {
+      if (val.url) paths.push(val.url);
+      if (val.path) paths.push(val.path);
+      if (Array.isArray(val.files)) {
+        val.files.forEach(f => {
+          if (typeof f === 'string') paths.push(f);
+          else if (f?.url) paths.push(f.url);
+          else if (f?.path) paths.push(f.path);
+        });
+      }
+    }
+  }
+  return [...new Set(paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '')).filter(Boolean))];
+}
+
+async function deleteR2Files(keys, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
+  if (!keys || keys.length === 0) return;
+  const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
+  const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
+  if (!CF_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || CF_ACCOUNT_ID.includes('your_')) return;
+
+  try {
+    const r2 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY
+      }
+    });
+
+    await Promise.allSettled(
+      keys.map(key => r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
+    );
+  } catch (err) {
+    console.warn('[customer-files] R2 document purge notice:', err?.message);
+  }
 }
 
 function mapDbToFrontend(f) {
@@ -80,9 +135,39 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 
-  // ── GET: Fetch All Customer Files ──────────────────────────────────────────
+  // ── GET: Fetch All Customer Files & Auto-Purge Expired Docs (> 14 days) ───
   if (req.method === 'GET') {
     try {
+      // 14-Day Retention Check: purge R2 documents for cancelled files older than 14 days
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: expiredFiles } = await db
+        .from('customer_files')
+        .select('id, documents, timeline')
+        .eq('status', 'Cancelled')
+        .lt('cancelled_at', fourteenDaysAgo);
+
+      if (Array.isArray(expiredFiles) && expiredFiles.length > 0) {
+        for (const exp of expiredFiles) {
+          const docKeys = extractAllDocPaths(exp.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+            const expiredPurgeNote = {
+              title: 'Vault Documents Purged (14-Day Retention)',
+              description: 'Attached customer documents permanently purged from Cloudflare R2 storage after 14-day cancellation retention limit.',
+              timestamp: new Date().toISOString(),
+              stage: 'CANCELLED',
+              author: 'System Vault Cleaner'
+            };
+            const updatedTimeline = Array.isArray(exp.timeline) ? [...exp.timeline, expiredPurgeNote] : [expiredPurgeNote];
+            await db.from('customer_files').update({
+              documents: {},
+              timeline: updatedTimeline,
+              updated_at: new Date().toISOString()
+            }).eq('id', exp.id);
+          }
+        }
+      }
+
       const { data: rows, error } = await db
         .from('customer_files')
         .select('*')
@@ -291,16 +376,32 @@ export default async function handler(req, res) {
     }
 
     if (action === 'restore' && fileId) {
-      const restoreNote = {
-        title: 'Customer File Restored',
-        description: `File restored to active Sourced pipeline by ${user.name || user.id || 'User'}`,
-        timestamp: new Date().toISOString(),
-        stage: 'LEAD_SOURCED',
-        author: user.name || user.id || 'User'
-      };
-
       try {
-        const { data: existing } = await db.from('customer_files').select('timeline').eq('id', fileId).single();
+        const { data: existing } = await db
+          .from('customer_files')
+          .select('cancelled_at, timeline')
+          .eq('id', fileId)
+          .single();
+
+        // 14-day restoration window enforcement
+        if (existing?.cancelled_at) {
+          const diffMs = Date.now() - new Date(existing.cancelled_at).getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          if (diffDays > 14) {
+            return res.status(400).json({
+              error: 'Restoration locked: The 14-day recovery window for this cancelled file has expired. Documents have been purged.'
+            });
+          }
+        }
+
+        const restoreNote = {
+          title: 'Customer File Restored',
+          description: `File restored to active Sourced pipeline by ${user.name || user.id || 'User'}`,
+          timestamp: new Date().toISOString(),
+          stage: 'LEAD_SOURCED',
+          author: user.name || user.id || 'User'
+        };
+
         const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, restoreNote] : [restoreNote];
 
         const payload = {
@@ -341,6 +442,20 @@ export default async function handler(req, res) {
       }
 
       try {
+        // Fetch file to purge all attached documents from Cloudflare R2 before removing row
+        const { data: fileToDelete } = await db
+          .from('customer_files')
+          .select('documents')
+          .eq('id', fileId)
+          .single();
+
+        if (fileToDelete?.documents) {
+          const docKeys = extractAllDocPaths(fileToDelete.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+          }
+        }
+
         const { error } = await db
           .from('customer_files')
           .delete()

@@ -1796,6 +1796,15 @@ const safeSetItem = (key, value) => {
   };
 
   const restoreCustomerFile = async (fileId) => {
+    const targetFile = (customerFiles || []).find(f => f.id === fileId);
+    if (targetFile?.cancelledAt) {
+      const cancelTime = new Date(targetFile.cancelledAt).getTime();
+      const diffDays = (Date.now() - cancelTime) / (1000 * 60 * 60 * 24);
+      if (diffDays > 14) {
+        throw new Error('Restoration locked: The 14-day recovery window for this cancelled file has expired.');
+      }
+    }
+
     const timestamp = new Date().toISOString();
     const restoreMilestone = {
       id: `TL-${Date.now()}`,
@@ -1827,9 +1836,10 @@ const safeSetItem = (key, value) => {
     }));
 
     try {
-      await customerFileService.restoreCustomerFile(fileId);
+      await customerFileService.restoreCustomerFile(fileId, targetFile);
     } catch (e) {
       console.warn('[AppContext] Failed to restore customer file in DB:', e);
+      throw e;
     }
 
     logActivity({
@@ -1844,9 +1854,10 @@ const safeSetItem = (key, value) => {
   };
 
   const deleteCustomerFile = async (fileId) => {
+    const targetFile = (customerFiles || []).find(f => f.id === fileId);
     setCustomerFiles(prev => prev.filter(f => f.id !== fileId));
     try {
-      await customerFileService.deleteCustomerFile(fileId);
+      await customerFileService.deleteCustomerFile(fileId, targetFile);
     } catch (e) {
       console.warn('[AppContext] Failed to delete customer file in DB:', e);
     }
@@ -1854,7 +1865,7 @@ const safeSetItem = (key, value) => {
       action: 'DELETE_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
       recordId: fileId,
-      details: `Permanently purged customer file ${fileId} from database.`
+      details: `Permanently purged customer file ${fileId} and all attached documents from storage.`
     });
     broadcastDbEvent('SYNC_FILES');
   };

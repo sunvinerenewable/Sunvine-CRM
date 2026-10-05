@@ -114,3 +114,53 @@ export function removeDocFromFileList(existingDocState, targetIdOrUrl) {
     date: primaryDoc?.date || new Date().toISOString().split('T')[0]
   };
 }
+
+/**
+ * Calculates 14-day cancellation retention and restoration eligibility.
+ * Files cancelled for > 14 days have their restore action permanently locked
+ * and their vault documents purged from Cloudflare R2.
+ */
+export function getCancellationRetentionStatus(cancelledAt) {
+  if (!cancelledAt) {
+    return {
+      isExpired: false,
+      daysRemaining: 14,
+      formattedRemaining: '14 days',
+      canRestore: true,
+      expiryDateFormatted: '14 days from cancellation'
+    };
+  }
+
+  const cancelTime = new Date(cancelledAt).getTime();
+  const now = Date.now();
+  const diffMs = now - cancelTime;
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const daysRemaining = Math.max(0, Math.ceil(14 - diffDays));
+  const isExpired = diffDays >= 14;
+  const expiryDate = new Date(cancelTime + 14 * 24 * 60 * 60 * 1000);
+
+  return {
+    isExpired,
+    daysRemaining,
+    formattedRemaining: daysRemaining === 0 ? 'Expired' : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`,
+    canRestore: !isExpired,
+    expiryDateFormatted: expiryDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  };
+}
+
+/**
+ * Extracts all document URLs/paths across all slots in a customer file.
+ */
+export function extractAllFileDocUrls(documents) {
+  if (!documents || typeof documents !== 'object') return [];
+  const urls = [];
+  for (const slot of Object.values(documents)) {
+    const list = normalizeDocList(slot);
+    list.forEach(doc => {
+      if (doc.url) urls.push(doc.url);
+      if (doc.path) urls.push(doc.path);
+    });
+  }
+  return [...new Set(urls.filter(Boolean))];
+}
+

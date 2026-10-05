@@ -8,7 +8,7 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
-import { normalizeDocList } from '../../utils/documentUtils';
+import { normalizeDocList, getCancellationRetentionStatus } from '../../utils/documentUtils';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -137,35 +137,57 @@ export default function CustomerFileDetailModal({ file, onClose }) {
         </div>
 
         {/* Cancellation Notice Banner (If Cancelled) */}
-        {(file.status === 'Cancelled' || file.stage === 'CANCELLED') && (
-          <div className="mx-4 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[20px]">cancel</span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between font-bold">
-                <span className="text-rose-950 text-sm">Customer File Cancelled</span>
-                {file.cancelledAt && (
-                  <span className="text-[11px] text-rose-600 font-normal">
-                    {new Date(file.cancelledAt).toLocaleString()}
+        {(file.status === 'Cancelled' || file.stage === 'CANCELLED') && (() => {
+          const retention = getCancellationRetentionStatus(file.cancelledAt);
+          return (
+            <div className="mx-4 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[20px]">
+                  {retention.isExpired ? 'lock_clock' : 'cancel'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between font-bold">
+                  <span className="text-rose-950 text-sm">Customer File Cancelled</span>
+                  {file.cancelledAt && (
+                    <span className="text-[11px] text-rose-600 font-normal">
+                      {new Date(file.cancelledAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                {/* 14-Day Retention Warning Badge */}
+                <div className={`mt-2 p-2 rounded-lg flex items-center gap-2 text-xs font-semibold ${
+                  retention.isExpired 
+                    ? 'bg-rose-200/80 text-rose-950 border border-rose-300' 
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {retention.isExpired ? 'lock' : 'alarm'}
                   </span>
-                )}
-              </div>
-              <div className="mt-1 text-rose-800 break-words">
-                <span className="font-semibold">Reason &amp; Remarks:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
-              </div>
-              {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
-                <div className="mt-0.5 text-[11px] text-rose-600">
-                  Action taken by: <span className="font-medium">
-                    {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
-                      ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
-                      : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                  <span>
+                    {retention.isExpired
+                      ? '14-Day Restoration Window Expired & Locked (Documents Purged from Cloudflare R2)'
+                      : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted}). After 14 days, files are locked and documents are purged.`}
                   </span>
                 </div>
-              )}
+
+                <div className="mt-2 text-rose-800 break-words">
+                  <span className="font-semibold">Reason &amp; Remarks:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                </div>
+                {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                  <div className="mt-0.5 text-[11px] text-rose-600">
+                    Action taken by: <span className="font-medium">
+                      {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                        ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                        : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Quick KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-4 bg-surface-container-low/20 border-b border-surface-container-high text-xs">

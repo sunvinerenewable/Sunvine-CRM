@@ -10,7 +10,7 @@ import EditCustomerFileModal from '../Shared/EditCustomerFileModal';
 import CancelCustomerFileModal from '../Shared/CancelCustomerFileModal';
 import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { formatFileSize } from '../../utils/mediaOptimizer';
-import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList, getCancellationRetentionStatus } from '../../utils/documentUtils';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import {
@@ -887,33 +887,55 @@ export default function StaffManagement() {
                         </div>
 
                         {/* Cancellation Banner */}
-                        {isCancelled && (
-                          <div className="mt-2.5 p-2.5 bg-rose-50/90 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
-                            <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">cancel</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-bold text-rose-900 flex items-center justify-between">
-                                <span>File Cancelled</span>
-                                {file.cancelledAt && (
-                                  <span className="text-[10px] text-rose-500 font-normal">
-                                    {new Date(file.cancelledAt).toLocaleDateString()}
+                        {isCancelled && (() => {
+                          const retention = getCancellationRetentionStatus(file.cancelledAt);
+                          return (
+                            <div className="mt-2.5 p-2.5 bg-rose-50/90 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+                              <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">
+                                {retention.isExpired ? 'lock_clock' : 'cancel'}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-bold text-rose-900 flex items-center justify-between">
+                                  <span>File Cancelled</span>
+                                  {file.cancelledAt && (
+                                    <span className="text-[10px] text-rose-500 font-normal">
+                                      {new Date(file.cancelledAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* 14-Day Retention Warning Badge */}
+                                <div className={`mt-1.5 p-1.5 rounded-md flex items-center gap-1.5 text-[11px] font-semibold ${
+                                  retention.isExpired 
+                                    ? 'bg-rose-200/80 text-rose-950 border border-rose-300' 
+                                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                                }`}>
+                                  <span className="material-symbols-outlined text-[14px]">
+                                    {retention.isExpired ? 'lock' : 'alarm'}
                                   </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-rose-700 mt-0.5 break-words">
-                                <span className="font-semibold">Reason:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
-                              </div>
-                              {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
-                                <div className="text-[10px] text-rose-600 mt-0.5">
-                                  Cancelled by: <span className="font-medium">
-                                    {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
-                                      ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
-                                      : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                                  <span>
+                                    {retention.isExpired
+                                      ? '14-Day Recovery Expired (Documents Purged)'
+                                      : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted})`}
                                   </span>
                                 </div>
-                              )}
+
+                                <div className="text-[11px] text-rose-700 mt-1.5 break-words">
+                                  <span className="font-semibold">Reason:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                                </div>
+                                {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                                  <div className="text-[10px] text-rose-600 mt-0.5">
+                                    Cancelled by: <span className="font-medium">
+                                      {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                                        ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                                        : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Info Pills */}
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -985,41 +1007,61 @@ export default function StaffManagement() {
 
                       {/* Action Footer */}
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                        {isCancelled ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFileForTimeline(file)}
-                              className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                              title="View History Timeline"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">timeline</span>
-                              <span>Timeline</span>
-                            </button>
+                        {isCancelled ? (() => {
+                          const retention = getCancellationRetentionStatus(file.cancelledAt);
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFileForTimeline(file)}
+                                className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                title="View History Timeline"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">timeline</span>
+                                <span>Timeline</span>
+                              </button>
 
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await restoreCustomerFile(file.id);
-                                addToast(`Customer file ${file.id} restored to Sourced stage`, 'success');
-                              }}
-                              className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">history</span>
-                              <span>Restore File</span>
-                            </button>
+                              {retention.isExpired ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="flex-1 py-1.5 px-3 bg-slate-100 border border-slate-200 text-slate-400 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60"
+                                  title="14-day recovery window has expired. This file cannot be restored."
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">lock</span>
+                                  <span>Recovery Locked</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      await restoreCustomerFile(file.id);
+                                      addToast(`Customer file ${file.id} restored to Sourced stage`, 'success');
+                                    } catch (err) {
+                                      addToast(err?.message || 'Failed to restore file', 'error');
+                                    }
+                                  }}
+                                  className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                                  title={`Restore to active pipeline (${retention.formattedRemaining} remaining)`}
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">history</span>
+                                  <span>Restore File</span>
+                                </button>
+                              )}
 
-                            <button
-                              type="button"
-                              onClick={() => setFileToCancel(file)}
-                              className="py-1.5 px-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                              title="Delete Permanently from Database"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">delete_forever</span>
-                              <span>Purge</span>
-                            </button>
-                          </>
-                        ) : (
+                              <button
+                                type="button"
+                                onClick={() => setFileToCancel(file)}
+                                className="py-1.5 px-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                title="Delete Permanently & Purge Documents from R2"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">delete_forever</span>
+                                <span>Purge</span>
+                              </button>
+                            </>
+                          );
+                        })() : (
                           <>
                             <button
                               type="button"
