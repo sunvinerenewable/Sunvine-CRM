@@ -20,19 +20,40 @@ export const auditLogService = {
   },
 
   async logEvent(action, entityType, entityId, details = {}, userEmail = 'ops@sunvine.in', userRole = 'admin') {
+    let detailsObj = {};
+    if (typeof details === 'object' && details !== null) {
+      detailsObj = details;
+    } else if (typeof details === 'string' && details.trim()) {
+      detailsObj = { message: details.trim() };
+    }
+
     const payload = {
-      action,
-      entity_type: entityType,
-      entity_id: String(entityId || ''),
+      action: action || 'SYSTEM_ACTION',
+      module: entityType || 'SYSTEM',
+      entity_type: entityType || 'SYSTEM',
+      record_id: entityId ? String(entityId) : null,
+      entity_id: entityId ? String(entityId) : null,
       user_email: userEmail,
+      user_name: userEmail,
       user_role: userRole,
-      details,
-      created_at: new Date().toISOString()
+      role: userRole,
+      details: detailsObj,
+      status: 'VERIFIED'
     };
 
     try {
-      await supabase.from('audit_logs').insert([payload]);
-    } catch (_) {}
+      const { error } = await supabase.from('audit_logs').insert([payload]);
+      if (error) {
+        console.error('[auditLogService] Supabase audit log insert error:', {
+          message: error.message,
+          code: error.code,
+          hint: error.hint,
+          details: error.details
+        });
+      }
+    } catch (err) {
+      console.error('[auditLogService] Exception inserting audit log:', err);
+    }
   },
 
   async getNotifications() {

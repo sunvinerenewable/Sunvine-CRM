@@ -915,7 +915,7 @@ export default function StaffManagement() {
                                   </span>
                                   <span>
                                     {retention.isExpired
-                                      ? '14-Day Recovery Expired (Documents Purged)'
+                                      ? 'Recovery period ended (Documents deleted)'
                                       : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted})`}
                                   </span>
                                 </div>
@@ -1054,10 +1054,10 @@ export default function StaffManagement() {
                                 type="button"
                                 onClick={() => setFileToCancel(file)}
                                 className="py-1.5 px-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                title="Delete Permanently & Purge Documents from R2"
+                                title="Permanently Delete File"
                               >
                                 <span className="material-symbols-outlined text-[15px]">delete_forever</span>
-                                <span>Purge</span>
+                                <span>Delete</span>
                               </button>
                             </>
                           );

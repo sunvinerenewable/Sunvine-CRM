@@ -703,7 +703,7 @@ export default function StaffFiles() {
                             </span>
                             <span>
                               {retention.isExpired
-                                ? '14-Day Recovery Expired (Documents Purged)'
+                                ? 'Recovery period ended (Documents deleted)'
                                 : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted})`}
                             </span>
                           </div>

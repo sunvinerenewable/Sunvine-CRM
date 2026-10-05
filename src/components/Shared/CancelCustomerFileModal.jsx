@@ -118,7 +118,7 @@ export default function CancelCustomerFileModal({
                     <span>Soft Cancel (Recommended)</span>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-tight">
-                    Moves file to 'Cancelled' tab with reason. Can be restored anytime.
+                    Moves file to 'Cancelled' tab with reason. Can be restored within 14 days.
                   </p>
                 </button>
 
@@ -136,7 +136,7 @@ export default function CancelCustomerFileModal({
                     <span>Permanent Delete</span>
                   </div>
                   <p className="text-[10px] text-slate-500 leading-tight">
-                    Completely purges record from database. Irreversible action.
+                    Permanently deletes file and removes all uploaded documents. Irreversible.
                   </p>
                 </button>
               </div>
@@ -173,12 +173,12 @@ export default function CancelCustomerFileModal({
                 />
               </div>
 
-              {/* 14-Day Policy Notice */}
+              {/* 14-Day Recovery Notice */}
               <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-amber-900 text-[11px] leading-relaxed flex items-start gap-2.5">
                 <span className="material-symbols-outlined text-amber-600 text-[18px] shrink-0 mt-0.5">timer</span>
                 <div>
-                  <strong className="block font-bold mb-0.5 text-amber-950">14-Day Restoration Policy</strong>
-                  This customer file can only be recovered within <strong>14 days from today</strong>. Once 14 days have passed, recovery is permanently locked and all attached documents will be purged from Cloudflare R2 storage.
+                  <strong className="block font-bold mb-0.5 text-amber-950">14-Day Recovery Period</strong>
+                  You can restore this file anytime within the next <strong>14 days</strong>. After 14 days, the file cannot be recovered and all uploaded documents will be permanently deleted.
                 </div>
               </div>
             </div>
@@ -188,8 +188,8 @@ export default function CancelCustomerFileModal({
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex items-start gap-2.5">
               <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">delete_forever</span>
               <div>
-                <strong className="block font-bold mb-0.5 text-red-950">⚠️ Warning: Permanent Purge</strong>
-                This will permanently purge customer <strong>{file.customerName}</strong> ({file.id}) from PostgreSQL and immediately delete all attached documents from Cloudflare R2 storage. This action cannot be undone.
+                <strong className="block font-bold mb-0.5 text-red-950">⚠️ Warning: Permanent Delete</strong>
+                This will permanently remove customer <strong>{file.customerName}</strong> ({file.id}) and all attached documents. This cannot be undone.
               </div>
             </div>
           )}

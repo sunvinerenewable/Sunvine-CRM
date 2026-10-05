@@ -167,8 +167,8 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                   </span>
                   <span>
                     {retention.isExpired
-                      ? '14-Day Restoration Window Expired & Locked (Documents Purged from Cloudflare R2)'
-                      : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted}). After 14 days, files are locked and documents are purged.`}
+                      ? 'Recovery period ended. This file can no longer be restored and all uploaded documents have been permanently deleted.'
+                      : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted}). After 14 days, the file cannot be restored and all uploaded documents will be deleted.`}
                   </span>
                 </div>
 

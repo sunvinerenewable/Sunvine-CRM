@@ -274,6 +274,86 @@ async function runMigrations() {
         CREATE OR REPLACE VIEW public.admin_users AS SELECT * FROM public.admin_accounts;
         CREATE OR REPLACE VIEW public.staff_users AS SELECT * FROM public.staff_accounts;
       `
+    },
+    {
+      name: '008_cancelled_files_14_day_retention',
+      sql: `
+        ALTER TABLE public.customer_files 
+        ADD COLUMN IF NOT EXISTS cancellation_reason TEXT,
+        ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+
+        CREATE INDEX IF NOT EXISTS idx_customer_files_cancelled_retention 
+        ON public.customer_files (status, cancelled_at) 
+        WHERE status = 'Cancelled';
+
+        CREATE OR REPLACE FUNCTION purge_expired_cancelled_file_documents()
+        RETURNS INTEGER AS $$
+        DECLARE
+            purged_count INTEGER;
+        BEGIN
+            UPDATE public.customer_files
+            SET documents = '{}'::jsonb,
+                updated_at = NOW()
+            WHERE status = 'Cancelled'
+              AND cancelled_at IS NOT NULL
+              AND cancelled_at < NOW() - INTERVAL '14 days'
+              AND documents IS NOT NULL
+              AND documents::text != '{}'
+              AND documents::text != 'null';
+            
+            GET DIAGNOSTICS purged_count = ROW_COUNT;
+            RETURN purged_count;
+        END;
+        $$ LANGUAGE plpgsql;
+      `
+    },
+    {
+      name: '009_audit_logs_comprehensive_schema_and_rls',
+      sql: `
+        ALTER TABLE public.audit_logs 
+          ADD COLUMN IF NOT EXISTS module VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS record_id VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS user_id VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS user_name VARCHAR(255),
+          ADD COLUMN IF NOT EXISTS role VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS old_value JSONB,
+          ADD COLUMN IF NOT EXISTS new_value JSONB,
+          ADD COLUMN IF NOT EXISTS ip_address VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'VERIFIED',
+          ADD COLUMN IF NOT EXISTS table_name VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS actor_id VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS actor_role VARCHAR(100);
+
+        ALTER TABLE public.audit_logs ALTER COLUMN entity_type DROP NOT NULL;
+        ALTER TABLE public.audit_logs ALTER COLUMN entity_type SET DEFAULT 'GENERAL';
+        ALTER TABLE public.audit_logs ALTER COLUMN action DROP NOT NULL;
+        ALTER TABLE public.audit_logs ALTER COLUMN action SET DEFAULT 'SYSTEM_ACTION';
+        ALTER TABLE public.audit_logs ALTER COLUMN details SET DEFAULT '{}'::jsonb;
+        ALTER TABLE public.audit_logs ALTER COLUMN created_at SET DEFAULT timezone('utc'::text, now());
+
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs (action);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON public.audit_logs (module);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs (user_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_logs_record_id ON public.audit_logs (record_id);
+
+        ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+
+        DROP POLICY IF EXISTS "service_role_all_audit_logs" ON public.audit_logs;
+        CREATE POLICY "service_role_all_audit_logs" ON public.audit_logs
+          FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+        DROP POLICY IF EXISTS "allow_insert_audit_logs" ON public.audit_logs;
+        CREATE POLICY "allow_insert_audit_logs" ON public.audit_logs
+          FOR INSERT TO anon, authenticated WITH CHECK (true);
+
+        DROP POLICY IF EXISTS "allow_select_audit_logs" ON public.audit_logs;
+        CREATE POLICY "allow_select_audit_logs" ON public.audit_logs
+          FOR SELECT TO anon, authenticated USING (true);
+
+        CREATE OR REPLACE VIEW public.audit_log AS SELECT * FROM public.audit_logs;
+      `
     }
   ];
 

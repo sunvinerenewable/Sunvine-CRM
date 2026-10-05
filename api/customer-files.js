@@ -152,11 +152,11 @@ export default async function handler(req, res) {
           if (docKeys.length > 0) {
             await deleteR2Files(docKeys);
             const expiredPurgeNote = {
-              title: 'Vault Documents Purged (14-Day Retention)',
-              description: 'Attached customer documents permanently purged from Cloudflare R2 storage after 14-day cancellation retention limit.',
+              title: 'Uploaded Documents Removed',
+              description: 'Uploaded customer documents were permanently deleted after the 14-day recovery period ended.',
               timestamp: new Date().toISOString(),
               stage: 'CANCELLED',
-              author: 'System Vault Cleaner'
+              author: 'System'
             };
             const updatedTimeline = Array.isArray(exp.timeline) ? [...exp.timeline, expiredPurgeNote] : [expiredPurgeNote];
             await db.from('customer_files').update({
