@@ -32,6 +32,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/auth/:action*",
+      "destination": "/api/auth/[action]?action=:action*"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

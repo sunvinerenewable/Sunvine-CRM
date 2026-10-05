@@ -46,3 +46,4 @@ DATABASE_URL
 # Rollout runs and database dumps
 rollout-run/
 backups/
+scratch/

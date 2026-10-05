@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useLoading } from '../../context/LoadingContext';
+import { useToast } from '../Shared/Toast';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
 import { DEFAULT_REQUIRED_DOCUMENTS, isDocMandatoryForCategory } from '../../data/defaultRequiredDocuments';
 
 export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSuccess }) {
@@ -18,6 +20,7 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     setActiveTab
   } = useApp();
   const { showLoader, hideLoader } = useLoading();
+  const { addToast } = useToast();
 
   if (!isOpen || !quotation) return null;
 
@@ -60,30 +63,35 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     return list.filter(d => (d.categories || []).includes(applicationCategory));
   }, [requiredDocuments, applicationCategory]);
 
-  const handleFileUpload = async (docKey, file) => {
-    if (!file) return;
+  const handleFileUpload = async (docKey, filesInput) => {
+    if (!filesInput) return;
+    const fileList = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (fileList.length === 0) return;
 
-    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-    const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
-    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'mp4'];
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'video/mp4'];
 
-    if (!isAllowed) {
-      addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
-      return;
-    }
+    const newDocs = [];
+    for (const file of fileList) {
+      const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
 
-    if (file.size > 2 * 1024 * 1024) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-      addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
-      return;
-    }
+      if (!isAllowed) {
+        addToast(`File "${file.name}" invalid format. Only PDF and Images are allowed.`, 'error');
+        continue;
+      }
 
-    try {
-      const optimized = await compressMedia(file);
-      setDocuments(prev => ({
-        ...prev,
-        [docKey]: {
+      if (file.size > 2 * 1024 * 1024) {
+        const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+        addToast(`File "${file.name}" (${sizeMB} MB) exceeds maximum 2 MB limit allowed.`, 'error');
+        continue;
+      }
+
+      try {
+        const optimized = await compressMedia(file);
+        newDocs.push({
           filename: optimized.file?.name || file.name,
           size: optimized.compressedFormatted || formatFileSize(file.size),
           originalSize: optimized.originalFormatted || formatFileSize(file.size),
@@ -91,43 +99,71 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
           dataUrl: optimized.dataUrl || optimized.posterDataUrl,
           uploaded: true,
           date: new Date().toISOString().split('T')[0]
-        }
-      }));
-    } catch (e) {
-      setDocuments(prev => ({
-        ...prev,
-        [docKey]: {
+        });
+      } catch (e) {
+        newDocs.push({
           filename: file.name,
           size: formatFileSize(file.size),
           uploaded: true,
           date: new Date().toISOString().split('T')[0]
-        }
+        });
+      }
+    }
+
+    if (newDocs.length > 0) {
+      setDocuments(prev => ({
+        ...prev,
+        [docKey]: appendDocsToFileList(prev[docKey], newDocs)
       }));
+      addToast(
+        newDocs.length > 1
+          ? `${newDocs.length} files attached`
+          : `Document attached: ${newDocs[0].filename}`,
+        'success'
+      );
     }
   };
 
-  const handleCameraCapture = (stats) => {
-    if (!cameraTargetDoc || !stats) return;
+  const handleCameraCapture = (statsOrList) => {
+    if (!cameraTargetDoc || !statsOrList) return;
+    const docKey = cameraTargetDoc.key;
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
+
+    const newDocs = items.map((stats, i) => ({
+      filename: stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`,
+      size: stats.compressedFormatted || stats.size || 'Attached',
+      originalSize: stats.originalFormatted,
+      reduction: stats.reduction,
+      dataUrl: stats.dataUrl || stats.posterDataUrl,
+      uploaded: true,
+      date: new Date().toISOString().split('T')[0]
+    }));
+
     setDocuments(prev => ({
       ...prev,
-      [cameraTargetDoc.key]: {
-        filename: stats.file?.name || `${cameraTargetDoc.key}_camera.jpg`,
-        size: stats.compressedFormatted,
-        originalSize: stats.originalFormatted,
-        reduction: stats.reduction,
-        dataUrl: stats.dataUrl || stats.posterDataUrl,
-        uploaded: true,
-        date: new Date().toISOString().split('T')[0]
-      }
+      [docKey]: appendDocsToFileList(prev[docKey], newDocs)
     }));
     setCameraTargetDoc(null);
+    addToast(newDocs.length > 1 ? `${newDocs.length} files attached` : `File attached: ${newDocs[0].filename}`, 'success');
   };
 
-  const handleRemoveDoc = (docKey) => {
+  const handleRemoveDoc = (docKey, targetIdOrFilename = null) => {
     setDocuments(prev => {
-      const next = { ...prev };
-      delete next[docKey];
-      return next;
+      if (!targetIdOrFilename) {
+        const next = { ...prev };
+        delete next[docKey];
+        return next;
+      }
+      const updatedSlot = removeDocFromFileList(prev[docKey], targetIdOrFilename);
+      if (!updatedSlot.uploaded || updatedSlot.files.length === 0) {
+        const next = { ...prev };
+        delete next[docKey];
+        return next;
+      }
+      return {
+        ...prev,
+        [docKey]: updatedSlot
+      };
     });
   };
 
@@ -171,8 +207,8 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
       sourceType: 'DEALER',
       dealerId: quotation.dealerId || currentDealer?.id || 'SV-DLR-0104',
       dealerName: quotation.dealerName || currentDealer?.name || 'Authorized Channel Partner',
-      staffId: currentDealer?.assignedStaffId || 'STF-001',
-      staffName: currentDealer?.assignedStaffName || 'Territory Sales Officer',
+      staffId: currentDealer?.assignedStaffId || 'STF-DIRECT',
+      staffName: currentDealer?.assignedStaffName || (currentDealer?.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
       financeType: quotation.financeType || 'CASH',
       loanBank: quotation.loanBank || (quotation.financeType === 'LOAN' ? 'State Bank of India' : ''),
       loanTenureYears: quotation.loanTenureYears || 5,
@@ -190,11 +226,7 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
       notes: internalNotes.trim(),
       timeline,
       documents: {
-        lightBill: documents.lightBill || { uploaded: false, filename: null },
-        aadhaar: documents.aadhaar || { uploaded: false, filename: null },
-        pan: documents.pan || { uploaded: false, filename: null },
-        propertyTax: documents.propertyTax || { uploaded: false, filename: null },
-        passportPhoto: documents.passportPhoto || { uploaded: false, filename: null }
+        ...documents
       }
     };
 
@@ -373,14 +405,16 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-on-surface mb-1">Sanctioned Load (kW)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={sanctionedLoadKw}
-                    onChange={(e) => setSanctionedLoadKw(e.target.value)}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-on-surface font-mono font-semibold focus:outline-none focus:border-primary"
-                  />
+                  <label className="block font-semibold text-on-surface mb-1">Project Category *</label>
+                  <select
+                    value={applicationCategory}
+                    onChange={(e) => setApplicationCategory(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-on-surface focus:outline-none focus:border-primary cursor-pointer font-medium"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block font-semibold text-on-surface mb-1">Terrace Type</label>
@@ -442,95 +476,117 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
             {/* Dynamic Card-Based UI for Document Uploads */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {activeDocRequirements.map((doc) => {
-                const uploaded = documents[doc.key];
+                const docState = documents[doc.key];
+                const attachedFiles = normalizeDocList(docState);
+                const isUploaded = attachedFiles.length > 0;
                 const isMandatory = isDocMandatoryForCategory(doc, applicationCategory);
+
                 return (
                   <div
                     key={doc.id || doc.key}
-                    className={`p-3 rounded-xl border flex flex-col justify-between gap-2 text-xs transition-colors ${
-                      uploaded
+                    className={`p-3 rounded-xl border flex flex-col justify-between gap-2.5 text-xs transition-colors ${
+                      isUploaded
                         ? 'bg-primary-container/10 border-primary/40'
                         : isMandatory
                         ? 'bg-surface-container-low border-amber-500/30'
                         : 'bg-surface-container-low border-surface-container-high/70'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="material-symbols-outlined text-primary text-lg shrink-0">
-                          {doc.icon || 'description'}
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-bold text-on-surface block text-[11px] truncate">{doc.label}</span>
-                          <span className="text-[10px] text-secondary block truncate">{doc.description || doc.desc}</span>
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="material-symbols-outlined text-primary text-lg shrink-0">
+                            {doc.icon || 'description'}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-on-surface block text-[11px] truncate">{doc.label}</span>
+                            <span className="text-[10px] text-secondary block truncate">{doc.description || doc.desc}</span>
+                          </div>
                         </div>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
+                            isUploaded
+                              ? 'bg-emerald-500/20 text-emerald-400'
+                              : isMandatory
+                              ? 'bg-amber-500/20 text-amber-400'
+                              : 'bg-surface-container text-secondary'
+                          }`}
+                        >
+                          {isUploaded ? (attachedFiles.length > 1 ? `${attachedFiles.length} Attached` : 'Ready') : isMandatory ? 'Mandatory' : 'Optional'}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
-                          uploaded
-                            ? 'bg-emerald-500/20 text-emerald-400'
-                            : isMandatory
-                            ? 'bg-amber-500/20 text-amber-400'
-                            : 'bg-surface-container text-secondary'
-                        }`}
-                      >
-                        {uploaded ? 'Ready' : isMandatory ? 'Mandatory' : 'Optional'}
-                      </span>
+
+                      {/* LIST OF ATTACHED DOCUMENTS WITH INDIVIDUAL REMOVE */}
+                      {isUploaded && (
+                        <div className="space-y-1.5 pt-1">
+                          {attachedFiles.map((fileItem, fIdx) => (
+                            <div
+                              key={fileItem.id || fileItem.filename || fIdx}
+                              className="bg-surface-container/60 p-2 rounded-lg border border-primary/25 space-y-1"
+                            >
+                              <div className="flex items-start justify-between gap-1.5">
+                                <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                                  <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">draft</span>
+                                  <span className="text-primary font-mono text-[11px] font-semibold break-all leading-tight select-all">
+                                    {fileItem.filename}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDoc(doc.key, fileItem.id || fileItem.filename)}
+                                  className="text-error hover:text-error/80 text-[10px] font-bold cursor-pointer shrink-0 px-1 py-0.5 rounded hover:bg-error/10 transition-colors"
+                                  title="Remove this document"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              {fileItem.reduction && fileItem.reduction !== '0%' ? (
+                                <div className="text-[9px] text-emerald-400 font-medium flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[11px]">bolt</span>
+                                  <span>{fileItem.originalSize} → {fileItem.size} ({fileItem.reduction} saved)</span>
+                                </div>
+                              ) : (
+                                <div className="text-[9px] text-secondary font-mono">
+                                  {fileItem.size || 'Ready'}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    {uploaded ? (
-                      <div className="pt-2 border-t border-surface-container space-y-1.5">
-                        <div className="flex items-start justify-between gap-2 bg-surface-container/60 p-2 rounded-lg border border-primary/25">
-                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                            <span className="material-symbols-outlined text-[15px] text-primary shrink-0 mt-0.5">draft</span>
-                            <span className="text-primary font-mono text-[11px] font-semibold break-all leading-tight select-all">
-                              {uploaded.filename}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveDoc(doc.key)}
-                            className="text-error hover:text-error/80 text-[10px] font-bold cursor-pointer shrink-0 px-1.5 py-0.5 rounded hover:bg-error/10 transition-colors"
-                            title="Remove uploaded document"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                        {uploaded.reduction && uploaded.reduction !== '0%' && (
-                          <div className="text-[9px] text-emerald-400 font-medium flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[11px]">bolt</span>
-                            <span>{uploaded.originalSize} → {uploaded.size} ({uploaded.reduction} saved)</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-1.5 mt-1">
-                        {/* Direct Camera Capture Button */}
-                        <button
-                          type="button"
-                          onClick={() => setCameraTargetDoc(doc)}
-                          className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest"
-                          title="Open Camera to capture photo or record video"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">
-                            {doc.captureMode === 'video' ? 'videocam' : 'photo_camera'}
-                          </span>
-                          <span>Camera</span>
-                        </button>
+                    {/* Action buttons (Add file / Camera) */}
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-surface-container">
+                      {/* Camera button */}
+                      <button
+                        type="button"
+                        onClick={() => setCameraTargetDoc(doc)}
+                        className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest"
+                        title="Capture photo or video"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {doc.captureMode === 'video' ? 'videocam' : 'photo_camera'}
+                        </span>
+                        <span>{isUploaded ? '+ Camera' : 'Camera'}</span>
+                      </button>
 
-                        {/* File Upload Button */}
-                        <label className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest">
-                          <span className="material-symbols-outlined text-[14px]">upload_file</span>
-                          <span>File</span>
-                          <input
-                            type="file"
-                            accept={doc.allowedExtensions?.join(',') || '.pdf,.jpg,.jpeg,.png,.mp4'}
-                            className="hidden"
-                            onChange={(e) => handleFileUpload(doc.key, e.target.files?.[0])}
-                          />
-                        </label>
-                      </div>
-                    )}
+                      {/* File Upload Button */}
+                      <label className="py-1.5 px-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-surface-container-highest">
+                        <span className="material-symbols-outlined text-[14px]">upload_file</span>
+                        <span>{isUploaded ? '+ File' : 'File'}</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept={doc.allowedExtensions?.join(',') || '.pdf,.jpg,.jpeg,.png,.mp4'}
+                          className="hidden"
+                          onChange={(e) => {
+                            handleFileUpload(doc.key, e.target.files);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    </div>
                   </div>
                 );
               })}

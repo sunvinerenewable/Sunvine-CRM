@@ -80,7 +80,8 @@ export function PortalSkeleton() {
             <img
               alt="Sunvine Renewable Energy Logo"
               className="h-8 w-auto object-contain"
-              src="/sunvine_logo_white.png"
+              src="/sunvine_logo_white.webp"
+              onError={(e) => { e.currentTarget.src = '/sunvine_logo_white.png'; }}
             />
             <span className="font-label-xs text-[10px] text-secondary-fixed-dim tracking-wider uppercase font-semibold">
               Portal

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import bcrypt from 'bcryptjs';
 
 /**
  * Enterprise Authentication Service
@@ -164,20 +165,67 @@ export const authService = {
   },
 
   async updatePassword(userType, identifier, newPassword) {
-    if (!newPassword || newPassword.length < 8) {
-      return { success: false, error: 'Password must be at least 8 characters.' };
+    if (!newPassword || newPassword.length < 1) {
+      return { success: false, error: 'Password cannot be empty.' };
     }
+
+    // 1. Try server-side secure manage-credentials endpoint
     try {
-      const { data, error } = await supabase.rpc('update_user_password', {
-        p_user_type: userType,
-        p_identifier: identifier,
-        p_new_password: newPassword
+      const action = userType === 'dealer' ? 'update-dealer-credentials' : 'update-staff-credentials';
+      const payload = userType === 'dealer'
+        ? { dealerCode: identifier, password: newPassword }
+        : { staffId: identifier, password: newPassword };
+
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action, payload })
       });
-      if (error || !data?.success) {
-        return { success: false, error: data?.error || error?.message || 'Failed to update password.' };
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) return { success: true };
       }
-      return { success: true };
+    } catch (_) {}
+
+    // 2. Client fallback with Bcrypt hashing
+    try {
+      const passwordHash = bcrypt.hashSync(newPassword, 10);
+      if (userType === 'dealer') {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(identifier || ''));
+        let query = supabase
+          .from('dealer_accounts')
+          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() });
+
+        if (isUuid) {
+          query = query.eq('id', identifier);
+        } else if (String(identifier).startsWith('SV-DLR')) {
+          query = query.eq('dealer_code', identifier);
+        } else {
+          query = query.eq('mobile_number', identifier);
+        }
+
+        const { error } = await query;
+
+        if (error) {
+          console.warn('[authService] Dealer password update warning:', error.message);
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      } else {
+        const { error } = await supabase
+          .from('staff_accounts')
+          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
+          .or(`id.eq.${identifier},phone.eq.${identifier}`);
+
+        if (error) {
+          console.warn('[authService] Staff password update warning:', error.message);
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      }
     } catch (err) {
+      console.error('[authService] Password update exception:', err);
       return { success: false, error: 'Failed to update password.' };
     }
   }

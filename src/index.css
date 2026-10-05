@@ -187,7 +187,7 @@
     max-width: 210mm !important;
     height: 295mm !important;
     max-height: 295mm !important;
-    object-fit: cover !important;
+    object-fit: fill !important;
     display: block !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -196,6 +196,53 @@
   .pdf-page-content {
     padding: 7mm 12mm !important;
   }
+}
+
+/* Offscreen container for html2pdf / html2canvas capture (Guarantees exact 1:1 A4 sheets, zero cut-off) */
+.pdf-export-container {
+  width: 210mm !important;
+  max-width: 210mm !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #ffffff !important;
+}
+
+.pdf-export-container .pdf-page {
+  width: 210mm !important;
+  max-width: 210mm !important;
+  height: 297mm !important;
+  max-height: 297mm !important;
+  min-height: 297mm !important;
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  page-break-after: always !important;
+  break-after: page !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.pdf-export-container .pdf-page-cover {
+  padding: 0 !important;
+  margin: 0 !important;
+  margin-bottom: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  height: 297mm !important;
+  max-height: 297mm !important;
+  overflow: hidden !important;
+}
+
+.pdf-export-container .pdf-page-cover img {
+  width: 210mm !important;
+  max-width: 210mm !important;
+  height: 297mm !important;
+  max-height: 297mm !important;
+  object-fit: fill !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
 }
 
 

@@ -1,5 +1,7 @@
 const CACHE_NAME = 'sunvine-portal-v1';
 
+importScripts('/sw-push.js');
+
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });

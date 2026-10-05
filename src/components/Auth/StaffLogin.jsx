@@ -68,7 +68,8 @@ export default function StaffLogin() {
               className="h-8 w-auto object-contain"
               width="148"
               height="32"
-              src="/sunvine_logo_transparent.png"
+              src="/sunvine_logo_transparent.webpp"
+              onError={(e) => { e.currentTarget.src = '/sunvine_logo_transparent.webp'; }}
             />
           </div>
           <div className="flex items-center gap-1.5 bg-secondary-container/60 px-2.5 py-1 rounded-full">
@@ -159,11 +160,10 @@ export default function StaffLogin() {
               <button
                 type="button"
                 onClick={() => { setSelectedStaffRole('sales'); setError(''); }}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  selectedStaffRole === 'sales'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-secondary hover:text-on-surface'
-                }`}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${selectedStaffRole === 'sales'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface'
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">badge</span>
                 <span>Salesperson</span>
@@ -171,11 +171,10 @@ export default function StaffLogin() {
               <button
                 type="button"
                 onClick={() => { setSelectedStaffRole('verification'); setError(''); }}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  selectedStaffRole === 'verification'
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-secondary hover:text-on-surface'
-                }`}
+                className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${selectedStaffRole === 'verification'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-secondary hover:text-on-surface'
+                  }`}
               >
                 <span className="material-symbols-outlined text-[16px]">verified_user</span>
                 <span>Verification Desk</span>
@@ -343,7 +342,8 @@ export default function StaffLogin() {
                 className="h-10 w-auto object-contain brightness-0 invert"
                 width="160"
                 height="40"
-                src="/sunvine_logo_transparent.png"
+                src="/sunvine_logo_transparent.webp"
+                onError={(e) => { e.currentTarget.src = '/sunvine_logo_transparent.png'; }}
               />
               <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container-lowest/10 backdrop-blur-sm border border-emerald-500/20">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -466,11 +466,10 @@ export default function StaffLogin() {
                   <button
                     type="button"
                     onClick={() => { setSelectedStaffRole('sales'); setError(''); }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      selectedStaffRole === 'sales'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${selectedStaffRole === 'sales'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-secondary hover:text-on-surface'
+                      }`}
                   >
                     <span className="material-symbols-outlined text-[16px]">badge</span>
                     <span>Salesperson</span>
@@ -478,11 +477,10 @@ export default function StaffLogin() {
                   <button
                     type="button"
                     onClick={() => { setSelectedStaffRole('verification'); setError(''); }}
-                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      selectedStaffRole === 'verification'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${selectedStaffRole === 'verification'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-secondary hover:text-on-surface'
+                      }`}
                   >
                     <span className="material-symbols-outlined text-[16px]">verified_user</span>
                     <span>Verification Desk</span>

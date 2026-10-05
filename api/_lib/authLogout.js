@@ -1,5 +1,5 @@
-import { createClearAuthCookieHeader, verifyJwt } from '../_lib/jwt.js';
-import { redisSet } from '../_lib/redis.js';
+import { createClearAuthCookieHeader, verifyJwt } from './jwt.js';
+import { redisSet } from './redis.js';
 
 function parseCookies(cookieHeader) {
   const list = {};

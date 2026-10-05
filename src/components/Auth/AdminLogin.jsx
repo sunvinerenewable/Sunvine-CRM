@@ -66,7 +66,8 @@ export default function AdminLogin() {
                 className="h-9 w-auto object-contain brightness-110 drop-shadow-sm cursor-pointer"
                 width="160"
                 height="40"
-                src="/sunvine_logo_white.png"
+                src="/sunvine_logo_white.webp"
+                onError={(e) => { e.currentTarget.src = '/sunvine_logo_white.png'; }}
                 onClick={() => setAuthView('dealer_login')}
               />
             </div>
@@ -154,7 +155,8 @@ export default function AdminLogin() {
             className="h-8 w-auto object-contain cursor-pointer"
             width="148"
             height="32"
-            src="/sunvine_logo_transparent.png"
+            src="/sunvine_logo_transparent.webp"
+            onError={(e) => { e.currentTarget.src = '/sunvine_logo_transparent.webp'; }}
             onClick={() => setAuthView('dealer_login')}
           />
           <div className="flex items-center gap-1.5 bg-secondary-container/60 px-2.5 py-1 rounded-full">
@@ -272,7 +274,7 @@ export default function AdminLogin() {
               {/* Workstation Checkbox */}
               <div className="flex items-center justify-between py-1">
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <input defaultChecked className="w-4 h-4 rounded border-surface-container-highest text-primary-container focus:ring-primary-container accent-[#6CBF3D] cursor-pointer" type="checkbox"/>
+                  <input defaultChecked className="w-4 h-4 rounded border-surface-container-highest text-primary-container focus:ring-primary-container accent-[#6CBF3D] cursor-pointer" type="checkbox" />
                   <span className="font-body-sm text-xs text-on-surface">Remember Me</span>
                 </label>
               </div>

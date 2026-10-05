@@ -1,1676 +1,2861 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, startTransition } from 'react';
 import { useApp } from '../../context/AppContext';
-import { DEFAULT_PIPELINE_STAGES, isDocMandatoryForCategory } from '../../data/defaultRequiredDocuments';
-
-const DEFAULT_BANKS = [
-  { id: 'bnk-1', name: 'State Bank of India', scheme: 'PM Surya Ghar Collateral-Free Loan', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true },
-  { id: 'bnk-2', name: 'Bank of Baroda', scheme: 'Baroda Solar Rooftop Scheme', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: true },
-  { id: 'bnk-3', name: 'HDFC Bank Ltd.', scheme: 'Green Energy Rooftop Finance', interestRate: 8.50, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: false },
-  { id: 'bnk-4', name: 'Canara Bank', scheme: 'Canara Solar Credit Support', interestRate: 7.00, minTenureYears: 3, maxTenureYears: 7, status: 'Active', collateralFree: true },
-  { id: 'bnk-5', name: 'ICICI Bank', scheme: 'Solar Fin Term Facility', interestRate: 8.75, minTenureYears: 3, maxTenureYears: 5, status: 'Active', collateralFree: false },
-  { id: 'bnk-6', name: 'Union Bank of India', scheme: 'Union Solar Green Loan', interestRate: 7.15, minTenureYears: 3, maxTenureYears: 10, status: 'Active', collateralFree: true }
-];
+import { useToast } from '../Shared/Toast';
+import { adminAccountService } from '../../services/adminAccountService';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function AdminSettings() {
+  const { addToast } = useToast();
   const {
-    governanceSettings,
-    updateGovernanceSettings,
-    systemSettings,
-    updateSystemSettings,
-    setActiveTab: setActiveTabGlobal,
-    requiredDocuments,
-    addRequiredDocument,
-    updateRequiredDocument,
-    deleteRequiredDocument,
-    resetRequiredDocuments,
-    applicationCategories,
-    applicationStages,
-    addApplicationStage,
-    updateApplicationStage,
-    deleteApplicationStage,
-    resetApplicationStages
+    currentAdmin,
+    setStaffList,
+    setDealers,
+    masterDocRegistry,
+    categoryDocRules,
+    addMasterDocument,
+    updateMasterDocument,
+    deleteMasterDocument,
+    updateCategoryDocRule,
+    resetDocumentRulesToDefault,
+    refreshMasterDocuments,
+    applicationCategories
   } = useApp();
-  const [activeTab, setActiveTab] = useState('governance');
-  const [saved, setSaved] = useState(false);
-  const [maintenance, setMaintenance] = useState(false);
 
-  const [settings, setSettings] = useState(() => governanceSettings || {
-    enforceAlmm: true,
-    pmSuryaGharActive: true,
-    maxDealerMarginPerKW: 8000,
-    minDealerMarginPerKW: 0,
-    quoteExpiryDays: 15,
-    autoGedaSync: true,
-    requireAdminApprovalAboveKW: 100,
-    retentionMonths: 36,
-    discomApiStatus: 'Online - 12ms ping',
-    gedaSyncStatus: 'Connected (Hourly)',
-    lastBackupTimestamp: 'Today, 01:15 AM'
-  });
+  const VALID_SETTINGS_TABS = ['account_center', 'document_rules', 'security', 'system'];
+  const VALID_CATEGORIES = ['RESIDENTIAL', 'BANK_LOAN', 'NBFC_LOAN', 'COMMERCIAL', 'HOUSING_SOCIETY'];
 
-  // Bank Master State (SR-64)
-  const [banksList, setBanksList] = useState(() => {
-    return systemSettings?.fileLifecycle?.loanBanksDetailed || DEFAULT_BANKS;
-  });
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [editingBank, setEditingBank] = useState(null);
-  const [bankForm, setBankForm] = useState({
-    name: '',
-    scheme: '',
-    interestRate: 7.0,
-    minTenureYears: 3,
-    maxTenureYears: 7,
-    status: 'Active',
-    collateralFree: true
-  });
-
-  // Pipeline Stages Master State (SR-64 & Custom Stages)
-  const [stagesList, setStagesList] = useState(() => {
-    return (applicationStages && applicationStages.length > 0)
-      ? applicationStages
-      : (systemSettings?.fileLifecycle?.stagesDetailed || DEFAULT_PIPELINE_STAGES);
-  });
-  const [showStageModal, setShowStageModal] = useState(false);
-  const [editingStage, setEditingStage] = useState(null);
-  const [stageForm, setStageForm] = useState({
-    id: '',
-    label: '',
-    description: '',
-    mandatory: true
-  });
-
-  // Keep stagesList in sync when applicationStages updates
-  useEffect(() => {
-    if (applicationStages && applicationStages.length > 0) {
-      setStagesList(applicationStages);
-    }
-  }, [applicationStages]);
-
-  // Dynamic Document Upload Management State
-  const [docCategoryFilter, setDocCategoryFilter] = useState('all');
-  const [docViewMode, setDocViewMode] = useState('cards'); // 'cards' | 'matrix'
-  const [showDocModal, setShowDocModal] = useState(false);
-  const [editingDoc, setEditingDoc] = useState(null);
-  const [docForm, setDocForm] = useState({
-    label: '',
-    description: '',
-    icon: 'description',
-    categories: ['residential'],
-    mandatory: true,
-    categoryMandatory: { residential: true, commercial: false, common_meter: false },
-    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-    captureMode: 'both'
-  });
-
-  // Policy editor state
-  const [selectedPolicyKey, setSelectedPolicyKey] = useState('dealerAgreement');
-  const [editPolicyTitle, setEditPolicyTitle] = useState('');
-  const [editPolicyContent, setEditPolicyContent] = useState('');
-
-  useEffect(() => {
-    if (governanceSettings) {
-      setSettings(governanceSettings);
-    }
-  }, [governanceSettings]);
-
-  useEffect(() => {
-    if (systemSettings?.documentPolicies && selectedPolicyKey) {
-      const p = systemSettings.documentPolicies[selectedPolicyKey];
-      if (p) {
-        setEditPolicyTitle(p.title || '');
-        setEditPolicyContent(
-          (p.sections || []).map(s => `### ${s.heading}\n${s.content}`).join('\n\n')
-        );
+  // Primary Settings Page Tabs: 'account_center' | 'document_rules' | 'security' | 'system'
+  const [settingsTab, setSettingsTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('subtab') || params.get('section');
+      if (VALID_SETTINGS_TABS.includes(tabParam)) {
+        return tabParam;
       }
     }
-  }, [systemSettings, selectedPolicyKey]);
+    return 'account_center';
+  });
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    if (updateGovernanceSettings) {
-      updateGovernanceSettings(settings);
+  // Account Center Sub-Tabs: 'admins' | 'dealers' | 'staff'
+  const [accountSubTab, setAccountSubTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const subParam = params.get('accountTab');
+      if (['admins', 'dealers', 'staff'].includes(subParam)) {
+        return subParam;
+      }
     }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    return 'admins';
+  });
+
+  // Document Rules Tab State
+  const [isSyncingDocs, setIsSyncingDocs] = useState(false);
+
+  // OS Push Notifications Console State
+  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
+  const [isPushLoading, setIsPushLoading] = useState(false);
+  const [permissionState, setPermissionState] = useState('default');
+
+  useEffect(() => {
+    if (pushNotificationService.isPushSupported()) {
+      pushNotificationService.isSubscribed().then(setIsPushSubscribed);
+      setPermissionState(pushNotificationService.getPermissionState());
+    }
+  }, []);
+
+  const handleToggleAdminPush = async () => {
+    setIsPushLoading(true);
+    try {
+      if (isPushSubscribed) {
+        await pushNotificationService.unsubscribeUser();
+        setIsPushSubscribed(false);
+        setPermissionState(pushNotificationService.getPermissionState());
+        addToast('OS Push notifications disabled on this device', 'info');
+      } else {
+        const res = await pushNotificationService.subscribeUser({
+          userId: currentAdmin?.id || 'admin',
+          role: 'admin'
+        });
+        if (res.success) {
+          setIsPushSubscribed(true);
+          setPermissionState('granted');
+          addToast('OS Push notifications enabled successfully for Admin!', 'success');
+        } else {
+          addToast(res.error || 'Failed to enable push notifications', 'error');
+        }
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
   };
 
-  const handleSavePolicy = (e) => {
-    e.preventDefault();
-    if (!updateSystemSettings || !selectedPolicyKey) return;
+  const handleSendAdminTestPush = async () => {
+    setIsPushLoading(true);
+    try {
+      const res = await pushNotificationService.sendTestPush({
+        targetUserId: 'admin',
+        role: 'admin'
+      });
+      if (res.success) {
+        addToast(`Admin test push sent! (${res.sentCount || 0} device notified)`, 'success');
+      } else {
+        addToast(res.error || 'Could not send test push', 'error');
+      }
+    } catch (e) {
+      addToast(e.message, 'error');
+    } finally {
+      setIsPushLoading(false);
+    }
+  };
 
-    // Parse sections back from markdown headings
-    const sectionBlocks = editPolicyContent.split('### ').filter(Boolean);
-    const parsedSections = sectionBlocks.map(block => {
-      const lines = block.split('\n');
-      const heading = lines[0].trim();
-      const content = lines.slice(1).join('\n').trim();
-      return { heading, content };
-    });
+  // Document Rules Tab State (URL Synchronized)
+  const [selectedCategoryRule, setSelectedCategoryRule] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const catParam = params.get('category');
+      if (VALID_CATEGORIES.includes(catParam)) {
+        return catParam;
+      }
+    }
+    return 'RESIDENTIAL';
+  });
 
-    const updatedPolicies = {
-      ...systemSettings.documentPolicies,
-      [selectedPolicyKey]: {
-        ...systemSettings.documentPolicies[selectedPolicyKey],
-        title: editPolicyTitle.trim(),
-        lastUpdated: `Updated ${new Date().toLocaleString('en-IN', { month: 'short', year: 'numeric' })}`,
-        sections: parsedSections.length > 0 ? parsedSections : [
-          { heading: 'Policy Details', content: editPolicyContent }
-        ]
+  // Keep URL query params synchronized so page refreshes maintain exact tab & category view
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('tab', settingsTab);
+      if (settingsTab === 'document_rules') {
+        params.set('category', selectedCategoryRule);
+      } else {
+        params.delete('category');
+      }
+      if (settingsTab === 'account_center') {
+        params.set('accountTab', accountSubTab);
+      } else {
+        params.delete('accountTab');
+      }
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, '', newUrl);
+    }
+  }, [settingsTab, selectedCategoryRule, accountSubTab]);
+
+  // Back/Forward browser history listener
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab') || params.get('subtab') || params.get('section');
+        if (VALID_SETTINGS_TABS.includes(tabParam)) {
+          setSettingsTab(tabParam);
+        }
+        const catParam = params.get('category');
+        if (VALID_CATEGORIES.includes(catParam)) {
+          setSelectedCategoryRule(catParam);
+        }
+        const accParam = params.get('accountTab');
+        if (['admins', 'dealers', 'staff'].includes(accParam)) {
+          setAccountSubTab(accParam);
+        }
       }
     };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+  const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [editingDoc, setEditingDoc] = useState(null);
+  const [isKeyManuallyEdited, setIsKeyManuallyEdited] = useState(false);
+  const [docForm, setDocForm] = useState({
+    key: '',
+    label: '',
+    category: 'Applicant KYC',
+    description: '',
+    icon: 'description',
+    allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png', '.webp']
+  });
+  const [deleteDocModal, setDeleteDocModal] = useState(null);
 
-    updateSystemSettings('documentPolicies', updatedPolicies);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  // Helper to convert document title into clean camelCase key (e.g., 'Property Tax Receipt' -> 'propertyTaxReceipt')
+  const formatDocumentKey = (title) => {
+    if (!title) return '';
+    const words = title
+      .replace(/[^a-zA-Z0-9\s_-]/g, '')
+      .trim()
+      .split(/[\s_-]+/);
+    if (words.length === 0 || !words[0]) return '';
+    return words
+      .map((w, idx) => {
+        if (idx === 0) return w.toLowerCase();
+        return w.charAt(0).toUpperCase() + w.slice(1);
+      })
+      .join('');
   };
 
-  // Bank Master Handlers (SR-64)
-  const handleSaveBankMaster = () => {
-    if (!updateSystemSettings) return;
-    updateSystemSettings('fileLifecycle', {
-      ...systemSettings?.fileLifecycle,
-      loanBanksDetailed: banksList,
-      loanBanks: banksList.filter(b => b.status === 'Active').map(b => b.name)
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
+  // Live Accounts State from PostgreSQL
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [successToast, setSuccessToast] = useState('');
 
-  const handleToggleBankStatus = (bankId) => {
-    setBanksList(prev => prev.map(b => b.id === bankId ? { ...b, status: b.status === 'Active' ? 'Disabled' : 'Active' } : b));
-  };
+  const [adminsList, setAdminsList] = useState([]);
+  const [dealersList, setDealersList] = useState([]);
+  const [staffListState, setStaffListState] = useState([]);
 
-  const handleDeleteBank = (bankId) => {
-    setBanksList(prev => prev.filter(b => b.id !== bankId));
-  };
+  // Filters & Search
+  const [staffFilter, setStaffFilter] = useState('all'); // 'all' | 'sales' | 'verification'
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const handleOpenAddBank = () => {
-    setEditingBank(null);
-    setBankForm({
-      name: '',
-      scheme: '',
-      interestRate: 7.0,
-      minTenureYears: 3,
-      maxTenureYears: 7,
-      status: 'Active',
-      collateralFree: true
-    });
-    setShowBankModal(true);
-  };
+  // Modals state
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [editingAdmin, setEditingAdmin] = useState(null);
+  const [adminForm, setAdminForm] = useState({
+    fullName: '',
+    email: '',
+    mobileNumber: '',
+    role: 'admin',
+    password: ''
+  });
 
-  const handleOpenEditBank = (bank) => {
-    setEditingBank(bank);
-    setBankForm({
-      name: bank.name || '',
-      scheme: bank.scheme || '',
-      interestRate: bank.interestRate || 7.0,
-      minTenureYears: bank.minTenureYears || 3,
-      maxTenureYears: bank.maxTenureYears || 7,
-      status: bank.status || 'Active',
-      collateralFree: bank.collateralFree !== undefined ? bank.collateralFree : true
-    });
-    setShowBankModal(true);
-  };
+  const [showDealerModal, setShowDealerModal] = useState(false);
+  const [editingDealer, setEditingDealer] = useState(null);
+  const [dealerForm, setDealerForm] = useState({
+    id: '',
+    dealerCode: '',
+    firmName: '',
+    contactPerson: '',
+    mobile: '',
+    email: '',
+    city: 'Ahmedabad',
+    state: 'Gujarat',
+    discom: 'UGVCL',
+    tier: 'Gold EPC',
+    maxMarginCapPerKw: 6000,
+    status: 'Active',
+    password: '',
+    assignedStaffId: 'STF-DIRECT',
+    assignedStaffName: 'Direct to Company (HQ Desk)'
+  });
 
-  const handleSaveBankForm = (e) => {
-    e.preventDefault();
-    if (editingBank) {
-      setBanksList(prev => prev.map(b => b.id === editingBank.id ? { ...b, ...bankForm } : b));
-    } else {
-      const newBank = {
-        ...bankForm,
-        id: `bnk-${Date.now().toString().slice(-4)}`
-      };
-      setBanksList(prev => [...prev, newBank]);
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [editingStaff, setEditingStaff] = useState(null);
+  const [staffForm, setStaffForm] = useState({
+    id: '',
+    name: '',
+    phone: '',
+    email: '',
+    department: 'Sales',
+    role: 'Senior Solar Field Executive',
+    status: 'Active',
+    password: ''
+  });
+
+  // Password Update Modal
+  const [passwordModal, setPasswordModal] = useState({
+    isOpen: false,
+    accountType: '', // 'admin' | 'dealer' | 'staff'
+    account: null,
+    newPassword: '',
+    confirmPassword: '',
+    showPass: false
+  });
+
+  // Delete Confirmation Modal
+  const [deleteModal, setDeleteModal] = useState({
+    isOpen: false,
+    accountType: '', // 'admin' | 'dealer' | 'staff'
+    account: null
+  });
+
+  const [submitting, setSubmitting] = useState(false);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (successToast) {
+      const t = setTimeout(() => setSuccessToast(''), 4500);
+      return () => clearTimeout(t);
     }
-    setShowBankModal(false);
-    setEditingBank(null);
-  };
+  }, [successToast]);
 
-  // Pipeline Stages Master Handlers (Dynamic CRUD for Drop-Down Menus)
-  const handleSavePipelineStages = () => {
-    if (updateSystemSettings) {
-      updateSystemSettings('fileLifecycle', {
-        ...systemSettings?.fileLifecycle,
-        stagesDetailed: stagesList,
-        stages: stagesList.map(s => s.label)
-      });
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
+  // Fetch live accounts from PostgreSQL
+  const loadAccounts = async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    else setLoading(true);
+    setError('');
 
-  const handleToggleStageMandatory = (stageId) => {
-    const target = stagesList.find(s => s.id === stageId);
-    if (!target) return;
-    const nextVal = !target.mandatory;
-    if (updateApplicationStage) {
-      updateApplicationStage(stageId, { mandatory: nextVal });
-    }
-    setStagesList(prev => prev.map(s => s.id === stageId ? { ...s, mandatory: nextVal } : s));
-  };
+    try {
+      const data = await adminAccountService.fetchAccounts();
+      setAdminsList(data.admins || []);
+      setDealersList(data.dealers || []);
+      setStaffListState(data.staff || []);
 
-  const handleDeleteStage = (stageId) => {
-    if (deleteApplicationStage) {
-      deleteApplicationStage(stageId);
-    }
-    setStagesList(prev => prev.filter(s => s.id !== stageId));
-  };
-
-  const handleResetStages = () => {
-    if (window.confirm('Reset application stages to standard 10 Gujarat DISCOM milestones?')) {
-      if (resetApplicationStages) {
-        resetApplicationStages();
+      if (typeof setStaffList === 'function' && Array.isArray(data.staff)) {
+        setStaffList(data.staff);
       }
-      setStagesList(DEFAULT_PIPELINE_STAGES);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      if (typeof setDealers === 'function' && Array.isArray(data.dealers)) {
+        setDealers(data.dealers.map(d => ({
+          ...d,
+          mobile: d.mobile_number || d.mobile,
+          firmName: d.firm_name || d.firmName,
+          contactPerson: d.contact_person || d.contactPerson
+        })));
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to connect to PostgreSQL database.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const handleOpenAddStage = () => {
-    setEditingStage(null);
-    setStageForm({
-      id: `STAGE_${Date.now().toString().slice(-4)}`,
-      label: '',
-      description: '',
-      mandatory: true
+  useEffect(() => {
+    loadAccounts();
+  }, []);
+
+  // Filtered lists
+  const filteredAdmins = useMemo(() => {
+    if (!searchQuery.trim()) return adminsList;
+    const q = searchQuery.toLowerCase();
+    return adminsList.filter(a =>
+      (a.full_name || '').toLowerCase().includes(q) ||
+      (a.email || '').toLowerCase().includes(q) ||
+      (a.mobile_number || '').includes(q)
+    );
+  }, [adminsList, searchQuery]);
+
+  const filteredDealers = useMemo(() => {
+    if (!searchQuery.trim()) return dealersList;
+    const q = searchQuery.toLowerCase();
+    return dealersList.filter(d =>
+      (d.firm_name || d.firmName || '').toLowerCase().includes(q) ||
+      (d.contact_person || d.contactPerson || '').toLowerCase().includes(q) ||
+      (d.mobile_number || d.mobile || '').includes(q) ||
+      (d.dealer_code || d.dealerCode || '').toLowerCase().includes(q)
+    );
+  }, [dealersList, searchQuery]);
+
+  const filteredStaff = useMemo(() => {
+    return staffListState.filter(s => {
+      const isVer = (s.department || '').toLowerCase().includes('verification') || (s.role || '').toLowerCase().includes('verification');
+      const matchesFilter =
+        staffFilter === 'all'
+          ? true
+          : staffFilter === 'verification'
+          ? isVer
+          : !isVer;
+
+      if (!matchesFilter) return false;
+      if (!searchQuery.trim()) return true;
+
+      const q = searchQuery.toLowerCase();
+      return (
+        (s.name || '').toLowerCase().includes(q) ||
+        (s.phone || '').includes(q) ||
+        (s.email || '').toLowerCase().includes(q) ||
+        (s.id || '').toLowerCase().includes(q)
+      );
     });
-    setShowStageModal(true);
+  }, [staffListState, staffFilter, searchQuery]);
+
+  const CATEGORY_TABS = [
+    { key: 'RESIDENTIAL', label: 'Residential Cash', icon: 'home', badge: 'PM Surya Ghar', desc: 'Direct consumer cash rooftop projects' },
+    { key: 'BANK_LOAN', label: 'Nationalized Bank Loan', icon: 'account_balance', badge: 'PSB Solar Loan', desc: 'SBI, PNB, Canara, BoB PM Surya Ghar bank loans' },
+    { key: 'NBFC_LOAN', label: 'NBFC / FinTech Loan', icon: 'credit_card', badge: 'FinTech Credit', desc: 'Ecofy, Credit Fair, Metafin digital loan files' },
+    { key: 'COMMERCIAL', label: 'Commercial & Industrial', icon: 'factory', badge: 'C&I Projects', desc: 'Commercial solar, factory & industrial rooftop 10kW-500kW' },
+    { key: 'HOUSING_SOCIETY', label: 'Housing Society', icon: 'apartment', badge: 'Common Meter', desc: 'Residential societies, RWA, apartment common meters' }
+  ];
+
+  const DOC_CATEGORY_GROUPS = [
+    'Applicant KYC',
+    'Bank & Financial',
+    'Utility & Property',
+    'Technical & Approvals',
+    'Co-Applicant KYC',
+    'Commercial & Legal',
+    'General'
+  ];
+
+  const DOC_ICONS = [
+    'description', 'badge', 'account_balance', 'bolt', 'receipt_long',
+    'photo_camera', 'contract', 'factory', 'apartment', 'verified',
+    'shield', 'folder', 'assignment', 'domain'
+  ];
+
+  const [showResetRulesModal, setShowResetRulesModal] = useState(false);
+
+  // Stable display order per category tab: sorts active (Mandatory -> Optional) first on initial page load / tab switch,
+  // preventing disorienting in-place card jumping while user clicks toggle buttons.
+  const initialCategoryOrder = useMemo(() => {
+    const list = masterDocRegistry || [];
+    const rules = categoryDocRules?.[selectedCategoryRule] || {};
+
+    const RULE_PRIORITY = {
+      mandatory: 1,
+      optional: 2,
+      disabled: 3
+    };
+
+    const sorted = [...list].sort((a, b) => {
+      const ruleA = rules[a.key] || 'mandatory';
+      const ruleB = rules[b.key] || 'mandatory';
+      const rankA = RULE_PRIORITY[ruleA] ?? 2;
+      const rankB = RULE_PRIORITY[ruleB] ?? 2;
+      if (rankA !== rankB) {
+        return rankA - rankB;
+      }
+      return (a.label || '').localeCompare(b.label || '');
+    });
+
+    const orderMap = {};
+    sorted.forEach((doc, idx) => {
+      orderMap[doc.key] = idx;
+    });
+    return orderMap;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategoryRule, masterDocRegistry]);
+
+  // Document Rules Memos - Stable order during live edits, active cards first on page refresh / tab switch
+  const filteredMasterDocs = useMemo(() => {
+    const list = masterDocRegistry || [];
+
+    let filtered = list;
+    if (docSearchQuery.trim()) {
+      const q = docSearchQuery.toLowerCase();
+      filtered = list.filter(d =>
+        (d.label || '').toLowerCase().includes(q) ||
+        (d.key || '').toLowerCase().includes(q) ||
+        (d.category || '').toLowerCase().includes(q) ||
+        (d.description || '').toLowerCase().includes(q)
+      );
+    }
+
+    return [...filtered].sort((a, b) => {
+      const posA = initialCategoryOrder[a.key] ?? 999;
+      const posB = initialCategoryOrder[b.key] ?? 999;
+      if (posA !== posB) return posA - posB;
+      return (a.label || '').localeCompare(b.label || '');
+    });
+  }, [masterDocRegistry, initialCategoryOrder, docSearchQuery]);
+
+  const currentCategoryStats = useMemo(() => {
+    const rules = categoryDocRules?.[selectedCategoryRule] || {};
+    let mandatory = 0;
+    let optional = 0;
+    let disabled = 0;
+    (masterDocRegistry || []).forEach(doc => {
+      const status = rules[doc.key] || 'mandatory';
+      if (status === 'mandatory') mandatory++;
+      else if (status === 'optional') optional++;
+      else if (status === 'disabled') disabled++;
+    });
+    return { mandatory, optional, disabled, total: (masterDocRegistry || []).length };
+  }, [masterDocRegistry, categoryDocRules, selectedCategoryRule]);
+
+  // Admin Modal Handlers
+  const handleOpenAddAdmin = () => {
+    setEditingAdmin(null);
+    setAdminForm({
+      fullName: '',
+      email: '',
+      mobileNumber: '',
+      role: 'admin',
+      password: ''
+    });
+    setError('');
+    setShowAdminModal(true);
   };
 
-  const handleOpenEditStage = (stage) => {
-    setEditingStage(stage);
-    setStageForm({
-      id: stage.id,
-      label: stage.label || '',
-      description: stage.description || '',
-      mandatory: stage.mandatory !== undefined ? stage.mandatory : true
+  const handleOpenEditAdmin = (admin) => {
+    setEditingAdmin(admin);
+    setAdminForm({
+      fullName: admin.full_name || '',
+      email: admin.email || '',
+      mobileNumber: admin.mobile_number || '',
+      role: admin.role || 'admin',
+      password: ''
     });
-    setShowStageModal(true);
+    setError('');
+    setShowAdminModal(true);
   };
 
-  const handleSaveStageForm = (e) => {
+  const handleSaveAdmin = async (e) => {
     e.preventDefault();
-    if (!stageForm.label?.trim()) return;
+    if (!adminForm.fullName.trim() || !adminForm.email.trim()) {
+      setError('Full Name and Email are required.');
+      return;
+    }
+    const cleanMobile = adminForm.mobileNumber.replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      setError('Valid 10-digit mobile number is required.');
+      return;
+    }
+    if (!editingAdmin && !adminForm.password.trim()) {
+      setError('Password is required for new admin account.');
+      return;
+    }
 
-    if (editingStage) {
-      if (updateApplicationStage) {
-        updateApplicationStage(editingStage.id, {
-          label: stageForm.label.trim(),
-          description: stageForm.description?.trim() || '',
-          mandatory: Boolean(stageForm.mandatory)
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (editingAdmin) {
+        const res = await adminAccountService.updateAdmin({
+          id: editingAdmin.id,
+          fullName: adminForm.fullName,
+          email: adminForm.email,
+          mobileNumber: cleanMobile,
+          role: adminForm.role,
+          password: adminForm.password ? adminForm.password.trim() : undefined
         });
+        if (!res.success) throw new Error(res.error || 'Failed to update admin');
+        setSuccessToast(`Admin ${adminForm.fullName} updated in live database.`);
+      } else {
+        const res = await adminAccountService.createAdmin({
+          fullName: adminForm.fullName,
+          email: adminForm.email,
+          mobileNumber: cleanMobile,
+          role: adminForm.role,
+          password: adminForm.password.trim()
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to create admin');
+        setSuccessToast(`Admin ${adminForm.fullName} created in live database.`);
       }
-      setStagesList(prev => prev.map(s => s.id === editingStage.id ? { ...s, ...stageForm } : s));
-    } else {
-      const newStage = {
-        id: stageForm.id?.trim() || `STAGE_${Date.now().toString().slice(-4)}`,
-        label: stageForm.label.trim(),
-        description: stageForm.description?.trim() || '',
-        mandatory: Boolean(stageForm.mandatory)
-      };
-      if (addApplicationStage) {
-        addApplicationStage(newStage);
-      }
-      setStagesList(prev => [...prev, newStage]);
+
+      setShowAdminModal(false);
+      await loadAccounts(true);
+    } catch (err) {
+      setError(err.message || 'Operation failed.');
+    } finally {
+      setSubmitting(false);
     }
-    setShowStageModal(false);
-    setEditingStage(null);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
   };
 
-  // Dynamic Required Documents Master Handlers with Category-Specific Mandatory Rules
+  // Dealer Modal Handlers
+  const handleOpenAddDealer = () => {
+    setEditingDealer(null);
+    const nextCode = `SV-DLR-${String(Math.floor(8000 + Math.random() * 900))}`;
+    setDealerForm({
+      id: nextCode,
+      dealerCode: nextCode,
+      firmName: '',
+      contactPerson: '',
+      mobile: '',
+      email: '',
+      city: 'Ahmedabad',
+      state: 'Gujarat',
+      discom: 'UGVCL',
+      tier: 'Gold EPC',
+      maxMarginCapPerKw: 6000,
+      status: 'Active',
+      password: '',
+      assignedStaffId: 'STF-DIRECT',
+      assignedStaffName: 'Direct to Company (HQ Desk)'
+    });
+    setError('');
+    setShowDealerModal(true);
+  };
+
+  const handleOpenEditDealer = (dealer) => {
+    setEditingDealer(dealer);
+    setDealerForm({
+      id: dealer.id || dealer.dealer_code,
+      dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
+      firmName: dealer.firm_name || dealer.firmName || '',
+      contactPerson: dealer.contact_person || dealer.contactPerson || '',
+      mobile: dealer.mobile_number || dealer.mobile || '',
+      email: dealer.email || '',
+      city: dealer.city || 'Ahmedabad',
+      state: dealer.state || 'Gujarat',
+      discom: dealer.discom || 'UGVCL',
+      tier: dealer.tier || 'Gold EPC',
+      maxMarginCapPerKw: dealer.max_margin_cap_per_kw || dealer.maxMarginCapPerKw || 6000,
+      status: dealer.status || 'Active',
+      password: '',
+      assignedStaffId: dealer.assigned_staff_id || dealer.assignedStaffId || 'STF-DIRECT',
+      assignedStaffName: dealer.assigned_staff_name || dealer.assignedStaffName || 'Direct to Company (HQ Desk)'
+    });
+    setError('');
+    setShowDealerModal(true);
+  };
+
+  const handleSaveDealer = async (e) => {
+    e.preventDefault();
+    if (!dealerForm.firmName.trim() || !dealerForm.contactPerson.trim()) {
+      setError('Firm Name and Contact Person are required.');
+      return;
+    }
+    const cleanMobile = dealerForm.mobile.replace(/\D/g, '').slice(-10);
+    if (cleanMobile.length !== 10) {
+      setError('Valid 10-digit mobile number is required.');
+      return;
+    }
+    if (!editingDealer && !dealerForm.password.trim()) {
+      setError('Initial password is required for new dealer.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (editingDealer) {
+        const res = await adminAccountService.updateDealer({
+          id: editingDealer.id,
+          dealerCode: dealerForm.dealerCode,
+          firmName: dealerForm.firmName,
+          contactPerson: dealerForm.contactPerson,
+          mobile: cleanMobile,
+          email: dealerForm.email || `${cleanMobile}@sunvinedealer.in`,
+          city: dealerForm.city,
+          state: dealerForm.state,
+          discom: dealerForm.discom,
+          tier: dealerForm.tier,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          status: dealerForm.status,
+          password: dealerForm.password ? dealerForm.password.trim() : undefined,
+          assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
+          assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to update dealer');
+        setSuccessToast(`Dealer ${dealerForm.firmName} updated in live database.`);
+      } else {
+        const res = await adminAccountService.createDealer({
+          dealerCode: dealerForm.dealerCode,
+          firmName: dealerForm.firmName,
+          contactPerson: dealerForm.contactPerson,
+          mobile: cleanMobile,
+          email: dealerForm.email || `${cleanMobile}@sunvinedealer.in`,
+          city: dealerForm.city,
+          state: dealerForm.state,
+          discom: dealerForm.discom,
+          tier: dealerForm.tier,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          status: dealerForm.status,
+          password: dealerForm.password.trim(),
+          assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
+          assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to create dealer');
+        setSuccessToast(`Dealer ${dealerForm.firmName} created in live database.`);
+      }
+
+      setShowDealerModal(false);
+      await loadAccounts(true);
+    } catch (err) {
+      setError(err.message || 'Operation failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Staff Modal Handlers
+  const handleOpenAddStaff = () => {
+    setEditingStaff(null);
+    const nextCode = `STF-${String(staffListState.length + 802).padStart(3, '0')}`;
+    setStaffForm({
+      id: nextCode,
+      name: '',
+      phone: '',
+      email: '',
+      department: 'Sales',
+      role: 'Senior Solar Field Executive',
+      status: 'Active',
+      password: ''
+    });
+    setError('');
+    setShowStaffModal(true);
+  };
+
+  const handleOpenEditStaff = (staff) => {
+    setEditingStaff(staff);
+    const isVer = (staff.department || '').toLowerCase().includes('verification') || (staff.role || '').toLowerCase().includes('verification');
+    setStaffForm({
+      id: staff.id,
+      name: staff.name || '',
+      phone: staff.phone || '',
+      email: staff.email || '',
+      department: isVer ? 'Verification' : 'Sales',
+      role: staff.role || (isVer ? 'Field Verification Officer' : 'Senior Solar Field Executive'),
+      status: staff.status || 'Active',
+      password: ''
+    });
+    setError('');
+    setShowStaffModal(true);
+  };
+
+  const handleSaveStaff = async (e) => {
+    e.preventDefault();
+    if (!staffForm.name.trim()) {
+      setError('Staff Name is required.');
+      return;
+    }
+    const cleanPhone = staffForm.phone.replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) {
+      setError('Valid 10-digit mobile number is required.');
+      return;
+    }
+    if (!editingStaff && !staffForm.password.trim()) {
+      setError('Password is required for new staff account.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (editingStaff) {
+        const res = await adminAccountService.updateStaff({
+          id: editingStaff.id,
+          name: staffForm.name,
+          phone: cleanPhone,
+          email: staffForm.email || `${cleanPhone}@sunvine.in`,
+          department: staffForm.department,
+          role: staffForm.role,
+          status: staffForm.status,
+          password: staffForm.password ? staffForm.password.trim() : undefined
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to update staff');
+        setSuccessToast(`Staff ${staffForm.name} updated in live database.`);
+      } else {
+        const res = await adminAccountService.createStaff({
+          id: staffForm.id,
+          name: staffForm.name,
+          phone: cleanPhone,
+          email: staffForm.email || `${cleanPhone}@sunvine.in`,
+          department: staffForm.department,
+          role: staffForm.role,
+          status: staffForm.status,
+          password: staffForm.password.trim()
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to create staff');
+        setSuccessToast(`Staff ${staffForm.name} created in live database.`);
+      }
+
+      setShowStaffModal(false);
+      await loadAccounts(true);
+    } catch (err) {
+      setError(err.message || 'Operation failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Password Reset Handlers
+  const handleOpenPasswordModal = (type, account) => {
+    setPasswordModal({
+      isOpen: true,
+      accountType: type,
+      account,
+      newPassword: '',
+      confirmPassword: '',
+      showPass: false
+    });
+    setError('');
+  };
+
+  const handleSavePassword = async (e) => {
+    e.preventDefault();
+    if (!passwordModal.newPassword.trim()) {
+      setError('Password cannot be empty.');
+      return;
+    }
+    if (passwordModal.newPassword !== passwordModal.confirmPassword) {
+      setError('Passwords do not match. Please verify.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (passwordModal.accountType === 'admin') {
+        const res = await adminAccountService.updateAdmin({
+          id: passwordModal.account.id,
+          password: passwordModal.newPassword.trim()
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to update admin password.');
+        setSuccessToast(`Password updated for Admin ${passwordModal.account.full_name} in live database.`);
+      } else if (passwordModal.accountType === 'dealer') {
+        const res = await adminAccountService.updateDealer({
+          id: passwordModal.account.id,
+          dealerCode: passwordModal.account.dealer_code || passwordModal.account.dealerCode,
+          password: passwordModal.newPassword.trim()
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to update dealer password.');
+        setSuccessToast(`Password updated for Dealer ${passwordModal.account.firm_name || passwordModal.account.firmName} in live database.`);
+      } else {
+        const res = await adminAccountService.updateStaff({
+          id: passwordModal.account.id,
+          password: passwordModal.newPassword.trim()
+        });
+        if (!res.success) throw new Error(res.error || 'Failed to update staff password.');
+        setSuccessToast(`Password updated for Staff ${passwordModal.account.name} in live database.`);
+      }
+
+      setPasswordModal({ isOpen: false, accountType: '', account: null, newPassword: '', confirmPassword: '', showPass: false });
+      await loadAccounts(true);
+    } catch (err) {
+      setError(err.message || 'Password update failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Delete Handlers
+  const handleOpenDelete = (type, account) => {
+    if (type === 'admin' && adminsList.length <= 1) {
+      setError('Cannot delete the only remaining admin account.');
+      return;
+    }
+    setDeleteModal({
+      isOpen: true,
+      accountType: type,
+      account
+    });
+    setError('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModal.account) return;
+    setSubmitting(true);
+    setError('');
+
+    try {
+      if (deleteModal.accountType === 'admin') {
+        const res = await adminAccountService.deleteAdmin(deleteModal.account.id);
+        if (!res.success) throw new Error(res.error || 'Failed to delete admin');
+        setSuccessToast(`Admin ${deleteModal.account.full_name} removed from live database.`);
+      } else if (deleteModal.accountType === 'dealer') {
+        const targetId = deleteModal.account.dealer_code || deleteModal.account.dealerCode || deleteModal.account.id;
+        const res = await adminAccountService.deleteDealer(targetId);
+        if (!res.success) throw new Error(res.error || 'Failed to delete dealer');
+        setSuccessToast(`Dealer ${deleteModal.account.firm_name || deleteModal.account.firmName} removed from live database.`);
+      } else {
+        const res = await adminAccountService.deleteStaff(deleteModal.account.id);
+        if (!res.success) throw new Error(res.error || 'Failed to delete staff');
+        setSuccessToast(`Staff ${deleteModal.account.name} removed from live database.`);
+      }
+
+      setDeleteModal({ isOpen: false, accountType: '', account: null });
+      await loadAccounts(true);
+    } catch (err) {
+      setError(err.message || 'Deletion failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Document Master Handlers
+  const handleSyncDocs = async () => {
+    setIsSyncingDocs(true);
+    try {
+      await refreshMasterDocuments?.();
+      setSuccessToast('Document Master & Category Rules synced with live database.');
+    } catch (err) {
+      setError(err?.message || 'Failed to sync with live database.');
+    } finally {
+      setIsSyncingDocs(false);
+    }
+  };
+
   const handleOpenAddDoc = () => {
     setEditingDoc(null);
+    setIsKeyManuallyEdited(false);
     setDocForm({
+      key: '',
       label: '',
+      category: 'Applicant KYC',
       description: '',
       icon: 'description',
-      categories: ['residential'],
-      mandatory: true,
-      categoryMandatory: {
-        residential: true,
-        commercial: false,
-        common_meter: false
-      },
-      allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png'],
-      captureMode: 'both'
+      allowedExtensions: ['.pdf', '.jpg', '.jpeg', '.png', '.webp']
     });
+    setError('');
     setShowDocModal(true);
   };
 
   const handleOpenEditDoc = (doc) => {
     setEditingDoc(doc);
-    const catMandatory = { ...(doc.categoryMandatory || {}) };
-    (doc.categories || ['residential']).forEach(c => {
-      if (catMandatory[c] === undefined) {
-        catMandatory[c] = Boolean(doc.mandatory);
-      }
-    });
-
+    setIsKeyManuallyEdited(true);
     setDocForm({
-      label: doc.label || '',
+      key: doc.key,
+      label: doc.label,
+      category: doc.category || 'Applicant KYC',
       description: doc.description || '',
       icon: doc.icon || 'description',
-      categories: doc.categories || ['residential'],
-      mandatory: Boolean(doc.mandatory),
-      categoryMandatory: catMandatory,
-      allowedExtensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png'],
-      captureMode: doc.captureMode || 'both'
+      allowedExtensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png', '.webp']
     });
+    setError('');
     setShowDocModal(true);
   };
 
-  const handleSaveDocForm = (e) => {
+  const handleSaveDoc = (e) => {
     e.preventDefault();
-    if (!docForm.label.trim()) return;
+    if (!docForm.label.trim()) {
+      setError('Please provide a document title.');
+      return;
+    }
 
-    const docPayload = {
-      label: docForm.label.trim(),
-      description: docForm.description.trim(),
-      icon: docForm.icon || 'description',
-      categories: docForm.categories,
-      mandatory: docForm.mandatory,
-      categoryMandatory: docForm.categoryMandatory || {},
-      allowedExtensions: docForm.allowedExtensions,
-      captureMode: docForm.captureMode
-    };
+    const cleanKey = editingDoc
+      ? editingDoc.key
+      : (docForm.key.trim() || docForm.label.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, ''));
+
+    if (!cleanKey) {
+      setError('Invalid document key.');
+      return;
+    }
 
     if (editingDoc) {
-      updateRequiredDocument(editingDoc.id, docPayload);
-    } else {
-      addRequiredDocument({
-        ...docPayload,
-        id: `doc-${Date.now()}`,
-        key: `doc_${docForm.label.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString().slice(-4)}`
+      updateMasterDocument(cleanKey, {
+        label: docForm.label.trim(),
+        category: docForm.category,
+        description: docForm.description.trim(),
+        icon: docForm.icon,
+        allowedExtensions: docForm.allowedExtensions
       });
+      setSuccessToast(`Document "${docForm.label}" updated successfully.`);
+    } else {
+      addMasterDocument({
+        key: cleanKey,
+        label: docForm.label.trim(),
+        category: docForm.category,
+        description: docForm.description.trim(),
+        icon: docForm.icon,
+        allowedExtensions: docForm.allowedExtensions
+      });
+      setSuccessToast(`New document type "${docForm.label}" registered.`);
     }
 
     setShowDocModal(false);
-    setEditingDoc(null);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
   };
 
-  const handleToggleDocCategory = (catId) => {
-    setDocForm(prev => {
-      const exists = prev.categories.includes(catId);
-      const next = exists ? prev.categories.filter(c => c !== catId) : [...prev.categories, catId];
-      const validCategories = next.length > 0 ? next : ['residential'];
-      const nextCatMandatory = { ...(prev.categoryMandatory || {}) };
-      if (!exists && nextCatMandatory[catId] === undefined) {
-        nextCatMandatory[catId] = prev.mandatory;
-      }
-      return {
-        ...prev,
-        categories: validCategories,
-        categoryMandatory: nextCatMandatory
-      };
-    });
-  };
-
-  const handleToggleDocCategoryInclusion = (docId, categoryId) => {
-    const doc = (requiredDocuments || []).find(d => d.id === docId);
-    if (!doc) return;
-    const cats = doc.categories || [];
-    const exists = cats.includes(categoryId);
-    const updatedCats = exists ? cats.filter(c => c !== categoryId) : [...cats, categoryId];
-    if (updatedCats.length === 0) return; // keep at least 1 category
-    updateRequiredDocument(docId, {
-      categories: updatedCats
-    });
-  };
-
-  const handleToggleCategoryMandatory = (docId, categoryId) => {
-    const doc = (requiredDocuments || []).find(d => d.id === docId);
-    if (!doc) return;
-    const currentIsMandatory = isDocMandatoryForCategory(doc, categoryId);
-    const updatedCategoryMandatory = {
-      ...(doc.categoryMandatory || {}),
-      [categoryId]: !currentIsMandatory
-    };
-    updateRequiredDocument(docId, {
-      categoryMandatory: updatedCategoryMandatory
-    });
+  const handleConfirmDeleteDoc = () => {
+    if (!deleteDocModal) return;
+    deleteMasterDocument(deleteDocModal.key);
+    setSuccessToast(`Document type "${deleteDocModal.label}" removed from master registry.`);
+    setDeleteDocModal(null);
   };
 
   return (
-    <div className="flex flex-col w-full gap-6">
-      {/* 1. BREADCRUMBS, HEADER & SYSTEM INTEGRITY BAR */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-surface-container-lowest p-6 rounded-xl shadow-sm">
-        <div className="flex flex-col gap-2 max-w-4xl">
-          <div className="flex items-center gap-2 text-secondary font-label-xs text-label-xs uppercase tracking-wider">
-            <button
-              type="button"
-              onClick={() => setActiveTabGlobal && setActiveTabGlobal('admin_dashboard')}
-              className="hover:text-primary transition-colors cursor-pointer text-left"
-              title="Navigate to Executive Overview"
-            >
-              Admin Operations
-            </button>
-            <span className="text-secondary/40 font-bold">/</span>
-            <button
-              type="button"
-              onClick={() => setActiveTab('governance')}
-              className="hover:text-primary transition-colors cursor-pointer text-left"
-              title="Reset to Governance view"
-            >
-              Global System Architecture
-            </button>
-            <span className="text-secondary/40 font-bold">/</span>
-            <span className="text-on-surface font-semibold">Master Settings</span>
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* Toast Notification */}
+      {successToast && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 bg-emerald-600 text-white rounded-xl shadow-xl transition-all animate-bounce">
+          <span className="material-symbols-outlined text-white text-xl">check_circle</span>
+          <p className="text-sm font-semibold">{successToast}</p>
+          <button
+            onClick={() => setSuccessToast('')}
+            className="text-emerald-100 hover:text-white cursor-pointer ml-2"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        </div>
+      )}
+
+      {/* Top Header & Breadcrumb */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-500 mb-1">
+            <span>Admin Console</span>
+            <span>&gt;</span>
+            <span className="text-slate-900 font-semibold">Settings</span>
           </div>
-          <div className="flex items-center gap-3">
-            <h1 className="font-headline-xl text-headline-xl text-on-surface tracking-tight">System Master Settings &amp; Enterprise Governance</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary-container/15 text-primary font-label-xs text-label-xs font-bold uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span>
-              Cluster 01-PROD
-            </span>
-          </div>
-          <p className="font-body-md text-body-md text-secondary leading-relaxed">
-            Centralized administration for national multi-tier dealer quotas, real-time pricing engines, RBAC permission matrix, state DISCOM protocol maps, and regulatory audit compliance logs.
+          <h1 className="text-2xl sm:text-3xl font-bold font-heading text-slate-900 tracking-tight">
+            Settings &amp; Governance
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Configure system settings, dynamic document requirements, security, and live database credentials.
           </p>
         </div>
 
-        {/* Top Action Controls & Maintenance Switch */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Maintenance Mode Toggle */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-surface-container-low rounded-lg shadow-sm">
-            <span className="material-symbols-outlined text-[18px] text-secondary">tune</span>
-            <span className="font-label-xs text-label-xs text-secondary uppercase font-semibold">Maintenance</span>
-            <button
-              type="button"
-              onClick={() => setMaintenance(!maintenance)}
-              className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${maintenance ? 'bg-error' : 'bg-surface-container-highest'
-                }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${maintenance ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-              />
-            </button>
-            <span className="font-label-xs text-label-xs font-bold text-secondary">
-              {maintenance ? 'ACTIVE' : 'OFF'}
-            </span>
+        {/* Status Chip & Refresh */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>PostgreSQL Live Sync</span>
           </div>
 
-          {/* Deploy CTA */}
           <button
-            type="button"
-            onClick={handleSave}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-container text-on-primary font-label-md text-label-md rounded-lg hover:bg-primary transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-container/30 active:scale-95"
+            onClick={() => loadAccounts(true)}
+            disabled={refreshing || loading}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+            title="Reload live records from database"
           >
-            <span className="material-symbols-outlined text-[18px]">
-              {saved ? 'verified' : 'lock_reset'}
+            <span className={`material-symbols-outlined text-sm text-slate-500 ${refreshing ? 'animate-spin' : ''}`}>
+              sync
             </span>
-            <span>{saved ? 'Enforced Globally' : 'Save changes'}</span>
+            <span>{refreshing ? 'Syncing...' : 'Sync Live DB'}</span>
           </button>
         </div>
       </div>
 
-      {/* 2. ADMIN HORIZONTAL TABBED WORKSPACE */}
-      <div className="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
-        <div className="flex items-center gap-1 px-4 overflow-x-auto bg-surface-container-low/40">
-          <button
-            onClick={() => setActiveTab('governance')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors ${activeTab === 'governance'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px] text-primary-container">shield_person</span>
-            <span>1. Enterprise Governance &amp; ALMM</span>
-            {activeTab === 'governance' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('margins')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors ${activeTab === 'margins'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">pie_chart</span>
-            <span>2. Dealer Quota &amp; Margin Caps</span>
-            {activeTab === 'margins' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('infrastructure')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'infrastructure'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">hub</span>
-            <span>3. DISCOM Grid Node Bridge</span>
-            {activeTab === 'infrastructure' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('lifecycle')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'lifecycle'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">alt_route</span>
-            <span>4. File Lifecycle Pipeline</span>
-            {activeTab === 'lifecycle' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('finance')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'finance'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">payments</span>
-            <span>5. Cash vs Loan Rules</span>
-            {activeTab === 'finance' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('policies')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'policies'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">description</span>
-            <span>6. Document Policies</span>
-            {activeTab === 'policies' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('documents')}
-            className={`flex items-center gap-2 py-3 px-3.5 font-label-sm text-label-sm whitespace-nowrap transition-colors cursor-pointer ${activeTab === 'documents'
-                ? 'font-bold text-on-surface bg-surface-container-lowest rounded-t-lg shadow-sm'
-                : 'text-secondary hover:text-on-surface'
-              }`}
-          >
-            <span className="material-symbols-outlined text-[17px]">folder_managed</span>
-            <span>7. Document Upload Master</span>
-            {activeTab === 'documents' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-container"></span>}
+      {/* Global Error Banner */}
+      {error && (
+        <div className="flex items-center justify-between gap-3 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-rose-600">error</span>
+            <span className="text-sm font-medium">{error}</span>
+          </div>
+          <button onClick={() => setError('')} className="text-rose-500 hover:text-rose-800 cursor-pointer">
+            <span className="material-symbols-outlined text-sm">close</span>
           </button>
         </div>
+      )}
 
-        {/* Tab Content 1: Governance & Compliance */}
-        {activeTab === 'governance' && (
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">policy</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">MNRE Regulatory Governance &amp; Central DBT</h3>
+      {/* ========================================================
+          PRIMARY SETTINGS TABS
+          ======================================================== */}
+      <div className="border-b border-slate-200 flex items-center gap-1 sm:gap-2 flex-wrap">
+        <button
+          onClick={() => startTransition(() => setSettingsTab('account_center'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'account_center'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">manage_accounts</span>
+          <span>Account Center</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 font-bold ml-1">
+            {adminsList.length + dealersList.length + staffListState.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => startTransition(() => setSettingsTab('document_rules'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'document_rules'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">folder_managed</span>
+          <span>Document Master &amp; Rules</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 font-bold ml-1">
+            {(masterDocRegistry || []).length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => startTransition(() => setSettingsTab('security'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'security'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">security</span>
+          <span>Security &amp; Policies</span>
+        </button>
+
+        <button
+          onClick={() => startTransition(() => setSettingsTab('system'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'system'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">tune</span>
+          <span>System &amp; Presets</span>
+        </button>
+      </div>
+
+      {/* ========================================================
+          TAB CONTENT: 1. ACCOUNT CENTER (Live Database Management)
+          ======================================================== */}
+      {settingsTab === 'account_center' && (
+        <div className="space-y-6">
+          {/* Key Metric Highlights in Clean Enterprise Theme */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div
+              onClick={() => setAccountSubTab('admins')}
+              className={`p-4 rounded-xl border transition-all cursor-pointer shadow-sm ${
+                accountSubTab === 'admins'
+                  ? 'bg-purple-50/70 border-purple-300 ring-2 ring-purple-400/20'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admins</div>
+                  <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{adminsList.length}</div>
+                  <div className="text-xs text-purple-700 font-medium mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">verified_user</span>
+                    HO System Authority
+                  </div>
+                </div>
+                <div className="w-11 h-11 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl">admin_panel_settings</span>
+                </div>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-primary-container/20 text-primary font-label-xs text-label-xs font-bold">
-                COMPLIANCE ENFORCED
-              </span>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex items-start justify-between p-4 rounded-xl bg-surface-container-low border border-surface-container-high">
+            <div
+              onClick={() => setAccountSubTab('dealers')}
+              className={`p-4 rounded-xl border transition-all cursor-pointer shadow-sm ${
+                accountSubTab === 'dealers'
+                  ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/20'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-label-md text-label-md text-on-surface font-bold block">
-                    Mandatory ALMM Compliant Module Enforcement
-                  </span>
-                  <span className="font-body-sm text-body-sm text-secondary block mt-1">
-                    Strictly prohibit non-ALMM (Approved List of Models and Manufacturers) listed solar photovoltaic modules from inclusion in grid-interactive customer proposals.
-                  </span>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">EPC Dealers</div>
+                  <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{dealersList.length}</div>
+                  <div className="text-xs text-amber-700 font-medium mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">handshake</span>
+                    Authorized Partners
+                  </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={settings.enforceAlmm}
-                  onChange={(e) => setSettings({ ...settings, enforceAlmm: e.target.checked })}
-                  className="rounded text-primary-container focus:ring-primary-container w-5 h-5 mt-1"
-                />
+                <div className="w-11 h-11 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl">apartment</span>
+                </div>
               </div>
+            </div>
 
-              <div className="flex items-start justify-between p-4 rounded-xl bg-surface-container-low border border-surface-container-high">
+            <div
+              onClick={() => setAccountSubTab('staff')}
+              className={`p-4 rounded-xl border transition-all cursor-pointer shadow-sm ${
+                accountSubTab === 'staff'
+                  ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-400/20'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-label-md text-label-md text-on-surface font-bold block">
-                    PM Surya Ghar: Muft Bijli Yojana Central DBT Auto-Calculation
-                  </span>
-                  <span className="font-body-sm text-body-sm text-secondary block mt-1">
-                    Automatically inject central residential subsidy slabs (₹30,000 for 1kW, ₹60,000 for 2kW, ₹78,000 for 3kW+) into residential proposals nationwide.
-                  </span>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Staff &amp; Desk</div>
+                  <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{staffListState.length}</div>
+                  <div className="text-xs text-emerald-700 font-medium mt-1 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">groups</span>
+                    Sales &amp; Verification Team
+                  </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={settings.pmSuryaGharActive}
-                  onChange={(e) => setSettings({ ...settings, pmSuryaGharActive: e.target.checked })}
-                  className="rounded text-primary-container focus:ring-primary-container w-5 h-5 mt-1"
-                />
-              </div>
-
-              <div className="flex items-start justify-between p-4 rounded-xl bg-surface-container-low border border-surface-container-high">
-                <div>
-                  <span className="font-label-md text-label-md text-on-surface font-bold block">
-                    Automated GEDA State Registration Queue Sync
-                  </span>
-                  <span className="font-body-sm text-body-sm text-secondary block mt-1">
-                    Dispatch approved dealer proposals to GEDA (Gujarat Energy Development Agency) API endpoint for net-metering synchronization.
-                  </span>
+                <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl">badge</span>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={settings.autoGedaSync}
-                  onChange={(e) => setSettings({ ...settings, autoGedaSync: e.target.checked })}
-                  className="rounded text-primary-container focus:ring-primary-container w-5 h-5 mt-1"
-                />
               </div>
             </div>
           </div>
-        )}
 
-        {/* Tab Content 2: Dealer Margin & Pricing */}
-        {activeTab === 'margins' && (
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">price_change</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">National Margin Ceilings &amp; Quotas</h3>
-              </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-label-xs text-label-xs font-bold">
-                COMMERCIAL CAPS
-              </span>
+          {/* Account Sub-Tabs Header (Admins / Dealers / Staff) + Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setAccountSubTab('admins')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  accountSubTab === 'admins'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">admin_panel_settings</span>
+                <span>Admins ({adminsList.length})</span>
+              </button>
+
+              <button
+                onClick={() => setAccountSubTab('dealers')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  accountSubTab === 'dealers'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">apartment</span>
+                <span>Dealers ({dealersList.length})</span>
+              </button>
+
+              <button
+                onClick={() => setAccountSubTab('staff')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  accountSubTab === 'staff'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">groups</span>
+                <span>Staff ({staffListState.length})</span>
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-surface-container-low">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold">Maximum Dealer Margin (₹ / kW)</label>
-                <div className="relative mt-1">
-                  <span className="absolute left-3 top-2.5 text-secondary font-bold">₹</span>
-                  <input
-                    type="number"
-                    value={settings.maxDealerMarginPerKW}
-                    onChange={(e) => setSettings({ ...settings, maxDealerMarginPerKW: Number(e.target.value) })}
-                    className="w-full pl-8 pr-3 py-2 bg-surface-container-lowest border border-surface-container-high rounded-lg font-headline-sm text-on-surface font-bold"
-                  />
-                </div>
-                <span className="text-[11px] font-body-sm text-secondary">Authorized channel partners cannot exceed this margin per kW.</span>
-              </div>
-
-              <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-surface-container-low">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold">High-Capacity Executive Approval Trigger</label>
-                <div className="relative mt-1">
-                  <input
-                    type="number"
-                    value={settings.requireAdminApprovalAboveKW}
-                    onChange={(e) => setSettings({ ...settings, requireAdminApprovalAboveKW: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-high rounded-lg font-headline-sm text-on-surface font-bold"
-                  />
-                  <span className="absolute right-3 top-2.5 text-secondary font-bold">kW</span>
-                </div>
-                <span className="text-[11px] font-body-sm text-secondary">Quotations exceeding this capacity require Headquarters review.</span>
-              </div>
-
-              <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-surface-container-low">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold">Quotation Expiry Validity (Days)</label>
+            <div className="flex items-center gap-3">
+              {/* Search Box */}
+              <div className="relative min-w-0 sm:w-60">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
                 <input
-                  type="number"
-                  value={settings.quoteExpiryDays}
-                  onChange={(e) => setSettings({ ...settings, quoteExpiryDays: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-high rounded-lg font-headline-sm text-on-surface font-bold mt-1"
+                  type="text"
+                  placeholder={`Search ${accountSubTab}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
                 />
-                <span className="text-[11px] font-body-sm text-secondary">Hardware pricing locks dynamically after validity expires.</span>
               </div>
 
-              <div className="flex flex-col gap-1.5 p-4 rounded-xl bg-surface-container-low">
-                <label className="font-label-sm text-label-sm text-on-surface font-semibold">Audit Ledger Retention Window (Months)</label>
-                <input
-                  type="number"
-                  value={settings.retentionMonths}
-                  onChange={(e) => setSettings({ ...settings, retentionMonths: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-high rounded-lg font-headline-sm text-on-surface font-bold mt-1"
-                />
-                <span className="text-[11px] font-body-sm text-secondary">Statutory compliance for EPC audits and GST ledgers.</span>
-              </div>
+              {/* Add Action Button */}
+              {accountSubTab === 'admins' && (
+                <button
+                  onClick={handleOpenAddAdmin}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-sm">person_add</span>
+                  <span>New Admin</span>
+                </button>
+              )}
+
+              {accountSubTab === 'dealers' && (
+                <button
+                  onClick={handleOpenAddDealer}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-sm">add_business</span>
+                  <span>New Dealer</span>
+                </button>
+              )}
+
+              {accountSubTab === 'staff' && (
+                <button
+                  onClick={handleOpenAddStaff}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-sm">group_add</span>
+                  <span>New Staff</span>
+                </button>
+              )}
             </div>
           </div>
-        )}
 
-        {/* Tab Content 3: Infrastructure */}
-        {activeTab === 'infrastructure' && (
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">dns</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">DISCOM Grid Node Status</h3>
+          {/* ========================================================
+              SUB-TAB 1: ADMIN ACCOUNTS TABLE
+              ======================================================== */}
+          {accountSubTab === 'admins' && (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              {loading ? (
+                <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
+                  <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                </div>
+              ) : filteredAdmins.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">
+                  <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">no_accounts</span>
+                  <p className="text-sm font-medium">No admin accounts found.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4">Administrator</th>
+                        <th className="py-3 px-4">Mobile Number</th>
+                        <th className="py-3 px-4">Email</th>
+                        <th className="py-3 px-4">Role</th>
+                        <th className="py-3 px-4">Database State</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredAdmins.map((admin) => (
+                        <tr key={admin.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-sm">
+                                {(admin.full_name || 'A').charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-slate-900 flex items-center gap-2">
+                                  <span>{admin.full_name}</span>
+                                  {admin.email === currentAdmin?.email && (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold border border-emerald-200">
+                                      Current Session
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono">ID: {admin.id.slice(0, 8)}...</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 font-mono font-medium text-slate-800">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-slate-400 text-sm">phone_iphone</span>
+                              <span>{admin.mobile_number || '8000050580'}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-slate-600 font-mono text-xs">
+                            {admin.email}
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              admin.role === 'super_admin'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-xs">
+                                {admin.role === 'super_admin' ? 'stars' : 'shield_person'}
+                              </span>
+                              <span>{admin.role === 'super_admin' ? 'Super Admin' : 'Admin Officer'}</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              Bcrypt Verified
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Password Button */}
+                              <button
+                                onClick={() => handleOpenPasswordModal('admin', admin)}
+                                className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer"
+                                title="Change Password"
+                              >
+                                <span className="material-symbols-outlined text-sm">key</span>
+                              </button>
+
+                              {/* Edit Button */}
+                              <button
+                                onClick={() => handleOpenEditAdmin(admin)}
+                                className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                                title="Edit Admin"
+                              >
+                                <span className="material-symbols-outlined text-sm">edit</span>
+                              </button>
+
+                              {/* Delete Button */}
+                              <button
+                                onClick={() => handleOpenDelete('admin', admin)}
+                                disabled={adminsList.length <= 1}
+                                className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={adminsList.length <= 1 ? 'Cannot delete the only admin' : 'Delete Admin'}
+                              >
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================
+              SUB-TAB 2: DEALER ACCOUNTS TABLE
+              ======================================================== */}
+          {accountSubTab === 'dealers' && (
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              {loading ? (
+                <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
+                  <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                </div>
+              ) : filteredDealers.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">
+                  <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">storefront</span>
+                  <p className="text-sm font-medium">No dealer partners found in database.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4">Dealer Partner / Firm</th>
+                        <th className="py-3 px-4">Mobile Number</th>
+                        <th className="py-3 px-4">City / DISCOM</th>
+                        <th className="py-3 px-4">Partner Tier</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredDealers.map((dealer) => {
+                        const firm = dealer.firm_name || dealer.firmName || 'Dealer Firm';
+                        const contact = dealer.contact_person || dealer.contactPerson || 'Authorized Person';
+                        const code = dealer.dealer_code || dealer.dealerCode || dealer.id;
+                        const mobile = dealer.mobile_number || dealer.mobile || '8000050580';
+                        return (
+                          <tr key={dealer.id || code} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-sm">
+                                  {firm.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-slate-900">{firm}</div>
+                                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <span>{contact}</span>
+                                    <span>•</span>
+                                    <span className="font-mono text-emerald-700 font-semibold">{code}</span>
+                                    <span>•</span>
+                                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                      (!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                      {(!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'Direct to Company'
+                                        : `Sales: ${dealer.assigned_staff_name || dealer.assignedStaffName || 'Sales Staff'}`}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4 font-mono font-medium text-slate-800">
+                              <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-slate-400 text-sm">phone_iphone</span>
+                                <span>{mobile}</span>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <div className="text-slate-900 font-medium">{dealer.city || 'Ahmedabad'}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">{dealer.discom || 'UGVCL'} Circle</div>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="material-symbols-outlined text-xs">workspace_premium</span>
+                                <span>{dealer.tier || 'Gold EPC'}</span>
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Active in DB</span>
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Password Button */}
+                                <button
+                                  onClick={() => handleOpenPasswordModal('dealer', dealer)}
+                                  className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer"
+                                  title="Change Dealer Password"
+                                >
+                                  <span className="material-symbols-outlined text-sm">key</span>
+                                </button>
+
+                                {/* Edit Button */}
+                                <button
+                                  onClick={() => handleOpenEditDealer(dealer)}
+                                  className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                                  title="Edit Dealer Profile"
+                                >
+                                  <span className="material-symbols-outlined text-sm">edit</span>
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                  onClick={() => handleOpenDelete('dealer', dealer)}
+                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+                                  title="Delete Dealer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================
+              SUB-TAB 3: STAFF ACCOUNTS TABLE
+              ======================================================== */}
+          {accountSubTab === 'staff' && (
+            <div className="space-y-3">
+              {/* Filter Pills */}
+              <div className="flex items-center gap-2">
+                {[
+                  { id: 'all', label: `All Staff (${staffListState.length})` },
+                  { id: 'sales', label: `Field Sales (${staffListState.filter(s => !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).length})` },
+                  { id: 'verification', label: `Verification Desk (${staffListState.filter(s => (s.department || '').toLowerCase().includes('verification') || (s.role || '').toLowerCase().includes('verification')).length})` }
+                ].map(pill => (
+                  <button
+                    key={pill.id}
+                    onClick={() => setStaffFilter(pill.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all ${
+                      staffFilter === pill.id
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary font-label-xs text-label-xs font-bold">
-                ALL SYSTEMS OPERATIONAL
-              </span>
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                {loading ? (
+                  <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
+                    <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                  </div>
+                ) : filteredStaff.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500">
+                    <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">person_off</span>
+                    <p className="text-sm font-medium">No staff members found matching filter.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4">Staff Member</th>
+                          <th className="py-3 px-4">Mobile Number</th>
+                          <th className="py-3 px-4">Department &amp; Role</th>
+                          <th className="py-3 px-4">Email</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStaff.map((staff) => {
+                          const isVer = (staff.department || '').toLowerCase().includes('verification') || (staff.role || '').toLowerCase().includes('verification');
+                          return (
+                            <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-sm ${
+                                    isVer ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                                  }`}>
+                                    {(staff.name || 'S').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{staff.name}</div>
+                                    <div className="text-[11px] text-slate-400 font-mono">ID: {staff.id}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-mono font-medium text-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="material-symbols-outlined text-slate-400 text-sm">phone_iphone</span>
+                                  <span>{staff.phone || '8000050580'}</span>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div>
+                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                    isVer
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-xs">
+                                      {isVer ? 'fact_check' : 'campaign'}
+                                    </span>
+                                    <span>{isVer ? 'Verification Desk' : 'Field Sales'}</span>
+                                  </span>
+                                  <div className="text-xs text-slate-500 mt-1">{staff.role}</div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
+                                {staff.email}
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span>Active in DB</span>
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {/* Password Button */}
+                                  <button
+                                    onClick={() => handleOpenPasswordModal('staff', staff)}
+                                    className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer"
+                                    title="Change Password"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">key</span>
+                                  </button>
+
+                                  {/* Edit Button */}
+                                  <button
+                                    onClick={() => handleOpenEditStaff(staff)}
+                                    className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                                    title="Edit Staff Profile"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">edit</span>
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    onClick={() => handleOpenDelete('staff', staff)}
+                                    className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+                                    title="Delete Staff"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB CONTENT: 2. DOCUMENT MASTER & CATEGORY RULES MATRIX
+          ======================================================== */}
+      {settingsTab === 'document_rules' && (
+        <div className="space-y-6">
+          {/* Category Switcher Tabs */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-600">rule_folder</span>
+                  <span>Project Category Rules Matrix</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Select an application category below to customize mandatory, optional, and disabled document requirements.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSyncDocs}
+                  disabled={isSyncingDocs}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold border border-emerald-300 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="Force instant sync of Document Master & Category Rules directly from Supabase PostgreSQL database"
+                >
+                  <span className={`material-symbols-outlined text-sm ${isSyncingDocs ? 'animate-spin' : ''}`}>
+                    sync
+                  </span>
+                  <span>{isSyncingDocs ? 'Syncing Live DB...' : 'Sync Live DB'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenAddDoc}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">add_circle</span>
+                  <span>Add Document Type</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowResetRulesModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition-all cursor-pointer"
+                  title="Reset all document rules to standard system defaults"
+                >
+                  <span className="material-symbols-outlined text-sm">restart_alt</span>
+                  <span>Reset Defaults</span>
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 rounded-xl bg-surface-container-low flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-label-sm text-label-sm text-secondary">PGVCL Bridge</span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-primary-container animate-pulse"></span>
-                </div>
-                <span className="font-headline-sm text-headline-sm text-on-surface">Live (12ms)</span>
-                <span className="text-[11px] text-secondary">Metoda Sub-division link active</span>
-              </div>
+            {/* Category Pills */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 pt-2">
+              {CATEGORY_TABS.map((cat) => {
+                const isSelected = selectedCategoryRule === cat.key;
+                const catRules = categoryDocRules?.[cat.key] || {};
+                const reqCount = (masterDocRegistry || []).filter(d => (catRules[d.key] || 'mandatory') === 'mandatory').length;
+                const optCount = (masterDocRegistry || []).filter(d => catRules[d.key] === 'optional').length;
 
-              <div className="p-4 rounded-xl bg-surface-container-low flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-label-sm text-label-sm text-secondary">GEDA State Portal</span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-primary-container"></span>
-                </div>
-                <span className="font-headline-sm text-headline-sm text-on-surface">Connected</span>
-                <span className="text-[11px] text-secondary">Hourly batch sync enabled</span>
-              </div>
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    onClick={() => startTransition(() => setSelectedCategoryRule(cat.key))}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                        : 'bg-slate-50 hover:bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`material-symbols-outlined text-lg ${isSelected ? 'text-emerald-700' : 'text-slate-500'}`}>
+                          {cat.icon}
+                        </span>
+                        <span className={`text-xs font-bold truncate ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
+                          {cat.label}
+                        </span>
+                      </div>
+                    </div>
 
-              <div className="p-4 rounded-xl bg-surface-container-low flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-label-sm text-label-sm text-secondary">Encrypted DB Snapshot</span>
-                  <span className="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
-                </div>
-                <span className="font-headline-sm text-headline-sm text-on-surface">Today, 01:15 AM</span>
-                <span className="text-[11px] text-secondary">AES-256 backup verified</span>
-              </div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono mt-1">
+                      <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold">
+                        {reqCount} Req
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-semibold">
+                        {optCount} Opt
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        )}
 
-        {/* Tab Content 4: Lifecycle Pipeline Master (SR-64) */}
-        {activeTab === 'lifecycle' && (
-          <div className="p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-surface-container-high gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">alt_route</span>
+          {/* Active Category Header & Search Filter */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-xl">
+                    {CATEGORY_TABS.find(c => c.key === selectedCategoryRule)?.icon || 'folder'}
+                  </span>
+                </div>
                 <div>
-                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                    Customer File Lifecycle Pipeline Master
+                  <h3 className="font-bold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                    <span>{CATEGORY_TABS.find(c => c.key === selectedCategoryRule)?.label}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-normal">
+                      Active Rule Matrix
+                    </span>
                   </h3>
-                  <p className="text-xs text-secondary mt-0.5">
-                    Configure official Gujarat DISCOM milestones, mandatory checklist gates, and stage descriptions.
+                  <p className="text-xs text-slate-500">
+                    {CATEGORY_TABS.find(c => c.key === selectedCategoryRule)?.desc}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleResetStages}
-                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest hover:bg-surface-container text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Reset to 10 standard Gujarat DISCOM stages"
-                >
-                  <span className="material-symbols-outlined text-base">restart_alt</span>
-                  <span>Reset Defaults</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenAddStage}
-                  className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-base">add</span>
-                  <span>Add Stage</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSavePipelineStages}
-                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold hover:bg-primary transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                >
-                  <span className="material-symbols-outlined text-base">save</span>
-                  <span>Save Pipeline</span>
-                </button>
+
+              {/* Category Live Counts */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  <span>{currentCategoryStats.mandatory} Mandatory</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                  <span>{currentCategoryStats.optional} Optional</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-600 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                  <span>{currentCategoryStats.disabled} Disabled</span>
+                </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {stagesList.map((stg, i) => {
-                const isCustom = !DEFAULT_PIPELINE_STAGES.some(d => d.id === stg.id);
+            {/* Search and Quick Filters */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search master documents by name, key, category..."
+                  value={docSearchQuery}
+                  onChange={(e) => setDocSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white"
+                />
+                {docSearchQuery && (
+                  <button
+                    onClick={() => setDocSearchQuery('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-xs">close</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Showing {filteredMasterDocs.length} of {(masterDocRegistry || []).length} Document Types</span>
+              </div>
+            </div>
+
+            {/* Master Document Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pt-2">
+              {filteredMasterDocs.map((doc) => {
+                const currentRule = categoryDocRules?.[selectedCategoryRule]?.[doc.key] || 'mandatory';
+
                 return (
-                  <div key={stg.id || i} className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col justify-between gap-3 shadow-xs">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <span className="w-6 h-6 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-[11px] shrink-0 mt-0.5">
-                          {i + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-on-surface text-xs">{stg.label}</span>
-                            {isCustom && (
-                              <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/20">
-                                CUSTOM
-                              </span>
-                            )}
+                  <div
+                    key={doc.key}
+                    className={`rounded-2xl border p-4 transition-all flex flex-col justify-between space-y-3.5 ${
+                      currentRule === 'mandatory'
+                        ? 'bg-white border-rose-200/90 shadow-xs'
+                        : currentRule === 'optional'
+                        ? 'bg-white border-sky-200/90 shadow-xs'
+                        : 'bg-slate-50/70 border-slate-200 opacity-70'
+                    }`}
+                  >
+                    {/* Top Metadata */}
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            currentRule === 'mandatory'
+                              ? 'bg-rose-50 text-rose-700'
+                              : currentRule === 'optional'
+                              ? 'bg-sky-50 text-sky-700'
+                              : 'bg-slate-200 text-slate-500'
+                          }`}>
+                            <span className="material-symbols-outlined text-lg">
+                              {doc.icon || 'description'}
+                            </span>
                           </div>
-                          {stg.description && (
-                            <div className="text-[11px] text-secondary mt-0.5 leading-relaxed">{stg.description}</div>
-                          )}
+
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                              {doc.label}
+                            </h4>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">
+                                {doc.category || 'KYC'}
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-400">
+                                #{doc.key}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <span className="text-[10px] font-mono text-secondary px-2 py-0.5 rounded bg-surface-container-lowest shrink-0">
-                        {stg.id}
-                      </span>
-                    </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-surface-container/60 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStageMandatory(stg.id)}
-                        className={`px-2 py-0.5 rounded-full font-semibold transition-colors cursor-pointer text-[10px] flex items-center gap-1 ${
-                          stg.mandatory
-                            ? 'bg-primary/15 text-primary border border-primary/20'
-                            : 'bg-surface-container text-secondary'
-                        }`}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                        {stg.mandatory ? 'Mandatory Gate' : 'Optional Stage'}
-                      </button>
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditStage(stg)}
-                          className="p-1 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                          title="Edit Stage Details"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
-                        </button>
-                        {(isCustom || stagesList.length > 3) && (
+                        {/* Edit & Delete Actions */}
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm(`Delete stage "${stg.label}"?`)) {
-                                handleDeleteStage(stg.id);
-                              }
-                            }}
-                            className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
-                            title="Delete Stage"
+                            onClick={() => handleOpenEditDoc(doc)}
+                            className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all cursor-pointer"
+                            title="Edit Document Definition"
                           >
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                            <span className="material-symbols-outlined text-sm">edit</span>
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => setDeleteDocModal(doc)}
+                            className="p-1 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-all cursor-pointer"
+                            title="Remove from Master Registry"
+                          >
+                            <span className="material-symbols-outlined text-sm">delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Description / Instructions */}
+                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                        {doc.description || 'Customer document required for processing and verification.'}
+                      </p>
+                    </div>
+
+                    {/* Rule Switcher 3-Way Segmented Control */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                        Requirement in this Category:
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateCategoryDocRule(selectedCategoryRule, doc.key, 'mandatory');
+                            setSuccessToast(`Set "${doc.label}" as Mandatory for ${selectedCategoryRule}`);
+                          }}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            currentRule === 'mandatory'
+                              ? 'bg-rose-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-xs">star</span>
+                          <span>Mandatory</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateCategoryDocRule(selectedCategoryRule, doc.key, 'optional');
+                            setSuccessToast(`Set "${doc.label}" as Optional for ${selectedCategoryRule}`);
+                          }}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            currentRule === 'optional'
+                              ? 'bg-sky-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-xs">tune</span>
+                          <span>Optional</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateCategoryDocRule(selectedCategoryRule, doc.key, 'disabled');
+                            setSuccessToast(`Disabled "${doc.label}" for ${selectedCategoryRule}`);
+                          }}
+                          className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                            currentRule === 'disabled'
+                              ? 'bg-slate-700 text-white shadow-xs'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-xs">visibility_off</span>
+                          <span>Disabled</span>
+                        </button>
                       </div>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
-        )}
 
-        {/* Tab Content 5: Cash vs Loan Financing & Bank Master CRUD (SR-64) */}
-        {activeTab === 'finance' && (
-          <div className="p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-surface-container-high gap-3">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">account_balance</span>
+            {filteredMasterDocs.length === 0 && (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <span className="material-symbols-outlined text-3xl text-slate-300">folder_off</span>
+                <p className="text-xs font-semibold text-slate-700 mt-2">No master documents matched your search.</p>
+                <button
+                  type="button"
+                  onClick={() => setDocSearchQuery('')}
+                  className="mt-2 text-xs text-emerald-600 font-bold hover:underline cursor-pointer"
+                >
+                  Clear search query
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB CONTENT: 3. SECURITY & POLICIES (Future Tab Placeholder)
+          ======================================================== */}
+      {settingsTab === 'security' && (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3 shadow-sm">
+          <div className="w-12 h-12 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center mx-auto">
+            <span className="material-symbols-outlined text-2xl">shield</span>
+          </div>
+          <h3 className="font-bold text-slate-900 text-base">Security &amp; Policy Governance</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            Two-factor authentication, distributed rate limiting, session TTL policies, and audit trails are active via server security middleware.
+          </p>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
+            <span className="material-symbols-outlined text-sm">lock</span>
+            Bcrypt Hashing &amp; JWT HTTP-Only Cookies Active
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB CONTENT: 3. SYSTEM & PRESETS (Future Tab Placeholder)
+          ======================================================== */}
+      {/* ========================================================
+          TAB CONTENT: 3. SYSTEM & OS PUSH NOTIFICATIONS
+          ======================================================== */}
+      {settingsTab === 'system' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* OS Push Notification Management Card */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  isPushSubscribed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                }`}>
+                  <span className="material-symbols-outlined text-2xl">
+                    {isPushSubscribed ? 'notifications_active' : 'notifications'}
+                  </span>
+                </div>
                 <div>
-                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                    Partner Bank Master &amp; Solar Loan Financing Rules
-                  </h3>
-                  <p className="text-xs text-secondary mt-0.5">
-                    Centralized bank interest rates, maximum loan tenures, and collateral-free flags for PM Surya Ghar rooftop credit.
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-slate-900 text-base sm:text-lg">
+                      OS-Level Web Push Notifications (Desktop &amp; Mobile)
+                    </h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                      isPushSubscribed
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {isPushSubscribed ? 'Active & Connected' : 'Not Enabled on this Device'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                    Receive instant Windows 10/11 Action Center, macOS Notification Center, and mobile notifications when dealers create customer applications—even when your browser is completely closed.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                {isPushSubscribed && (
+                  <button
+                    type="button"
+                    onClick={handleSendAdminTestPush}
+                    disabled={isPushLoading}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-base">send</span>
+                    <span>Send Test Notification</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleOpenAddBank}
-                  className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  onClick={handleToggleAdminPush}
+                  disabled={isPushLoading}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 ${
+                    isPushSubscribed
+                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-base">add</span>
-                  <span>Add Bank</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveBankMaster}
-                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary text-xs font-bold hover:bg-primary transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                >
-                  <span className="material-symbols-outlined text-base">save</span>
-                  <span>Save Bank Master</span>
+                  <span className="material-symbols-outlined text-base">
+                    {isPushSubscribed ? 'notifications_off' : 'add_alert'}
+                  </span>
+                  <span>{isPushLoading ? 'Connecting...' : isPushSubscribed ? 'Unsubscribe Device' : 'Enable OS Notifications'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Quick Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
-                <span className="text-[10px] text-secondary font-semibold uppercase">Active Partner Banks</span>
-                <span className="font-mono text-xl font-bold text-primary">
-                  {banksList.filter(b => b.status === 'Active').length} Banks
-                </span>
-                <span className="text-[11px] text-secondary">Authorized for Gujarat Rooftops</span>
+            {/* Diagnostic Badges & Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6">
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Standard &amp; Engine</span>
+                <span className="text-xs font-bold text-slate-800 mt-1 block">W3C Web Push &bull; RFC 8292 (VAPID)</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Service Worker: Active (sw-push.js)</span>
               </div>
-              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
-                <span className="text-[10px] text-secondary font-semibold uppercase">Collateral-Free Schemes</span>
-                <span className="font-mono text-xl font-bold text-emerald-400">
-                  {banksList.filter(b => b.collateralFree && b.status === 'Active').length} Schemes
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Browser OS Permission</span>
+                <span className={`text-xs font-bold mt-1 block capitalize ${
+                  permissionState === 'granted' ? 'text-emerald-700' : permissionState === 'denied' ? 'text-rose-600' : 'text-amber-700'
+                }`}>
+                  {permissionState === 'granted' ? 'Granted (Ready to Receive)' : permissionState === 'denied' ? 'Blocked in Browser Settings' : 'Prompt on Activation'}
                 </span>
-                <span className="text-[11px] text-secondary">Zero mortgage required</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Notification.permission API</span>
               </div>
-              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col gap-1">
-                <span className="text-[10px] text-secondary font-semibold uppercase">Lowest Interest Benchmark</span>
-                <span className="font-mono text-xl font-bold text-on-surface">
-                  {Math.min(...banksList.filter(b => b.status === 'Active').map(b => b.interestRate || 7.0)).toFixed(2)}% p.a.
-                </span>
-                <span className="text-[11px] text-secondary">Concessional green credit</span>
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Target Recipient Rule</span>
+                <span className="text-xs font-bold text-emerald-800 mt-1 block">Admin HQ: All Files (100%)</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Salesmen: Assigned Files Only</span>
               </div>
             </div>
 
-            {/* Banks Master Table */}
-            <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-surface-container text-secondary font-semibold uppercase text-[10px] tracking-wider bg-surface-container-low/80">
-                    <th className="py-2.5 px-3">Bank &amp; Financing Scheme</th>
-                    <th className="py-2.5 px-3 text-right">Interest Rate (% p.a.)</th>
-                    <th className="py-2.5 px-3 text-center">Tenure Range</th>
-                    <th className="py-2.5 px-3 text-center">Security</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
-                    <th className="py-2.5 px-3 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-container">
-                  {banksList.map((bank) => (
-                    <tr key={bank.id} className="hover:bg-surface-container transition-colors">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-on-surface">{bank.name}</div>
-                        <div className="text-[11px] text-secondary">{bank.scheme || 'Solar Rooftop Term Loan'}</div>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-primary">
-                        {Number(bank.interestRate).toFixed(2)}%
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono">
-                        {bank.minTenureYears} to {bank.maxTenureYears} Years
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          bank.collateralFree ? 'bg-emerald-500/15 text-emerald-400' : 'bg-surface-container text-secondary'
-                        }`}>
-                          {bank.collateralFree ? 'Collateral-Free' : 'Secured'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          bank.status === 'Active' ? 'bg-primary/15 text-primary' : 'bg-surface-container-highest text-secondary'
-                        }`}>
-                          {bank.status || 'Active'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleBankStatus(bank.id)}
-                            className="p-1 rounded hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                            title={bank.status === 'Active' ? 'Disable Bank' : 'Activate Bank'}
-                          >
-                            <span className="material-symbols-outlined text-[16px]">
-                              {bank.status === 'Active' ? 'block' : 'check_circle'}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditBank(bank)}
-                            className="p-1 rounded hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                            title="Edit Bank"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteBank(bank.id)}
-                            className="p-1 rounded hover:bg-error/10 text-secondary hover:text-error transition-colors cursor-pointer"
-                            title="Delete Bank"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Routing Rules Card */}
+            <div className="mt-5 p-4 rounded-xl bg-emerald-50/60 border border-emerald-200/70 text-xs text-emerald-900 space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+                <span className="material-symbols-outlined text-sm text-emerald-600">verified</span>
+                <span>Automated Push Routing Logic</span>
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-slate-700 text-[11px]">
+                <li><strong>Dealer creates file:</strong> Admin receives OS desktop notification banner immediately.</li>
+                <li><strong>Assigned Salesman:</strong> If dealer is linked to a salesman (e.g. Mayank Vekariya, STF-802), that specific salesman receives the alert on their desktop/phone.</li>
+                <li><strong>Direct Company:</strong> If dealer is handled direct by company (STF-DIRECT), only Admin receives the push notification.</li>
+                <li><strong>Click to Navigate:</strong> Clicking the OS notification banner automatically opens the portal and highlights the new file in the Sales Team &amp; Files view.</li>
+              </ul>
             </div>
           </div>
-        )}
 
-        {/* Tab Content 6: Document Policies Editor */}
-        {activeTab === 'policies' && (
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-high">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-[22px]">description</span>
-                <h3 className="font-headline-sm text-headline-sm text-on-surface">Dynamic Document &amp; Policy Editor</h3>
+          {/* Quick System Links */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h4 className="font-bold text-slate-900 text-sm mb-3">Master Configuration Quick Consoles</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('account_center'))}>
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
+                  <span className="material-symbols-outlined text-sm text-primary">badge</span>
+                  <span>Staff &amp; Dealer Accounts</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Manage dealer-to-salesman assignments and system credentials.</p>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-primary-container/20 text-primary font-label-xs text-label-xs font-bold">
-                REFLECTS IN-APP REALTIME
-              </span>
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('document_rules'))}>
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
+                  <span className="material-symbols-outlined text-sm text-primary">folder_managed</span>
+                  <span>Document Vault Master</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Configure mandatory documents per category and loan requirements.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: ADD / EDIT ADMIN
+          ======================================================== */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">admin_panel_settings</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingAdmin ? 'Edit Administrator Profile' : 'Add New Administrator'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAdminModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
             </div>
 
-            <form onSubmit={handleSavePolicy} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveAdmin} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Ramesh Patel"
+                  value={adminForm.fullName}
+                  onChange={(e) => setAdminForm(prev => ({ ...prev, fullName: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-secondary font-medium mb-1">Select Policy to Manage</label>
-                  <select
-                    value={selectedPolicyKey}
-                    onChange={(e) => setSelectedPolicyKey(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary cursor-pointer font-medium"
-                  >
-                    <option value="aboutUs">About Sunvine Renewable Energy</option>
-                    <option value="termsAndConditions">Platform Terms &amp; Conditions</option>
-                    <option value="privacyPolicy">Privacy Policy &amp; Data Confidentiality</option>
-                    <option value="dealerAgreement">Dealer Partner Operations Agreement</option>
-                    <option value="staffPolicy">Sales Staff Operational Directives</option>
-                    <option value="quotationTerms">Quotation Terms &amp; Conditions</option>
-                    <option value="cancellationPolicy">Project Cancellation &amp; Refund Policy</option>
-                    <option value="legalDisclaimer">MNRE Subsidy &amp; Statutory Disclaimers</option>
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    placeholder="8000050580"
+                    value={adminForm.mobileNumber}
+                    onChange={(e) => setAdminForm(prev => ({ ...prev, mobileNumber: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-secondary font-medium mb-1">Policy Document Title</label>
-                  <input
-                    type="text"
-                    value={editPolicyTitle}
-                    onChange={(e) => setEditPolicyTitle(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary font-bold text-on-surface"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+                  <select
+                    value={adminForm.role}
+                    onChange={(e) => setAdminForm(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 cursor-pointer"
+                  >
+                    <option value="super_admin">Super Admin Desk</option>
+                    <option value="admin">Operations Admin</option>
+                  </select>
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-secondary font-medium">Policy Markdown Content (Use ### Heading for sections)</label>
-                  <span className="text-[11px] text-secondary">Applies globally across all portals</span>
-                </div>
-                <textarea
-                  rows={12}
-                  value={editPolicyContent}
-                  onChange={(e) => setEditPolicyContent(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary font-mono text-xs leading-relaxed"
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="admin@sunvinerenewable.com"
+                  value={adminForm.email}
+                  onChange={(e) => setAdminForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
                 />
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {editingAdmin ? 'New Password (optional)' : 'Initial Password'}
+                </label>
+                <input
+                  type="text"
+                  required={!editingAdmin}
+                  placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
+                  value={adminForm.password}
+                  onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowAdminModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary-container text-on-primary font-bold text-xs hover:bg-primary transition-all cursor-pointer shadow-xs min-h-[44px]"
+                  disabled={submitting}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
                 >
-                  <span className="material-symbols-outlined text-[18px]">save</span>
-                  <span>Save &amp; Commit Policy to Audit Ledger</span>
+                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                  <span>{editingAdmin ? 'Save Changes' : 'Create Admin'}</span>
                 </button>
               </div>
             </form>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Tab Content 7: Dynamic Document Upload Master */}
-        {activeTab === 'documents' && (
-          <div className="p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-surface-container-high">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-[22px]">folder_managed</span>
-                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
-                    Customer Application Document Upload Master
-                  </h3>
-                </div>
-                <p className="text-xs text-secondary mt-1">
-                  Dynamically manage required uploads for customer applications. Map documents to categories (Residential, Commercial, Common Meters) and define mandatory vs optional gates.
-                </p>
-              </div>
-
+      {/* ========================================================
+          MODAL: ADD / EDIT DEALER
+          ======================================================== */}
+      {showDealerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
               <div className="flex items-center gap-2">
-                {/* View Switcher */}
-                <div className="flex items-center bg-surface-container-low p-1 rounded-xl border border-surface-container-high">
-                  <button
-                    type="button"
-                    onClick={() => setDocViewMode('cards')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                      docViewMode === 'cards'
-                        ? 'bg-surface-container-highest text-on-surface shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">grid_view</span>
-                    <span>Cards</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDocViewMode('matrix')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
-                      docViewMode === 'matrix'
-                        ? 'bg-surface-container-highest text-on-surface shadow-xs'
-                        : 'text-secondary hover:text-on-surface'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">table_chart</span>
-                    <span>Category Matrix</span>
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={resetRequiredDocuments}
-                  className="px-3 py-2 rounded-xl border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Reset to default Gujarat DISCOM checklist"
-                >
-                  <span className="material-symbols-outlined text-[16px]">restart_alt</span>
-                  <span>Reset Defaults</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenAddDoc}
-                  className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-bold flex items-center gap-1.5 hover:bg-primary/90 transition-all shadow-sm cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  <span>Add Document</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Category Filter Pills (Cards View) */}
-            {docViewMode === 'cards' && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                {[
-                  { id: 'all', label: 'All Document Requirements', count: (requiredDocuments || []).length },
-                  { id: 'residential', label: 'Residential Rooftop', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('residential')).length },
-                  { id: 'commercial', label: 'Commercial & Industrial', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('commercial')).length },
-                  { id: 'common_meter', label: 'Common Meter / Society', count: (requiredDocuments || []).filter(d => (d.categories || []).includes('common_meter')).length }
-                ].map((pill) => (
-                  <button
-                    key={pill.id}
-                    type="button"
-                    onClick={() => setDocCategoryFilter(pill.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      docCategoryFilter === pill.id
-                        ? 'bg-primary text-on-primary shadow-xs'
-                        : 'bg-surface-container-low text-secondary hover:text-on-surface border border-surface-container-high'
-                    }`}
-                  >
-                    <span>{pill.label}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                      docCategoryFilter === pill.id ? 'bg-black/20 text-white' : 'bg-surface-container text-secondary'
-                    }`}>
-                      {pill.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* VIEW MODE 1: Category Mapping Matrix Table */}
-            {docViewMode === 'matrix' ? (
-              <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-low">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-surface-container text-secondary font-semibold uppercase text-[10px] tracking-wider bg-surface-container-low/80">
-                      <th className="py-3 px-4">Document Title &amp; Scope</th>
-                      <th className="py-3 px-3 text-center">Residential (PM Surya Ghar)</th>
-                      <th className="py-3 px-3 text-center">Commercial &amp; Industrial</th>
-                      <th className="py-3 px-3 text-center">Common Meter / Society</th>
-                      <th className="py-3 px-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-container/60">
-                    {(requiredDocuments || []).map((doc) => {
-                      const categories = doc.categories || [];
-                      const isRes = categories.includes('residential');
-                      const isComm = categories.includes('commercial');
-                      const isSoc = categories.includes('common_meter');
-                      const resMandatory = isDocMandatoryForCategory(doc, 'residential');
-                      const commMandatory = isDocMandatoryForCategory(doc, 'commercial');
-                      const socMandatory = isDocMandatoryForCategory(doc, 'common_meter');
-
-                      return (
-                        <tr key={doc.id} className="hover:bg-surface-container/40 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <span className="material-symbols-outlined text-primary text-[20px]">{doc.icon || 'description'}</span>
-                              <div>
-                                <div className="font-bold text-on-surface text-xs">{doc.label}</div>
-                                <div className="text-[10px] font-mono text-secondary">{doc.key}</div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Residential Cell */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="inline-flex flex-col items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'residential')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
-                                  isRes ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-surface-container text-secondary/50 line-through'
-                                }`}
-                              >
-                                {isRes ? 'Applicable' : 'Excluded'}
-                              </button>
-                              {isRes && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'residential')}
-                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
-                                    resMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
-                                  }`}
-                                  title="Toggle Mandatory vs Optional for Residential"
-                                >
-                                  {resMandatory ? 'Mandatory' : 'Optional'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Commercial Cell */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="inline-flex flex-col items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'commercial')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
-                                  isComm ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-surface-container text-secondary/50 line-through'
-                                }`}
-                              >
-                                {isComm ? 'Applicable' : 'Excluded'}
-                              </button>
-                              {isComm && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'commercial')}
-                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
-                                    commMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
-                                  }`}
-                                  title="Toggle Mandatory vs Optional for Commercial"
-                                >
-                                  {commMandatory ? 'Mandatory' : 'Optional'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Common Meter Cell */}
-                          <td className="py-3 px-3 text-center">
-                            <div className="inline-flex flex-col items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleDocCategoryInclusion(doc.id, 'common_meter')}
-                                className={`text-[10px] px-2 py-0.5 rounded font-semibold cursor-pointer transition-colors ${
-                                  isSoc ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-surface-container text-secondary/50 line-through'
-                                }`}
-                              >
-                                {isSoc ? 'Applicable' : 'Excluded'}
-                              </button>
-                              {isSoc && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleCategoryMandatory(doc.id, 'common_meter')}
-                                  className={`text-[9px] px-2 py-0.5 rounded-full font-bold cursor-pointer transition-colors ${
-                                    socMandatory ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-surface-container text-secondary'
-                                  }`}
-                                  title="Toggle Mandatory vs Optional for Common Meter"
-                                >
-                                  {socMandatory ? 'Mandatory' : 'Optional'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditDoc(doc)}
-                                className="p-1 rounded text-secondary hover:text-primary transition-colors cursor-pointer"
-                                title="Edit Requirement"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">edit</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteRequiredDocument(doc.id)}
-                                className="p-1 rounded text-secondary hover:text-error transition-colors cursor-pointer"
-                                title="Remove Requirement"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">delete</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              /* VIEW MODE 2: Document Cards Grid (Enhanced with Category Mandatory Badges) */
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {(requiredDocuments || [])
-                  .filter(doc => docCategoryFilter === 'all' || (doc.categories || []).includes(docCategoryFilter))
-                  .map((doc) => {
-                    const isMandatory = Boolean(doc.mandatory);
-                    return (
-                      <div
-                        key={doc.id}
-                        className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high hover:border-primary/40 transition-colors flex flex-col justify-between gap-3 shadow-xs"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
-                                <span className="material-symbols-outlined text-[20px]">{doc.icon || 'description'}</span>
-                              </div>
-                              <div className="min-w-0">
-                                <h4 className="font-bold text-xs text-on-surface truncate">{doc.label}</h4>
-                                <span className="text-[10px] font-mono text-secondary block">Key: {doc.key}</span>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => updateRequiredDocument(doc.id, { mandatory: !isMandatory })}
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition-colors shrink-0 ${
-                                isMandatory
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                  : 'bg-surface-container-high text-secondary border border-surface-container-highest'
-                              }`}
-                              title="Click to toggle Global Mandatory vs Optional"
-                            >
-                              {isMandatory ? 'Global Mandatory' : 'Global Optional'}
-                            </button>
-                          </div>
-
-                          <p className="text-xs text-secondary leading-relaxed line-clamp-2">
-                            {doc.description || 'Customer document upload requirement'}
-                          </p>
-
-                          {/* Category Specific Mandatory Matrix Badges */}
-                          <div className="pt-2 border-t border-surface-container/60 space-y-1">
-                            <div className="text-[10px] text-secondary font-semibold uppercase">Category Gates:</div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {(doc.categories || []).map(cat => {
-                                const isCatMandatory = isDocMandatoryForCategory(doc, cat);
-                                const catLabel = cat === 'residential' ? 'Res' : cat === 'commercial' ? 'C&I' : 'Society';
-                                return (
-                                  <button
-                                    key={cat}
-                                    type="button"
-                                    onClick={() => handleToggleCategoryMandatory(doc.id, cat)}
-                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors flex items-center gap-1 ${
-                                      isCatMandatory
-                                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                        : 'bg-surface-container text-secondary hover:text-on-surface'
-                                    }`}
-                                    title={`Click to toggle mandatory status for ${cat}`}
-                                  >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                                    <span>{catLabel}: {isCatMandatory ? 'Mandatory' : 'Optional'}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Card Actions */}
-                        <div className="flex items-center justify-between pt-2 border-t border-surface-container text-xs">
-                          <span className="text-[10px] text-secondary flex items-center gap-1">
-                            <span className="material-symbols-outlined text-xs">
-                              {doc.captureMode === 'video' ? 'videocam' : doc.captureMode === 'image' ? 'photo_camera' : 'add_photo_alternate'}
-                            </span>
-                            <span>{doc.captureMode === 'both' ? 'Camera & File' : doc.captureMode === 'video' ? 'Video' : 'Photo'}</span>
-                          </span>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditDoc(doc)}
-                              className="p-1 rounded text-secondary hover:text-primary transition-colors cursor-pointer"
-                              title="Edit Document Requirement"
-                            >
-                              <span className="material-symbols-outlined text-[17px]">edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteRequiredDocument(doc.id)}
-                              className="p-1 rounded text-secondary hover:text-error transition-colors cursor-pointer"
-                              title="Remove Document Requirement"
-                            >
-                              <span className="material-symbols-outlined text-[17px]">delete</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Modal: Add / Edit Required Document Requirement */}
-      {showDocModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
-          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-xl">folder_managed</span>
-                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
-                  {editingDoc ? 'Edit Document Requirement' : 'Add New Document Requirement'}
+                <span className="material-symbols-outlined text-amber-600">apartment</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingDealer ? 'Edit Dealer Partner Profile' : 'Onboard New Dealer Partner'}
                 </h3>
               </div>
               <button
-                type="button"
-                onClick={() => setShowDocModal(false)}
-                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                onClick={() => setShowDealerModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-lg">close</span>
+                <span className="material-symbols-outlined">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveDocForm} className="space-y-4 text-xs">
+            <form onSubmit={handleSaveDealer} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Dealer Code</label>
+                  <input
+                    type="text"
+                    required
+                    disabled={Boolean(editingDealer)}
+                    value={dealerForm.dealerCode}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, dealerCode: e.target.value.toUpperCase() }))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Partner Tier</label>
+                  <select
+                    value={dealerForm.tier}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, tier: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Diamond EPC">Diamond EPC</option>
+                    <option value="Platinum EPC">Platinum EPC</option>
+                    <option value="Gold EPC">Gold EPC</option>
+                    <option value="Silver Installer">Silver Installer</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="block font-semibold mb-1">Document Title / Label *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Firm / Agency Trade Name</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Electricity / Light Bill"
-                  value={docForm.label}
-                  onChange={(e) => setDocForm({ ...docForm, label: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold text-on-surface"
+                  placeholder="e.g. Saur Urja Solutions"
+                  value={dealerForm.firmName}
+                  onChange={(e) => setDealerForm(prev => ({ ...prev, firmName: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold mb-1">Description / Guidance</label>
-                <textarea
-                  rows="2"
-                  placeholder="Instructions for customer or technician regarding this upload..."
-                  value={docForm.description}
-                  onChange={(e) => setDocForm({ ...docForm, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary text-on-surface"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Person</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Nilesh Shah"
+                    value={dealerForm.contactPerson}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, contactPerson: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    placeholder="8000050580"
+                    value={dealerForm.mobile}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold mb-1">Material Icon</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ahmedabad"
+                    value={dealerForm.city}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">DISCOM</label>
                   <select
-                    value={docForm.icon}
-                    onChange={(e) => setDocForm({ ...docForm, icon: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
+                    value={dealerForm.discom}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, discom: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                   >
-                    <option value="electric_bolt">electric_bolt (Bills)</option>
-                    <option value="badge">badge (Aadhaar / ID)</option>
-                    <option value="credit_card">credit_card (PAN Card)</option>
-                    <option value="home_work">home_work (Property Tax)</option>
-                    <option value="solar_power">solar_power (Rooftop Photo)</option>
-                    <option value="speed">speed (Meter Photo)</option>
-                    <option value="receipt_long">receipt_long (GST Certificate)</option>
-                    <option value="domain">domain (Society NOC)</option>
-                    <option value="person">person (Passport Photo)</option>
-                    <option value="description">description (General Document)</option>
+                    <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
+                    <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
+                    <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
+                    <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
+                    <option value="Torrent Power">Torrent Power</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="block font-semibold mb-1">Direct Capture Mode</label>
-                  <select
-                    value={docForm.captureMode}
-                    onChange={(e) => setDocForm({ ...docForm, captureMode: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary cursor-pointer text-on-surface"
-                  >
-                    <option value="both">Both Photo &amp; File Upload</option>
-                    <option value="image">Camera Photo Capture</option>
-                    <option value="video">Camera Video Recording</option>
-                    <option value="file">File Upload Only</option>
-                  </select>
-                </div>
               </div>
 
-              {/* Application Categories Mapping */}
               <div>
-                <label className="block font-semibold mb-2">Map to Application Categories *</label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {[
-                    { id: 'residential', label: 'Residential', icon: 'home' },
-                    { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
-                    { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
-                  ].map(cat => {
-                    const isChecked = docForm.categories.includes(cat.id);
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => handleToggleDocCategory(cat.id)}
-                        className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-colors text-left ${
-                          isChecked
-                            ? 'bg-primary/10 border-primary text-primary font-bold'
-                            : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-base">{cat.icon}</span>
-                        <span className="text-xs">{cat.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Global Default Mandatory Gate Toggle */}
-              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center justify-between">
-                <div>
-                  <span className="font-bold text-on-surface block">Default Mandatory Upload Gate</span>
-                  <span className="text-[11px] text-secondary">
-                    Default compliance gate applied if category-specific rule is unspecified.
-                  </span>
-                </div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Official Business Email <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                </label>
                 <input
-                  type="checkbox"
-                  checked={docForm.mandatory}
-                  onChange={(e) => {
-                    const nextVal = e.target.checked;
-                    setDocForm(prev => {
-                      const nextCatMandatory = { ...(prev.categoryMandatory || {}) };
-                      // Also update any existing categories that were matching the old default
-                      prev.categories.forEach(c => {
-                        if (nextCatMandatory[c] === undefined) {
-                          nextCatMandatory[c] = nextVal;
-                        }
-                      });
-                      return { ...prev, mandatory: nextVal, categoryMandatory: nextCatMandatory };
-                    });
-                  }}
-                  className="rounded text-primary focus:ring-primary w-5 h-5 cursor-pointer"
+                  type="email"
+                  placeholder="partner@sunvinedealer.in"
+                  value={dealerForm.email}
+                  onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                 />
               </div>
 
-              {/* Category-Specific Mandatory Rules Matrix */}
-              <div className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+              {/* Sales Channel & Salesman Alignment */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-primary text-[18px]">verified</span>
-                    <span className="font-bold text-on-surface">Category Mandatory Overrides</span>
-                  </div>
-                  <span className="text-[10px] text-secondary">Click to toggle per category</span>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Sales Channel &amp; Account Alignment
+                  </label>
+                  <span className="text-[11px] text-slate-400">Direct to HQ or Assigned Salesman</span>
                 </div>
-                <p className="text-[11px] text-secondary">
-                  Specify whether this document is strictly mandatory or optional for each customer project type.
-                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setDealerForm(prev => ({
+                      ...prev,
+                      assignedStaffId: 'STF-DIRECT',
+                      assignedStaffName: 'Direct to Company (HQ Desk)'
+                    }))}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                      dealerForm.assignedStaffId === 'STF-DIRECT'
+                        ? 'bg-indigo-50/70 border-indigo-400 ring-2 ring-indigo-400/20 text-indigo-900'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-lg text-indigo-600 mt-0.5">bolt</span>
+                    <div>
+                      <div className="text-xs font-bold">Direct to Company</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Deals with Sunvine HQ directly</div>
+                    </div>
+                  </button>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                  {[
-                    { id: 'residential', label: 'Residential', icon: 'home' },
-                    { id: 'commercial', label: 'Commercial (C&I)', icon: 'corporate_fare' },
-                    { id: 'common_meter', label: 'Common Meter', icon: 'apartment' }
-                  ].map(cat => {
-                    const isMapped = docForm.categories.includes(cat.id);
-                    const isCatMandatory = isMapped && Boolean(
-                      docForm.categoryMandatory?.[cat.id] !== undefined
-                        ? docForm.categoryMandatory[cat.id]
-                        : docForm.mandatory
-                    );
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                      setDealerForm(prev => ({
+                        ...prev,
+                        assignedStaffId: firstStaff?.id || 'STF-801',
+                        assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
+                      }));
+                    }}
+                    className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                      dealerForm.assignedStaffId !== 'STF-DIRECT'
+                        ? 'bg-emerald-50/70 border-emerald-400 ring-2 ring-emerald-400/20 text-emerald-900'
+                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-lg text-emerald-600 mt-0.5">person</span>
+                    <div>
+                      <div className="text-xs font-bold">Field Sales Executive</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Managed by field sales staff</div>
+                    </div>
+                  </button>
+                </div>
 
-                    if (!isMapped) {
-                      return (
-                        <div
-                          key={cat.id}
-                          className="p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container opacity-40 text-center flex flex-col items-center justify-center gap-1"
-                        >
-                          <span className="text-[10px] text-secondary font-medium">{cat.label}</span>
-                          <span className="text-[9px] text-secondary/70">Not Mapped</span>
-                        </div>
-                      );
-                    }
+                {dealerForm.assignedStaffId !== 'STF-DIRECT' && (
+                  <div className="pt-1.5 animate-fadeIn">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Select Assigned Sales Representative</label>
+                    <select
+                      value={dealerForm.assignedStaffId}
+                      onChange={(e) => {
+                        const sId = e.target.value;
+                        const match = (staffListState || []).find(s => s.id === sId);
+                        setDealerForm(prev => ({
+                          ...prev,
+                          assignedStaffId: sId,
+                          assignedStaffName: match?.name || 'Sunvine Sales Staff'
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      {(staffListState || []).map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
 
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => {
-                          setDocForm(prev => ({
-                            ...prev,
-                            categoryMandatory: {
-                              ...(prev.categoryMandatory || {}),
-                              [cat.id]: !isCatMandatory
-                            }
-                          }));
-                        }}
-                        className={`p-2.5 rounded-xl border flex flex-col gap-1 text-left transition-all cursor-pointer ${
-                          isCatMandatory
-                            ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 shadow-xs'
-                            : 'bg-surface-container-lowest border-surface-container-highest text-secondary hover:text-on-surface'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-[11px] font-semibold text-on-surface">{cat.label}</span>
-                          <span className="material-symbols-outlined text-[14px]">
-                            {isCatMandatory ? 'check_circle' : 'remove_circle_outline'}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-bold">
-                          {isCatMandatory ? 'Mandatory Gate' : 'Optional Upload'}
-                        </span>
-                      </button>
-                    );
-                  })}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {editingDealer ? 'New Password (optional)' : 'Initial Password'}
+                </label>
+                <input
+                  type="text"
+                  required={!editingDealer}
+                  placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
+                  value={dealerForm.password}
+                  onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDealerModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                  <span>{editingDealer ? 'Save Changes' : 'Onboard Dealer'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: ADD / EDIT STAFF
+          ======================================================== */}
+      {showStaffModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">group_add</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingStaff ? 'Edit Staff Profile' : 'Add New Staff Member'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowStaffModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStaff} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Staff ID</label>
+                  <input
+                    type="text"
+                    required
+                    disabled={Boolean(editingStaff)}
+                    placeholder="STF-802"
+                    value={staffForm.id}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, id: e.target.value.toUpperCase() }))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500 disabled:opacity-60"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                  <select
+                    value={staffForm.department}
+                    onChange={(e) => {
+                      const dept = e.target.value;
+                      setStaffForm(prev => ({
+                        ...prev,
+                        department: dept,
+                        role: dept === 'Verification' ? 'Field Verification Officer' : 'Senior Solar Field Executive'
+                      }));
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="Sales">Field Sales</option>
+                    <option value="Verification">Verification Desk</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Nilesh Vaghela"
+                  value={staffForm.name}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits)</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    placeholder="8000050580"
+                    value={staffForm.phone}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Designation / Role</label>
+                  <input
+                    type="text"
+                    list="adminSettingsRolesList"
+                    required
+                    value={staffForm.role}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
+                    placeholder="Type or select designation..."
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500"
+                  />
+                  <datalist id="adminSettingsRolesList">
+                    <option value="Field Sales Executive" />
+                    <option value="Area Sales Manager" />
+                    <option value="Regional Solar Lead" />
+                    <option value="Senior Solar Field Executive" />
+                    <option value="Verification Desk Officer" />
+                    <option value="Senior Technical Auditor" />
+                    <option value="Document Verification Lead" />
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  placeholder="staff@sunvine.in"
+                  value={staffForm.email}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {editingStaff ? 'New Password (optional)' : 'Initial Password'}
+                </label>
+                <input
+                  type="text"
+                  required={!editingStaff}
+                  placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
+                  value={staffForm.password}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowStaffModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                  <span>{editingStaff ? 'Save Changes' : 'Create Staff'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: CHANGE PASSWORD (Bcrypt Live)
+          ======================================================== */}
+      {passwordModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-600">key</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Change Password
+                </h3>
+              </div>
+              <button
+                onClick={() => setPasswordModal(prev => ({ ...prev, isOpen: false }))}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSavePassword} className="p-5 space-y-4">
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+                Updating credentials for{' '}
+                <strong className="font-semibold text-slate-900">
+                  {passwordModal.account?.full_name || passwordModal.account?.firm_name || passwordModal.account?.firmName || passwordModal.account?.name}
+                </strong>
+                . Changes are encrypted via Bcrypt and written directly to PostgreSQL.
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">New Password</label>
+                <div className="relative">
+                  <input
+                    type={passwordModal.showPass ? 'text' : 'password'}
+                    required
+                    placeholder="Enter new password"
+                    value={passwordModal.newPassword}
+                    onChange={(e) => setPasswordModal(prev => ({ ...prev, newPassword: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPasswordModal(prev => ({ ...prev, showPass: !prev.showPass }))}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-sm">
+                      {passwordModal.showPass ? 'visibility_off' : 'visibility'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm Password</label>
+                <input
+                  type={passwordModal.showPass ? 'text' : 'password'}
+                  required
+                  placeholder="Re-enter password"
+                  value={passwordModal.confirmPassword}
+                  onChange={(e) => setPasswordModal(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPasswordModal(prev => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                  <span>Update Password</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: DELETE CONFIRMATION
+          ======================================================== */}
+      {deleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4 border border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">warning</span>
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-slate-900 text-base">Delete Account</h3>
+              <p className="text-xs text-slate-500">
+                Are you sure you want to permanently delete{' '}
+                <strong className="text-slate-900">
+                  {deleteModal.account?.full_name || deleteModal.account?.firm_name || deleteModal.account?.firmName || deleteModal.account?.name}
+                </strong>{' '}
+                from the live PostgreSQL database? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ isOpen: false, accountType: '', account: null })}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={submitting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+              >
+                {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
+                <span>Delete Account</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: ADD / EDIT MASTER DOCUMENT TYPE
+          ======================================================== */}
+      {showDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">note_add</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingDoc ? 'Edit Document Definition' : 'Register New Master Document'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowDocModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveDoc} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Document Title / Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. CEI Electrical Safety Approval"
+                  value={docForm.label}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDocForm(prev => ({
+                      ...prev,
+                      label: val,
+                      key: (!editingDoc && !isKeyManuallyEdited) ? formatDocumentKey(val) : prev.key
+                    }));
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">Unique Key Identifier</label>
+                    {!editingDoc && !isKeyManuallyEdited && docForm.key && (
+                      <span className="text-[10px] text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Auto-generated
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    disabled={Boolean(editingDoc)}
+                    placeholder="e.g. ceiApproval"
+                    value={docForm.key}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\s+/g, '');
+                      if (!val) {
+                        setIsKeyManuallyEdited(false);
+                        setDocForm(prev => ({ ...prev, key: formatDocumentKey(prev.label) }));
+                      } else {
+                        setIsKeyManuallyEdited(true);
+                        setDocForm(prev => ({ ...prev, key: val }));
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 disabled:bg-slate-100 disabled:text-slate-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Unique database identifier &amp; storage prefix</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Group Category</label>
+                  <select
+                    value={docForm.category}
+                    onChange={(e) => setDocForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    {DOC_CATEGORY_GROUPS.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Icon</label>
+                <div className="flex items-center gap-1.5 flex-wrap p-2.5 bg-slate-50 border border-slate-200 rounded-xl max-h-28 overflow-y-auto">
+                  {DOC_ICONS.map(ic => (
+                    <button
+                      key={ic}
+                      type="button"
+                      onClick={() => setDocForm(prev => ({ ...prev, icon: ic }))}
+                      className={`p-2 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                        docForm.icon === ic
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-400'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-lg">{ic}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Instructions / Description</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Chief Electrical Inspectorate clearance certificate copy for >10kW solar system."
+                  value={docForm.description}
+                  onChange={(e) => setDocForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowDocModal(false)}
-                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-primary text-on-primary font-bold hover:bg-primary/90 transition-all cursor-pointer shadow-sm"
+                  className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95"
                 >
-                  {editingDoc ? 'Update Requirement' : 'Add Requirement'}
+                  <span className="material-symbols-outlined text-sm">save</span>
+                  <span>{editingDoc ? 'Save Changes' : 'Register Document'}</span>
                 </button>
               </div>
             </form>
@@ -1678,212 +2863,80 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* Modal: Add / Edit Partner Bank (SR-64) */}
-      {showBankModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-xl">account_balance</span>
-                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
-                  {editingBank ? 'Edit Partner Bank' : 'Add New Partner Bank'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowBankModal(false)}
-                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
+      {/* ========================================================
+          MODAL: DELETE MASTER DOCUMENT CONFIRMATION
+          ======================================================== */}
+      {deleteDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4 border border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">delete</span>
             </div>
 
-            <form onSubmit={handleSaveBankForm} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Bank Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. State Bank of India"
-                  value={bankForm.name}
-                  onChange={(e) => setBankForm({ ...bankForm, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold"
-                />
-              </div>
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-slate-900 text-base">Remove Document Type</h3>
+              <p className="text-xs text-slate-500">
+                Are you sure you want to remove <strong className="text-slate-900">{deleteDocModal.label}</strong> from the master registry? Existing uploaded customer files will retain their attachments.
+              </p>
+            </div>
 
-              <div>
-                <label className="block font-semibold mb-1">Scheme / Product Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. PM Surya Ghar Collateral-Free Solar Loan"
-                  value={bankForm.scheme}
-                  onChange={(e) => setBankForm({ ...bankForm, scheme: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Interest (% p.a.) *</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    required
-                    value={bankForm.interestRate}
-                    onChange={(e) => setBankForm({ ...bankForm, interestRate: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Min Tenure (Yrs)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="15"
-                    value={bankForm.minTenureYears}
-                    onChange={(e) => setBankForm({ ...bankForm, minTenureYears: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1">Max Tenure (Yrs)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="15"
-                    value={bankForm.maxTenureYears}
-                    onChange={(e) => setBankForm({ ...bankForm, maxTenureYears: Number(e.target.value) })}
-                    className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={bankForm.collateralFree}
-                    onChange={(e) => setBankForm({ ...bankForm, collateralFree: e.target.checked })}
-                    className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-                  />
-                  <span className="font-semibold text-on-surface">Collateral-Free Rooftop Loan</span>
-                </label>
-
-                <select
-                  value={bankForm.status}
-                  onChange={(e) => setBankForm({ ...bankForm, status: e.target.value })}
-                  className="px-2.5 py-1.5 rounded-lg bg-surface-container border border-surface-container-highest font-semibold cursor-pointer"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Disabled">Disabled</option>
-                </select>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
-                <button
-                  type="button"
-                  onClick={() => setShowBankModal(false)}
-                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary font-bold hover:bg-primary transition-all cursor-pointer"
-                >
-                  {editingBank ? 'Update Bank' : 'Add Bank'}
-                </button>
-              </div>
-            </form>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteDocModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDoc}
+                className="flex items-center gap-1.5 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95"
+              >
+                <span>Confirm Delete</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Modal: Add / Edit Pipeline Stage (SR-64) */}
-      {showStageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-surface-container-lowest border border-surface-container-highest rounded-2xl w-full max-w-lg shadow-2xl p-6 flex flex-col gap-4 text-on-surface">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-primary text-xl">alt_route</span>
-                <h3 className="font-headline-md text-base font-bold text-inverse-surface">
-                  {editingStage ? 'Edit Pipeline Stage' : 'Add Custom Pipeline Stage'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowStageModal(false)}
-                className="p-1 rounded-lg hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
+      {/* ========================================================
+          MODAL: RESET RULES TO STANDARD DEFAULTS
+          ======================================================== */}
+      {showResetRulesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4 border border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">restart_alt</span>
             </div>
 
-            <form onSubmit={handleSaveStageForm} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1">Stage Code / ID *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. METER_BOX_INSTALL"
-                  value={stageForm.id}
-                  disabled={Boolean(editingStage)}
-                  onChange={(e) => setStageForm({ ...stageForm, id: e.target.value.toUpperCase().replace(/\s+/g, '_') })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-mono font-semibold"
-                />
-              </div>
+            <div className="text-center space-y-1">
+              <h3 className="font-bold text-slate-900 text-base">Reset Standard Defaults</h3>
+              <p className="text-xs text-slate-500">
+                This will reset all project category document requirement rules (Residential, Bank Loan, NBFC, Commercial, Society) back to factory presets.
+              </p>
+            </div>
 
-              <div>
-                <label className="block font-semibold mb-1">Stage Name / Label *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. DISCOM Meter Box Installation"
-                  value={stageForm.label}
-                  onChange={(e) => setStageForm({ ...stageForm, label: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1">Operational Description</label>
-                <textarea
-                  rows="2"
-                  placeholder="Scope of work and verification tasks in this stage..."
-                  value={stageForm.description}
-                  onChange={(e) => setStageForm({ ...stageForm, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg focus:outline-none focus:border-primary"
-                />
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={stageForm.mandatory}
-                    onChange={(e) => setStageForm({ ...stageForm, mandatory: e.target.checked })}
-                    className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-                  />
-                  <span className="font-semibold text-on-surface">Mandatory Compliance Gate</span>
-                </label>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-surface-container">
-                <button
-                  type="button"
-                  onClick={() => setShowStageModal(false)}
-                  className="px-3 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-primary-container text-on-primary font-bold hover:bg-primary transition-all cursor-pointer"
-                >
-                  {editingStage ? 'Update Stage' : 'Add Stage'}
-                </button>
-              </div>
-            </form>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetRulesModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetDocumentRulesToDefault();
+                  setShowResetRulesModal(false);
+                  setSuccessToast('All document master rules restored to standard factory presets.');
+                }}
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95"
+              >
+                <span>Reset to Factory Defaults</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

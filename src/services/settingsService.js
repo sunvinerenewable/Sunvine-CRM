@@ -308,25 +308,33 @@ export const settingsService = {
       const { data, error } = await supabase
         .from('audit_logs')
         .select('*')
+        .order('created_at', { ascending: false })
         .limit(limit);
 
-      if (error || !data) return [];
+      if (error) {
+        console.warn('[settingsService] Failed to fetch audit logs:', error.message, error.code, error.hint);
+        return [];
+      }
+      if (!data) return [];
       return data.map(log => ({
         id: log.id,
-        timestamp: log.timestamp,
-        action: log.action,
-        module: log.module,
-        recordId: log.record_id,
-        userId: log.user_id,
-        userName: log.user_name,
-        role: log.role,
-        details: log.details,
+        timestamp: log.created_at || log.timestamp || new Date().toISOString(),
+        action: log.action || 'SYSTEM_ACTION',
+        module: log.module || log.entity_type || 'SYSTEM',
+        recordId: log.record_id || log.entity_id || '-',
+        userId: log.user_id || 'ADM-001',
+        userName: log.user_name || log.user_email || 'Super Admin Desk',
+        role: log.role || log.user_role || 'System Administrator',
+        details: typeof log.details === 'object' && log.details !== null
+          ? (log.details.message || JSON.stringify(log.details))
+          : (log.details || ''),
         oldValue: log.old_value,
         newValue: log.new_value,
         ipAddress: log.ip_address,
-        status: log.status
+        status: log.status || 'VERIFIED'
       }));
     } catch (err) {
+      console.warn('[settingsService] Exception fetching audit logs:', err);
       return [];
     }
   },
@@ -336,26 +344,55 @@ export const settingsService = {
    */
   async logActivity(logEntry) {
     if (!logEntry) return;
+
+    // Ensure jsonb details is a valid object
+    let detailsObj = {};
+    if (typeof logEntry.details === 'object' && logEntry.details !== null) {
+      detailsObj = logEntry.details;
+    } else if (typeof logEntry.details === 'string' && logEntry.details.trim()) {
+      detailsObj = { message: logEntry.details.trim() };
+    }
+
+    // Ensure jsonb old_value and new_value are valid objects or null
+    const oldValueObj = (logEntry.oldValue && typeof logEntry.oldValue === 'object') ? logEntry.oldValue : null;
+    const newValueObj = (logEntry.newValue && typeof logEntry.newValue === 'object') ? logEntry.newValue : null;
+
+    // Ensure ip_address is a clean string or null (never invalid/empty string)
+    const cleanIp = (logEntry.ipAddress && typeof logEntry.ipAddress === 'string' && logEntry.ipAddress.trim())
+      ? logEntry.ipAddress.trim()
+      : null;
+
+    // Do NOT send client-generated string id or timestamp; let DB defaults gen_random_uuid() and timezone('utc', now()) handle them
     const payload = {
-      id: logEntry.id || `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: logEntry.timestamp || new Date().toISOString(),
       action: logEntry.action || 'SYSTEM_ACTION',
       module: logEntry.module || 'SYSTEM',
-      record_id: logEntry.recordId || '-',
-      user_id: logEntry.userId || 'ADM-001',
+      entity_type: logEntry.module || 'SYSTEM',
+      record_id: logEntry.recordId ? String(logEntry.recordId) : null,
+      entity_id: logEntry.recordId ? String(logEntry.recordId) : null,
+      user_id: logEntry.userId ? String(logEntry.userId) : 'ADM-001',
       user_name: logEntry.userName || 'Super Admin Desk',
+      user_email: logEntry.userName || 'admin@sunvine.in',
       role: logEntry.role || 'System Administrator',
-      details: logEntry.details || '',
-      old_value: logEntry.oldValue !== undefined ? logEntry.oldValue : null,
-      new_value: logEntry.newValue !== undefined ? logEntry.newValue : null,
-      ip_address: logEntry.ipAddress || '192.168.1.104',
+      user_role: logEntry.role || 'admin',
+      details: detailsObj,
+      old_value: oldValueObj,
+      new_value: newValueObj,
+      ip_address: cleanIp,
       status: logEntry.status || 'VERIFIED'
     };
 
     try {
-      await supabase.from('audit_logs').insert([payload]);
+      const { error } = await supabase.from('audit_logs').insert([payload]);
+      if (error) {
+        console.error('[settingsService] Supabase audit log insert error:', {
+          message: error.message,
+          code: error.code,
+          hint: error.hint,
+          details: error.details
+        });
+      }
     } catch (err) {
-      console.warn('[settingsService] Failed to insert audit log:', err);
+      console.error('[settingsService] Failed to insert audit log:', err);
     }
   }
 };

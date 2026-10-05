@@ -8,6 +8,7 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
+import { normalizeDocList, getCancellationRetentionStatus } from '../../utils/documentUtils';
 
 export default function CustomerFileDetailModal({ file, onClose }) {
   const {
@@ -16,7 +17,10 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     updateCustomerFile,
     role,
     currentStaff,
-    applicationStages
+    applicationStages,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments
   } = useApp();
   const { addToast } = useToast();
 
@@ -131,6 +135,59 @@ export default function CustomerFileDetailModal({ file, onClose }) {
             <span className="material-symbols-outlined text-[22px]">close</span>
           </button>
         </div>
+
+        {/* Cancellation Notice Banner (If Cancelled) */}
+        {(file.status === 'Cancelled' || file.stage === 'CANCELLED') && (() => {
+          const retention = getCancellationRetentionStatus(file.cancelledAt);
+          return (
+            <div className="mx-4 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[20px]">
+                  {retention.isExpired ? 'lock_clock' : 'cancel'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between font-bold">
+                  <span className="text-rose-950 text-sm">Customer File Cancelled</span>
+                  {file.cancelledAt && (
+                    <span className="text-[11px] text-rose-600 font-normal">
+                      {new Date(file.cancelledAt).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+
+                {/* 14-Day Retention Warning Badge */}
+                <div className={`mt-2 p-2 rounded-lg flex items-center gap-2 text-xs font-semibold ${
+                  retention.isExpired 
+                    ? 'bg-rose-200/80 text-rose-950 border border-rose-300' 
+                    : 'bg-amber-100 text-amber-900 border border-amber-300'
+                }`}>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {retention.isExpired ? 'lock' : 'alarm'}
+                  </span>
+                  <span>
+                    {retention.isExpired
+                      ? 'Recovery period ended. This file can no longer be restored and all uploaded documents have been permanently deleted.'
+                      : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted}). After 14 days, the file cannot be restored and all uploaded documents will be deleted.`}
+                  </span>
+                </div>
+
+                <div className="mt-2 text-rose-800 break-words">
+                  <span className="font-semibold">Reason &amp; Remarks:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                </div>
+                {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                  <div className="mt-0.5 text-[11px] text-rose-600">
+                    Action taken by: <span className="font-medium">
+                      {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                        ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                        : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Quick KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-4 bg-surface-container-low/20 border-b border-surface-container-high text-xs">
@@ -307,7 +364,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                           <div className="flex items-center gap-3 mt-2 pt-2 border-t border-surface-container-high/50 text-[11px] text-secondary">
                             <span className="flex items-center gap-1">
                               <span className="material-symbols-outlined text-[13px]">person</span>
-                              {item.actor || 'System'}
+                              {typeof item.actor === 'object' ? item.actor?.name || item.actor?.id || 'System' : item.actor || 'System'}
                             </span>
                             {item.status && (
                               <span className="px-1.5 py-0.5 rounded bg-surface-container-low font-semibold">
@@ -337,7 +394,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                     {file.staffName || 'Unassigned Staff'}
                   </p>
                   <p className="text-xs text-secondary font-mono">
-                    Staff ID: {file.staffId || 'STF-001'}
+                    Staff ID: {file.staffId || (file.sourceType === 'DEALER' ? 'STF-DIRECT' : 'STF-801')}
                   </p>
                   <p className="text-xs text-secondary">
                     Role: Field Solar Executive &bull; Regional Operations
@@ -427,56 +484,75 @@ export default function CustomerFileDetailModal({ file, onClose }) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {getDocumentListForFile(file).map((doc) => {
+                {(getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules)).map((doc) => {
                   const docInfo = file.documents?.[doc.key] || (doc.alias ? file.documents?.[doc.alias] : null);
-                  const isUploaded = Boolean(docInfo?.uploaded);
-                  const sizeLabel = docInfo?.sizeBytes ? ` (${(docInfo.sizeBytes / 1024).toFixed(0)} KB)` : '';
+                  const filesList = normalizeDocList(docInfo);
+                  const isUploaded = filesList.length > 0;
 
                   return (
                     <div
                       key={doc.key}
-                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3 text-xs"
+                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex flex-col gap-2.5 text-xs"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
-                          {doc.icon || 'description'}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-on-surface truncate">{doc.label}</p>
-                          <p className="text-[11px] text-secondary">
-                            {isUploaded ? (
-                              <span className="font-mono text-primary break-all select-all font-medium">
-                                Document Attached{sizeLabel}: {docInfo?.filename || 'document.pdf'}
-                              </span>
-                            ) : (
-                              `${doc.category} \u2022 Optional (Max 2 MB)`
-                            )}
-                          </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
+                            {doc.icon || 'description'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-on-surface truncate">{doc.label}</p>
+                            <p className="text-[11px] text-secondary">
+                              {isUploaded ? (
+                                <span className="font-mono text-primary font-medium">
+                                  {filesList.length > 1 ? `${filesList.length} Files Attached` : '1 Document Attached'}
+                                </span>
+                              ) : (
+                                `${doc.category} \u2022 Optional (Max 2 MB)`
+                              )}
+                            </p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        {isUploaded && docInfo?.url && (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewDoc({
-                              title: doc.label,
-                              filename: docInfo.filename || 'document.pdf',
-                              url: docInfo.url
-                            })}
-                            className="p-1.5 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded-lg transition-colors flex items-center cursor-pointer"
-                            title="Inspect & Download Document"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                          </button>
-                        )}
-
-                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] ${
+                        <span className={`px-2 py-0.5 rounded-md font-semibold text-[10px] shrink-0 ${
                           isUploaded ? 'bg-emerald-100 text-emerald-800' : 'bg-surface-container-low text-secondary'
                         }`}>
                           {isUploaded ? 'VERIFIED' : 'OPTIONAL'}
                         </span>
                       </div>
+
+                      {isUploaded && (
+                        <div className="flex flex-col gap-1.5 pt-1.5 border-t border-surface-container-high/60">
+                          {filesList.map((f, fIdx) => (
+                            <div key={f.id || fIdx} className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-surface-container-low text-[11px]">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="material-symbols-outlined text-xs text-secondary shrink-0">
+                                  {f.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                </span>
+                                <span className="font-mono text-on-surface truncate" title={f.filename}>
+                                  {f.filename || `File ${fIdx + 1}`}
+                                </span>
+                                {f.size && <span className="text-[10px] text-secondary shrink-0 font-mono">({f.size})</span>}
+                              </div>
+                              {f.url && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewDoc({
+                                    title: `${doc.label} (${f.filename || fIdx + 1})`,
+                                    filename: f.filename || 'document.pdf',
+                                    url: f.url,
+                                    files: filesList,
+                                    initialIndex: fIdx
+                                  })}
+                                  className="p-1 bg-primary-container/20 hover:bg-primary-container/30 text-primary rounded transition-colors flex items-center shrink-0 cursor-pointer"
+                                  title="Inspect & Download"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">visibility</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

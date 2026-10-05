@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { verifyJwt } from './_lib/jwt.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
@@ -19,6 +20,60 @@ function getDb() {
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
+function extractAllDocPaths(documents) {
+  if (!documents || typeof documents !== 'object') return [];
+  const paths = [];
+  for (const key of Object.keys(documents)) {
+    const val = documents[key];
+    if (!val) continue;
+    if (typeof val === 'string') {
+      paths.push(val);
+    } else if (Array.isArray(val)) {
+      val.forEach(item => {
+        if (typeof item === 'string') paths.push(item);
+        else if (item?.url) paths.push(item.url);
+        else if (item?.path) paths.push(item.path);
+      });
+    } else if (typeof val === 'object') {
+      if (val.url) paths.push(val.url);
+      if (val.path) paths.push(val.path);
+      if (Array.isArray(val.files)) {
+        val.files.forEach(f => {
+          if (typeof f === 'string') paths.push(f);
+          else if (f?.url) paths.push(f.url);
+          else if (f?.path) paths.push(f.path);
+        });
+      }
+    }
+  }
+  return [...new Set(paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '')).filter(Boolean))];
+}
+
+async function deleteR2Files(keys, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
+  if (!keys || keys.length === 0) return;
+  const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
+  const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
+  if (!CF_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || CF_ACCOUNT_ID.includes('your_')) return;
+
+  try {
+    const r2 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY
+      }
+    });
+
+    await Promise.allSettled(
+      keys.map(key => r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })))
+    );
+  } catch (err) {
+    console.warn('[customer-files] R2 document purge notice:', err?.message);
+  }
+}
+
 function mapDbToFrontend(f) {
   return {
     id: f.id,
@@ -37,8 +92,10 @@ function mapDbToFrontend(f) {
     source: f.source_type || 'DIRECT_STAFF',
     dealerId: f.dealer_id,
     dealerName: f.dealer_name,
-    staffId: f.staff_id || 'STF-001',
-    staffName: f.staff_name || 'Jayesh Patel',
+    staffId: f.staff_id || (f.source_type === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
+    staffName: (f.staff_id === 'STF-DIRECT' || (!f.staff_id && f.source_type === 'DEALER'))
+      ? 'Direct to Company (HQ Desk)'
+      : (f.staff_name === 'Jayesh Patel' ? 'Sunvine Sales Staff' : (f.staff_name || 'Sunvine Sales Staff')),
     financeType: f.finance_type || 'CASH',
     paymentMode: f.finance_type || 'CASH',
     loanBank: f.loan_bank,
@@ -49,6 +106,9 @@ function mapDbToFrontend(f) {
     status: f.status || 'Sourced',
     documents: f.documents || {},
     timeline: Array.isArray(f.timeline) ? f.timeline : [],
+    cancellationReason: f.cancellation_reason || null,
+    cancelledAt: f.cancelled_at || null,
+    cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : null,
     createdAt: f.created_at,
     updatedAt: f.updated_at
   };
@@ -75,9 +135,39 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 
-  // ── GET: Fetch All Customer Files ──────────────────────────────────────────
+  // ── GET: Fetch All Customer Files & Auto-Purge Expired Docs (> 14 days) ───
   if (req.method === 'GET') {
     try {
+      // 14-Day Retention Check: purge R2 documents for cancelled files older than 14 days
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: expiredFiles } = await db
+        .from('customer_files')
+        .select('id, documents, timeline')
+        .eq('status', 'Cancelled')
+        .lt('cancelled_at', fourteenDaysAgo);
+
+      if (Array.isArray(expiredFiles) && expiredFiles.length > 0) {
+        for (const exp of expiredFiles) {
+          const docKeys = extractAllDocPaths(exp.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+            const expiredPurgeNote = {
+              title: 'Uploaded Documents Removed',
+              description: 'Uploaded customer documents were permanently deleted after the 14-day recovery period ended.',
+              timestamp: new Date().toISOString(),
+              stage: 'CANCELLED',
+              author: 'System'
+            };
+            const updatedTimeline = Array.isArray(exp.timeline) ? [...exp.timeline, expiredPurgeNote] : [expiredPurgeNote];
+            await db.from('customer_files').update({
+              documents: {},
+              timeline: updatedTimeline,
+              updated_at: new Date().toISOString()
+            }).eq('id', exp.id);
+          }
+        }
+      }
+
       const { data: rows, error } = await db
         .from('customer_files')
         .select('*')
@@ -115,8 +205,10 @@ export default async function handler(req, res) {
         source_type: file.sourceType || file.source || file.source_type || 'DIRECT_STAFF',
         dealer_id: file.dealerId || file.dealer_id || null,
         dealer_name: file.dealerName || file.dealer_name || null,
-        staff_id: file.staffId || file.staff_id || 'STF-001',
-        staff_name: file.staffName || file.staff_name || 'Jayesh Patel',
+        staff_id: file.staffId || file.staff_id || (file.sourceType === 'DEALER' || file.source === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
+        staff_name: (file.staffId === 'STF-DIRECT' || file.staff_id === 'STF-DIRECT' || ((!file.staffId && !file.staff_id) && (file.sourceType === 'DEALER' || file.source === 'DEALER')))
+          ? 'Direct to Company (HQ Desk)'
+          : ((file.staffName === 'Jayesh Patel' || file.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (file.staffName || file.staff_name || 'Sunvine Sales Staff')),
         finance_type: file.financeType || file.paymentMode || file.finance_type || 'CASH',
         loan_bank: file.loanBank || file.loan_bank || null,
         loan_account_no: file.loanAccountNo || file.loanRefNo || file.loan_account_no || null,
@@ -225,8 +317,145 @@ export default async function handler(req, res) {
       }
     }
 
-    if (action === 'delete' && fileId) {
+    const user = jwt.payload || jwt.user || {};
+
+    if (action === 'cancel' && fileId) {
+      const { reason, remarks, customRemarks, cancelledBy } = req.body || {};
+      const noteText = (remarks || customRemarks || '').trim();
+      let finalReason = reason || '';
+      if (!finalReason && noteText) {
+        finalReason = noteText;
+      } else if (noteText && !finalReason.includes(noteText)) {
+        finalReason = `${finalReason} — Remarks: ${noteText}`;
+      }
+      finalReason = finalReason || 'Cancelled by user';
+
+      const actor = cancelledBy || user.name || user.id || 'Admin Desk';
+      const cancelNote = {
+        title: 'Customer File Cancelled',
+        description: `File cancelled: ${finalReason}`,
+        timestamp: new Date().toISOString(),
+        stage: 'CANCELLED',
+        author: actor,
+        notes: finalReason
+      };
+
       try {
+        // Fetch current timeline first
+        const { data: existing } = await db.from('customer_files').select('timeline').eq('id', fileId).single();
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, cancelNote] : [cancelNote];
+
+        const payload = {
+          status: 'Cancelled',
+          stage: 'CANCELLED',
+          cancellation_reason: finalReason,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: actor,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await db
+          .from('customer_files')
+          .update(payload)
+          .eq('id', fileId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[api/customer-files] Cancel DB error:', error);
+          return res.status(400).json({ error: error.message });
+        }
+
+        await redisDel('customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Cancel exception:', err);
+        return res.status(500).json({ error: 'Failed to cancel customer file.' });
+      }
+    }
+
+    if (action === 'restore' && fileId) {
+      try {
+        const { data: existing } = await db
+          .from('customer_files')
+          .select('cancelled_at, timeline')
+          .eq('id', fileId)
+          .single();
+
+        // 14-day restoration window enforcement
+        if (existing?.cancelled_at) {
+          const diffMs = Date.now() - new Date(existing.cancelled_at).getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          if (diffDays > 14) {
+            return res.status(400).json({
+              error: 'Restoration locked: The 14-day recovery window for this cancelled file has expired. Documents have been purged.'
+            });
+          }
+        }
+
+        const restoreNote = {
+          title: 'Customer File Restored',
+          description: `File restored to active Sourced pipeline by ${user.name || user.id || 'User'}`,
+          timestamp: new Date().toISOString(),
+          stage: 'LEAD_SOURCED',
+          author: user.name || user.id || 'User'
+        };
+
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, restoreNote] : [restoreNote];
+
+        const payload = {
+          status: 'Sourced',
+          stage: 'LEAD_SOURCED',
+          cancellation_reason: null,
+          cancelled_at: null,
+          cancelled_by: null,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await db
+          .from('customer_files')
+          .update(payload)
+          .eq('id', fileId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[api/customer-files] Restore DB error:', error);
+          return res.status(400).json({ error: error.message });
+        }
+
+        await redisDel('customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Restore exception:', err);
+        return res.status(500).json({ error: 'Failed to restore customer file.' });
+      }
+    }
+
+    if (action === 'delete' && fileId) {
+      const userRole = (user.role || '').toLowerCase();
+      // Super Admin check for hard permanent purge
+      if (userRole && userRole !== 'admin' && userRole !== 'super_admin') {
+        return res.status(403).json({ error: 'Permission denied. Only Super Admin can permanently delete files.' });
+      }
+
+      try {
+        // Fetch file to purge all attached documents from Cloudflare R2 before removing row
+        const { data: fileToDelete } = await db
+          .from('customer_files')
+          .select('documents')
+          .eq('id', fileId)
+          .single();
+
+        if (fileToDelete?.documents) {
+          const docKeys = extractAllDocPaths(fileToDelete.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+          }
+        }
+
         const { error } = await db
           .from('customer_files')
           .delete()

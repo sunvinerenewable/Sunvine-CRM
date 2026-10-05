@@ -11,7 +11,9 @@
         }
       })();
     </script>
-    <link rel="icon" type="image/png" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0F1B2E" />
     <title>Sunvine Solar EPC Portal | Enterprise Dealer &amp; Admin Quotation Platform</title>
@@ -20,6 +22,7 @@
     <link rel="canonical" href="https://sunvine-dealer.vprotech.online/" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Sunvine EPC" />
@@ -37,13 +40,30 @@
     <meta name="twitter:description" content="High-precision solar telemetry &amp; dealer quotation engine." />
     <meta name="twitter:image" content="/pwa-512x512.png" />
 
-    <!-- Authoritative Typography Preconnections & Stylesheets -->
+    <!-- Asynchronous Typography Preconnections & Stylesheets (Zero Render-Blocking on 3G) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" media="print" onload="this.media='all'" />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" />
+    </noscript>
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" media="print" onload="this.media='all'" />
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" />
+    </noscript>
 
     <style>
+      /* Local Material Symbols Outlined font to prevent ligature fallback flash */
+      @font-face {
+        font-family: 'Material Symbols Outlined';
+        font-style: normal;
+        font-weight: 100 700;
+        font-display: block;
+        src: url('/fonts/material-symbols-outlined.woff2') format('woff2');
+      }
+
       /* Local Typography Fallback Definitions */
       @font-face {
         font-family: 'Inter';
@@ -152,12 +172,12 @@
       <div class="app-boot-shell">
         <div class="app-boot-brand">
           <img
-            src="/sunvine_logo_white.png"
+            src="/sunvine_logo_white.webp"
             alt="Sunvine Renewable Energy"
             class="app-boot-logo"
             width="220"
             height="52"
-            onerror="this.src='/sunvine-logo.png'"
+            onerror="this.src='/sunvine_logo_white.png'"
           />
           <div style="text-align: center;">
             <p class="app-boot-subtitle">Solar EPC Operations Platform</p>

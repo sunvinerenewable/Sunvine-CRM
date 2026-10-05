@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import EditCustomerFileModal from '../Shared/EditCustomerFileModal';
+import CancelCustomerFileModal from '../Shared/CancelCustomerFileModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import { storageService } from '../../services/storageService';
@@ -13,9 +15,30 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
+import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
+import { formatFileSize } from '../../utils/mediaOptimizer';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList, getCancellationRetentionStatus } from '../../utils/documentUtils';
 
 export default function StaffFiles() {
-  const { currentStaff, customerFiles, dealers, updateFileStatus, updateCustomerFile, addCustomerFile } = useApp();
+  const {
+    currentStaff,
+    customerFiles,
+    dealers,
+    updateFileStatus,
+    updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    restoreCustomerFile,
+    addCustomerFile,
+    isHardwareDbSyncing,
+    refreshCustomerFiles,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion,
+    highlightedFileId
+  } = useApp();
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
@@ -23,10 +46,29 @@ export default function StaffFiles() {
   const [financeFilter, setFinanceFilter] = useState('all'); // 'all', 'CASH', 'LOAN'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'
   const [searchTerm, setSearchTerm] = useState('');
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
+  const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
+  const [cameraIsUploading, setCameraIsUploading] = useState(false);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [fileToEdit, setFileToEdit] = useState(null);
+  const [fileToCancel, setFileToCancel] = useState(null);
+
+
+  // Auto-scroll to highlighted file from Push Notification
+  React.useEffect(() => {
+    if (highlightedFileId) {
+      setTimeout(() => {
+        const el = document.getElementById(`file-card-${highlightedFileId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [highlightedFileId]);
 
   // New File Form State
   const [newCustName, setNewCustName] = useState('');
@@ -37,8 +79,8 @@ export default function StaffFiles() {
   const [newCustAddress, setNewCustAddress] = useState('');
   const [newCustDiscom, setNewCustDiscom] = useState('UGVCL');
   const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
-  const [newCustLoad, setNewCustLoad] = useState('5.0');
   const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
+  const [newCustCategory, setNewCustCategory] = useState('residential');
   const [newCustSourceType, setNewCustSourceType] = useState('DIRECT_STAFF');
   const [newCustDealerId, setNewCustDealerId] = useState('');
   const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
@@ -47,29 +89,36 @@ export default function StaffFiles() {
   const [showBankModal, setShowBankModal] = useState(false);
 
   const isVerificationStaff = Boolean(
-    currentStaff?.role?.toLowerCase().includes('verification') ||
-    currentStaff?.department === 'verification' ||
-    currentStaff?.id === 'STF-003'
+    String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+    String(currentStaff?.role || '').toLowerCase().includes('verification')
   );
 
   // If verification staff, oversee all office files; if salesperson, strictly their assigned files
   const myFiles = isVerificationStaff
     ? (customerFiles || [])
     : (customerFiles || []).filter(
-        (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
-      );
+      (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
+    );
+
+  const activeFiles = myFiles.filter(f => f.status !== 'Cancelled');
+  const cancelledFiles = myFiles.filter(f => f.status === 'Cancelled');
 
   const filteredFiles = myFiles.filter((f) => {
     const term = searchTerm.toLowerCase().trim();
     const matchSearch =
       !term ||
-      f.customerName.toLowerCase().includes(term) ||
+      (f.customerName || '').toLowerCase().includes(term) ||
       (f.consumerNo || '').toLowerCase().includes(term) ||
-      f.phone.includes(term) ||
-      f.id.toLowerCase().includes(term);
+      (f.phone || '').includes(term) ||
+      (f.id || '').toLowerCase().includes(term);
 
-    const matchStatus = statusFilter === 'all' || f.status === statusFilter;
-    
+    const matchStatus =
+      statusFilter === 'all'
+        ? f.status !== 'Cancelled'
+        : statusFilter === 'Cancelled'
+        ? f.status === 'Cancelled'
+        : f.status === statusFilter;
+
     const isDealer = f.sourceType === 'DEALER' || f.source === 'DEALER';
     const matchSource =
       sourceFilter === 'all' ||
@@ -107,10 +156,11 @@ export default function StaffFiles() {
         address: newCustAddress.trim() || 'Gujarat, India',
         discom: newCustDiscom,
         consumerNo: newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`,
-        sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+        sanctionedLoadKw: parseFloat(newCustSolarKw) || 5.0,
         solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+        category: newCustCategory || 'residential',
         roofType: 'RCC Terrace',
-        staffId: currentStaff?.id || 'STF-001',
+        staffId: currentStaff?.id || 'STF-801',
         staffName: currentStaff?.name || 'Sales Officer',
         sourceType: newCustSourceType,
         source: newCustSourceType === 'DEALER' ? 'DEALER' : 'DIRECT_STAFF',
@@ -137,7 +187,11 @@ export default function StaffFiles() {
       setNewCustAddress('');
       setNewCustConsumerNo('');
       setNewCustLoanRef('');
-      addToast(`New file ${newFileId} created for ${newFile.customerName}!`, 'success');
+
+      // Auto-open Document Vault modal for the newly created customer file
+      setSelectedFileForDocs(newFile);
+
+      addToast(`New file ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
     } finally {
       hideLoader();
     }
@@ -166,86 +220,127 @@ export default function StaffFiles() {
     addToast(`Downloading ${attached.length} government-ready PDF(s)...`, 'success');
   };
 
-  const handleUploadDoc = async (fileId, docKey, fileOrName = 'document.pdf') => {
+  const handleUploadDoc = async (fileId, docKey, filesInput = 'document.pdf') => {
     const file = myFiles.find(f => f.id === fileId);
-    if (!file) return;
+    if (!file || !filesInput) return;
 
-    if (!fileOrName) return;
+    const fileList = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (fileList.length === 0) return;
 
-    // Strict PDF & Image (JPG, PNG, WEBP) & 2 MB Validation
-    if (typeof fileOrName === 'object') {
-      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const fileExt = fileOrName.name?.split('.').pop()?.toLowerCase() || '';
-      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(fileOrName.type?.toLowerCase());
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-      if (!isAllowed) {
-        addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
-        return;
-      }
-      if (fileOrName.size > 2 * 1024 * 1024) {
-        const sizeMB = (fileOrName.size / 1024 / 1024).toFixed(2);
-        addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
-        return;
-      }
-    }
-
-    let filename = typeof fileOrName === 'string' ? fileOrName : fileOrName.name;
-    let fileUrl = null;
-    let fileSize = typeof fileOrName === 'object' ? fileOrName.size : null;
-
-    showLoader('Securing document in Cloudflare R2 Vault...');
+    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
     try {
-      if (fileOrName && typeof fileOrName === 'object' && fileOrName.name) {
-        try {
-          const oldDoc = file?.documents?.[docKey];
-          const uploadRes = await storageService.uploadCustomerDocument(fileOrName, fileId, docKey, { oldDoc });
-          if (uploadRes?.success) {
-            filename = uploadRes.filename || fileOrName.name;
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            fileSize = uploadRes.fileSize || fileOrName.size;
+      const uploadedDocsList = [];
+
+      for (const item of fileList) {
+        if (typeof item === 'object' && item.name) {
+          const fileExt = item.name?.split('.').pop()?.toLowerCase() || '';
+          const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(item.type?.toLowerCase());
+
+          if (!isAllowed) {
+            addToast(`File "${item.name}" invalid format. Only PDF & Images allowed.`, 'error');
+            continue;
           }
-        } catch (err) {
-          console.warn('[StaffFiles] Cloudflare R2 upload error:', err);
-          addToast(err.message || 'Upload failed', 'error');
-          return;
+          if (item.size > 2 * 1024 * 1024) {
+            const sizeMB = (item.size / 1024 / 1024).toFixed(2);
+            addToast(`File "${item.name}" (${sizeMB} MB) exceeds maximum 2 MB limit allowed.`, 'error');
+            continue;
+          }
+
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey);
+            if (uploadRes?.success) {
+              uploadedDocsList.push({
+                filename: uploadRes.filename || item.name,
+                url: uploadRes.publicUrl || uploadRes.url,
+                sizeBytes: uploadRes.fileSize || item.size,
+                size: formatFileSize(uploadRes.fileSize || item.size),
+                uploaded: true,
+                date: new Date().toISOString().split('T')[0]
+              });
+            }
+          } catch (err) {
+            console.warn('[StaffFiles] Cloudflare R2 upload error for', item.name, err);
+            addToast(err.message || `Failed to upload ${item.name}`, 'error');
+          }
+        } else if (typeof item === 'string') {
+          uploadedDocsList.push({
+            filename: item,
+            url: null,
+            sizeBytes: null,
+            size: 'Attached',
+            uploaded: true,
+            date: new Date().toISOString().split('T')[0]
+          });
         }
       }
 
-      const updatedDocs = {
-        ...file.documents,
-        [docKey]: {
-          uploaded: true,
-          filename: filename || `${docKey}_document.pdf`,
-          url: fileUrl,
-          sizeBytes: fileSize,
-          date: new Date().toISOString().split('T')[0]
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = file.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+
+        const updatedDocs = {
+          ...file.documents,
+          [docKey]: updatedSlot
+        };
+
+        updateCustomerFile(fileId, { documents: updatedDocs });
+
+        if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
+          setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
         }
-      };
 
-      updateCustomerFile(fileId, { documents: updatedDocs });
-
-      if (selectedFileForDocs && selectedFileForDocs.id === fileId) {
-        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} documents attached`
+            : `Document attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-
-      addToast(`Document attached: ${filename}`, 'success');
     } finally {
       hideLoader();
     }
   };
 
-  const handleDeleteDoc = async (fileId, docKey) => {
+  const handleDeleteDoc = async (fileId, docKey, targetDocIdOrUrl = null) => {
     const file = customerFiles.find(f => f.id === fileId);
     if (!file) return;
-    const doc = file.documents?.[docKey];
+    const slotData = file.documents?.[docKey];
+    if (!slotData) return;
 
     showLoader('Removing document from Cloudflare R2 Vault...');
     try {
-      await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', doc);
+      const fileList = normalizeDocList(slotData);
+      const targetDoc = targetDocIdOrUrl
+        ? fileList.find(f => f.id === targetDocIdOrUrl || f.url === targetDocIdOrUrl || f.filename === targetDocIdOrUrl)
+        : null;
 
-      const updatedDocs = { ...(file.documents || {}) };
-      delete updatedDocs[docKey];
+      if (targetDoc && (targetDoc.url || targetDoc.path)) {
+        await storageService.deleteDocument(targetDoc.url || targetDoc.path);
+      } else if (!targetDocIdOrUrl) {
+        for (const f of fileList) {
+          if (f.url || f.path) {
+            await storageService.deleteDocument(f.url || f.path);
+          }
+        }
+        await storageService.deleteCustomerDocument(docKey, fileId, 'sunvine-documents', slotData);
+      }
+
+      let updatedDocs = { ...(file.documents || {}) };
+      if (targetDocIdOrUrl) {
+        const updatedSlot = removeDocFromFileList(slotData, targetDocIdOrUrl);
+        if (!updatedSlot.uploaded || updatedSlot.files.length === 0) {
+          delete updatedDocs[docKey];
+        } else {
+          updatedDocs[docKey] = updatedSlot;
+        }
+      } else {
+        delete updatedDocs[docKey];
+      }
 
       updateCustomerFile(fileId, { documents: updatedDocs });
 
@@ -259,6 +354,81 @@ export default function StaffFiles() {
       addToast(e.message || 'Failed to remove document', 'error');
     } finally {
       hideLoader();
+    }
+  };
+
+  const handleCameraCapture = async (statsOrList) => {
+    if (!selectedFileForDocs || !cameraTargetDoc || !statsOrList) return;
+    const fileId = selectedFileForDocs.id;
+    const docKey = cameraTargetDoc.key;
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
+
+    // Animate upload progress bar
+    setCameraIsUploading(true);
+    setCameraUploadProgress(10);
+    const prog = setInterval(() => setCameraUploadProgress(p => Math.min(p + 8, 75)), 250);
+
+    try {
+      const uploadedDocsList = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const stats = items[i];
+        let fileUrl = null;
+        let filename = stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`;
+        let fileSize = stats.compressedSize || stats.file?.size || 0;
+
+        if (stats.file) {
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
+            if (uploadRes?.success) {
+              fileUrl = uploadRes.publicUrl || uploadRes.url;
+              filename = uploadRes.filename || stats.file.name;
+              fileSize = uploadRes.fileSize || stats.file.size;
+            }
+          } catch (err) {
+            console.warn('[StaffFiles] Media upload warning for', filename, err);
+          }
+        }
+
+        uploadedDocsList.push({
+          uploaded: true,
+          filename,
+          url: fileUrl,
+          sizeBytes: fileSize,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          date: new Date().toISOString().split('T')[0]
+        });
+      }
+
+      clearInterval(prog);
+      setCameraUploadProgress(100);
+      await new Promise(r => setTimeout(r, 400)); // let bar reach 100
+
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = selectedFileForDocs.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+        const updatedDocs = { ...(selectedFileForDocs.documents || {}), [docKey]: updatedSlot };
+
+        updateCustomerFile(fileId, { documents: updatedDocs });
+        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+        setCameraTargetDoc(null);
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} files attached to vault`
+            : `File attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
+      }
+    } catch (err) {
+      clearInterval(prog);
+      console.error('[StaffFiles] Media upload error:', err);
+      addToast(err.message || 'Media upload failed', 'error');
+    } finally {
+      setCameraIsUploading(false);
+      setCameraUploadProgress(0);
     }
   };
 
@@ -296,36 +466,68 @@ export default function StaffFiles() {
           {/* Stage Filter Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
             {[
-              { key: 'all', label: 'All Stages' },
+              { key: 'all', label: `All Stages (${activeFiles.length})` },
               { key: 'Sourced', label: '1. Sourced' },
               { key: 'Verification', label: '2. Verification' },
               { key: 'DISCOM Registered', label: '3. DISCOM Reg.' },
-              { key: 'Subsidized', label: '4. Subsidized' }
+              { key: 'Subsidized', label: '4. Subsidized' },
+              { key: 'Cancelled', label: `Cancelled (${cancelledFiles.length})`, isCancelledTab: true }
             ].map((t) => (
               <button
                 key={t.key}
                 onClick={() => setStatusFilter(t.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  statusFilter === t.key
-                    ? 'bg-primary text-on-primary shadow-xs'
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${statusFilter === t.key
+                  ? t.isCancelledTab
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-primary text-on-primary shadow-xs'
+                  : t.isCancelledTab
+                    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
                     : 'bg-surface-container-low text-secondary hover:text-on-surface'
-                }`}
+                  }`}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-          {/* Search Input */}
-          <div className="relative w-full sm:w-64">
-            <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search customer, phone, consumer no..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-            />
+          {/* Search Input & Live Sync */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
+              <span className="material-symbols-outlined absolute left-2.5 top-2 text-[16px] text-secondary">search</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search customer, phone, consumer no..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                if (isManualSyncing) return;
+                setIsManualSyncing(true);
+                try {
+                  if (refreshCustomerFiles) {
+                    await refreshCustomerFiles({ force: true });
+                  }
+                  addToast('Live database sync complete.', 'success');
+                } catch (err) {
+                  addToast('Database refresh finished.', 'info');
+                } finally {
+                  setIsManualSyncing(false);
+                }
+              }}
+              disabled={isManualSyncing}
+              title="Sync Live with Database"
+              className="px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-on-surface rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
+            >
+              <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
+                sync
+              </span>
+              <span className="hidden sm:inline text-[11px]">Refresh</span>
+            </button>
           </div>
         </div>
 
@@ -337,25 +539,22 @@ export default function StaffFiles() {
           <div className="inline-flex rounded-lg border border-surface-container-high p-0.5 bg-surface-container-low">
             <button
               onClick={() => setSourceFilter('all')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
+                }`}
             >
               All Sources
             </button>
             <button
               onClick={() => setSourceFilter('DIRECT_STAFF')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'DIRECT_STAFF' ? 'bg-blue-600 text-white shadow-2xs' : 'text-blue-700 hover:text-blue-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'DIRECT_STAFF' ? 'bg-blue-600 text-white shadow-2xs' : 'text-blue-700 hover:text-blue-900'
+                }`}
             >
               Direct Staff
             </button>
             <button
               onClick={() => setSourceFilter('DEALER')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                sourceFilter === 'DEALER' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${sourceFilter === 'DEALER' ? 'bg-purple-600 text-white shadow-2xs' : 'text-purple-700 hover:text-purple-900'
+                }`}
             >
               Dealer Files
             </button>
@@ -365,25 +564,22 @@ export default function StaffFiles() {
           <div className="inline-flex rounded-lg border border-surface-container-high p-0.5 bg-surface-container-low">
             <button
               onClick={() => setFinanceFilter('all')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'all' ? 'bg-white shadow-2xs text-on-surface' : 'text-secondary hover:text-on-surface'
+                }`}
             >
               All Modes
             </button>
             <button
               onClick={() => setFinanceFilter('CASH')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'CASH' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:text-emerald-900'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'CASH' ? 'bg-emerald-600 text-white shadow-2xs' : 'text-emerald-700 hover:text-emerald-900'
+                }`}
             >
               Cash Case
             </button>
             <button
               onClick={() => setFinanceFilter('LOAN')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                financeFilter === 'LOAN' ? 'bg-amber-600 text-white shadow-2xs' : 'text-amber-800 hover:text-amber-950'
-              }`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${financeFilter === 'LOAN' ? 'bg-amber-600 text-white shadow-2xs' : 'text-amber-800 hover:text-amber-950'
+                }`}
             >
               Solar Loan
             </button>
@@ -392,221 +588,360 @@ export default function StaffFiles() {
       </div>
 
       {/* Files Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredFiles.map((file) => {
-          const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
-          const statusColors = {
-            'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
-            'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
-            'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
-            'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
-          };
+      {customerFiles.length === 0 && isHardwareDbSyncing ? (
+        <CustomerCardSkeleton count={6} />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredFiles.map((file) => {
+            const docsCount = Object.values(file.documents || {}).filter((d) => d.uploaded).length;
+            const statusColors = {
+              'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
+              'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
+              'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
+              'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+              'Cancelled': 'bg-rose-100 text-rose-800 border-rose-200'
+            };
 
-          return (
-            <div
-              key={file.id}
-              className="bg-surface rounded-xl p-5 border border-surface-container-high shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
-            >
-              <div>
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      <span className="text-[11px] font-mono font-bold text-secondary">{file.id}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                        file.sourceType === 'DEALER' || file.source === 'DEALER'
-                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                          : 'bg-blue-100 text-blue-800 border border-blue-200'
-                      }`}>
-                        {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
-                      </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
-                        file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}>
-                        {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors">
-                      {file.customerName}
-                    </h3>
-                  </div>
-                  <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status]}`}>
-                    {file.status}
-                  </span>
-                </div>
+            const isCancelled = file.status === 'Cancelled';
+            const isHighlighted = file.id === highlightedFileId;
+            const canEditOrCancel = file.status === 'Sourced' || isVerificationStaff;
 
-                {/* Office Pipeline Stage Tracker */}
-                <div className="mt-3 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/70 space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-secondary flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[13px] text-primary">account_tree</span>
-                      <span>Office Stage Tracking:</span>
-                    </span>
-                    <span className="font-bold text-primary font-mono text-[10px] uppercase truncate max-w-[140px]" title={file.currentStage || file.status}>
-                      {file.currentStage ? file.currentStage.replace(/_/g, ' ') : file.status}
-                    </span>
-                  </div>
-                  {/* Progress Step Bar */}
-                  <div className="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
-                    {[
-                      { step: 1, label: 'Sourced', key: 'Sourced' },
-                      { step: 2, label: 'Verify', key: 'Verification' },
-                      { step: 3, label: 'DISCOM', key: 'DISCOM Registered' },
-                      { step: 4, label: 'Subsidy', key: 'Subsidized' }
-                    ].map((st) => {
-                      const stageOrder = ['Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'];
-                      const currentIdx = stageOrder.indexOf(file.status);
-                      const stepIdx = stageOrder.indexOf(st.key);
-                      const isCompleted = stepIdx < currentIdx;
-                      const isCurrent = stepIdx === currentIdx;
-
-                      return (
-                        <div
-                          key={st.key}
-                          className={`py-1 px-1 rounded flex items-center justify-center gap-0.5 border ${
-                            isCompleted
-                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                              : isCurrent
-                              ? 'bg-primary text-white border-primary shadow-2xs font-extrabold'
-                              : 'bg-white/80 border-surface-container-high text-secondary/70'
-                          }`}
-                        >
-                          {isCompleted ? (
-                            <span className="material-symbols-outlined text-[11px] leading-none">check</span>
-                          ) : (
-                            <span>{st.step}.</span>
-                          )}
-                          <span className="truncate">{st.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Key Specs */}
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-surface-container-low p-2 rounded-lg">
-                    <span className="text-[10px] text-secondary block">Connection / DISCOM</span>
-                    <span className="font-bold text-on-surface">{file.discom}</span>
-                    <span className="text-[11px] text-secondary block truncate">{file.consumerNo || 'No Consumer No'}</span>
-                  </div>
-                  <div className="bg-surface-container-low p-2 rounded-lg">
-                    <span className="text-[10px] text-secondary block">System Capacity</span>
-                    <span className="font-bold text-emerald-600">{file.solarSystemKw} kW Solar</span>
-                    <span className="text-[11px] text-secondary block">{file.sanctionedLoadKw} kW Load</span>
-                  </div>
-                </div>
-
-                {/* Contact & Location */}
-                <div className="mt-3 space-y-1.5 text-xs text-secondary">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[15px] text-primary">call</span>
-                    <a href={`tel:${file.phone}`} className="hover:underline text-on-surface font-semibold">
-                      {file.phone}
-                    </a>
-                  </div>
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span className="material-symbols-outlined text-[15px] text-secondary">location_on</span>
-                    <span className="truncate">{file.address}</span>
-                  </div>
-                  {file.notes && (
-                    <div className="p-2 rounded bg-amber-50/70 border border-amber-200/50 text-amber-900 text-[11px] mt-2">
-                      <strong>Note:</strong> {file.notes}
+            return (
+              <div
+                id={`file-card-${file.id}`}
+                key={file.id}
+                className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${isHighlighted
+                  ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
+                  : isCancelled
+                  ? 'bg-slate-50/70 border-rose-200 shadow-xs'
+                  : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
+                  }`}
+              >
+                <div>
+                  {isHighlighted && (
+                    <div className="mb-3 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-xs font-bold text-emerald-400 flex items-center gap-1.5 animate-pulse">
+                      <span className="material-symbols-outlined text-sm text-emerald-400">notifications_active</span>
+                      <span>New Application Alert &bull; Opened from Push Notification</span>
                     </div>
                   )}
-                </div>
-
-                {/* Document Status - Dynamic by Category */}
-                {(() => {
-                  const docCompletion = getDocumentCompletion(file);
-                  const docList = getDocumentListForFile(file);
-                  const schemaKey = getDocumentSchemaKey(file);
-                  const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
-
-                  return (
-                    <div className="mt-4 pt-3 border-t border-surface-container-high">
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span className="text-secondary font-medium flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-primary">folder_open</span>
-                          <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <span className="text-[11px] font-mono font-bold text-secondary">{file.id}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.sourceType === 'DEALER' || file.source === 'DEALER'
+                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          }`}>
+                          {file.sourceType === 'DEALER' || file.source === 'DEALER' ? `Dealer (${file.dealerName || file.dealerId || 'Partner'})` : 'Direct Staff'}
                         </span>
-                        <span className="text-emerald-700 font-bold text-[11px]">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.financeType === 'LOAN' || file.paymentMode === 'LOAN'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}>
+                          {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
+                        </span>
                       </div>
-                      <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
-                        {docList.map((doc) => {
-                          const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
-                          return (
-                            <div
-                              key={doc.key}
-                              title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
-                              className={`py-1 px-1 rounded text-[9px] font-semibold border truncate ${
-                                isUp
+                      <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors truncate">
+                        {file.customerName}
+                      </h3>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isCancelled && canEditOrCancel && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setFileToEdit(file)}
+                            className="p-1 rounded-lg text-secondary hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                            title="Edit Customer File"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit_square</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFileToCancel(file)}
+                            className="p-1 rounded-lg text-secondary hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Cancel Customer File"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete_outline</span>
+                          </button>
+                        </>
+                      )}
+                      <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        {file.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cancellation Banner */}
+                  {isCancelled && (() => {
+                    const retention = getCancellationRetentionStatus(file.cancelledAt);
+                    return (
+                      <div className="mt-2.5 p-2.5 bg-rose-50/90 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+                        <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">
+                          {retention.isExpired ? 'lock_clock' : 'cancel'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-rose-900 flex items-center justify-between">
+                            <span>File Cancelled</span>
+                            {file.cancelledAt && (
+                              <span className="text-[10px] text-rose-500 font-normal">
+                                {new Date(file.cancelledAt).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 14-Day Retention Warning Badge */}
+                          <div className={`mt-1.5 p-1.5 rounded-md flex items-center gap-1.5 text-[11px] font-semibold ${
+                            retention.isExpired 
+                              ? 'bg-rose-200/80 text-rose-950 border border-rose-300' 
+                              : 'bg-amber-100 text-amber-900 border border-amber-300'
+                          }`}>
+                            <span className="material-symbols-outlined text-[14px]">
+                              {retention.isExpired ? 'lock' : 'alarm'}
+                            </span>
+                            <span>
+                              {retention.isExpired
+                                ? 'Recovery period ended (Documents deleted)'
+                                : `Restorable for ${retention.formattedRemaining} (Until ${retention.expiryDateFormatted})`}
+                            </span>
+                          </div>
+
+                          <div className="text-[11px] text-rose-700 mt-1.5 break-words">
+                            <span className="font-semibold">Reason:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                          </div>
+                          {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                            <div className="text-[10px] text-rose-600 mt-0.5">
+                              Cancelled by: <span className="font-medium">
+                                {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                                  ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                                  : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Office Pipeline Stage Tracker */}
+                  <div className="mt-3 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/70 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-secondary flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[13px] text-primary">account_tree</span>
+                        <span>Office Stage Tracking:</span>
+                      </span>
+                      <span className="font-bold text-primary font-mono text-[10px] uppercase truncate max-w-[140px]" title={file.currentStage || file.status}>
+                        {file.currentStage ? file.currentStage.replace(/_/g, ' ') : file.status}
+                      </span>
+                    </div>
+                    {/* Progress Step Bar */}
+                    <div className="grid grid-cols-4 gap-1 text-[9px] font-bold text-center">
+                      {[
+                        { step: 1, label: 'Sourced', key: 'Sourced' },
+                        { step: 2, label: 'Verify', key: 'Verification' },
+                        { step: 3, label: 'DISCOM', key: 'DISCOM Registered' },
+                        { step: 4, label: 'Subsidy', key: 'Subsidized' }
+                      ].map((st) => {
+                        const stageOrder = ['Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'];
+                        const currentIdx = stageOrder.indexOf(file.status);
+                        const stepIdx = stageOrder.indexOf(st.key);
+                        const isCompleted = stepIdx < currentIdx;
+                        const isCurrent = stepIdx === currentIdx;
+
+                        return (
+                          <div
+                            key={st.key}
+                            className={`py-1 px-1 rounded flex items-center justify-center gap-0.5 border ${isCompleted
+                              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                              : isCurrent
+                                ? 'bg-primary text-white border-primary shadow-2xs font-extrabold'
+                                : 'bg-white/80 border-surface-container-high text-secondary/70'
+                              }`}
+                          >
+                            {isCompleted ? (
+                              <span className="material-symbols-outlined text-[11px] leading-none">check</span>
+                            ) : (
+                              <span>{st.step}.</span>
+                            )}
+                            <span className="truncate">{st.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Key Specs */}
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-surface-container-low p-2 rounded-lg">
+                      <span className="text-[10px] text-secondary block">Connection / DISCOM</span>
+                      <span className="font-bold text-on-surface">{file.discom}</span>
+                      <span className="text-[11px] text-secondary block truncate">{file.consumerNo || 'No Consumer No'}</span>
+                    </div>
+                    <div className="bg-surface-container-low p-2 rounded-lg">
+                      <span className="text-[10px] text-secondary block">System Capacity</span>
+                      <span className="font-bold text-emerald-600">{file.solarSystemKw} kW Solar</span>
+                      <span className="text-[11px] text-secondary block">{file.sanctionedLoadKw} kW Load</span>
+                    </div>
+                  </div>
+
+                  {/* Contact & Location */}
+                  <div className="mt-3 space-y-1.5 text-xs text-secondary">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[15px] text-primary">call</span>
+                      <a href={`tel:${file.phone}`} className="hover:underline text-on-surface font-semibold">
+                        {file.phone}
+                      </a>
+                    </div>
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="material-symbols-outlined text-[15px] text-secondary">location_on</span>
+                      <span className="truncate">{file.address}</span>
+                    </div>
+                    {file.notes && (
+                      <div className="p-2 rounded bg-amber-50/70 border border-amber-200/50 text-amber-900 text-[11px] mt-2">
+                        <strong>Note:</strong> {file.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Document Status - Dynamic by Category */}
+                  {(() => {
+                    const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(file) : getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
+                    const docList = getFileDocuments ? getFileDocuments(file) : getDocumentListForFile(file, masterDocRegistry, categoryDocRules);
+                    const schemaKey = getDocumentSchemaKey(file);
+                    const schemaInfo = DOCUMENT_SCHEMAS[schemaKey];
+
+                    return (
+                      <div className="mt-4 pt-3 border-t border-surface-container-high">
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="text-secondary font-medium flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-primary">folder_open</span>
+                            <span>{schemaInfo?.shortLabel || 'Docs'}</span>
+                          </span>
+                          <span className="text-emerald-700 font-bold text-[11px]">{docCompletion.uploaded} / {docCompletion.total} Attached</span>
+                        </div>
+                        <div className={`grid gap-1 text-center ${docList.length <= 4 ? 'grid-cols-4' : (docList.length <= 6 ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-4 sm:grid-cols-8')}`}>
+                          {docList.map((doc) => {
+                            const isUp = Boolean(file.documents?.[doc.key]?.uploaded || (doc.alias && file.documents?.[doc.alias]?.uploaded));
+                            return (
+                              <div
+                                key={doc.key}
+                                title={`${doc.label}: ${isUp ? 'Uploaded' : 'Pending'}`}
+                                className={`py-1 px-1 rounded text-[9px] font-semibold border truncate ${isUp
                                   ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
                                   : 'bg-surface-container-low border-surface-container-high text-secondary/60'
-                              }`}
-                            >
-                              <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
-                            </div>
-                          );
-                        })}
+                                  }`}
+                              >
+                                <span className="truncate w-full">{doc.label.split(' ')[0]}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
+                  {isCancelled ? (() => {
+                    const retention = getCancellationRetentionStatus(file.cancelledAt);
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFileForTimeline(file)}
+                          className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          title="View History Timeline"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">timeline</span>
+                          <span>Timeline</span>
+                        </button>
+
+                        {retention.isExpired ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="flex-1 py-1.5 px-3 bg-surface-container-low border border-surface-container text-secondary text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 cursor-not-allowed opacity-60"
+                            title="14-day recovery window has expired. This file cannot be restored."
+                          >
+                            <span className="material-symbols-outlined text-[16px]">lock</span>
+                            <span>Recovery Locked</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await restoreCustomerFile(file.id);
+                                addToast(`Customer file ${file.id} restored to active pipeline`, 'success');
+                              } catch (err) {
+                                addToast(err?.message || 'Failed to restore file', 'error');
+                              }
+                            }}
+                            className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                            title={`Restore to active pipeline (${retention.formattedRemaining} remaining)`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">history</span>
+                            <span>Restore File</span>
+                          </button>
+                        )}
+                      </>
+                    );
+                  })() : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileForTimeline(file)}
+                        className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        title="View Timeline & Advance Stage"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">timeline</span>
+                        <span>Timeline</span>
+                      </button>
+
+                      <button
+                        onClick={() => setSelectedFileForDocs(file)}
+                        className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
+                        <span>Docs (Optional)</span>
+                      </button>
+
+                      <select
+                        value={file.status}
+                        onChange={(e) => {
+                          updateFileStatus(file.id, e.target.value);
+                          addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
+                        }}
+                        className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                      >
+                        <option value="Sourced">Sourced</option>
+                        <option value="Verification">Verification</option>
+                        <option value="DISCOM Registered">DISCOM Reg.</option>
+                        <option value="Subsidized">Subsidized</option>
+                      </select>
+                    </>
+                  )}
+
+                  <a
+                    href={`https://wa.me/${file.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(file.customerName)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Officer')}%20from%20Sunvine%20Renewable%20regarding%20your%20${file.solarSystemKw}kW%20rooftop%20solar%20file.`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-lg transition-colors"
+                    title="WhatsApp"
+                  >
+                    <span className="material-symbols-outlined text-[17px]">chat</span>
+                  </a>
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Action Buttons */}
-              <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setSelectedFileForTimeline(file)}
-                  className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                  title="View Timeline & Advance Stage"
-                >
-                  <span className="material-symbols-outlined text-[15px]">timeline</span>
-                  <span>Timeline</span>
-                </button>
-
-                <button
-                  onClick={() => setSelectedFileForDocs(file)}
-                  className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
-                  <span>Docs (Optional)</span>
-                </button>
-
-                <select
-                  value={file.status}
-                  onChange={(e) => {
-                    updateFileStatus(file.id, e.target.value);
-                    addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
-                  }}
-                  className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                >
-                  <option value="Sourced">Sourced</option>
-                  <option value="Verification">Verification</option>
-                  <option value="DISCOM Registered">DISCOM Reg.</option>
-                  <option value="Subsidized">Subsidized</option>
-                </select>
-
-                <a
-                  href={`https://wa.me/${file.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(file.customerName)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Officer')}%20from%20Sunvine%20Renewable%20regarding%20your%20${file.solarSystemKw}kW%20rooftop%20solar%20file.`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 rounded-lg transition-colors"
-                  title="WhatsApp"
-                >
-                  <span className="material-symbols-outlined text-[17px]">chat</span>
-                </a>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {filteredFiles.length === 0 && (
+      {filteredFiles.length === 0 && !(customerFiles.length === 0 && isHardwareDbSyncing) && (
         <div className="bg-surface rounded-xl p-12 text-center border border-surface-container-high text-secondary">
           <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">folder_off</span>
           <p className="text-sm">No customer files match your search criteria.</p>
@@ -697,20 +1032,23 @@ export default function StaffFiles() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Sanctioned Load (kW)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={newCustLoad}
-                    onChange={(e) => setNewCustLoad(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
-                  />
+                  <label className="block text-xs font-semibold text-secondary mb-1">Project Category *</label>
+                  <select
+                    value={newCustCategory}
+                    onChange={(e) => setNewCustCategory(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW)</label>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW) *</label>
                   <input
                     type="number"
                     step="0.1"
+                    min="0.5"
                     value={newCustSolarKw}
                     onChange={(e) => setNewCustSolarKw(e.target.value)}
                     className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
@@ -718,7 +1056,7 @@ export default function StaffFiles() {
                 </div>
               </div>
 
-              {/* Source Type & Finance Type (Cash vs Bank Loan vs Finance Loan) */}
+              {/* Customer Email & Payment / Case Type */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-xs font-semibold text-secondary mb-1">Customer Email ID (Optional)</label>
@@ -735,9 +1073,9 @@ export default function StaffFiles() {
                   <select
                     value={newCustFinanceType}
                     onChange={(e) => setNewCustFinanceType(e.target.value)}
-                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
                   >
-                    <option value="CASH">Residential (100% Cash / Self Paid)</option>
+                    <option value="CASH">100% Cash / Self Paid</option>
                     <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
                     <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
                   </select>
@@ -881,10 +1219,10 @@ export default function StaffFiles() {
 
       {/* DYNAMIC DOCUMENT VAULT MODAL (Residential, Bank Loan, Finance Loan) */}
       {selectedFileForDocs && (() => {
-        const docList = getDocumentListForFile(selectedFileForDocs);
+        const docList = getFileDocuments ? getFileDocuments(selectedFileForDocs) : getDocumentListForFile(selectedFileForDocs, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(selectedFileForDocs);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
-        const docCompletion = getDocumentCompletion(selectedFileForDocs);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(selectedFileForDocs) : getDocumentCompletion(selectedFileForDocs, masterDocRegistry, categoryDocRules);
 
         return (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -932,18 +1270,16 @@ export default function StaffFiles() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                 {docList.map((doc) => {
                   const dData = selectedFileForDocs.documents?.[doc.key] || (doc.alias ? selectedFileForDocs.documents?.[doc.alias] : null);
-                  const isUp = Boolean(dData?.uploaded);
-                  const sizeLabel = dData?.sizeBytes ? ` (${(dData.sizeBytes / 1024).toFixed(0)} KB)` : '';
-                  const isPdf = dData?.filename?.toLowerCase().endsWith('.pdf');
+                  const attachedFiles = normalizeDocList(dData);
+                  const isUp = attachedFiles.length > 0;
 
                   return (
                     <div
                       key={doc.key}
-                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
-                        isUp ? 'bg-emerald-50/50 border-emerald-300' : 'bg-surface-container-low border-surface-container-high'
-                      }`}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${isUp ? 'bg-surface-container-low/90 border-primary/40' : 'bg-surface-container-low border-surface-container-high'
+                        }`}
                     >
-                      <div>
+                      <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="material-symbols-outlined text-[20px] text-primary shrink-0">
@@ -954,76 +1290,94 @@ export default function StaffFiles() {
                               <p className="text-[10px] text-secondary leading-tight">{doc.category} &bull; {doc.description}</p>
                             </div>
                           </div>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
-                            isUp
-                              ? 'bg-emerald-200 text-emerald-800'
-                              : doc.mandatory
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                : 'bg-surface-container text-secondary border border-surface-container-high'
-                          }`}>
-                            {isUp ? `${isPdf ? 'PDF' : 'Photo'} Attached${sizeLabel}` : (doc.mandatory ? 'Pending' : 'Optional')}
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${isUp
+                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                            : doc.mandatory
+                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                              : 'bg-surface-container text-secondary border border-surface-container-high'
+                            }`}>
+                            {isUp ? (attachedFiles.length > 1 ? `${attachedFiles.length} Attached` : 'Attached') : (doc.mandatory ? 'Pending' : 'Optional')}
                           </span>
                         </div>
 
+                        {/* LIST OF ATTACHED DOCUMENTS WITH INDIVIDUAL PREVIEW & REMOVE */}
                         {isUp && (
-                          <p className="text-[11px] font-mono text-primary mt-2 break-all leading-tight select-all bg-surface-container/60 p-1.5 rounded border border-primary/20">
-                            {dData?.filename}
-                          </p>
+                          <div className="space-y-1.5 pt-1">
+                            {attachedFiles.map((fileItem, fIdx) => (
+                              <div
+                                key={fileItem.id || fileItem.url || fIdx}
+                                className="p-2 rounded-lg bg-surface-container-lowest border border-surface-container flex items-center justify-between gap-2 text-xs hover:border-primary/30 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="material-symbols-outlined text-primary text-[16px] shrink-0">
+                                    {fileItem.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-all text-[11px] font-mono text-on-surface font-semibold leading-tight truncate" title={fileItem.filename}>
+                                      {fileItem.filename}
+                                    </div>
+                                    <div className="text-[10px] text-secondary font-mono flex items-center gap-2 mt-0.5">
+                                      <span>{fileItem.size || 'Optimized'}</span>
+                                      <span>&bull;</span>
+                                      <span>{fileItem.date || 'Today'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({
+                                      title: `${doc.label} (${fileItem.filename})`,
+                                      filename: fileItem.filename || 'document.pdf',
+                                      url: fileItem.url || fileItem.dataUrl
+                                    })}
+                                    className="p-1 rounded-md text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                    title="View Preview"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key, fileItem.id || fileItem.url || fileItem.filename)}
+                                    className="p-1 rounded-md text-error hover:bg-error/10 transition-colors cursor-pointer"
+                                    title="Remove this document"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-surface-container-high/60 flex items-center justify-between gap-2">
+                      {/* Action buttons (Add file / Camera) */}
+                      <div className="mt-3 pt-2 border-t border-surface-container flex items-center gap-2 text-[11px]">
                         {isUp ? (
-                          <div className="flex items-center gap-3 w-full justify-between">
+                          <div className="flex items-center gap-2 w-full">
                             <button
                               type="button"
-                              onClick={() => setPreviewDoc({ title: doc.label, ...dData })}
-                              className="text-xs text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-500/30 shadow-2xs"
+                              title="Upload another photo or PDF"
                             >
-                              <span className="material-symbols-outlined text-[15px]">visibility</span>
-                              <span>View Preview</span>
+                              <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                              <span>Add More Media / PDF</span>
                             </button>
-
-                            <div className="flex items-center gap-3">
-                              <label className="text-[11px] text-secondary hover:text-primary font-medium cursor-pointer flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[13px]">sync</span>
-                                <span>Replace</span>
-                                <input
-                                  type="file"
-                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
-                                  }}
-                                />
-                              </label>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteDoc(selectedFileForDocs.id, doc.key)}
-                                className="text-[11px] text-error hover:underline font-medium cursor-pointer flex items-center gap-0.5"
-                                title="Delete document from Cloudflare R2 Vault"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">delete</span>
-                                <span>Delete</span>
-                              </button>
-                            </div>
                           </div>
                         ) : (
-                          <label className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1 w-full justify-center py-0.5">
-                            <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                            <span>Upload Document {doc.mandatory ? '' : '(Optional)'} (Max 2 MB)</span>
-                            <input
-                              type="file"
-                              accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const f = e.target.files?.[0];
-                                if (f) await handleUploadDoc(selectedFileForDocs.id, doc.key, f);
-                              }}
-                            />
-                          </label>
+                          <div className="flex items-center gap-2 w-full">
+                            <button
+                              type="button"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="flex-1 py-2 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-2 border border-surface-container-highest shadow-2xs hover:border-primary/40"
+                              title="Upload photos or PDF document"
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                              <span>Upload Document / Media {doc.mandatory ? '' : '(Optional)'}</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1044,9 +1398,10 @@ export default function StaffFiles() {
                 <button
                   type="button"
                   onClick={() => setSelectedFileForDocs(null)}
-                  className="px-4 py-2 bg-surface-container-high hover:bg-surface-container-highest text-on-surface text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  className="px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
                 >
-                  Close Vault
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>Done / Skip (Upload Later)</span>
                 </button>
               </div>
             </div>
@@ -1077,6 +1432,44 @@ export default function StaffFiles() {
         selectedBankName={newCustLoanBank}
         onSelectBank={(selectedName) => setNewCustLoanBank(selectedName)}
       />
+
+      {/* CAMERA CAPTURE MODAL */}
+      {cameraTargetDoc && (
+        <CameraCaptureModal
+          isOpen={Boolean(cameraTargetDoc)}
+          onClose={() => setCameraTargetDoc(null)}
+          onCapture={handleCameraCapture}
+          documentLabel={cameraTargetDoc.label}
+          isUploading={cameraIsUploading}
+          uploadProgress={cameraUploadProgress}
+          maxPhotos={5}
+        />
+      )}
+
+      {/* EDIT CUSTOMER FILE MODAL */}
+      {fileToEdit && (
+        <EditCustomerFileModal
+          file={fileToEdit}
+          isOpen={Boolean(fileToEdit)}
+          onClose={() => setFileToEdit(null)}
+          onSave={async (fileId, updatedFields) => {
+            await editCustomerFile(fileId, updatedFields);
+          }}
+        />
+      )}
+
+      {/* CANCEL CUSTOMER FILE MODAL */}
+      {fileToCancel && (
+        <CancelCustomerFileModal
+          file={fileToCancel}
+          isOpen={Boolean(fileToCancel)}
+          isAdmin={false}
+          onClose={() => setFileToCancel(null)}
+          onCancelFile={async (fileId, reason) => {
+            await cancelCustomerFile(fileId, reason);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -9,3 +9,5 @@ Permanent Core Protocols:
 4. **Non-Blocking Workflows**: Document uploads are strictly optional.
 5. **Quality Gate**: Always verify `npm run build` passes with 0 errors before committing.
 6. **Branch Protection & Deployment Policy**: All commits and pushes must go to the `sumit-updates` branch. NEVER push directly to `main` branch or production without explicit confirmation from the user.
+7. **Direct Database Single Source of Truth**: All data added or updated MUST be saved directly to the database and fetched directly from the database upon mount / hard refresh. Never store data exclusively in client cache or localStorage, and ensure zero data loss on hard refresh. Must be upheld on every prompt without exception.
+

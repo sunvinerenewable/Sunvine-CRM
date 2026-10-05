@@ -1,344 +1,454 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { compressImage, formatFileSize } from '../../utils/mediaOptimizer';
+import { compressToMaxSize, formatFileSize } from '../../utils/mediaOptimizer';
 
-export default function CameraCaptureModal({ isOpen, onClose, onCapture, mode = 'photo', documentLabel = 'Document Photo' }) {
-  const videoRef = useRef(null);
-  const mediaStreamRef = useRef(null);
-  const [streamActive, setStreamActive] = useState(false);
-  const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (selfie)
-  const [capturedPreview, setCapturedPreview] = useState(null);
+// ─── Upload Progress Bar ─────────────────────────────────────────────────────
+
+function ProgressBar({ progress }) {
+  return (
+    <div className="space-y-1.5 py-1">
+      <div className="flex items-center justify-between text-[11px] text-white/60">
+        <span className="flex items-center gap-1.5 font-medium">
+          <span
+            className="material-symbols-outlined text-[14px] text-emerald-400"
+            style={{ animation: 'spin 1.2s linear infinite' }}
+          >
+            progress_activity
+          </span>
+          Uploading to Cloudflare R2 Vault…
+        </span>
+        <span className="font-mono font-bold text-emerald-400">{progress}%</span>
+      </div>
+      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Modal Component ────────────────────────────────────────────────────
+
+export default function CameraCaptureModal({
+  isOpen,
+  onClose,
+  onCapture,
+  documentLabel = 'Document Photo',
+  maxPhotos = 5,
+  isUploading = false,
+  uploadProgress = 0,
+  // Legacy aliases
+  docLabel,
+  docKey,
+}) {
+  const label = documentLabel || docLabel || 'Document Photo';
+  const galleryInputRef = useRef(null);
+  const docInputRef = useRef(null);
+
+  const [fileItems, setFileItems] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const [captureStats, setCaptureStats] = useState(null);
+  const [processingStatus, setProcessingStatus] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  // Video recording states
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordedChunks, setRecordedChunks] = useState([]);
-  const [recordTimer, setRecordTimer] = useState(0);
-  const mediaRecorderRef = useRef(null);
-  const timerIntervalRef = useRef(null);
-
+  // Reset state when modal is opened or closed
   useEffect(() => {
-    if (isOpen) {
-      startCamera();
-    } else {
-      stopCamera();
-      setCapturedPreview(null);
-      setCaptureStats(null);
-      setIsRecording(false);
-    }
-    return () => {
-      stopCamera();
-    };
-  }, [isOpen, facingMode]);
-
-  const startCamera = async () => {
-    stopCamera();
-    setCameraError('');
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera hardware access is not supported by this browser.');
-      }
-
-      const constraints = {
-        video: {
-          facingMode: { ideal: facingMode },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: mode === 'video'
-      };
-
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setStreamActive(true);
-    } catch (err) {
-      console.warn('[CameraCaptureModal] Camera initialization error:', err);
-      setCameraError(err.message || 'Unable to access camera. Please allow camera permissions or upload an image file.');
-      setStreamActive(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-      mediaStreamRef.current = null;
-    }
-    if (timerIntervalRef.current) {
-      clearInterval(timerIntervalRef.current);
-    }
-    setStreamActive(false);
-  };
-
-  const toggleFacingMode = () => {
-    setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
-  };
-
-  // Capture Photo
-  const handleTakePhoto = async () => {
-    if (!videoRef.current) return;
-    setIsProcessing(true);
-
-    try {
-      const video = videoRef.current;
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          setIsProcessing(false);
-          return;
-        }
-
-        const rawFile = new File([blob], `camera_${Date.now()}.jpg`, { type: 'image/jpeg' });
-        // Compress client-side
-        const compressedResult = await compressImage(rawFile, { maxWidth: 1600, maxHeight: 1600, quality: 0.82 });
-
-        setCapturedPreview(compressedResult.dataUrl);
-        setCaptureStats(compressedResult);
-        setIsProcessing(false);
-      }, 'image/jpeg', 0.95);
-    } catch (e) {
-      console.error('Capture photo error:', e);
+    if (!isOpen) {
+      setFileItems([]);
       setIsProcessing(false);
+      setProcessingStatus('');
+      setIsDragging(false);
+      setErrorMessage('');
     }
-  };
-
-  // Video Recording handlers
-  const handleStartRecording = () => {
-    if (!mediaStreamRef.current) return;
-    setRecordedChunks([]);
-    setRecordTimer(0);
-
-    try {
-      const recorder = new MediaRecorder(mediaStreamRef.current, { mimeType: 'video/webm' });
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          setRecordedChunks(prev => [...prev, e.data]);
-        }
-      };
-
-      recorder.onstop = () => {
-        clearInterval(timerIntervalRef.current);
-      };
-
-      recorder.start(500); // 500ms chunk timeslice
-      setIsRecording(true);
-
-      timerIntervalRef.current = setInterval(() => {
-        setRecordTimer(t => t + 1);
-      }, 1000);
-    } catch (e) {
-      console.error('Error starting video recorder:', e);
-    }
-  };
-
-  const handleStopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      clearInterval(timerIntervalRef.current);
-
-      setTimeout(() => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const videoFile = new File([blob], `video_${Date.now()}.webm`, { type: 'video/webm' });
-        const videoUrl = URL.createObjectURL(blob);
-        setCapturedPreview(videoUrl);
-        setCaptureStats({
-          file: videoFile,
-          originalSize: blob.size,
-          compressedSize: blob.size,
-          originalFormatted: formatFileSize(blob.size),
-          compressedFormatted: formatFileSize(blob.size),
-          reduction: '0%',
-          isVideo: true
-        });
-      }, 300);
-    }
-  };
-
-  const handleRetake = () => {
-    setCapturedPreview(null);
-    setCaptureStats(null);
-    setRecordedChunks([]);
-    setRecordTimer(0);
-    startCamera();
-  };
-
-  const handleConfirm = () => {
-    if (!captureStats) return;
-    onCapture(captureStats);
-    onClose();
-  };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
+  // Process incoming files (Images compressed, PDFs validated)
+  const processFiles = async (rawFiles) => {
+    if (!rawFiles || rawFiles.length === 0) return;
+    setErrorMessage('');
+    setIsProcessing(true);
+
+    const availableSlots = Math.max(0, maxPhotos - fileItems.length);
+    if (availableSlots <= 0) {
+      setErrorMessage(`Maximum limit of ${maxPhotos} files reached.`);
+      setIsProcessing(false);
+      return;
+    }
+
+    const filesToProcess = Array.from(rawFiles).slice(0, availableSlots);
+    const newItems = [];
+
+    for (let i = 0; i < filesToProcess.length; i++) {
+      const file = filesToProcess[i];
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp)$/i.test(file.name);
+
+      if (!isPdf && !isImage) {
+        setErrorMessage(`"${file.name}" ignored. Only Images (JPG, PNG, WebP) and PDFs are allowed.`);
+        continue;
+      }
+
+      setProcessingStatus(`Optimizing ${i + 1} of ${filesToProcess.length}: ${file.name}`);
+
+      if (isPdf) {
+        // Enforce 2 MB limit for PDFs
+        if (file.size > 2 * 1024 * 1024) {
+          setErrorMessage(`PDF "${file.name}" exceeds 2 MB limit (${formatFileSize(file.size)}). Please compress before upload.`);
+          continue;
+        }
+        newItems.push({
+          id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          file,
+          name: file.name,
+          isPdf: true,
+          previewUrl: null,
+          originalSize: file.size,
+          originalFormatted: formatFileSize(file.size),
+          compressedSize: file.size,
+          compressedFormatted: formatFileSize(file.size),
+          reduction: '0%',
+          dataUrl: null,
+        });
+      } else {
+        // Image: client-side compression to ≤ 2MB, EXIF stripped
+        try {
+          const stats = await compressToMaxSize(file, 2 * 1024 * 1024);
+          newItems.push({
+            id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            file: stats.file || file,
+            name: file.name,
+            isPdf: false,
+            previewUrl: stats.dataUrl || URL.createObjectURL(file),
+            originalSize: stats.originalSize,
+            originalFormatted: stats.originalFormatted,
+            compressedSize: stats.compressedSize,
+            compressedFormatted: stats.compressedFormatted,
+            reduction: stats.reduction,
+            dataUrl: stats.dataUrl,
+          });
+        } catch (err) {
+          console.warn('[MediaUploadModal] Compression error, using raw image:', err);
+          newItems.push({
+            id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            file,
+            name: file.name,
+            isPdf: false,
+            previewUrl: URL.createObjectURL(file),
+            originalSize: file.size,
+            originalFormatted: formatFileSize(file.size),
+            compressedSize: file.size,
+            compressedFormatted: formatFileSize(file.size),
+            reduction: '0%',
+            dataUrl: null,
+          });
+        }
+      }
+    }
+
+    setFileItems(prev => [...prev, ...newItems]);
+    setIsProcessing(false);
+    setProcessingStatus('');
+  };
+
+  const handleFileInputChange = (e) => {
+    if (e.target.files?.length) {
+      processFiles(e.target.files);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveItem = (idToRemove) => {
+    setFileItems(prev => {
+      const target = prev.find(item => item.id === idToRemove);
+      if (target?.previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter(item => item.id !== idToRemove);
+    });
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files?.length) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
+
+  // Confirm and deliver files to parent
+  const handleConfirmUpload = () => {
+    if (fileItems.length === 0) return;
+
+    // Backward-compatible payload: emit single stats object if 1 item, or array if multiple
+    if (fileItems.length === 1) {
+      onCapture(fileItems[0]);
+    } else {
+      onCapture(fileItems);
+    }
+    onClose();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/85 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="relative bg-surface-container-lowest border border-surface-container-high rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col text-on-surface">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-surface-container-high bg-surface-container-low/60">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary text-[20px]">
-              {mode === 'video' ? 'videocam' : 'photo_camera'}
-            </span>
-            <span className="font-bold text-sm text-on-surface">{documentLabel} — Camera Capture</span>
+    <div
+      className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm"
+      style={{ animation: 'fadeIn 0.15s ease' }}
+    >
+      <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}} @keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <div
+        className="relative bg-[#0D1527] border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col text-white"
+        style={{ maxHeight: '94dvh' }}
+      >
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-emerald-400 text-[18px]">upload_file</span>
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-bold text-sm text-white truncate font-space">{label}</h2>
+              <p className="text-[10px] text-white/50">Upload KYC Media &amp; Documents</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-white/50 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            aria-label="Close"
           >
             <span className="material-symbols-outlined text-lg">close</span>
           </button>
         </div>
 
-        {/* Viewfinder / Preview Body */}
-        <div className="relative bg-black aspect-4/3 flex items-center justify-center overflow-hidden">
-          {cameraError ? (
-            <div className="p-6 text-center text-secondary space-y-3">
-              <span className="material-symbols-outlined text-error text-4xl">no_photography</span>
-              <p className="text-xs text-on-surface max-w-xs">{cameraError}</p>
-              <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-on-primary text-xs font-bold rounded-lg cursor-pointer hover:bg-primary/90">
-                <span className="material-symbols-outlined text-sm">upload_file</span>
-                <span>Select from Device</span>
-                <input
-                  type="file"
-                  accept={mode === 'video' ? 'video/*' : 'image/*'}
-                  capture="environment"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      const res = await compressImage(f);
-                      onCapture(res);
-                      onClose();
-                    }
-                  }}
-                />
-              </label>
+        {/* ── Body ── */}
+        <div className="overflow-y-auto overscroll-contain p-5 space-y-4 flex-1">
+          {/* Error Notice */}
+          {errorMessage && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm text-rose-400 shrink-0">error</span>
+              <span className="flex-1">{errorMessage}</span>
             </div>
-          ) : capturedPreview ? (
-            captureStats?.isVideo ? (
-              <video src={capturedPreview} controls autoPlay className="w-full h-full object-contain" />
-            ) : (
-              <img src={capturedPreview} alt="Captured Preview" className="w-full h-full object-contain" />
-            )
-          ) : (
-            <>
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
+          )}
+
+          {/* Processing Indicator */}
+          {isProcessing && (
+            <div className="py-6 px-4 rounded-xl bg-white/5 border border-white/10 flex flex-col items-center justify-center gap-2.5 text-center">
+              <div
+                className="w-8 h-8 rounded-full border-3 border-emerald-500/20 border-t-emerald-400"
+                style={{ animation: 'spin 0.8s linear infinite' }}
               />
-              {/* Camera Framing Grid */}
-              <div className="absolute inset-0 pointer-events-none border border-white/20 grid grid-cols-3 grid-rows-3">
-                <div className="border-r border-b border-white/10"></div>
-                <div className="border-r border-b border-white/10"></div>
-                <div className="border-b border-white/10"></div>
-                <div className="border-r border-b border-white/10"></div>
-                <div className="border-r border-b border-white/10"></div>
-                <div className="border-b border-white/10"></div>
+              <p className="text-xs text-emerald-400 font-semibold">{processingStatus || 'Optimizing media…'}</p>
+              <p className="text-[10px] text-white/40">Compressing images to ≤ 2 MB · Stripping EXIF metadata</p>
+            </div>
+          )}
+
+          {/* Action Buttons: 1. Device Gallery Media Picker (Direct Photos) & 2. Browse Documents (PDF) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Direct Device Gallery / Media Picker */}
+            <button
+              type="button"
+              onClick={() => galleryInputRef.current?.click()}
+              className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 shadow-sm min-h-[46px]"
+            >
+              <span className="material-symbols-outlined text-lg">photo_library</span>
+              <span>Choose from Gallery / Photos</span>
+            </button>
+
+            {/* Document / PDF File Picker */}
+            <button
+              type="button"
+              onClick={() => docInputRef.current?.click()}
+              className="py-3 px-4 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98 min-h-[46px]"
+            >
+              <span className="material-symbols-outlined text-lg text-emerald-400">drive_folder_upload</span>
+              <span>Browse Documents &amp; PDF</span>
+            </button>
+
+            {/* Hidden native input 1: pure image/* to trigger native Android Gallery */}
+            <input
+              ref={galleryInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+
+            {/* Hidden native input 2: PDF and documents */}
+            <input
+              ref={docInputRef}
+              type="file"
+              multiple
+              accept="application/pdf,.pdf,image/*"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+          </div>
+
+          {/* Drag & Drop Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => galleryInputRef.current?.click()}
+            className={`rounded-2xl border-2 border-dashed p-5 sm:p-7 flex flex-col items-center justify-center gap-2 text-center cursor-pointer transition-all ${
+              isDragging
+                ? 'border-emerald-400 bg-emerald-500/15 scale-[0.99]'
+                : 'border-white/15 bg-white/5 hover:bg-white/[0.07] hover:border-emerald-500/40'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center text-emerald-400 shadow-sm">
+              <span className="material-symbols-outlined text-2xl">cloud_upload</span>
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-white">
+                {isDragging ? 'Drop files here' : 'Or Drag & Drop files here'}
+              </p>
+              <p className="text-[11px] text-white/50 mt-0.5">
+                Drop multiple images or PDF documents
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
+              <span className="px-2 py-0.5 rounded-md bg-white/10 text-[9px] font-mono text-white/60">JPG</span>
+              <span className="px-2 py-0.5 rounded-md bg-white/10 text-[9px] font-mono text-white/60">PNG</span>
+              <span className="px-2 py-0.5 rounded-md bg-white/10 text-[9px] font-mono text-white/60">WEBP</span>
+              <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-[9px] font-mono font-bold text-emerald-300">PDF</span>
+              <span className="text-[9px] text-white/40">· Max {maxPhotos} files · ≤ 2 MB each</span>
+            </div>
+          </div>
+
+          {/* Selected Files Preview List */}
+          {fileItems.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white/80 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-emerald-400 text-[16px]">check_circle</span>
+                  <span>Attached Files ({fileItems.length} of {maxPhotos})</span>
+                </span>
+                {fileItems.length < maxPhotos && (
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">add_photo_alternate</span>
+                      <span>+ Photos</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => docInputRef.current?.click()}
+                      className="text-[11px] font-semibold text-white/60 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">note_add</span>
+                      <span>+ PDF</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* Facing mode switch toggle */}
-              <button
-                type="button"
-                onClick={toggleFacingMode}
-                className="absolute top-3 right-3 p-2 rounded-full bg-black/50 text-white hover:bg-black/80 backdrop-blur-xs transition-colors cursor-pointer"
-                title="Switch Camera (Front/Back)"
-              >
-                <span className="material-symbols-outlined text-lg">flip_camera_ios</span>
-              </button>
-
-              {isRecording && (
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-600/90 text-white text-xs font-mono font-bold animate-pulse">
-                  <span className="w-2 h-2 rounded-full bg-white"></span>
-                  <span>REC {Math.floor(recordTimer / 60)}:{(recordTimer % 60).toString().padStart(2, '0')}</span>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Compression Statistics Banner (Post-capture) */}
-        {captureStats && (
-          <div className="px-4 py-2 bg-emerald-500/10 border-t border-b border-emerald-500/20 text-xs flex items-center justify-between text-emerald-400">
-            <span className="flex items-center gap-1.5 font-medium">
-              <span className="material-symbols-outlined text-sm">speed</span>
-              <span>Compressed: {captureStats.originalFormatted} → <strong>{captureStats.compressedFormatted}</strong></span>
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-[10px] font-bold">
-              {captureStats.reduction} Size Saved
-            </span>
-          </div>
-        )}
-
-        {/* Control Footer */}
-        <div className="p-4 bg-surface-container-low/50 flex items-center justify-between gap-3">
-          {capturedPreview ? (
-            <>
-              <button
-                type="button"
-                onClick={handleRetake}
-                className="px-4 py-2.5 rounded-xl border border-surface-container-highest text-secondary hover:text-on-surface text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-sm">refresh</span>
-                <span>Retake</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
-              >
-                <span className="material-symbols-outlined text-sm">done_all</span>
-                <span>Use Optimized Media</span>
-              </button>
-            </>
-          ) : (
-            <div className="w-full flex items-center justify-center relative">
-              {mode === 'video' ? (
-                isRecording ? (
-                  <button
-                    type="button"
-                    onClick={handleStopRecording}
-                    className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90 cursor-pointer"
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {fileItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-2.5 rounded-xl bg-white/5 hover:bg-white/[0.08] border border-white/10 flex items-center gap-3 transition-colors"
                   >
-                    <div className="w-5 h-5 rounded-xs bg-white"></div>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleStartRecording}
-                    className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90 cursor-pointer ring-4 ring-red-500/30"
-                  >
-                    <span className="material-symbols-outlined text-2xl">videocam</span>
-                  </button>
-                )
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleTakePhoto}
-                  disabled={isProcessing || !streamActive}
-                  className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-on-primary flex items-center justify-center shadow-lg transition-transform active:scale-90 cursor-pointer ring-4 ring-primary/30 disabled:opacity-50"
-                  title="Capture Photo"
-                >
-                  <span className="material-symbols-outlined text-2xl">photo_camera</span>
-                </button>
-              )}
+                    {/* Thumbnail / Icon */}
+                    <div className="w-11 h-11 rounded-lg overflow-hidden bg-black/40 border border-white/10 flex items-center justify-center shrink-0">
+                      {item.isPdf ? (
+                        <span className="material-symbols-outlined text-rose-400 text-2xl">picture_as_pdf</span>
+                      ) : item.previewUrl ? (
+                        <img
+                          src={item.previewUrl}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="material-symbols-outlined text-emerald-400 text-2xl">image</span>
+                      )}
+                    </div>
+
+                    {/* File Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-white truncate">{item.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px]">
+                        {item.isPdf ? (
+                          <span className="text-rose-300 font-mono font-medium">PDF · {item.compressedFormatted}</span>
+                        ) : (
+                          <span className="text-white/50 font-mono">
+                            {item.originalFormatted} → <strong className="text-emerald-400">{item.compressedFormatted}</strong>
+                          </span>
+                        )}
+                        {!item.isPdf && item.reduction && item.reduction !== '0%' && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold text-[9px]">
+                            {item.reduction} saved
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Remove Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(item.id)}
+                      className="p-1 rounded-lg text-white/40 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0"
+                      title="Remove file"
+                      aria-label="Remove file"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
+
+          {/* Upload Progress Bar (when driven by parent) */}
+          {isUploading && <ProgressBar progress={uploadProgress} />}
+
+          {/* Info footnote */}
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-white/40 text-[10px]">
+            <span className="material-symbols-outlined text-[13px] text-emerald-400 shrink-0">verified_user</span>
+            <span>Files are encrypted &amp; stored securely in Cloudflare R2 Vault. GPS EXIF stripped for privacy.</span>
+          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div className="px-5 py-3.5 border-t border-white/10 bg-white/[0.02] flex items-center justify-between gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isUploading}
+            className="flex-1 py-2.5 px-4 rounded-xl border border-white/15 text-white/70 hover:text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors disabled:opacity-40"
+          >
+            <span>Cancel</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirmUpload}
+            disabled={fileItems.length === 0 || isUploading || isProcessing}
+            className="flex-[2] py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg"
+            style={{ boxShadow: fileItems.length > 0 ? '0 4px 20px rgba(16,185,129,0.25)' : 'none' }}
+          >
+            <span className="material-symbols-outlined text-base">cloud_upload</span>
+            <span>
+              {fileItems.length === 0
+                ? 'Select Files to Upload'
+                : `Upload ${fileItems.length} File${fileItems.length > 1 ? 's' : ''} to Vault`}
+            </span>
+          </button>
         </div>
       </div>
     </div>

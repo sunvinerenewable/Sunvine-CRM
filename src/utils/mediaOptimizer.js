@@ -172,6 +172,110 @@ export async function optimizeVideo(file) {
 }
 
 /**
+ * Smart iterative compressor — reduces quality until output is within maxBytes.
+ * EXIF metadata is stripped naturally via canvas redraw.
+ * @param {File|Blob} file
+ * @param {number} maxBytes — default 2 MB
+ * @returns {Promise<{ file: File, originalSize, compressedSize, reduction, dataUrl, width, height }>}
+ */
+export async function compressToMaxSize(file, maxBytes = 2 * 1024 * 1024) {
+  const originalSize = file.size;
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Invalid image file'));
+      img.onload = () => {
+        // Start at max 1920px wide; if still too large we scale down further
+        const MAX_PX = 1920;
+        let { width, height } = img;
+        if (width > MAX_PX || height > MAX_PX) {
+          if (width >= height) {
+            height = Math.round((height * MAX_PX) / width);
+            width = MAX_PX;
+          } else {
+            width = Math.round((width * MAX_PX) / height);
+            height = MAX_PX;
+          }
+        }
+
+        const drawToCanvas = (w, h) => {
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          return canvas;
+        };
+
+        // Iteratively reduce quality (0.90 → 0.82 → 0.72 → 0.60 → 0.48 → 0.38)
+        const qualities = [0.90, 0.82, 0.72, 0.60, 0.48, 0.38];
+        let canvas = drawToCanvas(width, height);
+        let scaleFactor = 1.0;
+        let attemptIndex = 0;
+
+        const tryNext = () => {
+          if (attemptIndex >= qualities.length) {
+            // Last resort: halve resolution
+            if (scaleFactor > 0.25) {
+              scaleFactor *= 0.7;
+              width = Math.round(width * 0.7);
+              height = Math.round(height * 0.7);
+              canvas = drawToCanvas(width, height);
+              attemptIndex = 0;
+            } else {
+              // Give up and return whatever we have at lowest quality
+              attemptIndex = qualities.length - 1;
+            }
+          }
+
+          const quality = qualities[Math.min(attemptIndex, qualities.length - 1)];
+          canvas.toBlob((blob) => {
+            if (!blob) return reject(new Error('Compression failed'));
+
+            if (blob.size <= maxBytes || (attemptIndex >= qualities.length - 1 && scaleFactor <= 0.25)) {
+              // Done
+              const compressedFile = new File(
+                [blob],
+                (file.name || 'photo.jpg').replace(/\.[^/.]+$/, '') + '_opt.jpg',
+                { type: 'image/jpeg', lastModified: Date.now() }
+              );
+              const reduction = originalSize > 0
+                ? `${Math.round(((originalSize - blob.size) / originalSize) * 100)}%`
+                : '0%';
+              resolve({
+                file: compressedFile,
+                originalSize,
+                compressedSize: blob.size,
+                originalFormatted: formatFileSize(originalSize),
+                compressedFormatted: formatFileSize(blob.size),
+                reduction,
+                width,
+                height,
+                dataUrl: canvas.toDataURL('image/jpeg', quality)
+              });
+            } else {
+              attemptIndex++;
+              tryNext();
+            }
+          }, 'image/jpeg', quality);
+        };
+
+        tryNext();
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Automatic smart media compressor
  * Inspects mime type: compresses images, optimizes videos, preserves PDFs.
  */

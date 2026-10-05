@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="16" fill="#0F1B2E"/>
+  <circle cx="32" cy="32" r="28" fill="url(#sunvine-grad)" fill-opacity="0.12"/>
+  <defs>
+    <linearGradient id="sunvine-grad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="sunvine-leaf" x1="16" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="sunvine-sun" x1="24" y1="12" x2="40" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <!-- Solar Sun Core -->
+  <circle cx="32" cy="22" r="8" fill="url(#sunvine-sun)"/>
+  <!-- Solar Rays -->
+  <path d="M32 9V5M32 39V35M45 22H49M15 22H19M41.19 12.81L44.02 9.98M19.98 34.02L22.81 31.19M41.19 31.19L44.02 34.02M19.98 9.98L22.81 12.81" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Renewable Energy Dynamic Leaf / Panel Base -->
+  <path d="M20 48C20 38 28 32 44 32C44 42 36 48 20 48Z" fill="url(#sunvine-leaf)"/>
+  <path d="M20 48C28 44 36 40 44 32" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-opacity="0.7"/>
+</svg>

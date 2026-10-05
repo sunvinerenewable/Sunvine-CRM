@@ -51,10 +51,13 @@ function apiDevPlugin() {
 
           try {
             let modulePath = null;
-            if (urlPath === '/api/auth/login') modulePath = '/api/auth/login.js';
-            else if (urlPath === '/api/auth/verify') modulePath = '/api/auth/verify.js';
-            else if (urlPath === '/api/auth/logout') modulePath = '/api/auth/logout.js';
-            else if (urlPath.startsWith('/api/')) {
+            if (urlPath.startsWith('/api/auth/')) {
+              const action = urlPath.replace('/api/auth/', '').replace(/\.js$/, '');
+              query.action = action;
+              req.query = req.query || {};
+              req.query.action = action;
+              modulePath = '/api/auth/[action].js';
+            } else if (urlPath.startsWith('/api/')) {
               const endpoint = urlPath.replace('/api/', '').replace(/\.js$/, '');
               modulePath = `/api/${endpoint}.js`;
             }
@@ -87,8 +90,9 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
-        globPatterns: ['**/*.{css,html,ico,png,svg,woff,woff2}', '**/index*.js'],
+        importScripts: ['/sw-push.js'],
+        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
+        globPatterns: ['**/*.{css,html,ico,png,webp,svg,woff,woff2}', '**/index*.js'],
         runtimeCaching: [
           {
             urlPattern: /\.(?:js|mjs)$/i,
@@ -134,10 +138,15 @@ export default defineConfig({
       },
       includeAssets: [
         'favicon.ico',
+        'sw-push.js',
         'sunvine-logo.png',
+        'sunvine-logo.webp',
         'sunvine-logo-darkmode.png',
+        'sunvine-logo-darkmode.webp',
         'sunvine_logo_transparent.png',
+        'sunvine_logo_transparent.webp',
         'sunvine_logo_white.png',
+        'sunvine_logo_white.webp',
         'pwa-192x192.png',
         'pwa-512x512.png',
         'fonts/material-symbols-outlined.woff2'
@@ -184,7 +193,8 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    host: true
+    host: true,
+    allowedHosts: true
   },
   build: {
     chunkSizeWarningLimit: 1200,

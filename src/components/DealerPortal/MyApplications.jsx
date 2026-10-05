@@ -7,7 +7,18 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
-import { DOCUMENT_SCHEMAS, getDocumentListForFile, getDocumentCompletion, getDocumentSchemaKey } from '../../data/defaultRequiredDocuments';
+import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
+import {
+  DOCUMENT_SCHEMAS,
+  getDocumentListForFile,
+  getDocumentCompletion,
+  getDocumentSchemaKey,
+  DEFAULT_REQUIRED_DOCUMENTS,
+  isDocMandatoryForCategory
+} from '../../data/defaultRequiredDocuments';
+import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
+import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
+import { pushNotificationService } from '../../services/pushNotificationService';
 
 export default function MyApplications() {
   const {
@@ -16,9 +27,14 @@ export default function MyApplications() {
     quotations,
     applicationStages,
     updateCustomerFile,
+    addCustomerFile,
     addCustomerFileTimelineEvent,
     requiredDocuments,
-    setActiveTab
+    setActiveTab,
+    masterDocRegistry,
+    categoryDocRules,
+    getFileDocuments,
+    getFileDocsCompletion
   } = useApp();
 
   // Search & Filter State
@@ -32,10 +48,30 @@ export default function MyApplications() {
   const [activeFileDetail, setActiveFileDetail] = useState(null);
   const [uploadTargetFile, setUploadTargetFile] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
+  const [cameraIsUploading, setCameraIsUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [quickStageFile, setQuickStageFile] = useState(null);
   const [quickStageVal, setQuickStageVal] = useState('');
   const [quickStageNotes, setQuickStageNotes] = useState('');
+
+  // New Application Modal & Form State
+  const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [newCustName, setNewCustName] = useState('');
+  const [newCustPhone, setNewCustPhone] = useState('');
+  const [newCustEmail, setNewCustEmail] = useState('');
+  const [newCustCoApplicantName, setNewCustCoApplicantName] = useState('');
+  const [newCustCoApplicantPhone, setNewCustCoApplicantPhone] = useState('');
+  const [newCustAddress, setNewCustAddress] = useState('');
+  const [newCustDiscom, setNewCustDiscom] = useState('PGVCL');
+  const [newCustConsumerNo, setNewCustConsumerNo] = useState('');
+  const [newCustLoad, setNewCustLoad] = useState('5.0');
+  const [newCustSolarKw, setNewCustSolarKw] = useState('4.4');
+  const [newCustCategory, setNewCustCategory] = useState('residential');
+  const [newCustFinanceType, setNewCustFinanceType] = useState('CASH');
+  const [newCustLoanBank, setNewCustLoanBank] = useState('State Bank of India (PM Surya Ghar Scheme)');
+  const [newCustLoanRef, setNewCustLoanRef] = useState('');
 
   // Stages master list
   const stages = useMemo(() => {
@@ -167,62 +203,73 @@ export default function MyApplications() {
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
-  // File upload handler (Cloudflare R2 + Supabase)
-  const handleUploadDocument = async (docKey, file) => {
-    if (!uploadTargetFile || !file) return;
+  // Multi-document upload handler (Cloudflare R2 + Supabase)
+  const handleUploadDocument = async (docKey, filesInput) => {
+    if (!uploadTargetFile || !filesInput) return;
+    const fileList = filesInput instanceof FileList || Array.isArray(filesInput)
+      ? Array.from(filesInput)
+      : [filesInput];
+    if (fileList.length === 0) return;
 
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-    const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
     const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
 
-    if (!isAllowed) {
-      addToast('Invalid file format. Only PDF (.pdf) and Images (.jpeg, .jpg, .png, .webp) are allowed.', 'error');
-      return;
-    }
-
-    if (file.size > 2 * 1024 * 1024) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-      addToast(`File size (${sizeMB} MB) exceeds maximum 2 MB limit allowed. Please compress the file.`, 'error');
-      return;
-    }
-
-    showLoader('Securing document in Cloudflare R2 Vault...');
+    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
     try {
-      let fileUrl = null;
-      let filename = file.name;
-      let fileSize = file.size;
+      const uploadedDocsList = [];
 
-      try {
-        const oldDoc = uploadTargetFile.documents?.[docKey];
-        const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey, { oldDoc });
-        if (uploadRes?.success) {
-          fileUrl = uploadRes.publicUrl || uploadRes.url;
-          filename = uploadRes.filename || file.name;
-          fileSize = uploadRes.fileSize || file.size;
+      for (const file of fileList) {
+        const fileExt = file.name?.split('.').pop()?.toLowerCase() || '';
+        const isAllowed = allowedExts.includes(fileExt) || allowedMimes.includes(file.type?.toLowerCase());
+
+        if (!isAllowed) {
+          addToast(`File "${file.name}" invalid format. Only PDF & Images are allowed.`, 'error');
+          continue;
         }
-      } catch (err) {
-        console.warn('[MyApplications] Cloudflare R2 upload warning:', err);
-        addToast(err.message || 'Upload failed', 'error');
-        return;
+
+        if (file.size > 2 * 1024 * 1024) {
+          const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+          addToast(`File "${file.name}" (${sizeMB} MB) exceeds maximum 2 MB limit allowed.`, 'error');
+          continue;
+        }
+
+        try {
+          const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey);
+          if (uploadRes?.success) {
+            uploadedDocsList.push({
+              filename: uploadRes.filename || file.name,
+              url: uploadRes.publicUrl || uploadRes.url,
+              size: formatFileSize(uploadRes.fileSize || file.size),
+              uploaded: true,
+              date: new Date().toISOString().split('T')[0]
+            });
+          }
+        } catch (err) {
+          console.warn('[MyApplications] Cloudflare R2 upload warning for', file.name, err);
+          addToast(err.message || `Failed to upload ${file.name}`, 'error');
+        }
       }
 
-      const updatedDocs = {
-        ...(uploadTargetFile.documents || {}),
-        [docKey]: {
-          filename,
-          url: fileUrl,
-          size: formatFileSize(fileSize),
-          uploaded: true,
-          date: new Date().toISOString().split('T')[0]
-        }
-      };
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = uploadTargetFile.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
 
-      if (updateCustomerFile) {
-        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        const updatedDocs = {
+          ...(uploadTargetFile.documents || {}),
+          [docKey]: updatedSlot
+        };
+
+        if (updateCustomerFile) {
+          await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        }
+        setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} documents added to vault`
+            : `Document uploaded: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      addToast(`Document uploaded to R2: ${filename}`, 'success');
     } catch (e) {
       console.error('[MyApplications] Upload error:', e);
       addToast(e.message || 'Upload failed', 'error');
@@ -232,16 +279,40 @@ export default function MyApplications() {
   };
 
   // Delete document handler (Cloudflare R2 + Supabase)
-  const handleDeleteDocument = async (docKey) => {
+  const handleDeleteDocument = async (docKey, targetDocIdOrUrl = null) => {
     if (!uploadTargetFile) return;
-    const doc = uploadTargetFile.documents?.[docKey];
+    const slotData = uploadTargetFile.documents?.[docKey];
+    if (!slotData) return;
 
     showLoader('Removing document from Cloudflare R2 Vault...');
     try {
-      await storageService.deleteCustomerDocument(docKey, uploadTargetFile.id, 'sunvine-documents', doc);
+      const fileList = normalizeDocList(slotData);
+      const targetDoc = targetDocIdOrUrl
+        ? fileList.find(f => f.id === targetDocIdOrUrl || f.url === targetDocIdOrUrl || f.filename === targetDocIdOrUrl)
+        : null;
 
-      const updatedDocs = { ...(uploadTargetFile.documents || {}) };
-      delete updatedDocs[docKey];
+      if (targetDoc && (targetDoc.url || targetDoc.path)) {
+        await storageService.deleteDocument(targetDoc.url || targetDoc.path);
+      } else if (!targetDocIdOrUrl) {
+        for (const f of fileList) {
+          if (f.url || f.path) {
+            await storageService.deleteDocument(f.url || f.path);
+          }
+        }
+        await storageService.deleteCustomerDocument(docKey, uploadTargetFile.id, 'sunvine-documents', slotData);
+      }
+
+      let updatedDocs = { ...(uploadTargetFile.documents || {}) };
+      if (targetDocIdOrUrl) {
+        const updatedSlot = removeDocFromFileList(slotData, targetDocIdOrUrl);
+        if (!updatedSlot.uploaded || updatedSlot.files.length === 0) {
+          delete updatedDocs[docKey];
+        } else {
+          updatedDocs[docKey] = updatedSlot;
+        }
+      } else {
+        delete updatedDocs[docKey];
+      }
 
       if (updateCustomerFile) {
         await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
@@ -256,34 +327,39 @@ export default function MyApplications() {
     }
   };
 
-  // Camera capture handler
-  const handleCameraCapture = async (stats) => {
-    if (!uploadTargetFile || !cameraTargetDoc || !stats) return;
+  // Media/Document upload handler (Supports batch arrays of files)
+  const handleCameraCapture = async (statsOrList) => {
+    if (!uploadTargetFile || !cameraTargetDoc || !statsOrList) return;
     const docKey = cameraTargetDoc.key;
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
 
-    showLoader('Securing camera photo in Cloudflare R2 Vault...');
+    setCameraIsUploading(true);
+    setCameraUploadProgress(10);
+    const prog = setInterval(() => setCameraUploadProgress(p => Math.min(p + 8, 75)), 250);
+
     try {
-      let fileUrl = null;
-      let filename = stats.file?.name || `${docKey}_camera.jpg`;
-      let fileSize = stats.file?.size || 0;
+      const uploadedDocsList = [];
 
-      if (stats.file) {
-        try {
-          const oldDoc = uploadTargetFile.documents?.[docKey];
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey, { oldDoc });
-          if (uploadRes?.success) {
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            filename = uploadRes.filename || stats.file.name;
-            fileSize = uploadRes.fileSize || stats.file.size;
+      for (let i = 0; i < items.length; i++) {
+        const stats = items[i];
+        let fileUrl = null;
+        let filename = stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`;
+        let fileSize = stats.compressedSize || stats.file?.size || 0;
+
+        if (stats.file) {
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
+            if (uploadRes?.success) {
+              fileUrl = uploadRes.publicUrl || uploadRes.url;
+              filename = uploadRes.filename || stats.file.name;
+              fileSize = uploadRes.fileSize || stats.file.size;
+            }
+          } catch (err) {
+            console.warn('[MyApplications] Media upload warning for', filename, err);
           }
-        } catch (err) {
-          console.warn('[MyApplications] Camera upload warning:', err);
         }
-      }
 
-      const updatedDocs = {
-        ...(uploadTargetFile.documents || {}),
-        [docKey]: {
+        uploadedDocsList.push({
           filename,
           url: fileUrl,
           size: stats.compressedFormatted || formatFileSize(fileSize),
@@ -292,20 +368,37 @@ export default function MyApplications() {
           dataUrl: fileUrl ? undefined : stats.dataUrl,
           uploaded: true,
           date: new Date().toISOString().split('T')[0]
-        }
-      };
-
-      if (updateCustomerFile) {
-        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        });
       }
-      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      setCameraTargetDoc(null);
-      addToast(`Photo secured in Cloudflare R2: ${filename}`, 'success');
+
+      clearInterval(prog);
+      setCameraUploadProgress(100);
+      await new Promise(r => setTimeout(r, 400));
+
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = uploadTargetFile.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+        const updatedDocs = { ...(uploadTargetFile.documents || {}), [docKey]: updatedSlot };
+
+        if (updateCustomerFile) {
+          await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        }
+        setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+        setCameraTargetDoc(null);
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} files attached to vault`
+            : `File attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
+      }
     } catch (e) {
-      console.error('[MyApplications] Camera upload error:', e);
-      addToast(e.message || 'Camera upload failed', 'error');
+      clearInterval(prog);
+      console.error('[MyApplications] Media upload error:', e);
+      addToast(e.message || 'Media upload failed', 'error');
     } finally {
-      hideLoader();
+      setCameraIsUploading(false);
+      setCameraUploadProgress(0);
     }
   };
 
@@ -330,6 +423,102 @@ export default function MyApplications() {
     setQuickStageFile(null);
     setQuickStageVal('');
     setQuickStageNotes('');
+  };
+
+  // Create New Customer Application (Direct Dealer Registration)
+  const handleCreateCustomerFile = async (e) => {
+    e.preventDefault();
+    if (!newCustName.trim() || !newCustPhone.trim()) {
+      addToast('Please enter customer name and contact phone number', 'error');
+      return;
+    }
+
+    showLoader('Registering new customer application...');
+    try {
+      const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
+      const cleanPhone = newCustPhone.trim();
+      const cleanConsumerNo = newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      const newFile = {
+        id: newFileId,
+        customerName: newCustName.trim(),
+        phone: cleanPhone,
+        email: newCustEmail.trim() || null,
+        coApplicantName: isLoanCase ? (newCustCoApplicantName.trim() || null) : null,
+        coApplicantPhone: isLoanCase ? (newCustCoApplicantPhone.trim() || null) : null,
+        address: newCustAddress.trim() || 'Gujarat, India',
+        discom: newCustDiscom,
+        consumerNo: cleanConsumerNo,
+        sanctionedLoadKw: parseFloat(newCustLoad) || 5.0,
+        solarSystemKw: parseFloat(newCustSolarKw) || 3.3,
+        category: newCustCategory || 'residential',
+        roofType: 'RCC Terrace',
+        sourceType: 'DEALER',
+        source: 'DEALER',
+        dealerId: currentDealer?.id || 'DLR-001',
+        dealerName: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+        staffId: currentDealer?.assignedStaffId || 'STF-DIRECT',
+        staffName: currentDealer?.assignedStaffName || (currentDealer?.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
+        financeType: newCustFinanceType,
+        paymentMode: newCustFinanceType,
+        loanBank: isLoanCase ? newCustLoanBank : null,
+        loanRefNo: isLoanCase ? newCustLoanRef.trim() : null,
+        createdDate: new Date().toISOString().split('T')[0],
+        status: 'Sourced',
+        currentStage: 'LEAD_SOURCED',
+        applicationNo: 'Draft Pending',
+        documents: {},
+        timeline: [
+          {
+            id: `TL-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            date: new Date().toISOString().split('T')[0],
+            stage: 'LEAD_SOURCED',
+            title: 'Application Created',
+            status: 'Sourced',
+            action: 'DIRECT_DEALER_CREATION',
+            actor: currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer',
+            notes: 'Application registered directly by Authorized Dealer partner.'
+          }
+        ]
+      };
+
+      if (addCustomerFile) {
+        await addCustomerFile(newFile);
+      }
+
+      // Dispatch True OS-Level Web Push to Admin and Assigned Salesman (if not direct)
+      pushNotificationService.sendApplicationCreatedPush({
+        fileId: newFile.id,
+        customerName: newFile.customerName,
+        solarKw: newFile.solarSystemKw,
+        dealerId: newFile.dealerId,
+        dealerName: newFile.dealerName,
+        assignedStaffId: newFile.staffId,
+        assignedStaffName: newFile.staffName
+      });
+
+      setShowAddFileModal(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustEmail('');
+      setNewCustCoApplicantName('');
+      setNewCustCoApplicantPhone('');
+      setNewCustAddress('');
+      setNewCustConsumerNo('');
+      setNewCustLoanRef('');
+
+      // Auto-open Document Upload Vault for the newly created application
+      setUploadTargetFile(newFile);
+
+      addToast(`New application ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
+    } catch (err) {
+      console.error('[MyApplications] Create application error:', err);
+      addToast(err.message || 'Failed to create application', 'error');
+    } finally {
+      hideLoader();
+    }
   };
 
   // Helper to format currency
@@ -389,11 +578,11 @@ export default function MyApplications() {
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             type="button"
-            onClick={() => setActiveTab && setActiveTab('create_quote')}
-            className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs flex items-center gap-2 hover:bg-primary/90 transition-all shadow-xs cursor-pointer min-h-[44px]"
+            onClick={() => setShowAddFileModal(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer min-h-[44px]"
           >
             <span className="material-symbols-outlined text-[18px]">add_circle</span>
-            <span>New Quotation</span>
+            <span>New Application</span>
           </button>
         </div>
       </div>
@@ -552,20 +741,30 @@ export default function MyApplications() {
           </div>
           <h3 className="font-bold text-sm text-on-surface">No Applications Match Your Filters</h3>
           <p className="text-xs text-secondary max-w-md">
-            Convert an approved quotation from the Quotations tab or adjust your filters above.
+            Directly register a new solar application or convert an approved quotation from the Quotations tab.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchQuery('');
-              setSelectedStage('ALL');
-              setSelectedCategory('ALL');
-              setSelectedDiscom('ALL');
-            }}
-            className="mt-2 px-4 py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors cursor-pointer"
-          >
-            Clear Filters
-          </button>
+          <div className="flex items-center gap-2.5 mt-2 flex-wrap justify-center">
+            <button
+              type="button"
+              onClick={() => setShowAddFileModal(true)}
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-xs cursor-pointer min-h-[44px]"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_circle</span>
+              <span>New Application</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setSelectedStage('ALL');
+                setSelectedCategory('ALL');
+                setSelectedDiscom('ALL');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors cursor-pointer min-h-[44px]"
+            >
+              Clear Filters
+            </button>
+          </div>
         </div>
       ) : viewMode === 'cards' ? (
         /* CARDS VIEW */
@@ -875,8 +1074,8 @@ export default function MyApplications() {
 
       {/* 7. MODAL: QUICK DOCUMENT MANAGEMENT (FULL RESPONSIVE VISIBILITY) */}
       {uploadTargetFile && (() => {
-        const docList = getDocumentListForFile(uploadTargetFile);
-        const docCompletion = getDocumentCompletion(uploadTargetFile);
+        const docList = getFileDocuments ? getFileDocuments(uploadTargetFile) : getDocumentListForFile(uploadTargetFile, masterDocRegistry, categoryDocRules);
+        const docCompletion = getFileDocsCompletion ? getFileDocsCompletion(uploadTargetFile) : getDocumentCompletion(uploadTargetFile, masterDocRegistry, categoryDocRules);
         const schemaKey = getDocumentSchemaKey(uploadTargetFile);
         const schema = DOCUMENT_SCHEMAS[schemaKey];
 
@@ -926,7 +1125,8 @@ export default function MyApplications() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
                 {docList.map(doc => {
                   const docState = uploadTargetFile.documents?.[doc.key] || (doc.alias ? uploadTargetFile.documents?.[doc.alias] : null);
-                  const isUploaded = Boolean(docState?.uploaded);
+                  const attachedFiles = normalizeDocList(docState);
+                  const isUploaded = attachedFiles.length > 0;
 
                   return (
                     <div
@@ -939,7 +1139,7 @@ export default function MyApplications() {
                             : 'bg-surface-container-lowest border-surface-container-high'
                       }`}
                     >
-                      <div>
+                      <div className="space-y-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="material-symbols-outlined text-primary text-base shrink-0">
@@ -957,88 +1157,86 @@ export default function MyApplications() {
                                 ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
                                 : 'bg-surface-container text-secondary border border-surface-container-high'
                           }`}>
-                            {isUploaded ? 'Uploaded' : (doc.mandatory ? 'Mandatory' : 'Optional')}
+                            {isUploaded ? (attachedFiles.length > 1 ? `${attachedFiles.length} Files Attached` : 'Uploaded') : (doc.mandatory ? 'Mandatory' : 'Optional')}
                           </span>
                         </div>
 
-                        {/* UPLOADED FILE STATUS WITH ZERO CLIPPING */}
+                        {/* LIST OF ATTACHED DOCUMENTS WITH INDIVIDUAL PREVIEW & REMOVE */}
                         {isUploaded && (
-                          <div className="mt-2.5 p-2 rounded-lg bg-surface-container-lowest border border-surface-container space-y-1">
-                            <div className="flex items-center gap-1.5 text-primary text-[11px] font-bold">
-                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
-                              <span>File Uploaded</span>
-                            </div>
-                            <div className="break-all text-[11px] font-mono text-on-surface leading-tight select-all">
-                              {docState.filename}
-                            </div>
-                            <div className="flex items-center justify-between text-[10px] text-secondary font-mono pt-1">
-                              <span>{docState.size || 'Optimized (Max 2 MB)'}</span>
-                              <span>{docState.date || 'Today'}</span>
-                            </div>
+                          <div className="space-y-1.5 pt-1">
+                            {attachedFiles.map((fileItem, fIdx) => (
+                              <div
+                                key={fileItem.id || fileItem.url || fIdx}
+                                className="p-2 rounded-lg bg-surface-container-lowest border border-surface-container flex items-center justify-between gap-2 text-xs hover:border-primary/30 transition-colors"
+                              >
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <span className="material-symbols-outlined text-primary text-[16px] shrink-0">
+                                    {fileItem.filename?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'image'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="break-all text-[11px] font-mono text-on-surface font-semibold leading-tight truncate" title={fileItem.filename}>
+                                      {fileItem.filename}
+                                    </div>
+                                    <div className="text-[10px] text-secondary font-mono flex items-center gap-2 mt-0.5">
+                                      <span>{fileItem.size || 'Optimized'}</span>
+                                      <span>&bull;</span>
+                                      <span>{fileItem.date || 'Today'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewDoc({
+                                      title: `${doc.label} (${fileItem.filename})`,
+                                      filename: fileItem.filename || 'document.pdf',
+                                      url: fileItem.url || fileItem.dataUrl
+                                    })}
+                                    className="p-1 rounded-md text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                                    title="Preview file"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDocument(doc.key, fileItem.id || fileItem.url || fileItem.filename)}
+                                    className="p-1 rounded-md text-error hover:bg-error/10 transition-colors cursor-pointer"
+                                    title="Remove this file"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
 
-                      {/* Upload & Preview Controls */}
+                      {/* Upload & Multi-Doc Controls */}
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-container text-[11px]">
                         {isUploaded ? (
-                          <div className="flex flex-wrap items-center justify-between gap-2 w-full">
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDoc({
-                                title: doc.label,
-                                filename: docState.filename || 'document.pdf',
-                                url: docState.url || docState.dataUrl
-                              })}
-                              className="px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-bold text-center cursor-pointer transition-colors flex items-center gap-1"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">visibility</span>
-                              <span>Preview</span>
-                            </button>
-
-                            <div className="flex items-center gap-2">
-                              <label className="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[14px]">sync</span>
-                                <span>Replace</span>
-                                <input
-                                  type="file"
-                                  accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                  className="hidden"
-                                  onChange={(e) => handleUploadDocument(doc.key, e.target.files?.[0])}
-                                />
-                              </label>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteDocument(doc.key)}
-                                className="px-2 py-1.5 rounded-lg text-error hover:bg-error/10 font-semibold cursor-pointer transition-colors flex items-center gap-0.5"
-                                title="Delete document from Cloudflare R2 Vault"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">delete</span>
-                                <span>Delete</span>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1">
-                              <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                              <span>Upload {doc.mandatory ? 'Document' : '(Optional)'}</span>
-                              <input
-                                type="file"
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={(e) => handleUploadDocument(doc.key, e.target.files?.[0])}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
-                              title="Capture with Camera"
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-500/30 shadow-2xs"
+                              title="Upload another photo or PDF"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                              <span>Add More Media / PDF</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 w-full">
+                            <button
+                              type="button"
+                              onClick={() => setCameraTargetDoc(doc)}
+                              className="flex-1 py-2 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-2 text-xs border border-surface-container-highest shadow-2xs hover:border-primary/40"
+                              title="Upload photos or PDF document"
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                              <span>Upload Document / Media {doc.mandatory ? '' : '(Optional)'}</span>
                             </button>
                           </div>
                         )}
@@ -1052,9 +1250,10 @@ export default function MyApplications() {
                 <button
                   type="button"
                   onClick={() => setUploadTargetFile(null)}
-                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:bg-primary/90 transition-all cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs hover:bg-primary/90 transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                 >
-                  Done
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>Done / Skip (Upload Later)</span>
                 </button>
               </div>
             </div>
@@ -1076,10 +1275,261 @@ export default function MyApplications() {
           isOpen={Boolean(cameraTargetDoc)}
           docKey={cameraTargetDoc.key}
           docLabel={cameraTargetDoc.label}
+          documentLabel={cameraTargetDoc.label}
           onCapture={handleCameraCapture}
           onClose={() => setCameraTargetDoc(null)}
+          isUploading={cameraIsUploading}
+          uploadProgress={cameraUploadProgress}
+          maxPhotos={5}
         />
       )}
+
+      {/* 9. MODAL: CREATE NEW CUSTOMER FILE (IDENTICAL TO STAFF PANEL) */}
+      {showAddFileModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface border border-surface-container-high rounded-2xl w-full max-w-xl p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto text-on-surface">
+            <div className="flex items-center justify-between border-b border-surface-container-high pb-3">
+              <h2 className="text-lg font-bold text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">note_add</span>
+                <span>Create New Customer File</span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAddFileModal(false)}
+                className="text-secondary hover:text-on-surface cursor-pointer"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomerFile} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Customer Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newCustName}
+                    onChange={(e) => setNewCustName(e.target.value)}
+                    placeholder="e.g. Bharatbhai M. Patel"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Mobile *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={newCustPhone}
+                    onChange={(e) => setNewCustPhone(e.target.value)}
+                    placeholder="+91 98250 99881"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-secondary mb-1">Site Address</label>
+                <input
+                  type="text"
+                  value={newCustAddress}
+                  onChange={(e) => setNewCustAddress(e.target.value)}
+                  placeholder="Plot 10, Suryam Residency, Ring Road, Ahmedabad"
+                  className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">DISCOM</label>
+                  <select
+                    value={newCustDiscom}
+                    onChange={(e) => setNewCustDiscom(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  >
+                    <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
+                    <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
+                    <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
+                    <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
+                    <option value="Torrent Power">Torrent Power</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Consumer No (Optional)</label>
+                  <input
+                    type="text"
+                    value={newCustConsumerNo}
+                    onChange={(e) => setNewCustConsumerNo(e.target.value)}
+                    placeholder="e.g. 03901/12345/6"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Project Category *</label>
+                  <select
+                    value={newCustCategory}
+                    onChange={(e) => setNewCustCategory(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="residential">Residential Rooftop</option>
+                    <option value="commercial">Commercial & Industrial (C&I)</option>
+                    <option value="common_meter">Housing Society / Common Meter</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Proposed Solar (kW) *</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.5"
+                    value={newCustSolarKw}
+                    onChange={(e) => setNewCustSolarKw(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Customer Email & Payment / Case Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Customer Email ID (Optional)</label>
+                  <input
+                    type="email"
+                    value={newCustEmail}
+                    onChange={(e) => setNewCustEmail(e.target.value)}
+                    placeholder="customer@example.com"
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Payment / Case Type</label>
+                  <select
+                    value={newCustFinanceType}
+                    onChange={(e) => setNewCustFinanceType(e.target.value)}
+                    className="w-full bg-surface-container-lowest border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary font-medium cursor-pointer"
+                  >
+                    <option value="CASH">100% Cash / Self Paid</option>
+                    <option value="BANK_LOAN">Bank Loan (Nationalized / Commercial Bank)</option>
+                    <option value="FINANCE_LOAN">Finance Loan (NBFC / FinTech Partner)</option>
+                  </select>
+                </div>
+              </div>
+
+              {(newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN') && (
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-amber-700">account_balance</span>
+                      <span>{newCustFinanceType === 'FINANCE_LOAN' ? 'NBFC Loan Details' : 'Bank Loan Details'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBankModal(true)}
+                      className="text-[11px] text-primary font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">manage_search</span>
+                      <span>Browse 40+ Official Banks</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Financing Bank / NBFC</label>
+                      <div className="flex gap-1.5">
+                        <select
+                          value={newCustLoanBank}
+                          onChange={(e) => setNewCustLoanBank(e.target.value)}
+                          className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          {GROUPED_SOLAR_BANKS.map((group) => (
+                            <optgroup key={group.category} label={group.label}>
+                              {group.banks.map((b) => (
+                                <option key={b.id} value={b.name}>
+                                  {b.name} ({b.interestRate.split(' ')[0]})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setShowBankModal(true)}
+                          className="px-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold flex items-center justify-center shrink-0 cursor-pointer"
+                          title="Browse All 40+ Banks"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">search</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Loan Ref / App # (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustLoanRef}
+                        onChange={(e) => setNewCustLoanRef(e.target.value)}
+                        placeholder="e.g. SBI-2026-9812"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Co-Applicant Fields */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-amber-200/60">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Name (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCustCoApplicantName}
+                        onChange={(e) => setNewCustCoApplicantName(e.target.value)}
+                        placeholder="e.g. Sunitaben B. Patel"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-amber-900 mb-1">Co-Applicant Mobile (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newCustCoApplicantPhone}
+                        onChange={(e) => setNewCustCoApplicantPhone(e.target.value)}
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-surface-container-high">
+                <button
+                  type="button"
+                  onClick={() => setShowAddFileModal(false)}
+                  className="px-4 py-2 bg-surface-container-low text-secondary hover:text-on-surface text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-primary hover:bg-primary-container text-on-primary text-xs font-bold rounded-lg shadow-sm cursor-pointer"
+                >
+                  Create Customer File
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 10. MODAL: BROWSE ALL 40+ OFFICIAL SOLAR LOAN BANKS & FINTECHS */}
+      <SolarBankSelectorModal
+        isOpen={showBankModal}
+        onClose={() => setShowBankModal(false)}
+        selectedBankName={newCustLoanBank}
+        onSelectBank={(selectedName) => setNewCustLoanBank(selectedName)}
+      />
     </div>
   );
 }

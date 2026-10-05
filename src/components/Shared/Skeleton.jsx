@@ -136,3 +136,117 @@ export function LeaderboardSkeleton() {
     </div>
   );
 }
+
+// Top Glowing Energy Progress Bar (Micro-loader for tab changes and background sync)
+export function TopProgressBar({ active = true }) {
+  if (!active) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 z-50 h-[2.5px] bg-surface-container overflow-hidden pointer-events-none">
+      <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 w-full animate-[shimmer_1.4s_infinite_linear] shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
+    </div>
+  );
+}
+
+// Customer File Card Grid Skeleton (Pixel-Perfect 1:1 match with live Customer File Card)
+export function CustomerCardSkeleton({ count = 3 }) {
+  // Mirrors the real customer file card in StaffManagement (same paddings, rows, 13-chip / 8-col doc grid, footer)
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full" aria-busy="true" aria-label="Loading customer files">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={`cust-skel-${i}`}
+          className="bg-white border border-[#E4E7EB] rounded-xl p-5 flex flex-col justify-between shadow-xs animate-pulse"
+        >
+          <div>
+            {/* Header: ID + Source pill + Finance pill + Status badge */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                  <div className="h-4 w-24 bg-slate-200 rounded" />
+                  <div className="h-5 w-40 bg-purple-50 border border-purple-200/70 rounded" />
+                  <div className="h-5 w-20 bg-emerald-50 border border-emerald-200/70 rounded" />
+                </div>
+                <div className="h-6 w-36 bg-slate-300/80 rounded mt-1.5" />
+              </div>
+              <div className="h-6 w-16 bg-amber-50 border border-amber-200 rounded-full shrink-0" />
+            </div>
+
+            {/* Info pills: DISCOM / System & Load */}
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1.5">
+                <div className="h-2.5 w-24 bg-slate-200 rounded" />
+                <div className="h-4 w-14 bg-slate-300 rounded" />
+                <div className="h-3 w-20 bg-slate-200 rounded" />
+              </div>
+              <div className="bg-slate-50 p-2 rounded-lg border border-slate-200/80 space-y-1.5">
+                <div className="h-2.5 w-20 bg-slate-200 rounded" />
+                <div className="h-4 w-24 bg-emerald-200/80 rounded" />
+                <div className="h-3 w-14 bg-slate-200 rounded" />
+              </div>
+            </div>
+
+            {/* Contact / Assigned / Address */}
+            <div className="mt-3 space-y-1.5 text-xs">
+              {[['call', 'w-28'], ['person', 'w-52'], ['location_on', 'w-40']].map(([icon, w]) => (
+                <div key={icon} className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[15px] text-slate-300">{icon}</span>
+                  <div className={`h-3.5 ${w} max-w-full bg-slate-200 rounded`} />
+                </div>
+              ))}
+            </div>
+
+            {/* Documents: label row + 13 chips on an 8-col grid */}
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px] text-emerald-200">folder_open</span>
+                  <div className="h-3 w-28 bg-slate-200 rounded" />
+                </span>
+                <div className="h-3 w-20 bg-emerald-100 rounded" />
+              </div>
+              <div className="grid grid-cols-4 sm:grid-cols-8 gap-1">
+                {Array.from({ length: 13 }).map((_, idx) => (
+                  <div key={idx} className="h-6 rounded border border-slate-200 bg-slate-50" />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Action footer: Timeline / Docs / Status select */}
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+            <div className="h-8 w-24 bg-emerald-50 border border-emerald-200 rounded-lg" />
+            <div className="h-8 flex-1 min-w-[96px] bg-white border border-[#E4E7EB] rounded-lg" />
+            <div className="h-8 w-24 bg-white border border-[#E4E7EB] rounded-lg" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Document Vault Modal Grid Skeleton (Matches 7-tile Document Vault modal)
+export function DocumentVaultSkeleton() {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={`vault-doc-skel-${i}`}
+          className="p-4 rounded-xl border border-white/10 bg-surface-container-low/50 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Shimmer className="w-8 h-8 rounded-lg" />
+              <div className="space-y-1">
+                <Shimmer className="h-4 w-28 rounded" />
+                <Shimmer className="h-3 w-36 rounded" />
+              </div>
+            </div>
+            <Shimmer className="h-5 w-16 rounded-full" />
+          </div>
+          <Shimmer className="h-9 w-full rounded-lg" />
+        </div>
+      ))}
+    </div>
+  );
+}
+

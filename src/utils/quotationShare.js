@@ -129,9 +129,12 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
       filename: `Sunvine_Proposal_${quoteId}.pdf`,
       image: { type: 'jpeg', quality: 0.95 },
       html2canvas: {
-        scale: 1.5,
+        scale: 2,
         useCORS: true,
-        logging: false
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: 794
       },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       pagebreak: { mode: ['css', 'legacy'] }
