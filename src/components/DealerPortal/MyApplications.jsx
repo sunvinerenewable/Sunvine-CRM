@@ -48,6 +48,8 @@ export default function MyApplications() {
   const [activeFileDetail, setActiveFileDetail] = useState(null);
   const [uploadTargetFile, setUploadTargetFile] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
+  const [cameraIsUploading, setCameraIsUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [quickStageFile, setQuickStageFile] = useState(null);
   const [quickStageVal, setQuickStageVal] = useState('');
@@ -325,60 +327,78 @@ export default function MyApplications() {
     }
   };
 
-  // Camera capture handler (Appends multiple photo captures)
-  const handleCameraCapture = async (stats) => {
-    if (!uploadTargetFile || !cameraTargetDoc || !stats) return;
+  // Media/Document upload handler (Supports batch arrays of files)
+  const handleCameraCapture = async (statsOrList) => {
+    if (!uploadTargetFile || !cameraTargetDoc || !statsOrList) return;
     const docKey = cameraTargetDoc.key;
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
 
-    showLoader('Securing camera photo in Cloudflare R2 Vault...');
+    setCameraIsUploading(true);
+    setCameraUploadProgress(10);
+    const prog = setInterval(() => setCameraUploadProgress(p => Math.min(p + 8, 75)), 250);
+
     try {
-      let fileUrl = null;
-      let filename = stats.file?.name || `${docKey}_photo_${Date.now().toString(36)}.jpg`;
-      let fileSize = stats.file?.size || 0;
+      const uploadedDocsList = [];
 
-      if (stats.file) {
-        try {
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
-          if (uploadRes?.success) {
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            filename = uploadRes.filename || stats.file.name;
-            fileSize = uploadRes.fileSize || stats.file.size;
+      for (let i = 0; i < items.length; i++) {
+        const stats = items[i];
+        let fileUrl = null;
+        let filename = stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`;
+        let fileSize = stats.compressedSize || stats.file?.size || 0;
+
+        if (stats.file) {
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
+            if (uploadRes?.success) {
+              fileUrl = uploadRes.publicUrl || uploadRes.url;
+              filename = uploadRes.filename || stats.file.name;
+              fileSize = uploadRes.fileSize || stats.file.size;
+            }
+          } catch (err) {
+            console.warn('[MyApplications] Media upload warning for', filename, err);
           }
-        } catch (err) {
-          console.warn('[MyApplications] Camera upload warning:', err);
         }
+
+        uploadedDocsList.push({
+          filename,
+          url: fileUrl,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        });
       }
 
-      const newDocRecord = {
-        filename,
-        url: fileUrl,
-        size: stats.compressedFormatted || formatFileSize(fileSize),
-        originalSize: stats.originalFormatted,
-        reduction: stats.reduction,
-        dataUrl: fileUrl ? undefined : stats.dataUrl,
-        uploaded: true,
-        date: new Date().toISOString().split('T')[0]
-      };
+      clearInterval(prog);
+      setCameraUploadProgress(100);
+      await new Promise(r => setTimeout(r, 400));
 
-      const existingSlot = uploadTargetFile.documents?.[docKey];
-      const updatedSlot = appendDocsToFileList(existingSlot, newDocRecord);
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = uploadTargetFile.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+        const updatedDocs = { ...(uploadTargetFile.documents || {}), [docKey]: updatedSlot };
 
-      const updatedDocs = {
-        ...(uploadTargetFile.documents || {}),
-        [docKey]: updatedSlot
-      };
-
-      if (updateCustomerFile) {
-        await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        if (updateCustomerFile) {
+          await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
+        }
+        setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
+        setCameraTargetDoc(null);
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} files attached to vault`
+            : `File attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-      setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      setCameraTargetDoc(null);
-      addToast(`Photo secured in Cloudflare R2: ${filename}`, 'success');
     } catch (e) {
-      console.error('[MyApplications] Camera upload error:', e);
-      addToast(e.message || 'Camera upload failed', 'error');
+      clearInterval(prog);
+      console.error('[MyApplications] Media upload error:', e);
+      addToast(e.message || 'Media upload failed', 'error');
     } finally {
-      hideLoader();
+      setCameraIsUploading(false);
+      setCameraUploadProgress(0);
     }
   };
 
@@ -1197,55 +1217,26 @@ export default function MyApplications() {
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-container text-[11px]">
                         {isUploaded ? (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
-                              <span className="material-symbols-outlined text-[15px] text-primary">add_circle</span>
-                              <span>Add Another Photo / File</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={(e) => {
-                                  handleUploadDocument(doc.key, e.target.files);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 border border-surface-container-highest"
-                              title="Capture another photo with camera"
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-500/30 shadow-2xs"
+                              title="Upload another photo or PDF"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
-                              <span className="hidden sm:inline text-[11px]">Camera</span>
+                              <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                              <span>Add More Media / PDF</span>
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1">
-                              <span className="material-symbols-outlined text-[15px]">upload_file</span>
-                              <span>Upload {doc.mandatory ? 'Document' : '(Optional)'}</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={(e) => {
-                                  handleUploadDocument(doc.key, e.target.files);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
-                              title="Capture with Camera"
+                              className="flex-1 py-2 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-2 text-xs border border-surface-container-highest shadow-2xs hover:border-primary/40"
+                              title="Upload photos or PDF document"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                              <span>Upload Document / Media {doc.mandatory ? '' : '(Optional)'}</span>
                             </button>
                           </div>
                         )}
@@ -1284,8 +1275,12 @@ export default function MyApplications() {
           isOpen={Boolean(cameraTargetDoc)}
           docKey={cameraTargetDoc.key}
           docLabel={cameraTargetDoc.label}
+          documentLabel={cameraTargetDoc.label}
           onCapture={handleCameraCapture}
           onClose={() => setCameraTargetDoc(null)}
+          isUploading={cameraIsUploading}
+          uploadProgress={cameraUploadProgress}
+          maxPhotos={5}
         />
       )}
 

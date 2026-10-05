@@ -51,6 +51,9 @@ function mapDbToFrontend(f) {
     status: f.status || 'Sourced',
     documents: f.documents || {},
     timeline: Array.isArray(f.timeline) ? f.timeline : [],
+    cancellationReason: f.cancellation_reason || null,
+    cancelledAt: f.cancelled_at || null,
+    cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : null,
     createdAt: f.created_at,
     updatedAt: f.updated_at
   };
@@ -229,7 +232,114 @@ export default async function handler(req, res) {
       }
     }
 
+    const user = jwt.payload || jwt.user || {};
+
+    if (action === 'cancel' && fileId) {
+      const { reason, remarks, customRemarks, cancelledBy } = req.body || {};
+      const noteText = (remarks || customRemarks || '').trim();
+      let finalReason = reason || '';
+      if (!finalReason && noteText) {
+        finalReason = noteText;
+      } else if (noteText && !finalReason.includes(noteText)) {
+        finalReason = `${finalReason} — Remarks: ${noteText}`;
+      }
+      finalReason = finalReason || 'Cancelled by user';
+
+      const actor = cancelledBy || user.name || user.id || 'Admin Desk';
+      const cancelNote = {
+        title: 'Customer File Cancelled',
+        description: `File cancelled: ${finalReason}`,
+        timestamp: new Date().toISOString(),
+        stage: 'CANCELLED',
+        author: actor,
+        notes: finalReason
+      };
+
+      try {
+        // Fetch current timeline first
+        const { data: existing } = await db.from('customer_files').select('timeline').eq('id', fileId).single();
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, cancelNote] : [cancelNote];
+
+        const payload = {
+          status: 'Cancelled',
+          stage: 'CANCELLED',
+          cancellation_reason: finalReason,
+          cancelled_at: new Date().toISOString(),
+          cancelled_by: actor,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await db
+          .from('customer_files')
+          .update(payload)
+          .eq('id', fileId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[api/customer-files] Cancel DB error:', error);
+          return res.status(400).json({ error: error.message });
+        }
+
+        await redisDel('customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Cancel exception:', err);
+        return res.status(500).json({ error: 'Failed to cancel customer file.' });
+      }
+    }
+
+    if (action === 'restore' && fileId) {
+      const restoreNote = {
+        title: 'Customer File Restored',
+        description: `File restored to active Sourced pipeline by ${user.name || user.id || 'User'}`,
+        timestamp: new Date().toISOString(),
+        stage: 'LEAD_SOURCED',
+        author: user.name || user.id || 'User'
+      };
+
+      try {
+        const { data: existing } = await db.from('customer_files').select('timeline').eq('id', fileId).single();
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, restoreNote] : [restoreNote];
+
+        const payload = {
+          status: 'Sourced',
+          stage: 'LEAD_SOURCED',
+          cancellation_reason: null,
+          cancelled_at: null,
+          cancelled_by: null,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await db
+          .from('customer_files')
+          .update(payload)
+          .eq('id', fileId)
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[api/customer-files] Restore DB error:', error);
+          return res.status(400).json({ error: error.message });
+        }
+
+        await redisDel('customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Restore exception:', err);
+        return res.status(500).json({ error: 'Failed to restore customer file.' });
+      }
+    }
+
     if (action === 'delete' && fileId) {
+      const userRole = (user.role || '').toLowerCase();
+      // Super Admin check for hard permanent purge
+      if (userRole && userRole !== 'admin' && userRole !== 'super_admin') {
+        return res.status(403).json({ error: 'Permission denied. Only Super Admin can permanently delete files.' });
+      }
+
       try {
         const { error } = await db
           .from('customer_files')

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, startTransition } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, startTransition } from 'react';
 import {
   DEFAULT_PRICING_MASTER,
   DEFAULT_MODULES,
@@ -516,6 +516,117 @@ const safeSetItem = (key, value) => {
   const [customerFilesError, setCustomerFilesError] = useState(null);
   const [isHardwareDbConnected, setIsHardwareDbConnected] = useState(true);
 
+  // Dynamic Master Document Registry (Supabase Live DB Authority - No localStorage)
+  const [masterDocRegistry, setMasterDocRegistry] = useState(DEFAULT_MASTER_DOCUMENT_REGISTRY);
+
+  // Dynamic Category Document Rules Matrix (Supabase Live DB Authority - No localStorage)
+  const [categoryDocRules, setCategoryDocRules] = useState(DEFAULT_CATEGORY_DOC_RULES);
+
+  // Solar Loan Partner Banks (Database Connected + SWR Cache)
+  const [solarBanks, setSolarBanks] = useState(() => cacheManager.get('solar_banks', []));
+
+  // Dedicated Inverter Sizing & Benchmark Pricing Matrix
+  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => cacheManager.get('inverter_benchmarks', [
+    { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
+    { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
+    { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
+    { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
+    { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
+    { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
+    { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
+    { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
+  ]));
+
+  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync + SWR Cache)
+  const [bomCatalog, setBomCatalog] = useState(() => cacheManager.get('bom_catalog', STANDARD_BOM_CATALOG));
+
+  // Standard BOM Item Rates (Admin Configurable)
+  const defaultBomRates = useMemo(() => {
+    return (bomCatalog || STANDARD_BOM_CATALOG).reduce((acc, item) => {
+      acc[item.id] = item.defaultRate || item.rate || 100;
+      return acc;
+    }, {});
+  }, [bomCatalog]);
+
+  const [bomRates, setBomRates] = useState(defaultBomRates);
+
+  // Standard Capacity-Wise BOM Quantities (Admin Configurable)
+  const [capacityBomMatrix, setCapacityBomMatrix] = useState(DEFAULT_CAPACITY_BOM);
+
+  // Reusable Solar BOM Kits & Presets (Field-Grade)
+  const [kitsPresets, setKitsPresets] = useState([
+    {
+      id: 'kit-standard-3_3kw',
+      name: '3.3 kW Standard 6-Panel HDGI Kit (Field Sheet)',
+      capacityKw: 3.3,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 3.3, panelWatt: 540, panelQuantity: 6, ratePerWp: 18.00 })
+    },
+    {
+      id: 'kit-standard-4_4kw',
+      name: '4.4 kW Standard 8-Panel HDGI Kit',
+      capacityKw: 4.4,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 4.4, panelWatt: 550, panelQuantity: 8, ratePerWp: 18.00 })
+    },
+    {
+      id: 'kit-standard-5_5kw',
+      name: '5.5 kW 10-Panel High-Rise HDGI Kit',
+      capacityKw: 5.5,
+      createdBy: 'Sunvine HO',
+      creatorRole: 'admin',
+      items: generateFieldBOM({ kw: 5.5, panelWatt: 550, panelQuantity: 10, ratePerWp: 18.00 })
+    }
+  ]);
+
+  // Catalog items viewed by dealer (for "NEW" badge management)
+  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
+    return safeJsonParse('sunvine_seen_catalog_items', []);
+  });
+
+  // Quotations List (Live Supabase Database + SWR Cache)
+  const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
+
+  // Active quotation loaded in 4-Page Preview
+  const [previewQuotation, setPreviewQuotation] = useState(null);
+
+  // Active quotation loaded for Editing in CreateQuotation
+  const [editingQuotation, setEditingQuotation] = useState(null);
+
+  // Active in-progress draft quotation for multi-step navigation persistence (SR-36)
+  const [activeDraftQuote, setActiveDraftQuote] = useState(null);
+  const clearActiveDraftQuote = () => {
+    setActiveDraftQuote(null);
+  };
+
+  // Current Logged-in Staff Member
+  const [currentStaff, setCurrentStaff] = useState(() => {
+    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
+  });
+
+  // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
+  const [staffList, setStaffList] = useState([]);
+
+  // Master Dynamic System Settings
+  const [systemSettings, setSystemSettings] = useState(DEFAULT_SYSTEM_SETTINGS);
+
+  // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
+  const [requiredDocuments, setRequiredDocuments] = useState(DEFAULT_REQUIRED_DOCUMENTS);
+
+  // Master Dynamic Application / Pipeline Stages State
+  const [applicationStages, setApplicationStages] = useState(DEFAULT_PIPELINE_STAGES);
+
+  // Immutable Audit Activity Ledger
+  const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
+
+  // 2D and 3D Solar CAD Design Records
+  const [designRecords, setDesignRecords] = useState([]);
+
+  // System & Compliance Notifications
+  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS);
+
   // Determine if running in public proposal viewer mode
   const isPublicProposal = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'quote';
 
@@ -596,6 +707,9 @@ const safeSetItem = (key, value) => {
       status: f.status || 'Sourced',
       documents: (f.documents && typeof f.documents === 'object' && !Array.isArray(f.documents)) ? f.documents : {},
       timeline: Array.isArray(f.timeline) ? f.timeline : [],
+      cancellationReason: f.cancellation_reason || f.cancellationReason || (f.timeline?.find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || null,
+      cancelledAt: f.cancelled_at || f.cancelledAt || (f.timeline?.find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.timestamp) || null,
+      cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : (f.cancelledBy || (f.timeline?.find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.actor) || null),
       createdAt: f.created_at || f.createdAt || new Date().toISOString(),
       updatedAt: f.updated_at || f.updatedAt || new Date().toISOString()
     };
@@ -605,150 +719,160 @@ const safeSetItem = (key, value) => {
     return (files || []).map((f, idx) => normalizeCustomerFileRow(f, idx)).filter(Boolean);
   };
 
+  // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority + SWR Cache)
+  const [dealers, setDealers] = useState(() => {
+    const cached = cacheManager.get('dealers_list', null);
+    return Array.isArray(cached) && cached.length > 0 ? ensureDealerAttribution(cached) : ensureDealerAttribution(INITIAL_DEALERS);
+  });
+
+  // Real PDF BOS Reference Data
+  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => cacheManager.get('bos_matrix', PDF_BOS_PRICE_MATRIX));
+
+  // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority + SWR Cache)
+  const [customerFiles, setCustomerFiles] = useState(() => {
+    const cached = cacheManager.get('customer_files', []);
+    return Array.isArray(cached) && cached.length > 0 ? ensureCustomerFileAttribution(cached) : [];
+  });
+
   // Live Universal Database Hydration (Async startup from Supabase PostgreSQL with SWR Cache)
-  useEffect(() => {
-    let isMounted = true;
-    const hydrateAllFromSupabase = async () => {
-      try {
-        setIsHardwareDbSyncing(true);
-        const [
-          dbModules,
-          dbInverters,
-          dbPresets,
-          dbBos,
-          dbBenchmarks,
-          dbTiers,
-          dbDealers,
-          dbQuotations,
-          dbFiles,
-          dbStaff,
-          dbSettings,
-          dbDocMaster,
-          dbLogs,
-          dbNotifs,
-          dbBanks,
-          dbBomItems
-        ] = await Promise.allSettled([
-          hardwareService.getAllModules(),
-          hardwareService.getAllInverters(),
-          pricingService.getPricingPresets(),
-          pricingService.getBosMatrix(),
-          pricingService.getInverterBenchmarks(),
-          pricingService.getTierMargins(),
-          dealerService.getAllDealers(),
-          quotationService.getAllQuotations(100),
-          customerFileService.getAllCustomerFiles({ throwOnError: true }),
-          staffService.getAllStaff(),
-          systemSettingsService.getSystemSettings(),
-          documentMasterService.fetchDocumentMaster(),
-          auditLogService.getAuditLogs(100),
-          auditLogService.getNotifications(),
-          bankService.getAllSolarBanks(),
-          hardwareService.getAllBomItems()
-        ]);
+  const hydrateAllFromSupabase = useCallback(async () => {
+    try {
+      setIsHardwareDbSyncing(true);
+      const [
+        dbModules,
+        dbInverters,
+        dbPresets,
+        dbBos,
+        dbBenchmarks,
+        dbTiers,
+        dbDealers,
+        dbQuotations,
+        dbFiles,
+        dbStaff,
+        dbSettings,
+        dbDocMaster,
+        dbLogs,
+        dbNotifs,
+        dbBanks,
+        dbBomItems
+      ] = await Promise.allSettled([
+        hardwareService.getAllModules(),
+        hardwareService.getAllInverters(),
+        pricingService.getPricingPresets(),
+        pricingService.getBosMatrix(),
+        pricingService.getInverterBenchmarks(),
+        pricingService.getTierMargins(),
+        dealerService.getAllDealers(),
+        quotationService.getAllQuotations(100),
+        customerFileService.getAllCustomerFiles({ throwOnError: false }),
+        staffService.getAllStaff(),
+        systemSettingsService.getSystemSettings(),
+        documentMasterService.fetchDocumentMaster(),
+        auditLogService.getAuditLogs(100),
+        auditLogService.getNotifications(),
+        bankService.getAllSolarBanks(),
+        hardwareService.getAllBomItems()
+      ]);
 
-        if (!isMounted) return;
-
-        if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
-          setModulesList(dbModules.value);
-          cacheManager.set('modules_list', dbModules.value);
-          setIsHardwareDbConnected(true);
-        }
-        if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
-          setInvertersList(dbInverters.value);
-          cacheManager.set('inverters_list', dbInverters.value);
-          setIsHardwareDbConnected(true);
-        }
-        if (dbPresets.status === 'fulfilled' && dbPresets.value) {
-          setPricingPresets(dbPresets.value);
-          cacheManager.set('pricing_presets', dbPresets.value);
-        }
-        if (dbBos.status === 'fulfilled' && Array.isArray(dbBos.value) && dbBos.value.length > 0) {
-          setPdfBosMatrix(dbBos.value);
-          cacheManager.set('bos_matrix', dbBos.value);
-        }
-        if (dbBenchmarks.status === 'fulfilled' && Array.isArray(dbBenchmarks.value) && dbBenchmarks.value.length > 0) {
-          setInverterBenchmarkMatrix(dbBenchmarks.value);
-          cacheManager.set('inverter_benchmarks', dbBenchmarks.value);
-        }
-        if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
-          setTierMargins(dbTiers.value);
-          cacheManager.set('tier_margins', dbTiers.value);
-        }
-        if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value)) {
-          const attributed = ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS);
-          setDealers(attributed);
-          cacheManager.set('dealers_list', attributed);
-        }
-        if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
-          setQuotations(dbQuotations.value);
-          cacheManager.set('quotations_feed', dbQuotations.value);
-        }
-        if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value)) {
-          const attributedFiles = ensureCustomerFileAttribution(dbFiles.value);
-          setCustomerFiles(attributedFiles);
-          cacheManager.set('customer_files', attributedFiles);
-          setCustomerFilesError(null);
-        } else if (dbFiles.status === 'rejected') {
-          if (dbFiles.reason?.message === 'SESSION_EXPIRED') logout();
-          else setCustomerFilesError(dbFiles.reason?.message || 'Failed to load customer files');
-        }
-        if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
-          setStaffList(dbStaff.value);
-        }
-        if (dbSettings.status === 'fulfilled' && dbSettings.value) {
-          setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
-          if (dbSettings.value.governanceSettings) {
-            setGovernanceSettings(dbSettings.value.governanceSettings);
-          }
-        }
-        if (dbDocMaster.status === 'fulfilled' && dbDocMaster.value) {
-          if (Array.isArray(dbDocMaster.value.registry) && dbDocMaster.value.registry.length > 0) {
-            setMasterDocRegistry(dbDocMaster.value.registry);
-          }
-          if (dbDocMaster.value.rules && typeof dbDocMaster.value.rules === 'object') {
-            setCategoryDocRules(dbDocMaster.value.rules);
-          }
-        }
-        if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value)) {
-          setAuditLogs(dbLogs.value.length > 0 ? dbLogs.value : INITIAL_AUDIT_LOGS);
-        }
-        if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value)) {
-          setNotifications(dbNotifs.value.length > 0 ? dbNotifs.value : DEFAULT_NOTIFICATIONS);
-        }
-        if (dbBanks.status === 'fulfilled' && Array.isArray(dbBanks.value) && dbBanks.value.length > 0) {
-          setSolarBanks(dbBanks.value);
-          cacheManager.set('solar_banks', dbBanks.value);
-        }
-        if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value) && dbBomItems.value.length > 0) {
-          setBomCatalog(prev => {
-            const mergedMap = new Map();
-            STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
-            dbBomItems.value.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
-            const list = Array.from(mergedMap.values());
-            cacheManager.set('bom_catalog', list);
-            return list;
-          });
-          setBomRates(prev => {
-            const next = { ...prev };
-            dbBomItems.value.forEach(it => {
-              if (it.defaultRate && !next[it.id]) {
-                next[it.id] = it.defaultRate;
-              }
-            });
-            return next;
-          });
-        }
-      } catch (err) {
-        console.warn('[AppContext] Supabase live hydration notice:', err);
-      } finally {
-        if (isMounted) setIsHardwareDbSyncing(false);
+      if (dbModules.status === 'fulfilled' && Array.isArray(dbModules.value) && dbModules.value.length > 0) {
+        setModulesList(dbModules.value);
+        cacheManager.set('modules_list', dbModules.value);
+        setIsHardwareDbConnected(true);
       }
-    };
+      if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value) && dbInverters.value.length > 0) {
+        setInvertersList(dbInverters.value);
+        cacheManager.set('inverters_list', dbInverters.value);
+        setIsHardwareDbConnected(true);
+      }
+      if (dbPresets.status === 'fulfilled' && dbPresets.value) {
+        setPricingPresets(dbPresets.value);
+        cacheManager.set('pricing_presets', dbPresets.value);
+      }
+      if (dbBos.status === 'fulfilled' && Array.isArray(dbBos.value) && dbBos.value.length > 0) {
+        setPdfBosMatrix(dbBos.value);
+        cacheManager.set('bos_matrix', dbBos.value);
+      }
+      if (dbBenchmarks.status === 'fulfilled' && Array.isArray(dbBenchmarks.value) && dbBenchmarks.value.length > 0) {
+        setInverterBenchmarkMatrix(dbBenchmarks.value);
+        cacheManager.set('inverter_benchmarks', dbBenchmarks.value);
+      }
+      if (dbTiers.status === 'fulfilled' && dbTiers.value && Object.keys(dbTiers.value).length > 0) {
+        setTierMargins(dbTiers.value);
+        cacheManager.set('tier_margins', dbTiers.value);
+      }
+      if (dbDealers.status === 'fulfilled' && Array.isArray(dbDealers.value)) {
+        const attributed = ensureDealerAttribution(dbDealers.value.length > 0 ? dbDealers.value : INITIAL_DEALERS);
+        setDealers(attributed);
+        cacheManager.set('dealers_list', attributed);
+      }
+      if (dbQuotations.status === 'fulfilled' && Array.isArray(dbQuotations.value)) {
+        setQuotations(dbQuotations.value);
+        cacheManager.set('quotations_feed', dbQuotations.value);
+      }
+      if (dbFiles.status === 'fulfilled' && Array.isArray(dbFiles.value)) {
+        const attributedFiles = ensureCustomerFileAttribution(dbFiles.value);
+        setCustomerFiles(attributedFiles);
+        cacheManager.set('customer_files', attributedFiles);
+        setCustomerFilesError(null);
+      } else if (dbFiles.status === 'rejected') {
+        setCustomerFilesError(dbFiles.reason?.message || 'Failed to load customer files');
+      }
+      if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
+        setStaffList(dbStaff.value);
+      }
+      if (dbSettings.status === 'fulfilled' && dbSettings.value) {
+        setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
+        if (dbSettings.value.governanceSettings) {
+          setGovernanceSettings(dbSettings.value.governanceSettings);
+        }
+      }
+      if (dbDocMaster.status === 'fulfilled' && dbDocMaster.value) {
+        if (Array.isArray(dbDocMaster.value.registry) && dbDocMaster.value.registry.length > 0) {
+          setMasterDocRegistry(dbDocMaster.value.registry);
+        }
+        if (dbDocMaster.value.rules && typeof dbDocMaster.value.rules === 'object') {
+          setCategoryDocRules(dbDocMaster.value.rules);
+        }
+      }
+      if (dbLogs.status === 'fulfilled' && Array.isArray(dbLogs.value)) {
+        setAuditLogs(dbLogs.value.length > 0 ? dbLogs.value : INITIAL_AUDIT_LOGS);
+      }
+      if (dbNotifs.status === 'fulfilled' && Array.isArray(dbNotifs.value)) {
+        setNotifications(dbNotifs.value.length > 0 ? dbNotifs.value : DEFAULT_NOTIFICATIONS);
+      }
+      if (dbBanks.status === 'fulfilled' && Array.isArray(dbBanks.value) && dbBanks.value.length > 0) {
+        setSolarBanks(dbBanks.value);
+        cacheManager.set('solar_banks', dbBanks.value);
+      }
+      if (dbBomItems.status === 'fulfilled' && Array.isArray(dbBomItems.value) && dbBomItems.value.length > 0) {
+        setBomCatalog(prev => {
+          const mergedMap = new Map();
+          STANDARD_BOM_CATALOG.forEach(it => mergedMap.set(it.id, it));
+          dbBomItems.value.forEach(it => mergedMap.set(it.id, { ...(mergedMap.get(it.id) || {}), ...it }));
+          const list = Array.from(mergedMap.values());
+          cacheManager.set('bom_catalog', list);
+          return list;
+        });
+        setBomRates(prev => {
+          const next = { ...prev };
+          dbBomItems.value.forEach(it => {
+            if (it.defaultRate && !next[it.id]) {
+              next[it.id] = it.defaultRate;
+            }
+          });
+          return next;
+        });
+      }
+    } catch (err) {
+      console.warn('[AppContext] Supabase live hydration notice:', err);
+    } finally {
+      setIsHardwareDbSyncing(false);
+    }
+  }, [isAuthenticated]);
 
+  useEffect(() => {
     hydrateAllFromSupabase();
-    return () => { isMounted = false; };
-  }, []);
+  }, [hydrateAllFromSupabase]);
 
   // Real-time Supabase Database Subscriptions across all major tables
   useEffect(() => {
@@ -954,9 +1078,25 @@ const safeSetItem = (key, value) => {
     };
   }, []);
 
-  const refreshCustomerFiles = async () => {
+  // Concurrency guard and throttling to prevent overlapping in-flight network requests or loop triggers
+  const isFetchingCustomerFilesRef = useRef(false);
+  const lastCustomerFilesFetchTimeRef = useRef(0);
+
+  const refreshCustomerFiles = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now - lastCustomerFilesFetchTimeRef.current < 2000) {
+      return;
+    }
+    // If a database fetch is already actively in-flight, return to avoid race conditions
+    if (isFetchingCustomerFilesRef.current) {
+      return;
+    }
+
+    lastCustomerFilesFetchTimeRef.current = now;
+    isFetchingCustomerFilesRef.current = true;
+
     try {
-      const freshFiles = await customerFileService.getAllCustomerFiles({ throwOnError: true });
+      const freshFiles = await customerFileService.getAllCustomerFiles({ throwOnError: false });
       if (freshFiles && Array.isArray(freshFiles)) {
         const attributed = ensureCustomerFileAttribution(freshFiles);
         setCustomerFiles(attributed);
@@ -966,137 +1106,40 @@ const safeSetItem = (key, value) => {
       }
     } catch (err) {
       console.warn('[AppContext] refreshCustomerFiles error:', err);
-      if (err?.message === 'SESSION_EXPIRED') { logout(); return customerFiles; }
       setCustomerFilesError(err?.message || 'Failed to load customer files');
+    } finally {
+      isFetchingCustomerFilesRef.current = false;
     }
-    return customerFiles;
-  };
+  }, []);
 
-  // Dynamic Master Document Registry (Supabase Live DB Authority - No localStorage)
-  const [masterDocRegistry, setMasterDocRegistry] = useState(DEFAULT_MASTER_DOCUMENT_REGISTRY);
+  // Live refresh staff directory directly from database with concurrency and throttle protection
+  const isFetchingStaffRef = useRef(false);
+  const lastStaffFetchTimeRef = useRef(0);
 
-  // Dynamic Category Document Rules Matrix (Supabase Live DB Authority - No localStorage)
-  const [categoryDocRules, setCategoryDocRules] = useState(DEFAULT_CATEGORY_DOC_RULES);
-
-  // Solar Loan Partner Banks (Database Connected + SWR Cache)
-  const [solarBanks, setSolarBanks] = useState(() => cacheManager.get('solar_banks', []));
-
-  // Dealers Directory (Gujarat Dealers Only - Supabase DB Authority + SWR Cache)
-  const [dealers, setDealers] = useState(() => {
-    const cached = cacheManager.get('dealers_list', null);
-    return Array.isArray(cached) && cached.length > 0 ? ensureDealerAttribution(cached) : ensureDealerAttribution(INITIAL_DEALERS);
-  });
-
-  // Real PDF BOS Reference Data
-  const [pdfBosMatrix, setPdfBosMatrix] = useState(() => cacheManager.get('bos_matrix', PDF_BOS_PRICE_MATRIX));
-
-  // Dedicated Inverter Sizing & Benchmark Pricing Matrix
-  const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => cacheManager.get('inverter_benchmarks', [
-    { id: 'inv-bm-1', capacityKW: 2.2, brand: 'Solis / Solaryaan', series: 'Single Phase Grid-Tied', phase: '1-Phase / Dual MPPT', benchmarkPrice: 24500 },
-    { id: 'inv-bm-2', capacityKW: 3.0, brand: 'Sunvine Smart Series', series: '1-Phase Smart MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 29800 },
-    { id: 'inv-bm-3', capacityKW: 3.6, brand: 'Solis / Vsole', series: 'Dual MPPT On-Grid', phase: '1-Phase / Dual MPPT', benchmarkPrice: 33500 },
-    { id: 'inv-bm-4', capacityKW: 5.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 42000 },
-    { id: 'inv-bm-5', capacityKW: 6.0, brand: 'Sunvine Smart Series', series: '3-Phase Smart MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 48500 },
-    { id: 'inv-bm-6', capacityKW: 10.0, brand: 'Growatt / Deye', series: '3-Phase Dual MPPT On-Grid', phase: '3-Phase / Multi MPPT', benchmarkPrice: 72000 },
-    { id: 'inv-bm-7', capacityKW: 50.0, brand: 'Solis Cloud Series', series: 'Commercial 3-Phase Grid-Tied', phase: '3-Phase / 4-MPPT', benchmarkPrice: 245000 },
-    { id: 'inv-bm-8', capacityKW: 125.0, brand: 'Solaryaan / Vsole', series: 'Industrial String Inverter', phase: '3-Phase / 6-MPPT', benchmarkPrice: 580000 },
-  ]));
-
-  // Bill of Materials (BOM) Master Catalog (Live Supabase & Reactive Sync + SWR Cache)
-  const [bomCatalog, setBomCatalog] = useState(() => cacheManager.get('bom_catalog', STANDARD_BOM_CATALOG));
-
-  // Standard BOM Item Rates (Admin Configurable)
-  const defaultBomRates = useMemo(() => {
-    return (bomCatalog || STANDARD_BOM_CATALOG).reduce((acc, item) => {
-      acc[item.id] = item.defaultRate || item.rate || 100;
-      return acc;
-    }, {});
-  }, [bomCatalog]);
-
-  const [bomRates, setBomRates] = useState(defaultBomRates);
-
-  // Standard Capacity-Wise BOM Quantities (Admin Configurable)
-  const [capacityBomMatrix, setCapacityBomMatrix] = useState(DEFAULT_CAPACITY_BOM);
-
-  // Reusable Solar BOM Kits & Presets (Field-Grade)
-  const [kitsPresets, setKitsPresets] = useState([
-    {
-      id: 'kit-standard-3_3kw',
-      name: '3.3 kW Standard 6-Panel HDGI Kit (Field Sheet)',
-      capacityKw: 3.3,
-      createdBy: 'Sunvine HO',
-      creatorRole: 'admin',
-      items: generateFieldBOM({ kw: 3.3, panelWatt: 540, panelQuantity: 6, ratePerWp: 18.00 })
-    },
-    {
-      id: 'kit-standard-4_4kw',
-      name: '4.4 kW Standard 8-Panel HDGI Kit',
-      capacityKw: 4.4,
-      createdBy: 'Sunvine HO',
-      creatorRole: 'admin',
-      items: generateFieldBOM({ kw: 4.4, panelWatt: 550, panelQuantity: 8, ratePerWp: 18.00 })
-    },
-    {
-      id: 'kit-standard-5_5kw',
-      name: '5.5 kW 10-Panel High-Rise HDGI Kit',
-      capacityKw: 5.5,
-      createdBy: 'Sunvine HO',
-      creatorRole: 'admin',
-      items: generateFieldBOM({ kw: 5.5, panelWatt: 550, panelQuantity: 10, ratePerWp: 18.00 })
+  const refreshStaffList = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now - lastStaffFetchTimeRef.current < 2000) {
+      return;
     }
-  ]);
+    if (isFetchingStaffRef.current) {
+      return;
+    }
 
-  // Catalog items viewed by dealer (for "NEW" badge management)
-  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
-    return safeJsonParse('sunvine_seen_catalog_items', []);
-  });
+    lastStaffFetchTimeRef.current = now;
+    isFetchingStaffRef.current = true;
 
-  // Quotations List (Live Supabase Database + SWR Cache)
-  const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
-
-  // Active quotation loaded in 4-Page Preview
-  const [previewQuotation, setPreviewQuotation] = useState(null);
-
-  // Active quotation loaded for Editing in CreateQuotation
-  const [editingQuotation, setEditingQuotation] = useState(null);
-
-  // Active in-progress draft quotation for multi-step navigation persistence (SR-36)
-  const [activeDraftQuote, setActiveDraftQuote] = useState(null);
-  const clearActiveDraftQuote = () => {
-    setActiveDraftQuote(null);
-  };
-
-  // Current Logged-in Staff Member
-  const [currentStaff, setCurrentStaff] = useState(() => {
-    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
-  });
-
-  // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
-  const [staffList, setStaffList] = useState([]);
-
-  // Customer Files Pipeline (Synchronized between Admin and Sales Staff - Live Supabase DB Authority + SWR Cache)
-  const [customerFiles, setCustomerFiles] = useState(() => {
-    const cached = cacheManager.get('customer_files', []);
-    return Array.isArray(cached) && cached.length > 0 ? ensureCustomerFileAttribution(cached) : [];
-  });
-
-  // Master Dynamic System Settings
-  const [systemSettings, setSystemSettings] = useState(DEFAULT_SYSTEM_SETTINGS);
-
-  // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
-  const [requiredDocuments, setRequiredDocuments] = useState(DEFAULT_REQUIRED_DOCUMENTS);
-
-  // Master Dynamic Application / Pipeline Stages State
-  const [applicationStages, setApplicationStages] = useState(DEFAULT_PIPELINE_STAGES);
-
-  // Immutable Audit Activity Ledger
-  const [auditLogs, setAuditLogs] = useState(INITIAL_AUDIT_LOGS);
-
-  // 2D and 3D Solar CAD Design Records
-  const [designRecords, setDesignRecords] = useState([]);
-
-  // System & Compliance Notifications
-  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS);
+    try {
+      const freshStaff = await staffService.getAllStaff();
+      if (freshStaff && Array.isArray(freshStaff)) {
+        setStaffList(freshStaff);
+        return freshStaff;
+      }
+    } catch (err) {
+      console.warn('[AppContext] refreshStaffList error:', err);
+    } finally {
+      isFetchingStaffRef.current = false;
+    }
+  }, []);
 
   // Synchronize client-only UI state with localStorage
   useEffect(() => {
@@ -1319,6 +1362,10 @@ const safeSetItem = (key, value) => {
         if (userProfile) setCurrentDealer(userProfile);
       }
     });
+    // Immediately re-hydrate full database data with authenticated credentials
+    setTimeout(() => {
+      hydrateAllFromSupabase();
+    }, 50);
   };
 
   const logout = () => {
@@ -1653,6 +1700,149 @@ const safeSetItem = (key, value) => {
     });
   };
 
+  const editCustomerFile = async (fileId, updatedFields) => {
+    const timestamp = new Date().toISOString();
+    const editMilestone = {
+      id: `TL-${Date.now()}`,
+      timestamp,
+      date: timestamp.split('T')[0],
+      stage: 'DETAILS_UPDATED',
+      title: 'Customer Details Updated',
+      status: 'Updated',
+      action: 'EDIT_FILE',
+      actor: role === 'admin' ? 'Admin Desk' : currentStaff?.name || currentDealer?.contactPerson || 'Authorized User',
+      notes: `File details updated: ${Object.keys(updatedFields).filter(k => !['timeline', 'updatedAt'].includes(k)).join(', ')}`
+    };
+
+    let targetUpdatedFile = null;
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const updatedTimeline = [...(f.timeline || []), editMilestone];
+      targetUpdatedFile = {
+        ...f,
+        ...updatedFields,
+        timeline: updatedTimeline,
+        updatedAt: timestamp
+      };
+      return targetUpdatedFile;
+    }));
+
+    if (targetUpdatedFile) {
+      try {
+        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+      } catch (e) {
+        console.warn('[AppContext] Failed to save updated customer file in DB:', e);
+      }
+    }
+
+    logActivity({
+      action: 'EDIT_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Edited customer file details for ${fileId}`
+    });
+
+    broadcastDbEvent('SYNC_FILES');
+    return targetUpdatedFile;
+  };
+
+  const cancelCustomerFile = async (fileId, reason = 'Cancelled by user') => {
+    const timestamp = new Date().toISOString();
+    const actorName = role === 'admin' ? 'Admin Desk' : currentStaff?.name || currentDealer?.contactPerson || 'Authorized User';
+    const cancelMilestone = {
+      id: `TL-${Date.now()}`,
+      timestamp,
+      date: timestamp.split('T')[0],
+      stage: 'CANCELLED',
+      title: 'Customer File Cancelled',
+      status: 'Cancelled',
+      action: 'CANCEL_FILE',
+      actor: actorName,
+      notes: `Cancellation reason: ${reason}`
+    };
+
+    let targetCancelledFile = null;
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const updatedTimeline = [...(f.timeline || []), cancelMilestone];
+      targetCancelledFile = {
+        ...f,
+        status: 'Cancelled',
+        stage: 'CANCELLED',
+        cancellationReason: reason,
+        cancelledAt: timestamp,
+        cancelledBy: actorName,
+        timeline: updatedTimeline,
+        updatedAt: timestamp
+      };
+      return targetCancelledFile;
+    }));
+
+    try {
+      await customerFileService.cancelCustomerFile(fileId, reason, actorName);
+    } catch (e) {
+      console.warn('[AppContext] Failed to cancel customer file in DB:', e);
+    }
+
+    logActivity({
+      action: 'CANCEL_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Cancelled customer file ${fileId}. Reason: ${reason}`
+    });
+
+    broadcastDbEvent('SYNC_FILES');
+    return targetCancelledFile;
+  };
+
+  const restoreCustomerFile = async (fileId) => {
+    const timestamp = new Date().toISOString();
+    const restoreMilestone = {
+      id: `TL-${Date.now()}`,
+      timestamp,
+      date: timestamp.split('T')[0],
+      stage: 'LEAD_SOURCED',
+      title: 'Customer File Restored',
+      status: 'Sourced',
+      action: 'RESTORE_FILE',
+      actor: role === 'admin' ? 'Admin Desk' : currentStaff?.name || currentDealer?.contactPerson || 'Authorized User',
+      notes: 'File restored to active Sourced pipeline.'
+    };
+
+    let targetRestoredFile = null;
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      const updatedTimeline = [...(f.timeline || []), restoreMilestone];
+      targetRestoredFile = {
+        ...f,
+        status: 'Sourced',
+        stage: 'LEAD_SOURCED',
+        cancellationReason: null,
+        cancelledAt: null,
+        cancelledBy: null,
+        timeline: updatedTimeline,
+        updatedAt: timestamp
+      };
+      return targetRestoredFile;
+    }));
+
+    try {
+      await customerFileService.restoreCustomerFile(fileId);
+    } catch (e) {
+      console.warn('[AppContext] Failed to restore customer file in DB:', e);
+    }
+
+    logActivity({
+      action: 'RESTORE_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Restored customer file ${fileId} back to active Sourced pipeline.`
+    });
+
+    broadcastDbEvent('SYNC_FILES');
+    return targetRestoredFile;
+  };
+
   const deleteCustomerFile = async (fileId) => {
     setCustomerFiles(prev => prev.filter(f => f.id !== fileId));
     try {
@@ -1664,8 +1854,9 @@ const safeSetItem = (key, value) => {
       action: 'DELETE_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
       recordId: fileId,
-      details: `Deleted customer file ${fileId} from organization records.`
+      details: `Permanently purged customer file ${fileId} from database.`
     });
+    broadcastDbEvent('SYNC_FILES');
   };
 
   const updateFileStatus = async (fileId, nextStatus, notes = '') => {
@@ -2596,158 +2787,279 @@ const safeSetItem = (key, value) => {
     return getDocumentCompletion(file, masterDocRegistry, categoryDocRules);
   };
 
+  const contextValue = useMemo(() => ({
+    isAuthenticated,
+    authView,
+    setAuthView,
+    login,
+    logout,
+    role,
+    setRole,
+    activeTab,
+    setActiveTab,
+    highlightedFileId,
+    setHighlightedFileId,
+    currentDealer,
+    setCurrentDealer,
+    updateDealerProfile,
+    currentStaff,
+    setCurrentStaff,
+    staffList,
+    setStaffList,
+    customerFiles,
+    setCustomerFiles,
+    refreshCustomerFiles,
+    refreshStaffList,
+    customerFilesError,
+    addStaff,
+    updateStaff,
+    updateStaffPassword,
+    deleteStaff,
+    addCustomerFile,
+    updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    restoreCustomerFile,
+    deleteCustomerFile,
+    updateFileStatus,
+    pricingMaster,
+    updatePricingMaster,
+    pricingPresets,
+    updatePricingPresets,
+    tierMargins,
+    updateTierMargins,
+    governanceSettings,
+    updateGovernanceSettings,
+    modulesList,
+    setModulesList,
+    invertersList,
+    setInvertersList,
+    isHardwareDbSyncing,
+    isHardwareDbConnected,
+    hardwareService,
+    dealers,
+    addDealer,
+    updateDealer,
+    deleteDealer,
+    toggleDealerStatus,
+    updateDealerMarginCap,
+    updateDealerPassword,
+    updateDealerPricing,
+    updateDealerProductRate,
+    removeDealerProductRate,
+    getAccessibleDealers,
+    kitsPresets,
+    saveKitPreset,
+    deleteKitPreset,
+    quotations,
+    addQuotation,
+    updateQuotation,
+    editingQuotation,
+    startEditingQuotation,
+    clearEditingQuotation,
+    activeDraftQuote,
+    setActiveDraftQuote,
+    clearActiveDraftQuote,
+    updateQuotationStatus,
+    previewQuotation,
+    setPreviewQuotation,
+    notifications: visibleNotifications,
+    unreadNotificationsCount,
+    notificationsOpen,
+    setNotificationsOpen,
+    isChangelogModalOpen,
+    setIsChangelogModalOpen,
+    selectedChangelogVersion,
+    openChangelogModal,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    deleteNotification,
+    clearAllNotifications,
+    addNotification,
+    dismissedPopupIds,
+    dismissPopupNotification,
+    dismissedNotifIds,
+    pdfBosMatrix,
+    setPdfBosMatrix,
+    inverterBenchmarkMatrix,
+    setInverterBenchmarkMatrix,
+    pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
+    officialProfile: SUNVINE_OFFICIAL_PROFILE,
+    // Standard BOM & BoS Engine
+    bomCatalog,
+    setBomCatalog,
+    bomCategories: STANDARD_BOM_CATEGORIES,
+    bomRates,
+    setBomRates,
+    updateBomItemRate,
+    capacityBomMatrix,
+    updateCapacityBomItemQty,
+    updateCapacityBomPreset,
+    getResolvedBom,
+    addBomItem,
+    updateBomItem,
+    deleteBomItem,
+    archiveBomItem,
+    // Dynamic Catalogs & 'NEW' Badge Tracking
+    addNewModule,
+    addNewInverter,
+    seenCatalogItemIds,
+    markCatalogItemSeen,
+    isCatalogItemNew,
+    // Master System Settings & Policies
+    systemSettings,
+    updateSystemSettings,
+    // Dynamic Required Documents Management
+    requiredDocuments: DEFAULT_REQUIRED_DOCUMENTS,
+    masterDocRegistry,
+    categoryDocRules,
+    addMasterDocument,
+    updateMasterDocument,
+    deleteMasterDocument,
+    updateCategoryDocRule,
+    resetDocumentRulesToDefault,
+    refreshMasterDocuments,
+    getFileDocuments,
+    getFileDocsCompletion,
+    applicationCategories: APPLICATION_CATEGORIES,
+    isDocMandatoryForCategory,
+    // Master Dynamic Application Stages
+    applicationStages,
+    addApplicationStage,
+    updateApplicationStage,
+    deleteApplicationStage,
+    resetApplicationStages,
+    // Immutable Audit Activity Ledger
+    auditLogs,
+    logActivity,
+    // Solar CAD Designs
+    designRecords,
+    saveDesignRecord,
+    // Customer File Timeline Progression
+    addCustomerFileTimelineEvent,
+    // Solar Loan Partner Banks
+    solarBanks
+  }), [
+    isAuthenticated,
+    authView,
+    role,
+    activeTab,
+    highlightedFileId,
+    currentDealer,
+    currentStaff,
+    staffList,
+    customerFiles,
+    refreshCustomerFiles,
+    refreshStaffList,
+    customerFilesError,
+    pricingMaster,
+    pricingPresets,
+    tierMargins,
+    governanceSettings,
+    modulesList,
+    invertersList,
+    isHardwareDbSyncing,
+    isHardwareDbConnected,
+    dealers,
+    kitsPresets,
+    quotations,
+    editingQuotation,
+    activeDraftQuote,
+    previewQuotation,
+    visibleNotifications,
+    unreadNotificationsCount,
+    notificationsOpen,
+    isChangelogModalOpen,
+    selectedChangelogVersion,
+    dismissedPopupIds,
+    dismissedNotifIds,
+    pdfBosMatrix,
+    inverterBenchmarkMatrix,
+    bomCatalog,
+    bomRates,
+    capacityBomMatrix,
+    seenCatalogItemIds,
+    systemSettings,
+    masterDocRegistry,
+    categoryDocRules,
+    applicationStages,
+    auditLogs,
+    designRecords,
+    solarBanks,
+    login,
+    logout,
+    updateDealerProfile,
+    addStaff,
+    updateStaff,
+    updateStaffPassword,
+    deleteStaff,
+    addCustomerFile,
+    updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    restoreCustomerFile,
+    deleteCustomerFile,
+    updateFileStatus,
+    updatePricingMaster,
+    updatePricingPresets,
+    updateTierMargins,
+    updateGovernanceSettings,
+    addDealer,
+    updateDealer,
+    deleteDealer,
+    toggleDealerStatus,
+    updateDealerMarginCap,
+    updateDealerPassword,
+    updateDealerPricing,
+    updateDealerProductRate,
+    removeDealerProductRate,
+    getAccessibleDealers,
+    saveKitPreset,
+    deleteKitPreset,
+    addQuotation,
+    updateQuotation,
+    startEditingQuotation,
+    clearEditingQuotation,
+    setActiveDraftQuote,
+    clearActiveDraftQuote,
+    updateQuotationStatus,
+    openChangelogModal,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    deleteNotification,
+    clearAllNotifications,
+    addNotification,
+    dismissPopupNotification,
+    updateBomItemRate,
+    updateCapacityBomItemQty,
+    updateCapacityBomPreset,
+    getResolvedBom,
+    addBomItem,
+    updateBomItem,
+    deleteBomItem,
+    archiveBomItem,
+    addNewModule,
+    addNewInverter,
+    markCatalogItemSeen,
+    isCatalogItemNew,
+    updateSystemSettings,
+    addMasterDocument,
+    updateMasterDocument,
+    deleteMasterDocument,
+    updateCategoryDocRule,
+    resetDocumentRulesToDefault,
+    refreshMasterDocuments,
+    addApplicationStage,
+    updateApplicationStage,
+    deleteApplicationStage,
+    resetApplicationStages,
+    logActivity,
+    saveDesignRecord,
+    addCustomerFileTimelineEvent
+  ]);
+
   return (
-    <AppContext.Provider
-      value={{
-        isAuthenticated,
-        authView,
-        setAuthView,
-        login,
-        logout,
-        role,
-        setRole,
-        activeTab,
-        setActiveTab,
-        highlightedFileId,
-        setHighlightedFileId,
-        currentDealer,
-        setCurrentDealer,
-        updateDealerProfile,
-        currentStaff,
-        setCurrentStaff,
-        staffList,
-        setStaffList,
-        customerFiles,
-        setCustomerFiles,
-        refreshCustomerFiles,
-        customerFilesError,
-        addStaff,
-        updateStaff,
-        updateStaffPassword,
-        deleteStaff,
-        addCustomerFile,
-        updateCustomerFile,
-        deleteCustomerFile,
-        updateFileStatus,
-        pricingMaster,
-        updatePricingMaster,
-        pricingPresets,
-        updatePricingPresets,
-        tierMargins,
-        updateTierMargins,
-        governanceSettings,
-        updateGovernanceSettings,
-        modulesList,
-        setModulesList,
-        invertersList,
-        setInvertersList,
-        isHardwareDbSyncing,
-        isHardwareDbConnected,
-        hardwareService,
-        dealers,
-        addDealer,
-        updateDealer,
-        deleteDealer,
-        toggleDealerStatus,
-        updateDealerMarginCap,
-        updateDealerPassword,
-        updateDealerPricing,
-        updateDealerProductRate,
-        removeDealerProductRate,
-        getAccessibleDealers,
-        kitsPresets,
-        saveKitPreset,
-        deleteKitPreset,
-        quotations,
-        addQuotation,
-        updateQuotation,
-        editingQuotation,
-        startEditingQuotation,
-        clearEditingQuotation,
-        activeDraftQuote,
-        setActiveDraftQuote,
-        clearActiveDraftQuote,
-        updateQuotationStatus,
-        previewQuotation,
-        setPreviewQuotation,
-        notifications: visibleNotifications,
-        unreadNotificationsCount,
-        notificationsOpen,
-        setNotificationsOpen,
-        isChangelogModalOpen,
-        setIsChangelogModalOpen,
-        selectedChangelogVersion,
-        openChangelogModal,
-        markNotificationAsRead,
-        markAllNotificationsAsRead,
-        deleteNotification,
-        clearAllNotifications,
-        addNotification,
-        dismissedPopupIds,
-        dismissPopupNotification,
-        dismissedNotifIds,
-        pdfBosMatrix,
-        setPdfBosMatrix,
-        inverterBenchmarkMatrix,
-        setInverterBenchmarkMatrix,
-        pdfBomSpecs: PDF_BOM_SPECIFICATIONS,
-        officialProfile: SUNVINE_OFFICIAL_PROFILE,
-        // Standard BOM & BoS Engine
-        bomCatalog,
-        setBomCatalog,
-        bomCategories: STANDARD_BOM_CATEGORIES,
-        bomRates,
-        setBomRates,
-        updateBomItemRate,
-        capacityBomMatrix,
-        updateCapacityBomItemQty,
-        updateCapacityBomPreset,
-        getResolvedBom,
-        addBomItem,
-        updateBomItem,
-        deleteBomItem,
-        archiveBomItem,
-        // Dynamic Catalogs & 'NEW' Badge Tracking
-        addNewModule,
-        addNewInverter,
-        seenCatalogItemIds,
-        markCatalogItemSeen,
-        isCatalogItemNew,
-        // Master System Settings & Policies
-        systemSettings,
-        updateSystemSettings,
-        // Dynamic Required Documents Management
-        requiredDocuments: DEFAULT_REQUIRED_DOCUMENTS,
-        masterDocRegistry,
-        categoryDocRules,
-        addMasterDocument,
-        updateMasterDocument,
-        deleteMasterDocument,
-        updateCategoryDocRule,
-        resetDocumentRulesToDefault,
-        refreshMasterDocuments,
-        getFileDocuments,
-        getFileDocsCompletion,
-        applicationCategories: APPLICATION_CATEGORIES,
-        isDocMandatoryForCategory,
-        // Master Dynamic Application Stages
-        applicationStages,
-        addApplicationStage,
-        updateApplicationStage,
-        deleteApplicationStage,
-        resetApplicationStages,
-        // Immutable Audit Activity Ledger
-        auditLogs,
-        logActivity,
-        // Solar CAD Designs
-        designRecords,
-        saveDesignRecord,
-        // Customer File Timeline Progression
-        addCustomerFileTimelineEvent,
-        // Solar Loan Partner Banks
-        solarBanks
-      }}
-    >
+    <AppContext.Provider value={contextValue}>
       <TopProgressBar active={isHardwareDbSyncing} />
       {children}
     </AppContext.Provider>

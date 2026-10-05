@@ -6,8 +6,10 @@ import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import EditCustomerFileModal from '../Shared/EditCustomerFileModal';
+import CancelCustomerFileModal from '../Shared/CancelCustomerFileModal';
 import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
-import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
+import { formatFileSize } from '../../utils/mediaOptimizer';
 import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
@@ -29,15 +31,23 @@ export default function StaffManagement() {
     deleteStaff,
     addCustomerFile,
     updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    restoreCustomerFile,
+    deleteCustomerFile,
     updateFileStatus,
     isHardwareDbSyncing,
     refreshCustomerFiles,
+    refreshStaffList,
     customerFilesError,
     masterDocRegistry,
     categoryDocRules,
     getFileDocuments,
     getFileDocsCompletion,
-    highlightedFileId
+    highlightedFileId,
+    role,
+    currentStaff,
+    currentDealer
   } = useApp();
 
   const { addToast } = useToast();
@@ -58,6 +68,8 @@ export default function StaffManagement() {
     }
     return 'files';
   });
+
+
 
   // Auto-scroll to highlighted file from Push Notification
   React.useEffect(() => {
@@ -102,6 +114,7 @@ export default function StaffManagement() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+
   // Files pipeline filter: 'all', 'Sourced', 'Verification', 'DISCOM Registered', 'Subsidized'
   const [statusFilter, setStatusFilter] = useState('all');
   const [staffFilter, setStaffFilter] = useState('all');
@@ -111,10 +124,14 @@ export default function StaffManagement() {
   // Modals
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [fileToEdit, setFileToEdit] = useState(null);
+  const [fileToCancel, setFileToCancel] = useState(null);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
+  const [cameraIsUploading, setCameraIsUploading] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
 
   // Staff Credentials & User Management State
@@ -363,65 +380,78 @@ export default function StaffManagement() {
     }
   };
 
-  const handleCameraCapture = async (capturedBlob, filename = null) => {
-    if (!selectedFileForDocs || !cameraTargetDoc) return;
+  const handleCameraCapture = async (statsOrList) => {
+    if (!selectedFileForDocs || !cameraTargetDoc || !statsOrList) return;
     const docKey = cameraTargetDoc.key;
     const fileId = selectedFileForDocs.id;
-    const effectiveFileName = filename || `${docKey}_photo_${Date.now().toString(36)}.jpg`;
-    showLoader('Optimizing and uploading photo to Cloudflare R2...');
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
+
+    setCameraIsUploading(true);
+    setCameraUploadProgress(10);
+    const prog = setInterval(() => setCameraUploadProgress(p => Math.min(p + 8, 75)), 250);
 
     try {
-      const stats = await compressMedia(capturedBlob, {
-        maxDimension: 1600,
-        quality: 0.8,
-        outputFormat: 'image/jpeg'
-      });
+      const uploadedDocsList = [];
 
-      let fileUrl = null;
-      let fileSize = stats.compressedSize;
+      for (let i = 0; i < items.length; i++) {
+        const stats = items[i];
+        let fileUrl = null;
+        let filename = stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`;
+        let fileSize = stats.compressedSize || stats.file?.size || 0;
 
-      if (stats.file) {
-        try {
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
-          if (uploadRes?.publicUrl || uploadRes?.url) {
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            fileSize = uploadRes.fileSize || stats.file.size;
+        if (stats.file) {
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
+            if (uploadRes?.publicUrl || uploadRes?.url) {
+              fileUrl = uploadRes.publicUrl || uploadRes.url;
+              fileSize = uploadRes.fileSize || stats.file.size;
+              filename = uploadRes.filename || stats.file.name;
+            }
+          } catch (err) {
+            console.warn('[StaffManagement] Media upload warning for', filename, err);
           }
-        } catch (err) {
-          console.warn('[StaffManagement] Camera upload warning:', err);
         }
+
+        uploadedDocsList.push({
+          filename,
+          url: fileUrl,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          uploaded: true,
+          date: new Date().toISOString().split('T')[0]
+        });
       }
 
-      const newDocRecord = {
-        filename: effectiveFileName,
-        url: fileUrl,
-        size: stats.compressedFormatted || formatFileSize(fileSize),
-        originalSize: stats.originalFormatted,
-        reduction: stats.reduction,
-        dataUrl: fileUrl ? undefined : stats.dataUrl,
-        uploaded: true,
-        date: new Date().toISOString().split('T')[0]
-      };
+      clearInterval(prog);
+      setCameraUploadProgress(100);
+      await new Promise(r => setTimeout(r, 400));
 
-      const existingSlot = selectedFileForDocs.documents?.[docKey];
-      const updatedSlot = appendDocsToFileList(existingSlot, newDocRecord);
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = selectedFileForDocs.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+        const updatedDocs = { ...(selectedFileForDocs.documents || {}), [docKey]: updatedSlot };
 
-      const updatedDocs = {
-        ...(selectedFileForDocs.documents || {}),
-        [docKey]: updatedSlot
-      };
-
-      if (updateCustomerFile) {
-        await updateCustomerFile(selectedFileForDocs.id, { documents: updatedDocs });
+        if (updateCustomerFile) {
+          await updateCustomerFile(selectedFileForDocs.id, { documents: updatedDocs });
+        }
+        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+        setCameraTargetDoc(null);
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} files attached to vault`
+            : `File attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
       }
-      setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
-      setCameraTargetDoc(null);
-      addToast(`Photo secured in Cloudflare R2: ${effectiveFileName}`, 'success');
     } catch (e) {
-      console.error('[StaffManagement] Camera upload error:', e);
-      addToast(e.message || 'Camera upload failed', 'error');
+      clearInterval(prog);
+      console.error('[StaffManagement] Media upload error:', e);
+      addToast(e.message || 'Media upload failed', 'error');
     } finally {
-      hideLoader();
+      setCameraIsUploading(false);
+      setCameraUploadProgress(0);
     }
   };
 
@@ -546,29 +576,42 @@ export default function StaffManagement() {
     addToast(`Login credentials copied for ${member.name}! Send to staff via WhatsApp.`, 'success');
   };
 
+  // Active vs Cancelled breakdown
+  const activeFiles = (customerFiles || []).filter(f => f.status !== 'Cancelled');
+  const cancelledFiles = (customerFiles || []).filter(f => f.status === 'Cancelled');
+
   // Filtered files
   const filteredFiles = (customerFiles || []).filter(f => {
     const term = searchTerm.toLowerCase().trim();
     const matchSearch =
       !term ||
-      f.customerName.toLowerCase().includes(term) ||
+      (f.customerName || '').toLowerCase().includes(term) ||
       (f.consumerNo || '').toLowerCase().includes(term) ||
-      f.phone.includes(term) ||
-      f.id.toLowerCase().includes(term) ||
+      (f.phone || '').includes(term) ||
+      (f.id || '').toLowerCase().includes(term) ||
       (f.staffName || '').toLowerCase().includes(term);
 
-    const matchStatus = statusFilter === 'all' || f.status === statusFilter;
+    const matchStatus =
+      statusFilter === 'all'
+        ? f.status !== 'Cancelled'
+        : statusFilter === 'Cancelled'
+        ? f.status === 'Cancelled'
+        : f.status === statusFilter;
+
     const matchStaff = staffFilter === 'all' || f.staffId === staffFilter;
 
     return matchSearch && matchStatus && matchStaff;
   });
 
-  // Pipeline stats
-  const totalFilesCount = (customerFiles || []).length;
-  const sourcedCount = (customerFiles || []).filter(f => f.status === 'Sourced').length;
-  const inProgressTotal = (customerFiles || []).filter(f => f.status === 'Verification' || f.status === 'DISCOM Registered').length;
-  const subsidizedCount = (customerFiles || []).filter(f => f.status === 'Subsidized').length;
-  const totalKwSum = (customerFiles || []).reduce((acc, f) => acc + (f.solarSystemKw || 0), 0).toFixed(1);
+  // Pipeline stats (Active only)
+  const totalFilesCount = activeFiles.length;
+  const sourcedCount = activeFiles.filter(f => f.status === 'Sourced').length;
+  const verificationCount = activeFiles.filter(f => f.status === 'Verification').length;
+  const discomRegCount = activeFiles.filter(f => f.status === 'DISCOM Registered').length;
+  const inProgressTotal = verificationCount + discomRegCount;
+  const subsidizedCount = activeFiles.filter(f => f.status === 'Subsidized').length;
+  const cancelledCount = cancelledFiles.length;
+  const totalKwSum = activeFiles.reduce((acc, f) => acc + (f.solarSystemKw || 0), 0).toFixed(1);
 
   return (
     <div className="flex flex-col w-full pb-16 font-sans text-slate-800">
@@ -654,7 +697,7 @@ export default function StaffManagement() {
           >
             <span className="material-symbols-outlined text-[18px]">folder</span>
             <span>Customer Files &amp; Subsidies</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{(customerFiles || []).length}</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold">{totalFilesCount}</span>
           </button>
           <button
             onClick={() => handleViewChange('staff')}
@@ -677,19 +720,24 @@ export default function StaffManagement() {
               {/* Pipeline Tabs */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none shrink-0">
                 {[
-                  { key: 'all', label: 'All Files' },
-                  { key: 'Sourced', label: 'Sourced' },
-                  { key: 'Verification', label: 'Verification' },
-                  { key: 'DISCOM Registered', label: 'DISCOM Reg.' },
-                  { key: 'Subsidized', label: 'Subsidized' }
+                  { key: 'all', label: `All Files (${totalFilesCount})` },
+                  { key: 'Sourced', label: `Sourced (${sourcedCount})` },
+                  { key: 'Verification', label: `Verification (${verificationCount})` },
+                  { key: 'DISCOM Registered', label: `DISCOM Reg. (${discomRegCount})` },
+                  { key: 'Subsidized', label: `Subsidized (${subsidizedCount})` },
+                  { key: 'Cancelled', label: `Cancelled (${cancelledCount})`, isCancelledTab: true }
                 ].map(t => (
                   <button
                     key={t.key}
                     type="button"
                     onClick={() => setStatusFilter(t.key)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${statusFilter === t.key
-                      ? 'bg-[#0F1B2E] text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      ? t.isCancelledTab
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-[#0F1B2E] text-white shadow-xs'
+                      : t.isCancelledTab
+                        ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                   >
                     {t.label}
@@ -724,10 +772,19 @@ export default function StaffManagement() {
                 <button
                   type="button"
                   onClick={async () => {
+                    if (isManualSyncing) return;
                     setIsManualSyncing(true);
-                    await refreshCustomerFiles();
-                    setIsManualSyncing(false);
-                    addToast('Live refresh completed.', 'info');
+                    try {
+                      await Promise.allSettled([
+                        refreshCustomerFiles ? refreshCustomerFiles({ force: true }) : Promise.resolve(),
+                        refreshStaffList ? refreshStaffList({ force: true }) : Promise.resolve()
+                      ]);
+                      addToast('Live database sync complete.', 'success');
+                    } catch (err) {
+                      addToast('Database refresh finished.', 'info');
+                    } finally {
+                      setIsManualSyncing(false);
+                    }
                   }}
                   disabled={isManualSyncing}
                   title="Live Database Sync"
@@ -752,9 +809,11 @@ export default function StaffManagement() {
                     'Sourced': 'bg-amber-50 text-amber-800 border-amber-200',
                     'Verification': 'bg-blue-50 text-blue-800 border-blue-200',
                     'DISCOM Registered': 'bg-purple-50 text-purple-800 border-purple-200',
-                    'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    'Subsidized': 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                    'Cancelled': 'bg-rose-50 text-rose-800 border-rose-200'
                   };
 
+                  const isCancelled = file.status === 'Cancelled';
                   const isHighlighted = file.id === highlightedFileId;
 
                   return (
@@ -763,6 +822,8 @@ export default function StaffManagement() {
                       key={file.id}
                       className={`rounded-xl p-5 flex flex-col justify-between transition-all animate-in fade-in duration-200 ${isHighlighted
                         ? 'bg-emerald-50/60 border-2 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-400'
+                        : isCancelled
+                        ? 'bg-slate-50/70 border border-rose-200 shadow-xs'
                         : 'bg-white border border-[#E4E7EB] hover:border-slate-300 shadow-xs'
                         }`}
                     >
@@ -775,7 +836,7 @@ export default function StaffManagement() {
                         )}
                         {/* Card Header */}
                         <div className="flex items-start justify-between gap-2">
-                          <div>
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap mb-0.5">
                               <span className="text-[11px] font-mono text-slate-500 uppercase tracking-wider font-semibold">{file.id}</span>
                               <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.sourceType === 'DEALER' || file.source === 'DEALER'
@@ -791,14 +852,68 @@ export default function StaffManagement() {
                                 {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
                               </span>
                             </div>
-                            <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors">
+                            <h3 className="text-base font-bold text-slate-900 hover:text-emerald-700 transition-colors truncate">
                               {file.customerName}
                             </h3>
                           </div>
-                          <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                            {file.status}
-                          </span>
+                          
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Edit & Delete Action Buttons (Active Files) */}
+                            {!isCancelled && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setFileToEdit(file)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                  title="Edit Customer File Details"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">edit_square</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setFileToCancel(file)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Cancel or Delete File"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">delete_outline</span>
+                                </button>
+                              </>
+                            )}
+
+                            <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                              {file.status}
+                            </span>
+                          </div>
                         </div>
+
+                        {/* Cancellation Banner */}
+                        {isCancelled && (
+                          <div className="mt-2.5 p-2.5 bg-rose-50/90 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+                            <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">cancel</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-rose-900 flex items-center justify-between">
+                                <span>File Cancelled</span>
+                                {file.cancelledAt && (
+                                  <span className="text-[10px] text-rose-500 font-normal">
+                                    {new Date(file.cancelledAt).toLocaleDateString()}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-rose-700 mt-0.5 break-words">
+                                <span className="font-semibold">Reason:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                              </div>
+                              {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                                <div className="text-[10px] text-rose-600 mt-0.5">
+                                  Cancelled by: <span className="font-medium">
+                                    {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                                      ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                                      : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         {/* Info Pills */}
                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -870,38 +985,76 @@ export default function StaffManagement() {
 
                       {/* Action Footer */}
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFileForTimeline(file)}
-                          className="py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-                          title="View Timeline & Advance Stage"
-                        >
-                          <span className="material-symbols-outlined text-[15px]">timeline</span>
-                          <span>Timeline</span>
-                        </button>
+                        {isCancelled ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFileForTimeline(file)}
+                              className="py-1.5 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                              title="View History Timeline"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">timeline</span>
+                              <span>Timeline</span>
+                            </button>
 
-                        <button
-                          onClick={() => setSelectedFileForDocs(file)}
-                          className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                        >
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
-                          <span>Docs (Optional)</span>
-                        </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await restoreCustomerFile(file.id);
+                                addToast(`Customer file ${file.id} restored to Sourced stage`, 'success');
+                              }}
+                              className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">history</span>
+                              <span>Restore File</span>
+                            </button>
 
-                        {/* Quick Status Advance */}
-                        <select
-                          value={file.status}
-                          onChange={e => {
-                            updateFileStatus(file.id, e.target.value);
-                            addToast(`Updated status to "${e.target.value}"`, 'success');
-                          }}
-                          className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
-                        >
-                          <option value="Sourced">Sourced</option>
-                          <option value="Verification">Verification</option>
-                          <option value="DISCOM Registered">DISCOM Reg.</option>
-                          <option value="Subsidized">Subsidized</option>
-                        </select>
+                            <button
+                              type="button"
+                              onClick={() => setFileToCancel(file)}
+                              className="py-1.5 px-2.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                              title="Delete Permanently from Database"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete_forever</span>
+                              <span>Purge</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFileForTimeline(file)}
+                              className="py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                              title="View Timeline & Advance Stage"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">timeline</span>
+                              <span>Timeline</span>
+                            </button>
+
+                            <button
+                              onClick={() => setSelectedFileForDocs(file)}
+                              className="flex-1 py-1.5 px-3 bg-white hover:bg-slate-50 border border-[#E4E7EB] text-slate-700 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <span className="material-symbols-outlined text-[15px] text-emerald-600">upload_file</span>
+                              <span>Docs (Optional)</span>
+                            </button>
+
+                            {/* Quick Status Advance */}
+                            <select
+                              value={file.status}
+                              onChange={e => {
+                                updateFileStatus(file.id, e.target.value);
+                                addToast(`Updated status to "${e.target.value}"`, 'success');
+                              }}
+                              className="bg-white border border-[#E4E7EB] rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 cursor-pointer shadow-2xs"
+                            >
+                              <option value="Sourced">Sourced</option>
+                              <option value="Verification">Verification</option>
+                              <option value="DISCOM Registered">DISCOM Reg.</option>
+                              <option value="Subsidized">Subsidized</option>
+                            </select>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -1886,59 +2039,26 @@ export default function StaffManagement() {
                       <div className="mt-3 pt-2.5 border-t border-slate-200/70 flex items-center gap-2 text-xs">
                         {isUploaded ? (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-200">
-                              <span className="material-symbols-outlined text-[15px] text-emerald-700">add_circle</span>
-                              <span>Add Another Photo / File</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (e.target.files?.length) {
-                                    await handleUploadDoc(selectedFileForDocs.id, item.key, e.target.files);
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(item)}
-                              className="py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 border border-emerald-200"
-                              title="Capture photo with Camera"
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-200 shadow-2xs"
+                              title="Upload another photo or PDF"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
-                              <span className="hidden sm:inline text-xs">Camera</span>
+                              <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                              <span>Add More Media / PDF</span>
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-xs">
-                              <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                              <span>Upload Document {item.mandatory ? '' : '(Optional)'}</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (e.target.files?.length) {
-                                    await handleUploadDoc(selectedFileForDocs.id, item.key, e.target.files);
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(item)}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
-                              title="Capture with Camera"
+                              className="flex-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-2 text-xs border border-slate-200 hover:border-slate-300 shadow-2xs"
+                              title="Upload photos or PDF document"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="material-symbols-outlined text-[16px] text-emerald-600">upload_file</span>
+                              <span>Upload Document / Media {item.mandatory ? '' : '(Optional)'}</span>
                             </button>
                           </div>
                         )}
@@ -1996,8 +2116,41 @@ export default function StaffManagement() {
           isOpen={Boolean(cameraTargetDoc)}
           docKey={cameraTargetDoc.key}
           docLabel={cameraTargetDoc.label}
+          documentLabel={cameraTargetDoc.label}
           onCapture={handleCameraCapture}
           onClose={() => setCameraTargetDoc(null)}
+          isUploading={cameraIsUploading}
+          uploadProgress={cameraUploadProgress}
+          maxPhotos={5}
+        />
+      )}
+
+      {/* EDIT CUSTOMER FILE MODAL */}
+      {fileToEdit && (
+        <EditCustomerFileModal
+          file={fileToEdit}
+          isOpen={Boolean(fileToEdit)}
+          onClose={() => setFileToEdit(null)}
+          onSave={async (fileId, updatedFields) => {
+            await editCustomerFile(fileId, updatedFields);
+          }}
+        />
+      )}
+
+      {/* CANCEL / DELETE CUSTOMER FILE MODAL */}
+      {fileToCancel && (
+        <CancelCustomerFileModal
+          file={fileToCancel}
+          isOpen={Boolean(fileToCancel)}
+          isAdmin={true}
+          initialDeleteMode={fileToCancel.status === 'Cancelled' ? 'hard_delete' : 'soft_cancel'}
+          onClose={() => setFileToCancel(null)}
+          onCancelFile={async (fileId, reason) => {
+            await cancelCustomerFile(fileId, reason);
+          }}
+          onHardDelete={async (fileId) => {
+            await deleteCustomerFile(fileId);
+          }}
         />
       )}
     </div>

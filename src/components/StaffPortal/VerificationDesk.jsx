@@ -18,11 +18,13 @@ export default function VerificationDesk() {
     currentStaff,
     role,
     isHardwareDbSyncing,
+    refreshCustomerFiles,
     masterDocRegistry,
     categoryDocRules,
     getFileDocuments
   } = useApp();
   const { addToast } = useToast();
+
 
   const [stageFilter, setStageFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'

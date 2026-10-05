@@ -136,6 +136,37 @@ export default function CustomerFileDetailModal({ file, onClose }) {
           </button>
         </div>
 
+        {/* Cancellation Notice Banner (If Cancelled) */}
+        {(file.status === 'Cancelled' || file.stage === 'CANCELLED') && (
+          <div className="mx-4 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[20px]">cancel</span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between font-bold">
+                <span className="text-rose-950 text-sm">Customer File Cancelled</span>
+                {file.cancelledAt && (
+                  <span className="text-[11px] text-rose-600 font-normal">
+                    {new Date(file.cancelledAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-rose-800 break-words">
+                <span className="font-semibold">Reason &amp; Remarks:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+              </div>
+              {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                <div className="mt-0.5 text-[11px] text-rose-600">
+                  Action taken by: <span className="font-medium">
+                    {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                      ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                      : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Quick KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-4 bg-surface-container-low/20 border-b border-surface-container-high text-xs">
           <div className="p-2.5 rounded-lg bg-surface-container-lowest border border-surface-container-high">
@@ -311,7 +342,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                           <div className="flex items-center gap-3 mt-2 pt-2 border-t border-surface-container-high/50 text-[11px] text-secondary">
                             <span className="flex items-center gap-1">
                               <span className="material-symbols-outlined text-[13px]">person</span>
-                              {item.actor || 'System'}
+                              {typeof item.actor === 'object' ? item.actor?.name || item.actor?.id || 'System' : item.actor || 'System'}
                             </span>
                             {item.status && (
                               <span className="px-1.5 py-0.5 rounded bg-surface-container-low font-semibold">

@@ -1,30 +1,51 @@
 import { supabase } from '../lib/supabase';
 
+let apiRateLimitedUntil = 0;
+
 export const customerFileService = {
   /**
    * Fetch all customer files from serverless API (Supabase PostgreSQL + Redis cache), or direct Supabase query
    */
-  async getAllCustomerFiles({ throwOnError = false } = {}) {
-    try {
-      const res = await fetch('/api/customer-files', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include'
-      });
+  async getAllCustomerFiles({ throwOnError = false, maxRetries = 0 } = {}) {
+    const isRateLimited = Date.now() < apiRateLimitedUntil;
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data)) {
-          return json.data;
+    if (!isRateLimited) {
+      let attempt = 0;
+      const maxAttempts = maxRetries > 0 ? Math.min(maxRetries, 3) : 1;
+
+      while (attempt < maxAttempts) {
+        try {
+          const res = await fetch('/api/customer-files', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && Array.isArray(json.data)) {
+              return json.data;
+            }
+          } else if (res.status === 429) {
+            console.warn(`[customerFileService] HTTP 429 received. Backing off API for 60s; direct database will serve requests.`);
+            apiRateLimitedUntil = Date.now() + 60000;
+            if (throwOnError) throw new Error('RATE_LIMITED_429');
+            break;
+          } else if (res.status === 401 && throwOnError) {
+            // Session cookie missing/expired and caller requested error throwing
+            throw new Error('SESSION_EXPIRED');
+          } else {
+            break;
+          }
+        } catch (apiErr) {
+          if (apiErr?.message === 'SESSION_EXPIRED' || apiErr?.message === 'RATE_LIMITED_429') {
+            if (throwOnError) throw apiErr;
+            break;
+          }
+          console.warn('[customerFileService] API fetch notice, checking database direct:', apiErr);
+          break;
         }
-      } else if (res.status === 401) {
-        // Session cookie missing/expired: the anon fallback is blocked by RLS and would look like "no data".
-        if (throwOnError) throw new Error('SESSION_EXPIRED');
-        return [];
       }
-    } catch (apiErr) {
-      if (apiErr?.message === 'SESSION_EXPIRED') throw apiErr;
-      console.warn('[customerFileService] API fetch notice, checking database direct:', apiErr);
     }
 
     try {
@@ -71,6 +92,9 @@ export const customerFileService = {
           status: f.status || 'Sourced',
           documents: (f.documents && typeof f.documents === 'object' && !Array.isArray(f.documents)) ? f.documents : {},
           timeline: Array.isArray(f.timeline) ? f.timeline : [],
+          cancellationReason: f.cancellation_reason || null,
+          cancelledAt: f.cancelled_at || null,
+          cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : null,
           createdAt: f.created_at,
           updatedAt: f.updated_at
         }));
@@ -248,11 +272,116 @@ export const customerFileService = {
   },
 
   /**
-   * Delete customer file from database in real time
+   * Cancel / Soft-Delete customer file with cancellation reason
+   */
+  async cancelCustomerFile(fileId, reason = 'Cancelled by user', cancelledBy = 'Admin Desk') {
+    if (!fileId) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'cancel', fileId, reason, cancelledBy })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return json;
+      }
+    } catch (apiErr) {
+      console.warn('[customerFileService] API cancel notice, falling back to direct:', apiErr);
+    }
+
+    const cancelMilestone = {
+      id: `TL-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      date: new Date().toISOString().split('T')[0],
+      stage: 'CANCELLED',
+      title: 'Customer File Cancelled',
+      status: 'Cancelled',
+      action: 'CANCEL_FILE',
+      actor: cancelledBy || 'Admin Desk',
+      notes: `Cancellation reason: ${reason}`
+    };
+
+    try {
+      const { data: existing } = await supabase.from('customer_files').select('timeline').eq('id', fileId).single();
+      const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, cancelMilestone] : [cancelMilestone];
+
+      const payload = {
+        status: 'Cancelled',
+        stage: 'CANCELLED',
+        cancellation_reason: reason,
+        cancelled_at: new Date().toISOString(),
+        cancelled_by: cancelledBy || 'Admin Desk',
+        timeline: updatedTimeline,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('customer_files')
+        .update(payload)
+        .eq('id', fileId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Restore a cancelled customer file back to active Sourced pipeline
+   */
+  async restoreCustomerFile(fileId) {
+    if (!fileId) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'restore', fileId })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return json;
+      }
+    } catch (apiErr) {
+      console.warn('[customerFileService] API restore notice, falling back to direct:', apiErr);
+    }
+
+    const payload = {
+      status: 'Sourced',
+      stage: 'LEAD_SOURCED',
+      cancellation_reason: null,
+      cancelled_at: null,
+      cancelled_by: null,
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      const { data, error } = await supabase
+        .from('customer_files')
+        .update(payload)
+        .eq('id', fileId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Delete customer file from database in real time (Super Admin hard delete)
    */
   async deleteCustomerFile(fileId) {
-    if (!fileId) return { success: false };
+    if (!fileId) return { success: false, error: 'File ID required' };
 
+    let apiSucceeded = false;
     try {
       const res = await fetch('/api/customer-files', {
         method: 'POST',
@@ -261,15 +390,31 @@ export const customerFileService = {
         body: JSON.stringify({ action: 'delete', fileId })
       });
 
-      if (res.ok) return { success: true };
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          apiSucceeded = true;
+        }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        console.warn('[customerFileService] API delete response:', res.status, errJson);
+      }
     } catch (apiErr) {
       console.warn('[customerFileService] API delete notice:', apiErr);
     }
 
     try {
-      await supabase.from('customer_files').delete().eq('id', fileId);
-      return { success: true };
+      const { data, error } = await supabase.from('customer_files').delete().eq('id', fileId);
+      if (error) {
+        console.warn('[customerFileService] Supabase direct delete notice:', error.message);
+        if (!apiSucceeded) {
+          return { success: false, error: error.message };
+        }
+      }
+      return { success: true, data };
     } catch (err) {
+      console.warn('[customerFileService] Supabase delete exception:', err);
+      if (!apiSucceeded) return { success: false, error: err.message };
       return { success: true };
     }
   }

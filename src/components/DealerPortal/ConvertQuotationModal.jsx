@@ -124,24 +124,27 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
     }
   };
 
-  const handleCameraCapture = (stats) => {
-    if (!cameraTargetDoc || !stats) return;
+  const handleCameraCapture = (statsOrList) => {
+    if (!cameraTargetDoc || !statsOrList) return;
     const docKey = cameraTargetDoc.key;
-    const newDoc = {
-      filename: stats.file?.name || `${docKey}_photo_${Date.now().toString(36)}.jpg`,
-      size: stats.compressedFormatted,
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
+
+    const newDocs = items.map((stats, i) => ({
+      filename: stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`,
+      size: stats.compressedFormatted || stats.size || 'Attached',
       originalSize: stats.originalFormatted,
       reduction: stats.reduction,
       dataUrl: stats.dataUrl || stats.posterDataUrl,
       uploaded: true,
       date: new Date().toISOString().split('T')[0]
-    };
+    }));
+
     setDocuments(prev => ({
       ...prev,
-      [docKey]: appendDocsToFileList(prev[docKey], newDoc)
+      [docKey]: appendDocsToFileList(prev[docKey], newDocs)
     }));
     setCameraTargetDoc(null);
-    addToast('Camera capture attached', 'success');
+    addToast(newDocs.length > 1 ? `${newDocs.length} files attached` : `File attached: ${newDocs[0].filename}`, 'success');
   };
 
   const handleRemoveDoc = (docKey, targetIdOrFilename = null) => {

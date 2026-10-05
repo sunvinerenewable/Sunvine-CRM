@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
+import EditCustomerFileModal from '../Shared/EditCustomerFileModal';
+import CancelCustomerFileModal from '../Shared/CancelCustomerFileModal';
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import { storageService } from '../../services/storageService';
@@ -25,6 +27,9 @@ export default function StaffFiles() {
     dealers,
     updateFileStatus,
     updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    restoreCustomerFile,
     addCustomerFile,
     isHardwareDbSyncing,
     refreshCustomerFiles,
@@ -44,9 +49,14 @@ export default function StaffFiles() {
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [selectedFileForDocs, setSelectedFileForDocs] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
+  const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
+  const [cameraIsUploading, setCameraIsUploading] = useState(false);
   const [selectedFileForTimeline, setSelectedFileForTimeline] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [showAddFileModal, setShowAddFileModal] = useState(false);
+  const [fileToEdit, setFileToEdit] = useState(null);
+  const [fileToCancel, setFileToCancel] = useState(null);
+
 
   // Auto-scroll to highlighted file from Push Notification
   React.useEffect(() => {
@@ -90,16 +100,24 @@ export default function StaffFiles() {
       (f) => f.staffId === currentStaff?.id || f.staffName === currentStaff?.name
     );
 
+  const activeFiles = myFiles.filter(f => f.status !== 'Cancelled');
+  const cancelledFiles = myFiles.filter(f => f.status === 'Cancelled');
+
   const filteredFiles = myFiles.filter((f) => {
     const term = searchTerm.toLowerCase().trim();
     const matchSearch =
       !term ||
-      f.customerName.toLowerCase().includes(term) ||
+      (f.customerName || '').toLowerCase().includes(term) ||
       (f.consumerNo || '').toLowerCase().includes(term) ||
-      f.phone.includes(term) ||
-      f.id.toLowerCase().includes(term);
+      (f.phone || '').includes(term) ||
+      (f.id || '').toLowerCase().includes(term);
 
-    const matchStatus = statusFilter === 'all' || f.status === statusFilter;
+    const matchStatus =
+      statusFilter === 'all'
+        ? f.status !== 'Cancelled'
+        : statusFilter === 'Cancelled'
+        ? f.status === 'Cancelled'
+        : f.status === statusFilter;
 
     const isDealer = f.sourceType === 'DEALER' || f.source === 'DEALER';
     const matchSource =
@@ -339,58 +357,78 @@ export default function StaffFiles() {
     }
   };
 
-  const handleCameraCapture = async (stats) => {
-    if (!selectedFileForDocs || !cameraTargetDoc || !stats) return;
+  const handleCameraCapture = async (statsOrList) => {
+    if (!selectedFileForDocs || !cameraTargetDoc || !statsOrList) return;
     const fileId = selectedFileForDocs.id;
     const docKey = cameraTargetDoc.key;
+    const items = Array.isArray(statsOrList) ? statsOrList : [statsOrList];
 
-    showLoader('Securing camera photo in Cloudflare R2 Vault...');
+    // Animate upload progress bar
+    setCameraIsUploading(true);
+    setCameraUploadProgress(10);
+    const prog = setInterval(() => setCameraUploadProgress(p => Math.min(p + 8, 75)), 250);
+
     try {
-      let fileUrl = null;
-      let filename = stats.file?.name || `${docKey}_photo_${Date.now().toString(36)}.jpg`;
-      let fileSize = stats.file?.size || 0;
+      const uploadedDocsList = [];
 
-      if (stats.file) {
-        try {
-          const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
-          if (uploadRes?.success) {
-            fileUrl = uploadRes.publicUrl || uploadRes.url;
-            filename = uploadRes.filename || stats.file.name;
-            fileSize = uploadRes.fileSize || stats.file.size;
+      for (let i = 0; i < items.length; i++) {
+        const stats = items[i];
+        let fileUrl = null;
+        let filename = stats.file?.name || stats.name || `${docKey}_media_${Date.now().toString(36)}_${i + 1}.${stats.isPdf ? 'pdf' : 'jpg'}`;
+        let fileSize = stats.compressedSize || stats.file?.size || 0;
+
+        if (stats.file) {
+          try {
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
+            if (uploadRes?.success) {
+              fileUrl = uploadRes.publicUrl || uploadRes.url;
+              filename = uploadRes.filename || stats.file.name;
+              fileSize = uploadRes.fileSize || stats.file.size;
+            }
+          } catch (err) {
+            console.warn('[StaffFiles] Media upload warning for', filename, err);
           }
-        } catch (err) {
-          console.warn('[StaffFiles] Camera upload warning:', err);
         }
+
+        uploadedDocsList.push({
+          uploaded: true,
+          filename,
+          url: fileUrl,
+          sizeBytes: fileSize,
+          size: stats.compressedFormatted || formatFileSize(fileSize),
+          originalSize: stats.originalFormatted,
+          reduction: stats.reduction,
+          dataUrl: fileUrl ? undefined : stats.dataUrl,
+          date: new Date().toISOString().split('T')[0]
+        });
       }
 
-      const newDocRecord = {
-        uploaded: true,
-        filename,
-        url: fileUrl,
-        sizeBytes: fileSize,
-        size: stats.compressedFormatted || formatFileSize(fileSize),
-        dataUrl: fileUrl ? undefined : stats.dataUrl,
-        date: new Date().toISOString().split('T')[0]
-      };
+      clearInterval(prog);
+      setCameraUploadProgress(100);
+      await new Promise(r => setTimeout(r, 400)); // let bar reach 100
 
-      const existingSlot = selectedFileForDocs.documents?.[docKey];
-      const updatedSlot = appendDocsToFileList(existingSlot, newDocRecord);
+      if (uploadedDocsList.length > 0) {
+        const existingSlot = selectedFileForDocs.documents?.[docKey];
+        const updatedSlot = appendDocsToFileList(existingSlot, uploadedDocsList);
+        const updatedDocs = { ...(selectedFileForDocs.documents || {}), [docKey]: updatedSlot };
 
-      const updatedDocs = {
-        ...(selectedFileForDocs.documents || {}),
-        [docKey]: updatedSlot
-      };
-
-      updateCustomerFile(fileId, { documents: updatedDocs });
-
-      setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
-      setCameraTargetDoc(null);
-      addToast(`Camera capture saved: ${filename}`, 'success');
+        updateCustomerFile(fileId, { documents: updatedDocs });
+        setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
+        setCameraTargetDoc(null);
+        addToast(
+          uploadedDocsList.length > 1
+            ? `${uploadedDocsList.length} files attached to vault`
+            : `File attached: ${uploadedDocsList[0].filename}`,
+          'success'
+        );
+      }
     } catch (err) {
-      console.error('[StaffFiles] Camera capture error:', err);
-      addToast(err.message || 'Camera capture failed', 'error');
+      clearInterval(prog);
+      console.error('[StaffFiles] Media upload error:', err);
+      addToast(err.message || 'Media upload failed', 'error');
     } finally {
-      hideLoader();
+      setCameraIsUploading(false);
+      setCameraUploadProgress(0);
     }
   };
 
@@ -428,18 +466,23 @@ export default function StaffFiles() {
           {/* Stage Filter Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
             {[
-              { key: 'all', label: 'All Stages' },
+              { key: 'all', label: `All Stages (${activeFiles.length})` },
               { key: 'Sourced', label: '1. Sourced' },
               { key: 'Verification', label: '2. Verification' },
               { key: 'DISCOM Registered', label: '3. DISCOM Reg.' },
-              { key: 'Subsidized', label: '4. Subsidized' }
+              { key: 'Subsidized', label: '4. Subsidized' },
+              { key: 'Cancelled', label: `Cancelled (${cancelledFiles.length})`, isCancelledTab: true }
             ].map((t) => (
               <button
                 key={t.key}
                 onClick={() => setStatusFilter(t.key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${statusFilter === t.key
-                  ? 'bg-primary text-on-primary shadow-xs'
-                  : 'bg-surface-container-low text-secondary hover:text-on-surface'
+                  ? t.isCancelledTab
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-primary text-on-primary shadow-xs'
+                  : t.isCancelledTab
+                    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                    : 'bg-surface-container-low text-secondary hover:text-on-surface'
                   }`}
               >
                 {t.label}
@@ -463,10 +506,18 @@ export default function StaffFiles() {
             <button
               type="button"
               onClick={async () => {
+                if (isManualSyncing) return;
                 setIsManualSyncing(true);
-                await refreshCustomerFiles();
-                setIsManualSyncing(false);
-                addToast('Live refresh completed.', 'info');
+                try {
+                  if (refreshCustomerFiles) {
+                    await refreshCustomerFiles({ force: true });
+                  }
+                  addToast('Live database sync complete.', 'success');
+                } catch (err) {
+                  addToast('Database refresh finished.', 'info');
+                } finally {
+                  setIsManualSyncing(false);
+                }
               }}
               disabled={isManualSyncing}
               title="Sync Live with Database"
@@ -547,10 +598,13 @@ export default function StaffFiles() {
               'Sourced': 'bg-amber-100 text-amber-800 border-amber-200',
               'Verification': 'bg-blue-100 text-blue-800 border-blue-200',
               'DISCOM Registered': 'bg-purple-100 text-purple-800 border-purple-200',
-              'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200'
+              'Subsidized': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+              'Cancelled': 'bg-rose-100 text-rose-800 border-rose-200'
             };
 
+            const isCancelled = file.status === 'Cancelled';
             const isHighlighted = file.id === highlightedFileId;
+            const canEditOrCancel = file.status === 'Sourced' || isVerificationStaff;
 
             return (
               <div
@@ -558,6 +612,8 @@ export default function StaffFiles() {
                 key={file.id}
                 className={`rounded-xl p-5 border transition-all flex flex-col justify-between animate-in fade-in duration-200 ${isHighlighted
                   ? 'bg-emerald-950/20 border-emerald-500 shadow-xl shadow-emerald-500/20 ring-2 ring-emerald-500'
+                  : isCancelled
+                  ? 'bg-slate-50/70 border-rose-200 shadow-xs'
                   : 'bg-surface border-surface-container-high shadow-xs hover:shadow-md'
                   }`}
               >
@@ -570,7 +626,7 @@ export default function StaffFiles() {
                   )}
                   {/* Header */}
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap mb-1">
                         <span className="text-[11px] font-mono font-bold text-secondary">{file.id}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${file.sourceType === 'DEALER' || file.source === 'DEALER'
@@ -586,14 +642,66 @@ export default function StaffFiles() {
                           {file.financeType === 'LOAN' || file.paymentMode === 'LOAN' ? `Loan (${file.loanBank ? file.loanBank.split(' ')[0] : 'Bank'})` : 'Cash Case'}
                         </span>
                       </div>
-                      <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors">
+                      <h3 className="text-base font-bold text-on-surface hover:text-primary transition-colors truncate">
                         {file.customerName}
                       </h3>
                     </div>
-                    <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status]}`}>
-                      {file.status}
-                    </span>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isCancelled && canEditOrCancel && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setFileToEdit(file)}
+                            className="p-1 rounded-lg text-secondary hover:text-primary hover:bg-surface-container transition-colors cursor-pointer"
+                            title="Edit Customer File"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit_square</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFileToCancel(file)}
+                            className="p-1 rounded-lg text-secondary hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Cancel Customer File"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">delete_outline</span>
+                          </button>
+                        </>
+                      )}
+                      <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-semibold shrink-0 ${statusColors[file.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        {file.status}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Cancellation Banner */}
+                  {isCancelled && (
+                    <div className="mt-2.5 p-2.5 bg-rose-50/90 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2">
+                      <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">cancel</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-rose-900 flex items-center justify-between">
+                          <span>File Cancelled</span>
+                          {file.cancelledAt && (
+                            <span className="text-[10px] text-rose-500 font-normal">
+                              {new Date(file.cancelledAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-rose-700 mt-0.5 break-words">
+                          <span className="font-semibold">Reason:</span> {file.cancellationReason || file.cancellation_reason || (file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED' || t.title?.includes('Cancelled'))?.notes) || 'No reason specified'}
+                        </div>
+                        {(file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) && (
+                          <div className="text-[10px] text-rose-600 mt-0.5">
+                            Cancelled by: <span className="font-medium">
+                              {typeof (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor) === 'object'
+                                ? (file.cancelledBy?.name || file.cancelledBy?.id || 'Authorized User')
+                                : (file.cancelledBy || file.timeline?.slice().reverse().find(t => t.stage === 'CANCELLED')?.actor)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Office Pipeline Stage Tracker */}
                   <div className="mt-3 p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/70 space-y-1.5">
@@ -715,37 +823,65 @@ export default function StaffFiles() {
 
                 {/* Action Buttons */}
                 <div className="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFileForTimeline(file)}
-                    className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                    title="View Timeline & Advance Stage"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">timeline</span>
-                    <span>Timeline</span>
-                  </button>
+                  {isCancelled ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileForTimeline(file)}
+                        className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        title="View History Timeline"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">timeline</span>
+                        <span>Timeline</span>
+                      </button>
 
-                  <button
-                    onClick={() => setSelectedFileForDocs(file)}
-                    className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
-                    <span>Docs (Optional)</span>
-                  </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await restoreCustomerFile(file.id);
+                          addToast(`Customer file ${file.id} restored to Sourced stage`, 'success');
+                        }}
+                        className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">history</span>
+                        <span>Restore File</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileForTimeline(file)}
+                        className="py-1.5 px-2 bg-primary-container/15 hover:bg-primary-container/25 text-primary text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        title="View Timeline & Advance Stage"
+                      >
+                        <span className="material-symbols-outlined text-[15px]">timeline</span>
+                        <span>Timeline</span>
+                      </button>
 
-                  <select
-                    value={file.status}
-                    onChange={(e) => {
-                      updateFileStatus(file.id, e.target.value);
-                      addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
-                    }}
-                    className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                  >
-                    <option value="Sourced">Sourced</option>
-                    <option value="Verification">Verification</option>
-                    <option value="DISCOM Registered">DISCOM Reg.</option>
-                    <option value="Subsidized">Subsidized</option>
-                  </select>
+                      <button
+                        onClick={() => setSelectedFileForDocs(file)}
+                        className="py-1.5 px-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-xs font-semibold rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
+                        <span>Docs (Optional)</span>
+                      </button>
+
+                      <select
+                        value={file.status}
+                        onChange={(e) => {
+                          updateFileStatus(file.id, e.target.value);
+                          addToast(`Updated ${file.customerName} status to "${e.target.value}"`, 'success');
+                        }}
+                        className="px-2 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-lowest text-xs font-bold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                      >
+                        <option value="Sourced">Sourced</option>
+                        <option value="Verification">Verification</option>
+                        <option value="DISCOM Registered">DISCOM Reg.</option>
+                        <option value="Subsidized">Subsidized</option>
+                      </select>
+                    </>
+                  )}
 
                   <a
                     href={`https://wa.me/${file.phone.replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(file.customerName)},%20I%20am%20${encodeURIComponent(currentStaff?.name || 'Sunvine Solar Officer')}%20from%20Sunvine%20Renewable%20regarding%20your%20${file.solarSystemKw}kW%20rooftop%20solar%20file.`}
@@ -1178,59 +1314,26 @@ export default function StaffFiles() {
                       <div className="mt-3 pt-2 border-t border-surface-container flex items-center gap-2 text-[11px]">
                         {isUp ? (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
-                              <span className="material-symbols-outlined text-[15px] text-primary">add_circle</span>
-                              <span>Add Another Photo / File</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (e.target.files?.length) {
-                                    await handleUploadDoc(selectedFileForDocs.id, doc.key, e.target.files);
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary hover:text-primary-container font-semibold transition-colors cursor-pointer shrink-0 flex items-center gap-1 border border-surface-container-highest"
-                              title="Capture another photo with Camera"
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-emerald-500/30 shadow-2xs"
+                              title="Upload another photo or PDF"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
-                              <span className="hidden sm:inline text-[11px]">Camera</span>
+                              <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                              <span>Add More Media / PDF</span>
                             </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 w-full">
-                            <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-1.5 border border-surface-container-highest">
-                              <span className="material-symbols-outlined text-[15px] text-primary">upload_file</span>
-                              <span>Upload Document {doc.mandatory ? '' : '(Optional)'}</span>
-                              <input
-                                type="file"
-                                multiple
-                                accept=".pdf,.jpeg,.jpg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (e.target.files?.length) {
-                                    await handleUploadDoc(selectedFileForDocs.id, doc.key, e.target.files);
-                                    e.target.value = '';
-                                  }
-                                }}
-                              />
-                            </label>
-
                             <button
                               type="button"
                               onClick={() => setCameraTargetDoc(doc)}
-                              className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors cursor-pointer shrink-0"
-                              title="Capture with Camera"
+                              className="flex-1 py-2 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-center cursor-pointer transition-colors flex items-center justify-center gap-2 border border-surface-container-highest shadow-2xs hover:border-primary/40"
+                              title="Upload photos or PDF document"
                             >
-                              <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                              <span className="material-symbols-outlined text-[16px] text-primary">upload_file</span>
+                              <span>Upload Document / Media {doc.mandatory ? '' : '(Optional)'}</span>
                             </button>
                           </div>
                         )}
@@ -1295,7 +1398,34 @@ export default function StaffFiles() {
           onClose={() => setCameraTargetDoc(null)}
           onCapture={handleCameraCapture}
           documentLabel={cameraTargetDoc.label}
-          mode="photo"
+          isUploading={cameraIsUploading}
+          uploadProgress={cameraUploadProgress}
+          maxPhotos={5}
+        />
+      )}
+
+      {/* EDIT CUSTOMER FILE MODAL */}
+      {fileToEdit && (
+        <EditCustomerFileModal
+          file={fileToEdit}
+          isOpen={Boolean(fileToEdit)}
+          onClose={() => setFileToEdit(null)}
+          onSave={async (fileId, updatedFields) => {
+            await editCustomerFile(fileId, updatedFields);
+          }}
+        />
+      )}
+
+      {/* CANCEL CUSTOMER FILE MODAL */}
+      {fileToCancel && (
+        <CancelCustomerFileModal
+          file={fileToCancel}
+          isOpen={Boolean(fileToCancel)}
+          isAdmin={false}
+          onClose={() => setFileToCancel(null)}
+          onCancelFile={async (fileId, reason) => {
+            await cancelCustomerFile(fileId, reason);
+          }}
         />
       )}
     </div>
