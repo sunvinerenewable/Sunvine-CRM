@@ -1579,15 +1579,20 @@ const safeSetItem = (key, value) => {
         staffName: assignedStaffName
       };
 
-      // 2. Dispatch OS-level Web Push notification to Admin & matching Salesman
+      // 2. Dispatch OS-level Web Push notification + Slack notification to Admin & matching Salesman
       pushNotificationService.sendApplicationCreatedPush({
         fileId: fileToSave.id,
         customerName: fileToSave.customerName,
         solarKw: fileToSave.solarSystemKw,
+        sanctionedLoadKw: fileToSave.sanctionedLoadKw,
         dealerId: fileToSave.dealerId,
         dealerName: fileToSave.dealerName,
         assignedStaffId,
-        assignedStaffName
+        assignedStaffName,
+        city: fileToSave.city,
+        discom: fileToSave.discom || fileToSave.discomCircle,
+        financeType: fileToSave.financeType || fileToSave.paymentMode,
+        roofType: fileToSave.roofType
       });
     }
 
@@ -1730,6 +1735,17 @@ const safeSetItem = (key, value) => {
       } catch (e) {
         console.warn('[AppContext] Failed to update file timeline in DB:', e);
       }
+
+      // Dispatch stage progression notification to Slack & Push channels
+      pushNotificationService.sendFileStageUpdatedNotification({
+        fileId,
+        customerName: targetUpdatedFile.customerName,
+        newStage: event.stage || targetUpdatedFile.currentStage,
+        status: event.status || targetUpdatedFile.status,
+        dealerName: targetUpdatedFile.dealerName,
+        actor: newMilestone.actor,
+        notes: newMilestone.notes
+      });
     }
 
     logActivity({
@@ -1841,6 +1857,15 @@ const safeSetItem = (key, value) => {
       console.warn('[AppContext] Failed to cancel customer file in DB:', e);
     }
 
+    if (targetCancelledFile) {
+      pushNotificationService.sendFileCancelledNotification({
+        fileId,
+        customerName: targetCancelledFile.customerName,
+        reason,
+        cancelledBy: actorName
+      });
+    }
+
     logActivity({
       action: 'CANCEL_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
@@ -1897,6 +1922,14 @@ const safeSetItem = (key, value) => {
     } catch (e) {
       console.warn('[AppContext] Failed to restore customer file in DB:', e);
       throw e;
+    }
+
+    if (targetRestoredFile) {
+      pushNotificationService.sendFileRestoredNotification({
+        fileId,
+        customerName: targetRestoredFile.customerName,
+        restoredBy: restoreMilestone.actor
+      });
     }
 
     logActivity({
