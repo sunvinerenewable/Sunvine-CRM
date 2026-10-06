@@ -2506,39 +2506,41 @@ export default function CreateQuotation() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  {/* 1. Mounting Structure Selection (Compact) */}
-                  <div className="flex flex-col gap-1.5 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
+                  {/* 1. Mounting Structure Selection (Compact & Mobile Responsive) */}
+                  <div className="flex flex-col justify-between gap-1.5 p-2.5 sm:p-3 rounded-xl bg-surface-container-low border border-surface-container-high">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px] text-primary">foundation</span>
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-primary">foundation</span>
                         <span>Mounting Structure</span>
                       </label>
-                      <span className="text-[10px] font-mono font-bold text-slate-600">
+                      <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
                         {structureType === 'standard_hdgi' ? '100% HDGI' : (structureType === 'monorail' ? '100% Monorail' : `${100 - hybridMonorailPercent}/${hybridMonorailPercent}% Hybrid`)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
+                    <div className="grid grid-cols-3 gap-1.5">
                       {[
-                        { id: 'standard_hdgi', label: 'HDGI Elevated' },
-                        { id: 'monorail', label: 'Industrial Monorail' },
-                        { id: 'hybrid', label: 'Hybrid Split' }
+                        { id: 'standard_hdgi', label: 'HDGI Elevated', shortLabel: 'HDGI' },
+                        { id: 'monorail', label: 'Industrial Monorail', shortLabel: 'Monorail' },
+                        { id: 'hybrid', label: 'Hybrid Split', shortLabel: 'Hybrid' }
                       ].map(st => (
                         <button
                           key={st.id}
                           type="button"
                           onClick={() => setStructureType(st.id)}
-                          className={`py-1 px-1 rounded text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer text-center truncate ${structureType === st.id
-                              ? 'bg-[#6CBF3D] text-[#0F1B2E] shadow-xs'
-                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface'
-                            }`}
+                          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                            structureType === st.id
+                              ? 'bg-[#6CBF3D] text-[#0F1B2E] shadow-xs ring-1 ring-[#6CBF3D]'
+                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface hover:bg-surface-container'
+                          }`}
                         >
-                          {st.label}
+                          <span className="hidden sm:inline">{st.label}</span>
+                          <span className="sm:hidden">{st.shortLabel}</span>
                         </button>
                       ))}
                     </div>
                     {structureType === 'hybrid' && (
-                      <div className="flex items-center gap-2 pt-1 border-t border-surface-container-high/60">
-                        <span className="text-[10px] text-secondary whitespace-nowrap">Monorail %:</span>
+                      <div className="flex items-center gap-2 pt-1.5 border-t border-surface-container-high/60">
+                        <span className="text-[10px] text-secondary whitespace-nowrap font-medium">Monorail %:</span>
                         <input
                           type="range"
                           min="10"
@@ -2548,19 +2550,19 @@ export default function CreateQuotation() {
                           onChange={(e) => setHybridMonorailPercent(Number(e.target.value))}
                           className="w-full accent-[#6CBF3D] h-1.5 cursor-pointer"
                         />
-                        <span className="text-[10px] font-bold font-mono text-emerald-700">{hybridMonorailPercent}%</span>
+                        <span className="text-[10px] font-bold font-mono text-emerald-700 shrink-0">{hybridMonorailPercent}%</span>
                       </div>
                     )}
                   </div>
 
-                  {/* 2. Doorstep Freight & Logistics (Compact) */}
-                  <div className="flex flex-col gap-1.5 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
+                  {/* 2. Doorstep Freight & Logistics (Compact & Mobile Responsive) */}
+                  <div className="flex flex-col justify-between gap-1.5 p-2.5 sm:p-3 rounded-xl bg-surface-container-low border border-surface-container-high">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px] text-primary">local_shipping</span>
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-primary">local_shipping</span>
                         <span>Doorstep Freight</span>
                       </label>
-                      <span className="text-[10px] font-mono font-bold text-emerald-700">
+                      <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
                         {transportPreset === 'dealer_scope'
                           ? '₹0 (Dealer Scope)'
                           : (transportPreset === 'rajkot_local'
@@ -2568,11 +2570,11 @@ export default function CreateQuotation() {
                             : `${formatINR(customTransportCharge)} (Custom)`)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1">
+                    <div className="grid grid-cols-3 gap-1.5">
                       {[
-                        { id: 'rajkot_local', label: '📍 Rajkot (₹1k)', amt: 1000 },
-                        { id: 'dealer_scope', label: '🚛 None (₹0)', amt: 0 },
-                        { id: 'custom', label: '🛣️ Custom ₹' }
+                        { id: 'rajkot_local', label: '📍 Rajkot (₹1k)', shortLabel: '📍 Rajkot' },
+                        { id: 'dealer_scope', label: '🚛 None (₹0)', shortLabel: '🚛 None' },
+                        { id: 'custom', label: '🛣️ Custom ₹', shortLabel: '🛣️ Custom' }
                       ].map(tp => (
                         <button
                           key={tp.id}
@@ -2581,56 +2583,83 @@ export default function CreateQuotation() {
                             setTransportPreset(tp.id);
                             if (tp.amt !== undefined) setCustomTransportCharge(tp.amt);
                           }}
-                          className={`py-1 px-1 rounded text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer text-center truncate ${transportPreset === tp.id
-                              ? 'bg-[#6CBF3D] text-[#0F1B2E] shadow-xs'
-                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface'
-                            }`}
+                          className={`py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer text-center ${
+                            transportPreset === tp.id
+                              ? 'bg-[#6CBF3D] text-[#0F1B2E] shadow-xs ring-1 ring-[#6CBF3D]'
+                              : 'bg-surface-container-lowest border border-surface-container-high text-secondary hover:text-on-surface hover:bg-surface-container'
+                          }`}
                         >
-                          {tp.label}
+                          <span className="hidden sm:inline">{tp.label}</span>
+                          <span className="sm:hidden">{tp.shortLabel}</span>
                         </button>
                       ))}
                     </div>
                     {transportPreset === 'custom' && (
-                      <div className="flex items-center gap-2 pt-1 border-t border-surface-container-high/60">
-                        <span className="text-[10px] text-secondary whitespace-nowrap">Flat Freight ₹:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="100"
-                          value={customTransportCharge}
-                          onChange={(e) => setCustomTransportCharge(Math.max(0, parseFloat(e.target.value) || 0))}
-                          className="w-full h-6 px-2 text-xs font-mono font-bold rounded border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-                          placeholder="e.g. 2500"
-                        />
+                      <div className="flex items-center gap-2 pt-1.5 border-t border-surface-container-high/60">
+                        <span className="text-[10px] text-secondary whitespace-nowrap font-medium">Flat Freight:</span>
+                        <div className="relative flex items-center flex-1">
+                          <span className="absolute left-2.5 text-xs text-secondary font-bold pointer-events-none">₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="100"
+                            value={customTransportCharge}
+                            onChange={(e) => setCustomTransportCharge(Math.max(0, parseFloat(e.target.value) || 0))}
+                            className="w-full h-7 pl-6 pr-2 text-xs font-mono font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+                            placeholder="e.g. 2500"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* 3. Turnkey Erection & DISCOM Liaisoning (Flexible Mode Bar: Per kW vs Fixed Flat ₹) */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2.5 rounded-lg bg-surface-container-low border border-surface-container-high">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined text-primary text-[18px] shrink-0">build_circle</span>
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-bold text-slate-900 leading-tight truncate">Installation Charge</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
-                          {installationPricingMode === 'fixed' ? 'Fixed Flat' : 'Per kW'}
+                {/* 3. Installation Charge (Sleek Responsive Engineering Service Card) */}
+                <div className="flex flex-col gap-2 p-2.5 sm:p-3 rounded-xl bg-surface-container-low border border-surface-container-high">
+                  {/* Row 1: Title, Subtitle & Prominent Live Total */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">build_circle</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs sm:text-sm font-bold text-slate-900 leading-tight">Installation Charge</span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
+                            {installationPricingMode === 'fixed' ? 'Fixed Flat' : 'Per kW'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 line-clamp-1">
+                          Anchoring, wiring, net-metering &amp; inspection
                         </span>
                       </div>
-                      <span className="text-[10px] text-slate-500 truncate">
-                        Anchoring, wiring, net-metering &amp; inspection
+                    </div>
+
+                    {/* Prominent Price Display on Right */}
+                    <div className="text-right shrink-0">
+                      <span className="text-sm font-mono font-extrabold text-emerald-800">
+                        {formatINR(installationEstimatedCost)}
                       </span>
+                      {installationPricingMode === 'fixed' && kw > 0 ? (
+                        <span className="block text-[9px] text-slate-500 font-mono">
+                          (~₹{Math.round(installationEstimatedCost / kw).toLocaleString('en-IN')}/kW)
+                        </span>
+                      ) : (
+                        <span className="block text-[9px] text-slate-500 font-mono">
+                          (@ ₹{installationRatePerKw}/kW)
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap sm:flex-nowrap">
-                    {/* Mode Toggle: Rate / kW vs Fixed Flat Amount */}
-                    <div className="flex items-center bg-surface-container-lowest p-0.5 rounded-lg border border-surface-container-high">
+                  {/* Row 2: Controls (Mode Toggle + Input Field + Reset) */}
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-surface-container-high/60 flex-wrap sm:flex-nowrap">
+                    {/* Mode Switcher */}
+                    <div className="flex items-center bg-surface-container-lowest p-0.5 rounded-lg border border-surface-container-high shrink-0">
                       <button
                         type="button"
                         onClick={() => setInstallationPricingMode('per_kw')}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                           installationPricingMode === 'per_kw'
                             ? 'bg-primary text-white shadow-xs'
                             : 'text-secondary hover:text-on-surface'
@@ -2647,7 +2676,7 @@ export default function CreateQuotation() {
                             setInstallationFixedAmount(Math.round(kw * (Number(installationRatePerKw) || defaultInstallationRatePerKw)));
                           }
                         }}
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
                           installationPricingMode === 'fixed'
                             ? 'bg-primary text-white shadow-xs'
                             : 'text-secondary hover:text-on-surface'
@@ -2658,66 +2687,57 @@ export default function CreateQuotation() {
                       </button>
                     </div>
 
-                    {/* Dynamic Input based on active mode */}
-                    {installationPricingMode === 'per_kw' ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-secondary font-medium">Rate:</span>
-                        <div className="relative flex items-center">
-                          <span className="absolute left-2 text-xs text-secondary font-bold pointer-events-none">₹</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max="10000"
-                            step="50"
-                            value={installationRatePerKw}
-                            onChange={(e) => {
-                              setUserOverrodeInstallRate(true);
-                              setInstallationRatePerKw(Math.max(0, parseFloat(e.target.value) || 0));
-                            }}
-                            className="w-20 h-7 pl-5 pr-1 text-xs font-mono font-bold rounded-md border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-                          />
-                          <span className="text-[10px] text-secondary font-bold ml-1">/kW</span>
-                        </div>
-                        {userOverrodeInstallRate && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setUserOverrodeInstallRate(false);
-                              setInstallationRatePerKw(defaultInstallationRatePerKw);
-                            }}
-                            className="text-[10px] text-amber-700 font-bold hover:underline cursor-pointer"
-                            title="Reset to structure default rate"
-                          >
-                            Reset
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-secondary font-medium">Flat ₹:</span>
-                        <div className="relative flex items-center">
-                          <span className="absolute left-2 text-xs text-secondary font-bold pointer-events-none">₹</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="100"
-                            value={installationFixedAmount}
-                            onChange={(e) => setInstallationFixedAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                            className="w-24 h-7 pl-5 pr-1 text-xs font-mono font-bold rounded-md border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
-                            placeholder="e.g. 5000"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="text-right pl-2 border-l border-surface-container-high/60">
-                      <span className="text-xs font-mono font-bold text-emerald-700 whitespace-nowrap">
-                        = {formatINR(installationEstimatedCost)}
-                      </span>
-                      {installationPricingMode === 'fixed' && kw > 0 && (
-                        <span className="block text-[9px] text-slate-500 font-mono">
-                          (~₹{Math.round(installationEstimatedCost / kw).toLocaleString('en-IN')}/kW)
-                        </span>
+                    {/* Mode Specific Input */}
+                    <div className="flex items-center gap-1.5 flex-1 justify-end min-w-0">
+                      {installationPricingMode === 'per_kw' ? (
+                        <>
+                          <span className="text-[11px] text-secondary font-medium shrink-0">Rate:</span>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-2.5 text-xs text-secondary font-bold pointer-events-none">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="10000"
+                              step="50"
+                              value={installationRatePerKw}
+                              onChange={(e) => {
+                                setUserOverrodeInstallRate(true);
+                                setInstallationRatePerKw(Math.max(0, parseFloat(e.target.value) || 0));
+                              }}
+                              className="w-24 h-8 pl-6 pr-2 text-xs font-mono font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+                            />
+                            <span className="text-[10px] text-secondary font-bold ml-1.5 shrink-0">/kW</span>
+                          </div>
+                          {userOverrodeInstallRate && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUserOverrodeInstallRate(false);
+                                setInstallationRatePerKw(defaultInstallationRatePerKw);
+                              }}
+                              className="text-[10px] text-amber-700 font-bold hover:underline cursor-pointer px-1 py-0.5 rounded bg-amber-50 shrink-0"
+                              title="Reset to structure default rate"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[11px] text-secondary font-medium shrink-0">Flat Amount:</span>
+                          <div className="relative flex items-center">
+                            <span className="absolute left-2.5 text-xs text-secondary font-bold pointer-events-none">₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="100"
+                              value={installationFixedAmount}
+                              onChange={(e) => setInstallationFixedAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                              className="w-28 h-8 pl-6 pr-2 text-xs font-mono font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary outline-none"
+                              placeholder="e.g. 5000"
+                            />
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>
