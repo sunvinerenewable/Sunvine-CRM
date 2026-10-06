@@ -158,9 +158,10 @@ export default async function handler(req, res) {
           params.push(passwordHash);
         }
 
-        if (email) {
+        if (email !== undefined) {
+          const cleanEmailVal = (email && String(email).trim()) ? String(email).trim() : null;
           updates.push(`email = $${idx++}`);
-          params.push(email.trim());
+          params.push(cleanEmailVal);
         }
 
         if (firmName) {
@@ -353,9 +354,10 @@ export default async function handler(req, res) {
           params.push(cleanPhone);
         }
 
-        if (email) {
+        if (email !== undefined) {
+          const cleanStaffEmail = (email && String(email).trim()) ? String(email).trim() : null;
           updates.push(`email = $${idx++}`);
-          params.push(email.trim());
+          params.push(cleanStaffEmail);
         }
 
         if (role) {

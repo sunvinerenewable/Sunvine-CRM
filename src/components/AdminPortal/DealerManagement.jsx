@@ -159,7 +159,7 @@ export default function DealerManagement() {
     const updatedDealer = {
       ...credModalDealer,
       mobile: cleanMobile,
-      email: cleanEmail || credModalDealer.email,
+      email: cleanEmail ? cleanEmail : null,
       password: cleanPass
     };
 
@@ -418,8 +418,20 @@ export default function DealerManagement() {
 
   const handleSaveDealer = (e) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (!newFirm.trim() || !newContact.trim() || !newMobile.trim()) {
-      setFormError('Please fill in required fields: Firm Name, Signatory, and Mobile Number.');
+    const cleanMobile = (newMobile || '').replace(/\D/g, '').slice(0, 10);
+    if (!newFirm.trim() || !newContact.trim() || cleanMobile.length !== 10) {
+      const msg = 'Please fill in required fields: Firm Name, Signatory, and a valid 10-digit Mobile Number.';
+      setFormError(msg);
+      if (addToast) addToast({ title: 'Validation Error', message: msg, type: 'error' });
+      return;
+    }
+
+    const cleanEmail = newEmail.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (cleanEmail && !emailRegex.test(cleanEmail)) {
+      const msg = 'Please enter a valid email address (e.g. partner@example.com) or leave it empty.';
+      setFormError(msg);
+      if (addToast) addToast({ title: 'Invalid Email', message: msg, type: 'error' });
       return;
     }
 
@@ -460,13 +472,15 @@ export default function DealerManagement() {
                           staffZone.includes('DGVCL') || staffCity.includes('Surat') || staffCity.includes('Bharuch') || staffCity.includes('Navsari') ? 'DGVCL Circle' :
                           staffZone.includes('MGVCL') || staffCity.includes('Vadodara') || staffCity.includes('Anand') ? 'MGVCL Circle' : 'UGVCL Circle';
 
+    const finalEmail = cleanEmail ? cleanEmail : null;
+
     if (editingDealer) {
       const updatedDealerObj = {
         ...editingDealer,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
-        mobile: newMobile.trim(),
-        email: newEmail.trim() || editingDealer.email || 'partner@sunvinedealer.in',
+        mobile: cleanMobile,
+        email: finalEmail,
         assignedStaffId,
         assignedStaffName,
         city: editingDealer.city || cityDerived,
@@ -541,8 +555,8 @@ export default function DealerManagement() {
         dealerCode: finalDealerId,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
-        mobile: newMobile.trim(),
-        email: newEmail.trim() || 'partner@sunvinedealer.in',
+        mobile: cleanMobile,
+        email: finalEmail,
         assignedStaffId,
         assignedStaffName,
         city: cityDerived,
@@ -650,6 +664,14 @@ export default function DealerManagement() {
           </div>
         </section>
 
+        {/* Visible Validation Error Banner */}
+        {formError && (
+          <div className="max-w-[1520px] mx-auto w-full mb-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-center gap-2 shadow-xs">
+            <span className="material-symbols-outlined text-[18px] text-rose-600 shrink-0">error</span>
+            <span>{formError}</span>
+          </div>
+        )}
+
         {/* 12-Column Layout */}
         <div className="grid grid-cols-12 gap-6 max-w-[1520px] mx-auto w-full">
           {/* Left Column (8 cols) */}
@@ -707,12 +729,22 @@ export default function DealerManagement() {
                       <span className="material-symbols-outlined text-[12px]">lock</span> Auth Key
                     </span>
                   </label>
-                  <input
-                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-semibold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
-                    type="text"
-                    value={newMobile}
-                    onChange={(e) => setNewMobile(e.target.value)}
-                  />
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3.5 font-mono text-sm font-bold text-slate-600 select-none pointer-events-none flex items-center gap-1.5 z-10">
+                      <span>+91</span>
+                      <span className="text-slate-300 font-normal">|</span>
+                    </span>
+                    <input
+                      className="w-full pl-14 pr-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-semibold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 font-mono tracking-wide"
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      placeholder="9876543210"
+                      value={newMobile}
+                      onChange={(e) => setNewMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      autoComplete="off"
+                    />
+                  </div>
                   <p className="mt-1 font-body-sm text-body-sm text-secondary">Primary authentication identifier for portal sign-in and signature OTPs</p>
                 </div>
                 <div className="col-span-1 md:col-span-2">
@@ -722,9 +754,10 @@ export default function DealerManagement() {
                   <input
                     className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
                     type="email"
-                    placeholder="partner@sunvinedealer.in"
+                    placeholder="e.g. partner@example.com (Optional)"
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
+                    autoComplete="off"
                   />
                 </div>
                 {/* Sales Channel & Salesman Assignment (with Direct to Company Primary Option) */}
@@ -921,6 +954,8 @@ export default function DealerManagement() {
                   <input
                     className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-bold focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
                     type="text"
+                    name="dealerMaxMarginCap"
+                    autoComplete="off"
                     value={newCap}
                     onChange={(e) => setNewCap(e.target.value)}
                   />
@@ -984,7 +1019,7 @@ export default function DealerManagement() {
                   <span className="font-label-xs text-label-xs text-secondary uppercase font-semibold">Login Username (Mobile)</span>
                   <div className="flex items-center justify-between mt-0.5">
                     <span className="font-body-sm font-semibold text-on-surface">Registered Mobile</span>
-                    <span className="font-mono text-label-sm text-primary font-bold">{newMobile || '10-digit mobile'}</span>
+                    <span className="font-mono text-label-sm text-primary font-bold">{newMobile ? `+91 ${newMobile}` : '+91 (10-digit mobile)'}</span>
                   </div>
                 </div>
                 <div className="h-px bg-surface-container-highest"></div>
@@ -1008,6 +1043,7 @@ export default function DealerManagement() {
                       onChange={(e) => setNewPassword(e.target.value)}
                       className="w-full h-9 pl-9 pr-9 bg-white border border-surface-container-highest rounded-lg font-mono text-xs text-on-surface font-semibold focus:outline-none focus:border-primary-container"
                       placeholder="Assign password"
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"

@@ -1451,15 +1451,22 @@ export default function StaffManagement() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile Number (10 Digits) *</label>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={10}
-                    value={newStaffPhone}
-                    onChange={e => setNewStaffPhone(e.target.value.replace(/\D/g, ''))}
-                    placeholder="9825012345"
-                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
-                  />
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3 font-mono text-xs font-bold text-slate-600 select-none pointer-events-none flex items-center gap-1 z-10">
+                      <span>+91</span>
+                      <span className="text-slate-300 font-normal">|</span>
+                    </span>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      value={newStaffPhone}
+                      onChange={e => setNewStaffPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      placeholder="9825012345"
+                      className="w-full pl-12 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                      autoComplete="off"
+                    />
+                  </div>
                 </div>
 
                 <div>
