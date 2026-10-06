@@ -90,7 +90,23 @@ export default function DealerManagement() {
     setPricingModalDealer(null);
   };
 
+  // Helper: auto-increment dealer code based on highest numeric ID in existing dealers
+  const computeNextDealerCode = (dealerList = []) => {
+    const nums = (dealerList || [])
+      .map(d => {
+        const str = String(d?.id || d?.dealerCode || '');
+        const match = str.match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : null;
+      })
+      .filter(n => n !== null && !isNaN(n));
+    if (nums.length === 0) return 'SV-DLR-0801';
+    const nextNum = Math.max(...nums) + 1;
+    const formattedNum = nextNum < 1000 ? `0${nextNum}` : `${nextNum}`;
+    return `SV-DLR-${formattedNum}`;
+  };
+
   // Onboarding Form States
+  const [newDealerCode, setNewDealerCode] = useState('');
   const [newFirm, setNewFirm] = useState('');
   const [newContact, setNewContact] = useState('');
   const [newMobile, setNewMobile] = useState('');
@@ -336,6 +352,7 @@ export default function DealerManagement() {
 
   const handleOpenAddDealer = () => {
     setEditingDealer(null);
+    setNewDealerCode(computeNextDealerCode(dealers));
     setNewFirm('');
     setNewContact('');
     setNewMobile('');
@@ -355,6 +372,7 @@ export default function DealerManagement() {
 
   const handleEditDealer = (dealer) => {
     setEditingDealer(dealer);
+    setNewDealerCode(dealer.id || dealer.dealerCode || '');
     setNewFirm(dealer.firmName || '');
     setNewContact(dealer.contactPerson || '');
     setNewMobile(dealer.mobile || dealer.phone || '');
@@ -384,6 +402,7 @@ export default function DealerManagement() {
 
   const handleDiscardModal = () => {
     setEditingDealer(null);
+    setNewDealerCode('');
     setNewFirm('');
     setNewContact('');
     setNewMobile('');
@@ -516,8 +535,10 @@ export default function DealerManagement() {
         });
       }
     } else {
+      const finalDealerId = newDealerCode.trim() || computeNextDealerCode(dealers);
       const newDealerObj = {
-        id: `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`,
+        id: finalDealerId,
+        dealerCode: finalDealerId,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
         mobile: newMobile.trim(),
@@ -928,16 +949,28 @@ export default function DealerManagement() {
               </div>
               <div className="p-3.5 bg-surface-container-low rounded-lg border border-surface-container-highest flex items-center justify-between">
                 <div>
-                  <span className="font-label-xs text-label-xs text-secondary uppercase tracking-wider block">Assigned Partner ID</span>
-                  <span className="font-headline-sm text-headline-sm font-bold font-mono text-on-surface">
-                    {editingDealer ? editingDealer.id : '#SV-DLR-0845'}
-                  </span>
+                  <span className="font-label-xs text-label-xs text-secondary uppercase tracking-wider block">Assigned Partner ID / Dealer Code</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="font-headline-sm text-headline-sm font-bold font-mono text-on-surface">
+                      {editingDealer ? editingDealer.id : (newDealerCode || computeNextDealerCode(dealers))}
+                    </span>
+                    {!editingDealer && (
+                      <input
+                        type="text"
+                        value={newDealerCode}
+                        onChange={(e) => setNewDealerCode(e.target.value.toUpperCase())}
+                        placeholder="SV-DLR-0805"
+                        className="text-xs font-mono font-bold px-2 py-0.5 bg-surface-container-highest border border-surface-container-highest rounded text-on-surface focus:outline-none focus:border-primary w-32"
+                        title="Auto-incremented dealer code. Editable if needed."
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="text-right">
                   <span className="font-label-xs text-label-xs text-secondary block">Provisioning Status</span>
                   <span className="inline-flex items-center gap-1 font-label-xs text-label-xs font-bold text-primary">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
-                    {editingDealer ? 'Active Partner' : 'Ready to Dispatch'}
+                    {editingDealer ? 'Active Partner' : 'Auto-Incremented'}
                   </span>
                 </div>
               </div>

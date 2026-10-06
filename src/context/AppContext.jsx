@@ -388,10 +388,22 @@ export const AppProvider = ({ children }) => {
     if (isAuthenticated && typeof window !== 'undefined') {
       if (isPublicProposalRoute()) return;
 
-      if (window.location.pathname === '/profile') {
-        window.history.replaceState({ tab: 'dealer_settings' }, '', '/settings');
-        setActiveTabState('dealer_settings');
+      if (window.location.pathname === '/profile' || window.location.pathname === '/settings') {
+        if (role === 'admin') {
+          window.history.replaceState({ tab: 'admin_settings' }, '', '/admin/settings');
+          setActiveTabState('admin_settings');
+        } else if (role === 'staff') {
+          window.history.replaceState({ tab: 'staff_dashboard' }, '', '/staff');
+          setActiveTabState('staff_dashboard');
+        } else {
+          window.history.replaceState({ tab: 'dashboard' }, '', '/dashboard');
+          setActiveTabState('dashboard');
+        }
         return;
+      }
+      if (role !== 'admin' && (activeTab === 'dealer_settings' || activeTab === 'admin_settings')) {
+        const safeTab = role === 'staff' ? 'staff_dashboard' : 'dashboard';
+        setActiveTabState(safeTab);
       }
       let targetPath = TAB_TO_PATH[activeTab];
       if (role === 'admin' && (activeTab === 'create_quote' || activeTab === 'admin_create_quote')) {
@@ -819,6 +831,11 @@ const safeSetItem = (key, value) => {
       }
       if (dbStaff.status === 'fulfilled' && Array.isArray(dbStaff.value)) {
         setStaffList(dbStaff.value);
+        setCurrentStaff(prev => {
+          if (!prev?.id) return prev;
+          const live = dbStaff.value.find(s => s.id === prev.id || (s.phone && s.phone === prev.phone));
+          return live ? { ...prev, ...live } : prev;
+        });
       }
       if (dbSettings.status === 'fulfilled' && dbSettings.value) {
         setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
@@ -1132,6 +1149,11 @@ const safeSetItem = (key, value) => {
       const freshStaff = await staffService.getAllStaff();
       if (freshStaff && Array.isArray(freshStaff)) {
         setStaffList(freshStaff);
+        setCurrentStaff(prev => {
+          if (!prev?.id) return prev;
+          const live = freshStaff.find(s => s.id === prev.id || (s.phone && s.phone === prev.phone));
+          return live ? { ...prev, ...live } : prev;
+        });
         return freshStaff;
       }
     } catch (err) {

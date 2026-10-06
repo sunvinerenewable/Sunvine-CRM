@@ -1,7 +1,24 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { hardwareService } from '../../services/hardwareService';
+import { systemSettingsService } from '../../services/systemSettingsService';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+
+const DEFAULT_BOM_CATEGORIES = [
+  { value: 'structure', label: 'Mounting Structure' },
+  { value: 'electrical', label: 'Electrical & Switchgear' },
+  { value: 'cables', label: 'Solar Cables & Wiring' },
+  { value: 'conduits', label: 'Conduits & Piping' },
+  { value: 'safety', label: 'Safety & Earthing' },
+  { value: 'metering', label: 'Metering & Auxiliary' },
+  { value: 'civil', label: 'Civil Works & Foundation' },
+  { value: 'logistics', label: 'Logistics & Transportation' },
+  { value: 'other', label: 'Custom Hardware' }
+];
+
+const DEFAULT_BOM_UNITS = [
+  'Nos', 'Meter', 'Mtr', 'Set', 'Pair', 'Kg', 'Box', 'Roll', 'Packet', 'Packer', 'Bundle', 'Liter', 'Feet'
+];
 
 export default function HardwareMaster() {
   const {
@@ -35,6 +52,36 @@ export default function HardwareMaster() {
   const [modulesViewMode, setModulesViewMode] = useTableViewMode('admin_hw_modules');
   const [invertersViewMode, setInvertersViewMode] = useTableViewMode('admin_hw_inverters');
   const [bomViewMode, setBomViewMode] = useTableViewMode('admin_hw_bom');
+
+  // Custom Pure UI Deletion Confirmation State
+  const [deleteModalState, setDeleteModalState] = useState(null);
+
+  // Dynamic Units & Categories (Database Persisted)
+  const [availableUnits, setAvailableUnits] = useState(DEFAULT_BOM_UNITS);
+  const [availableCategories, setAvailableCategories] = useState(DEFAULT_BOM_CATEGORIES);
+  const [isAddingCustomUnit, setIsAddingCustomUnit] = useState(false);
+  const [customUnitInput, setCustomUnitInput] = useState('');
+  const [isAddingCustomCategory, setIsAddingCustomCategory] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
+
+  // Fetch custom units and categories from Supabase on mount
+  useEffect(() => {
+    let isMounted = true;
+    systemSettingsService.getCustomUnitsAndCategories().then(res => {
+      if (!isMounted || !res) return;
+      if (Array.isArray(res.units) && res.units.length > 0) {
+        setAvailableUnits(prev => Array.from(new Set([...prev, ...res.units])));
+      }
+      if (Array.isArray(res.categories) && res.categories.length > 0) {
+        setAvailableCategories(prev => {
+          const existingKeys = new Set(prev.map(c => c.value));
+          const newCats = res.categories.filter(c => !existingKeys.has(c.value));
+          return [...prev, ...newCats];
+        });
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   // BOM Management State
   const [bomSearch, setBomSearch] = useState('');
@@ -410,24 +457,75 @@ export default function HardwareMaster() {
     }
   };
 
-  const handleDeleteModule = async (mod) => {
-    if (window.confirm(`Permanently remove ${mod.brand} ${mod.model} from catalog and database?`)) {
-      if (setModulesList) {
-        setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
+  const handleDeleteModule = (mod) => {
+    setDeleteModalState({
+      title: 'Delete Solar PV Module',
+      badge: 'Solar PV Module',
+      itemName: `${mod.brand} ${mod.model}`,
+      itemDetails: `${mod.wattage}W · ${mod.cellTech || ''} · ${mod.dimensions || ''}`,
+      itemRate: mod.ratePerWp ? `${mod.ratePerWp}` : 'Benchmark Rate',
+      warning: 'This module will be permanently removed from the catalog, presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Module',
+      onConfirm: async () => {
+        if (setModulesList) {
+          setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
+        }
+        await hardwareService.deleteModule(mod.id);
+        triggerToast(`Removed ${mod.brand} ${mod.model} from database`);
+        setDeleteModalState(null);
       }
-      await hardwareService.deleteModule(mod.id);
-      triggerToast(`Removed ${mod.brand} ${mod.model}`);
-    }
+    });
   };
 
-  const handleDeleteInverter = async (inv) => {
-    if (window.confirm(`Permanently remove ${inv.brand} ${inv.model} from catalog and database?`)) {
-      if (setInvertersList) {
-        setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
+  const handleDeleteInverter = (inv) => {
+    setDeleteModalState({
+      title: 'Delete String Inverter',
+      badge: 'Solar Inverter',
+      itemName: `${inv.brand} ${inv.model}`,
+      itemDetails: `${inv.capacity || `${inv.capacityKW} kW`} · ${inv.phase || ''} · ${inv.warranty || ''}`,
+      itemRate: inv.basePrice || 'Benchmark Price',
+      warning: 'This inverter model will be permanently removed from the catalog, presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Inverter',
+      onConfirm: async () => {
+        if (setInvertersList) {
+          setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
+        }
+        await hardwareService.deleteInverter(inv.id);
+        triggerToast(`Removed ${inv.brand} ${inv.model} from database`);
+        setDeleteModalState(null);
       }
-      await hardwareService.deleteInverter(inv.id);
-      triggerToast(`Removed ${inv.brand} ${inv.model}`);
+    });
+  };
+
+  // Custom Unit & Category Handlers
+  const handleAddCustomUnit = async () => {
+    const clean = customUnitInput.trim();
+    if (!clean) return;
+    if (!availableUnits.includes(clean)) {
+      const nextUnits = [...availableUnits, clean];
+      setAvailableUnits(nextUnits);
+      await systemSettingsService.saveCustomUnitsAndCategories(nextUnits, availableCategories);
+      triggerToast(`Custom unit "${clean}" saved to database!`);
     }
+    setBomForm(prev => ({ ...prev, unit: clean }));
+    setCustomUnitInput('');
+    setIsAddingCustomUnit(false);
+  };
+
+  const handleAddCustomCategory = async () => {
+    const clean = customCategoryInput.trim();
+    if (!clean) return;
+    const catKey = clean.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (!availableCategories.some(c => c.value === catKey)) {
+      const newCatObj = { value: catKey, label: clean };
+      const nextCats = [...availableCategories, newCatObj];
+      setAvailableCategories(nextCats);
+      await systemSettingsService.saveCustomUnitsAndCategories(availableUnits, nextCats);
+      triggerToast(`Custom category "${clean}" saved to database!`);
+    }
+    setBomForm(prev => ({ ...prev, category: catKey }));
+    setCustomCategoryInput('');
+    setIsAddingCustomCategory(false);
   };
 
   // ==========================================
@@ -444,6 +542,8 @@ export default function HardwareMaster() {
       rate: '',
       gstRate: '18'
     });
+    setIsAddingCustomCategory(false);
+    setIsAddingCustomUnit(false);
     setShowAddBomModal(true);
   };
 
@@ -454,34 +554,56 @@ export default function HardwareMaster() {
       category: item.category || 'structure',
       make: item.make || '',
       unit: item.unit || 'Nos',
-      spec: item.spec || '',
-      rate: item.rate !== undefined ? String(item.rate) : '',
+      spec: item.spec || item.specs || '',
+      rate: item.rate !== undefined ? String(item.rate) : (item.defaultRate !== undefined ? String(item.defaultRate) : ''),
       gstRate: item.gstRate !== undefined ? String(item.gstRate) : '18'
     });
+    setIsAddingCustomCategory(false);
+    setIsAddingCustomUnit(false);
     setShowAddBomModal(true);
   };
 
-  const handleToggleArchiveBom = async (item) => {
+  const handleToggleArchiveBom = (item) => {
     const isCurrentlyArchived = !!item.isArchived;
-    const confirmMsg = isCurrentlyArchived
-      ? `Restore ${item.name} to active BOM catalog?`
-      : `Archive ${item.name}? It will be hidden from default quotation presets.`;
-
-    if (window.confirm(confirmMsg)) {
-      if (archiveBomItem) {
-        await archiveBomItem(item.id, !isCurrentlyArchived);
+    setDeleteModalState({
+      title: isCurrentlyArchived ? 'Restore BOM Component' : 'Archive BOM Component',
+      badge: isCurrentlyArchived ? 'RESTORE ITEM' : 'ARCHIVE ITEM',
+      itemName: item.name,
+      itemDetails: `Category: ${item.category || 'structure'} · Unit: ${item.unit || 'Nos'}`,
+      itemRate: `₹ ${Number(item.rate || item.defaultRate || 0).toLocaleString('en-IN')}`,
+      warning: isCurrentlyArchived
+        ? 'This item will be restored and will appear in active quotation presets and BOM builder.'
+        : 'This item will be archived and hidden from default quotation presets.',
+      confirmButtonText: isCurrentlyArchived ? 'Restore Component' : 'Archive Component',
+      isArchive: !isCurrentlyArchived,
+      isRestore: isCurrentlyArchived,
+      onConfirm: async () => {
+        if (archiveBomItem) {
+          await archiveBomItem(item.id, !isCurrentlyArchived);
+        }
+        triggerToast(isCurrentlyArchived ? `Restored ${item.name}` : `Archived ${item.name}`);
+        setDeleteModalState(null);
       }
-      triggerToast(isCurrentlyArchived ? `Restored ${item.name}` : `Archived ${item.name}`);
-    }
+    });
   };
 
-  const handleDeleteBom = async (item) => {
-    if (window.confirm(`Permanently remove ${item.name} from BOM catalog and database?`)) {
-      if (deleteBomItem) {
-        await deleteBomItem(item.id);
+  const handleDeleteBom = (item) => {
+    setDeleteModalState({
+      title: 'Delete BOM Hardware Component',
+      badge: (item.category || 'BOM ITEM').toUpperCase(),
+      itemName: item.name,
+      itemDetails: `Make: ${item.make || 'Approved Brand'} · Unit: ${item.unit || 'Nos'} · GST: ${item.gstRate || 18}%`,
+      itemRate: `₹ ${Number(item.rate || item.defaultRate || 0).toLocaleString('en-IN')}`,
+      warning: 'This component will be permanently removed from BOM catalog, standard presets, and Supabase database.',
+      confirmButtonText: 'Permanently Delete Component',
+      onConfirm: async () => {
+        if (deleteBomItem) {
+          await deleteBomItem(item.id);
+        }
+        triggerToast(`Removed ${item.name} from catalog and database`);
+        setDeleteModalState(null);
       }
-      triggerToast(`Removed ${item.name} from catalog and database`);
-    }
+    });
   };
 
   const handleSaveBom = async (e) => {
@@ -2637,20 +2759,51 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Component Category *</label>
-                  <select
-                    value={bomForm.category}
-                    onChange={(e) => setBomForm({ ...bomForm, category: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface"
-                  >
-                    <option value="structure">Mounting Structure</option>
-                    <option value="electrical">Electrical &amp; Switchgear</option>
-                    <option value="cables">Solar Cables &amp; Wiring</option>
-                    <option value="conduits">Conduits &amp; Piping</option>
-                    <option value="safety">Safety &amp; Earthing</option>
-                    <option value="metering">Metering &amp; Auxiliary</option>
-                    <option value="other">Custom Hardware</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-secondary">Component Category *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingCustomCategory(!isAddingCustomCategory)}
+                      className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                      {isAddingCustomCategory ? 'Cancel' : '+ New Category'}
+                    </button>
+                  </div>
+                  {isAddingCustomCategory ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. Civil Works"
+                        value={customCategoryInput}
+                        onChange={(e) => setCustomCategoryInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-container-highest bg-surface-container-lowest text-on-surface"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomCategory}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={bomForm.category}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setIsAddingCustomCategory(true);
+                        } else {
+                          setBomForm({ ...bomForm, category: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface cursor-pointer"
+                    >
+                      {availableCategories.map(cat => (
+                        <option key={cat.value} value={cat.value}>{cat.label}</option>
+                      ))}
+                      <option value="__add_new__">+ Add Custom Category...</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -2667,20 +2820,51 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Standard Unit *</label>
-                  <select
-                    value={bomForm.unit}
-                    onChange={(e) => setBomForm({ ...bomForm, unit: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface"
-                  >
-                    <option value="Nos">Nos</option>
-                    <option value="Meter">Meter</option>
-                    <option value="Set">Set</option>
-                    <option value="Pair">Pair</option>
-                    <option value="Kg">Kg</option>
-                    <option value="Box">Box</option>
-                    <option value="Roll">Roll</option>
-                  </select>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-secondary">Standard Unit *</label>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddingCustomUnit(!isAddingCustomUnit)}
+                      className="text-[11px] text-primary hover:underline font-semibold cursor-pointer"
+                    >
+                      {isAddingCustomUnit ? 'Cancel' : '+ New Unit'}
+                    </button>
+                  </div>
+                  {isAddingCustomUnit ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="e.g. Packet, Nos"
+                        value={customUnitInput}
+                        onChange={(e) => setCustomUnitInput(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-surface-container-highest bg-surface-container-lowest text-on-surface"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddCustomUnit}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold cursor-pointer"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : (
+                    <select
+                      value={bomForm.unit}
+                      onChange={(e) => {
+                        if (e.target.value === '__add_new__') {
+                          setIsAddingCustomUnit(true);
+                        } else {
+                          setBomForm({ ...bomForm, unit: e.target.value });
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface cursor-pointer"
+                    >
+                      {availableUnits.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
+                      <option value="__add_new__">+ Add Custom Unit...</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -2705,7 +2889,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                   <select
                     value={bomForm.gstRate}
                     onChange={(e) => setBomForm({ ...bomForm, gstRate: e.target.value })}
-                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface font-mono"
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-surface-container-highest bg-surface-container-lowest focus:ring-1 focus:ring-primary-container text-on-surface font-mono cursor-pointer"
                   >
                     <option value="18">18% (Standard)</option>
                     <option value="12">12%</option>
@@ -2746,6 +2930,105 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================= */}
+      {/* CUSTOM PURE UI HARDWARE DELETION / ARCHIVE CONFIRMATION MODAL */}
+      {/* ============================================================= */}
+      {deleteModalState && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 text-slate-900 animate-in zoom-in-95 space-y-4">
+            {/* Header with Danger / Warning badge */}
+            <div className="flex items-start gap-3.5">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                deleteModalState.isRestore
+                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                  : deleteModalState.isArchive
+                    ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                    : 'bg-rose-50 text-rose-600 border border-rose-200'
+              }`}>
+                <span className="material-symbols-outlined text-2xl">
+                  {deleteModalState.isRestore ? 'unarchive' : deleteModalState.isArchive ? 'archive' : 'delete_forever'}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-500">
+                  {deleteModalState.badge || 'Hardware Catalog'}
+                </span>
+                <h3 className="font-bold text-slate-900 text-lg leading-tight mt-0.5">
+                  {deleteModalState.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteModalState(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Hardware Item Info Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-sm font-bold text-slate-900">
+                {deleteModalState.itemName}
+              </div>
+              {deleteModalState.itemDetails && (
+                <div className="text-xs text-slate-600">
+                  {deleteModalState.itemDetails}
+                </div>
+              )}
+              {deleteModalState.itemRate && (
+                <div className="text-xs font-mono font-bold text-emerald-700 pt-0.5">
+                  Rate: {deleteModalState.itemRate}
+                </div>
+              )}
+            </div>
+
+            {/* Warning Text */}
+            <div className={`text-xs p-3 rounded-xl border flex items-start gap-2 ${
+              deleteModalState.isRestore
+                ? 'bg-emerald-50/60 text-emerald-800 border-emerald-200'
+                : deleteModalState.isArchive
+                  ? 'bg-amber-50/60 text-amber-800 border-amber-200'
+                  : 'bg-rose-50/60 text-rose-800 border-rose-200'
+            }`}>
+              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">
+                {deleteModalState.isRestore ? 'info' : 'warning'}
+              </span>
+              <span className="leading-relaxed">
+                {deleteModalState.warning}
+              </span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteModalState(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-semibold text-xs hover:bg-slate-100 min-h-[44px] cursor-pointer transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteModalState.onConfirm}
+                className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs min-h-[44px] cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors ${
+                  deleteModalState.isRestore
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : deleteModalState.isArchive
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {deleteModalState.isRestore ? 'check_circle' : deleteModalState.isArchive ? 'archive' : 'delete'}
+                </span>
+                <span>{deleteModalState.confirmButtonText || 'Confirm'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
