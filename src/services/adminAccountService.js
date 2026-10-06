@@ -190,7 +190,7 @@ export const adminAccountService = {
         firm_name: firmName,
         contact_person: contactPerson,
         mobile_number: cleanMobile,
-        email: email || `${cleanMobile}@sunvinedealer.in`,
+        email: (email && String(email).trim()) ? String(email).trim() : null,
         city: city || 'Ahmedabad',
         state: state || 'Gujarat',
         discom: discom || 'UGVCL',
@@ -251,8 +251,8 @@ export const adminAccountService = {
       if (mobile) {
         updates.mobile_number = String(mobile).replace(/\D/g, '').slice(-10);
       }
-      if (email) {
-        updates.email = email;
+      if (email !== undefined) {
+        updates.email = (email && String(email).trim()) ? String(email).trim() : null;
       }
       if (password && String(password).trim().length > 0) {
         updates.password_hash = bcrypt.hashSync(String(password).trim(), 10);
