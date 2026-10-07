@@ -171,10 +171,11 @@ export default function CreateQuotation() {
     : ((isAdmin || isStaff) ? (accessibleDealers?.find(d => d.id === assignedDealerId) || currentDealer) : currentDealer);
 
   // Dealer category resolution: Margin Based vs Kit Based
-  const effectiveDealerCategory = isDirectCompanyQuote
-    ? 'Margin Based'
-    : (effectiveDealer?.category || effectiveDealer?.pricingConfig?.category || 'Margin Based');
-  const isMarginBased = effectiveDealerCategory === 'Margin Based';
+  // Admin & Staff ALWAYS get the full original customization interface (Brand, Watt, Rate/Wp, Inverter, BOM list).
+  // The simplified turnkey flow (kW-first, smart panel dropdown, hidden inverter/BOM) applies strictly to Dealers in the Dealer Portal.
+  const isDealerUser = !isAdmin && !isStaff;
+  const effectiveDealerCategory = effectiveDealer?.category || effectiveDealer?.pricingConfig?.category || 'Margin Based';
+  const isMarginBased = isDealerUser && (effectiveDealerCategory === 'Margin Based');
 
   // Pricing mode: 'standard' (Company Base Price) vs 'custom' (Dealer Negotiated Price)
   const [bomPricingMode, setBomPricingMode] = useState(() => {
