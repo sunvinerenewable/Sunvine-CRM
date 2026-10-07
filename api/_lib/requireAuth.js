@@ -1,10 +1,12 @@
 /**
- * requireAuth.js — Admin JWT guard (SEC-001)
+ * requireAuth.js — Authentication and authorization guards (SEC-001, SEC-012)
  *
  * Exports:
+ *   extractToken(req) → string | null
+ *   requireUser(req, res, options) → jwtPayload | null
  *   requireAdmin(req, res) → jwtPayload | null
  *
- * Returns the verified JWT payload when the caller is a valid admin.
+ * Returns the verified JWT payload on success.
  * Sends 401/403 and returns null otherwise — callers must `return` on null.
  */
 
@@ -16,12 +18,12 @@ import { verifyJwt } from './jwt.js';
  * @param {import('http').IncomingMessage} req
  * @returns {string|null}
  */
-function extractToken(req) {
-  const cookieHeader = req.headers.cookie || '';
+export function extractToken(req) {
+  const cookieHeader = req.headers?.cookie || '';
   const cookieMatch = cookieHeader.match(/sunvine_auth_token=([^;]+)/);
   if (cookieMatch) return decodeURIComponent(cookieMatch[1]);
 
-  const authHeader = req.headers.authorization || '';
+  const authHeader = req.headers?.authorization || '';
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     return authHeader.slice(7).trim();
   }
@@ -30,14 +32,15 @@ function extractToken(req) {
 }
 
 /**
- * Require a valid admin JWT.
- * Returns the JWT payload on success, or sends 401/403 and returns null.
+ * Require an authenticated user with optional role restrictions.
  *
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
- * @returns {object|null}
+ * @param {object} [options]
+ * @param {string[]|string} [options.roles] Allowed role(s), e.g. ['admin', 'staff'] or 'dealer'
+ * @returns {object|null} Decoded JWT payload or null if response was sent
  */
-export function requireAdmin(req, res) {
+export function requireUser(req, res, options = {}) {
   const token = extractToken(req);
 
   if (!token) {
@@ -52,10 +55,27 @@ export function requireAdmin(req, res) {
     return null;
   }
 
-  if (result.payload.role !== 'admin') {
-    res.status(403).json({ error: 'Forbidden.' });
-    return null;
+  const payload = result.payload;
+
+  if (options.roles) {
+    const allowed = Array.isArray(options.roles) ? options.roles : [options.roles];
+    if (!allowed.includes(payload.role)) {
+      res.status(403).json({ error: 'Forbidden.' });
+      return null;
+    }
   }
 
-  return result.payload;
+  return payload;
+}
+
+/**
+ * Require a valid admin JWT.
+ * Returns the JWT payload on success, or sends 401/403 and returns null.
+ *
+ * @param {import('http').IncomingMessage} req
+ * @param {import('http').ServerResponse} res
+ * @returns {object|null}
+ */
+export function requireAdmin(req, res) {
+  return requireUser(req, res, { roles: ['admin'] });
 }
