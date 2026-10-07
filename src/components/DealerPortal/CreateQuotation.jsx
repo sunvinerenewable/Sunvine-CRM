@@ -335,41 +335,46 @@ export default function CreateQuotation() {
     return list;
   }, [activeModules]);
 
-  // 2. Smart kW Options derived from available panel wattages (min 2 panels, increasing by 1) & database presets
+  // 2. kW Options: STRICTLY derived from the pricing preset matrix slabs created by Admin in activeBosMatrix
   const availableKwOptions = useMemo(() => {
     const kwMap = new Map();
 
-    // Generate combinations from each preset make wattage for n >= 2 up to 25
-    allAvailablePresetMakes.forEach((make) => {
-      for (let n = 2; n <= 25; n++) {
-        const rawKw = (n * make.watt) / 1000;
-        const kwVal = Number(rawKw.toFixed(2));
-        if (!kwMap.has(kwVal)) {
-          kwMap.set(kwVal, {
-            kw: kwVal,
-            panelsCount: n,
-            primaryMake: make
-          });
-        }
-      }
-    });
-
-    // Also ensure all nominal capacities from activeBosMatrix are present
-    activeBosMatrix.forEach((slab) => {
-      const slabKw = Number(slab.capacityKW);
-      const modules = Number(slab.noOfModules) || 4;
-      if (!kwMap.has(slabKw)) {
-        kwMap.set(slabKw, {
-          kw: slabKw,
+    (activeBosMatrix || []).forEach((slab) => {
+      // Standard nominal capacity (e.g. 2.2, 2.75, 3.3, 3.85, 4.4, 4.95, 5.5, 6.05, 6.6, 7.7, 8.25, 8.8, etc.)
+      const standardKw = Number(slab.capacityKW);
+      const modules = Number(slab.noOfModules) || 6;
+      if (standardKw && !kwMap.has(standardKw)) {
+        kwMap.set(standardKw, {
+          kw: standardKw,
           panelsCount: modules,
-          primaryMake: allAvailablePresetMakes[0]
+          label: `${standardKw} kW System — ${modules} Panels`
+        });
+      }
+
+      // If 600W TOPCon capacity is explicitly configured in this admin slab (e.g. 2.4, 3.0, 3.6, 4.2, 4.8, 5.4, 6.0, etc.)
+      const topcon600Kw = Number(slab.topcon600CapacityKW);
+      if (topcon600Kw && !kwMap.has(topcon600Kw)) {
+        kwMap.set(topcon600Kw, {
+          kw: topcon600Kw,
+          panelsCount: modules,
+          label: `${topcon600Kw} kW System — ${modules} Panels`
+        });
+      }
+
+      // If 585W TOPCon capacity is explicitly configured in this admin slab (e.g. 2.34, 2.925, 3.51, 4.095, etc.)
+      const topcon585Kw = Number(slab.topcon585CapacityKW);
+      if (topcon585Kw && !kwMap.has(topcon585Kw)) {
+        kwMap.set(topcon585Kw, {
+          kw: topcon585Kw,
+          panelsCount: modules,
+          label: `${topcon585Kw} kW System — ${modules} Panels`
         });
       }
     });
 
     // Return sorted ascending
     return Array.from(kwMap.values()).sort((a, b) => a.kw - b.kw);
-  }, [allAvailablePresetMakes, activeBosMatrix]);
+  }, [activeBosMatrix]);
 
   // Selected kW for margin-based presets flow (defaults to 3.3 kW or initialSource)
   const [selectedPresetKw, setSelectedPresetKw] = useState(() => {
@@ -1337,104 +1342,10 @@ export default function CreateQuotation() {
     }
 
     const isEdit = Boolean(editingQuotation?.id);
-    const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
-    const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
-
-    const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
-    const quotePayload = {
-      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
-      date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
-      customerName: custName,
-      customerPhone: custPhone,
-      location: custLocation,
-      city: custLocation.split(',')[0]?.trim() || 'Rajkot',
-      state: 'Gujarat',
-      projectType,
-      type: `${panelBrand.split(' ')[0]} • ${projectType}`,
-      systemCapacityKW: kw,
-      capacityKW: kw,
-      panelType: isMarginBased ? currentPresetMake.fullName : fullPanelDescription,
-      solarModule: isMarginBased ? currentPresetMake.fullName : fullPanelDescription,
-      selectedModuleMake: isMarginBased ? currentPresetMake.name : panelBrand,
-      selectedInverterMake: inverterBrand,
-      moduleWattage: isMarginBased ? currentPresetMake.watt : panelWatt,
-      moduleCount: panelQuantity,
-      ratePerWp: ratePerWp,
-      multiBrandComparison,
-      multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
-      structureLayout: selectedStructureLayout || null,
-      structureType,
-      hybridMonorailPercent: structureType === 'hybrid' ? hybridMonorailPercent : null,
-      transportPreset,
-      transportCharge: effectiveTransportCharge,
-      installationPricingMode,
-      installationFixedAmount: Number(installationFixedAmount) || 0,
-      installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
-      installationEstimatedCost,
-      marginMode,
-      marginRatePerKw: Number(marginRatePerKw) || 0,
-      pvModuleSize: '4 * 8',
-      inverterBrand,
-      inverterCapacityKw,
-      inverterQuantity,
-      inverterUnitPrice,
-      inverterType: inverterModel,
-      inverterCapacity: `${inverterCapacityKw} kW`,
-      inverterCount: `${inverterQuantity} NOS`,
-      financeType,
-      paymentMode: financeType,
-      loanBank: financeType === 'LOAN' ? loanBank : null,
-      loanTenureYears: financeType === 'LOAN' ? loanTenureYears : null,
-      estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
-      baseRatePerKW: ratePerKw,
-      baseCost: baseProjectCost,
-      dealerMargin: dealerMarginINR,
-      dealerTotalMargin: dealerMarginINR,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
-      hasCustomDealerPricing,
-      customDiscountPercent,
-      discountAmount,
-      moduleEstimatedCost,
-      inverterEstimatedCost,
-      structureEstimatedCost,
-      bosEstimatedCost,
-      baseBeforeGst,
-      gstPercentage: 13.8,
-      gstAmount,
-      isGstInclusive: true,
-      annualGenerationUnits,
-      monthlyGenerationUnits,
-      annualSavings,
-      monthlySavings,
-      paybackYears,
-      isDirectCompanyQuote,
-      quoteChannel,
-      creatorRole: role,
-      creatorStaffId: isStaff ? currentStaff?.id : null,
-      creatorStaffName: isStaff ? currentStaff?.name : null,
-      isFlagged: isMarginExceeded,
-      requiresAudit: isMarginExceeded,
-      auditFlagReason: isMarginExceeded ? `Margin of ₹${currentMarginPerKw}/kW exceeds tier cap of ₹${maxMarginCapPerKw}/kW` : null,
-      totalAmount: totalCost,
-      grandTotalCustomer: totalCost,
-      subsidyAmount: subsidy,
-      netPayable: finalPayable,
-      status: isEdit ? (editingQuotation.status || (isDirectCompanyQuote ? 'Approved / Direct' : 'Draft')) : (isMarginExceeded ? 'Audit Required' : (isDirectCompanyQuote ? 'Approved / Direct' : 'Draft')),
-      statusClass: isEdit ? (editingQuotation.statusClass || 'bg-secondary/15 text-secondary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
-      dealerCode: resolvedDealerCode,
-      dealerId: resolvedDealerCode,
-      dealerName: resolvedDealerName,
-      roofConfig: quotationRoofConfig,
-      coverImage: customCoverUrl || null,
-      customCoverUrl: customCoverUrl || null,
-      bomItems,
-      bomTotals,
-      pricingMode: isMarginBased ? 'margin_based' : bomPricingMode,
-      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based'
-    };
+    const quotePayload = buildCurrentQuotePayload('Draft');
 
     setIsSubmitting(true);
-    setSaveStatus('Saving quotation...');
+    setSaveStatus('Saving quotation draft...');
     showLoader('Securing Quotation with Cloud...');
     try {
       if (isEdit && updateQuotation) {
@@ -1450,7 +1361,7 @@ export default function CreateQuotation() {
           type: '2D_ROOF_CAD',
           roofConfig: quotationRoofConfig,
           structureLayout: selectedStructureLayout,
-          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+          specs: { moduleCount: panelQuantity, panelWatt, rooftopAreaSqFt }
         });
       }
 
@@ -1474,30 +1385,33 @@ export default function CreateQuotation() {
     }
   };
 
-  const handlePreview = () => {
-    if (!custName.trim()) {
-      addToast({
-        title: 'Customer Name Required',
-        message: 'Please specify the customer name before generating proposal preview.',
-        type: 'warning'
-      });
-      return;
-    }
-
-    if (isMarginExceeded) {
-      addToast({
-        title: 'Margin Audit Alert',
-        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
-        type: 'warning'
-      });
-    }
-
+  // Helper to build standardized quote payload
+  const buildCurrentQuotePayload = (explicitStatus = null) => {
     const isEdit = Boolean(editingQuotation?.id);
     const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
     const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
 
-    const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
-    const quotePayload = {
+    // In margin-based quotations, dealer doesn't select an inverter; list all admin inverter brands
+    const allInverterBrandNames = (activeInverters && activeInverters.length > 0)
+      ? Array.from(new Set(activeInverters.map((i) => i.brand?.trim()).filter(Boolean))).join(' / ')
+      : 'Solis / Growatt / Deye / Vsole / Sunvine';
+
+    const fullPanelDescription = isMarginBased
+      ? currentPresetMake.fullName
+      : `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
+
+    const defaultStatus = explicitStatus || (isEdit ? (editingQuotation.status || 'Active / Generated') : (isDirectCompanyQuote ? 'Approved / Direct' : 'Active / Generated'));
+    const statusClass = defaultStatus === 'Draft'
+      ? 'bg-secondary/15 text-secondary'
+      : isMarginExceeded
+        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+        : 'bg-primary/15 text-primary';
+
+    const effectiveModuleCount = isMarginBased
+      ? (panelQuantity || Number(matchedSlab?.noOfModules) || 6)
+      : panelQuantity;
+
+    return {
       id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
@@ -1509,12 +1423,12 @@ export default function CreateQuotation() {
       type: `${panelBrand.split(' ')[0]} • ${projectType}`,
       systemCapacityKW: kw,
       capacityKW: kw,
-      solarModule: fullPanelDescription,
       panelType: fullPanelDescription,
-      selectedModuleMake: panelBrand,
-      selectedInverterMake: inverterBrand,
-      moduleWattage: panelWatt,
-      moduleCount: panelQuantity,
+      solarModule: fullPanelDescription,
+      selectedModuleMake: isMarginBased ? currentPresetMake.name : panelBrand,
+      selectedInverterMake: isMarginBased ? allInverterBrandNames : inverterBrand,
+      moduleWattage: isMarginBased ? currentPresetMake.watt : panelWatt,
+      moduleCount: effectiveModuleCount,
       ratePerWp: ratePerWp,
       multiBrandComparison,
       multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
@@ -1530,13 +1444,13 @@ export default function CreateQuotation() {
       marginMode,
       marginRatePerKw: Number(marginRatePerKw) || 0,
       pvModuleSize: '4 * 8',
-      inverterBrand,
+      inverterBrand: isMarginBased ? allInverterBrandNames : inverterBrand,
       inverterCapacityKw,
-      inverterQuantity,
+      inverterQuantity: 1,
       inverterUnitPrice,
-      inverterCapacity: `${inverterCapacityKw} kW`,
-      inverterType: inverterModel,
-      inverterCount: `${inverterQuantity} NOS`,
+      inverterType: isMarginBased ? `${allInverterBrandNames} (${matchedSlab?.inverterCapacityKW || kw} kW)` : inverterModel,
+      inverterCapacity: `${matchedSlab?.inverterCapacityKW || inverterCapacityKw} kW`,
+      inverterCount: '1 NOS',
       financeType,
       paymentMode: financeType,
       loanBank: financeType === 'LOAN' ? loanBank : null,
@@ -1544,9 +1458,9 @@ export default function CreateQuotation() {
       estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
       baseRatePerKW: ratePerKw,
       baseCost: baseProjectCost,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
-      dealerTotalMargin: dealerMarginINR,
       dealerMargin: dealerMarginINR,
+      dealerTotalMargin: dealerMarginINR,
+      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
       hasCustomDealerPricing,
       customDiscountPercent,
       discountAmount,
@@ -1575,37 +1489,43 @@ export default function CreateQuotation() {
       grandTotalCustomer: totalCost,
       subsidyAmount: subsidy,
       netPayable: finalPayable,
-      status: isEdit ? (editingQuotation.status || 'Active / Sent') : (isMarginExceeded ? 'Audit Required' : 'Active / Sent'),
-      statusClass: isEdit ? (editingQuotation.statusClass || 'bg-primary/15 text-primary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
-      dealerId: resolvedDealerCode,
+      status: defaultStatus,
+      statusClass,
       dealerCode: resolvedDealerCode,
+      dealerId: resolvedDealerCode,
       dealerName: resolvedDealerName,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
       customCoverUrl: customCoverUrl || null,
       bomItems,
       bomTotals,
-      pricingMode: bomPricingMode
+      pricingMode: isMarginBased ? 'margin_based' : bomPricingMode,
+      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based'
     };
+  };
 
-    showLoader('Generating Quotation Proposal...');
+  // Preview Quotation: ONLY prepares in-memory view, DOES NOT insert into database table!
+  const handlePreview = () => {
+    if (!custName.trim()) {
+      addToast({
+        title: 'Customer Name Required',
+        message: 'Please specify the customer name before generating proposal preview.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (isMarginExceeded) {
+      addToast({
+        title: 'Margin Audit Alert',
+        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for compliance audit.`,
+        type: 'warning'
+      });
+    }
+
+    showLoader('Preparing Proposal Preview...');
     try {
-      if (isEdit && updateQuotation) {
-        updateQuotation(quotePayload);
-      } else if (addQuotation) {
-        addQuotation(quotePayload);
-      }
-      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
-        saveDesignRecord({
-          quotationId: quotePayload.id,
-          customerName: custName,
-          capacityKw: kw,
-          type: '2D_ROOF_CAD',
-          roofConfig: quotationRoofConfig,
-          structureLayout: selectedStructureLayout,
-          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
-        });
-      }
+      const quotePayload = buildCurrentQuotePayload();
       if (setPreviewQuotation) setPreviewQuotation(quotePayload);
       if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
       if (typeof window !== 'undefined') {
@@ -1615,7 +1535,79 @@ export default function CreateQuotation() {
       }
       setActiveTab('preview_quote');
     } finally {
-      setTimeout(() => hideLoader(), 350);
+      setTimeout(() => hideLoader(), 250);
+    }
+  };
+
+  // Generate Quotation: Officially saves/inserts quotation into database table!
+  const handleGenerateQuotation = async () => {
+    if (!custName.trim()) {
+      addToast({
+        title: 'Customer Name Required',
+        message: 'Please specify the customer name before generating proposal.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (isMarginExceeded) {
+      addToast({
+        title: 'Margin Audit Alert',
+        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
+        type: 'warning'
+      });
+    }
+
+    const isEdit = Boolean(editingQuotation?.id);
+    const quotePayload = buildCurrentQuotePayload(
+      isDirectCompanyQuote ? 'Approved / Direct' : (isMarginExceeded ? 'Audit Required' : 'Active / Generated')
+    );
+
+    setIsSubmitting(true);
+    setSaveStatus('Generating quotation and saving to cloud...');
+    showLoader('Securing Quotation in Database...');
+    try {
+      if (isEdit && updateQuotation) {
+        await updateQuotation(quotePayload);
+      } else if (addQuotation) {
+        await addQuotation(quotePayload);
+      }
+
+      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+        saveDesignRecord({
+          quotationId: quotePayload.id,
+          customerName: custName,
+          capacityKw: kw,
+          type: '2D_ROOF_CAD',
+          roofConfig: quotationRoofConfig,
+          structureLayout: selectedStructureLayout,
+          specs: { moduleCount: quotePayload.moduleCount, panelWatt, rooftopAreaSqFt }
+        });
+      }
+
+      addToast({
+        title: isEdit ? 'Quotation Updated' : 'Quotation Generated',
+        message: `Quotation #${quotePayload.id} has been generated and saved directly to the database.`,
+        type: 'success'
+      });
+
+      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
+      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+      setActiveTab('preview_quote');
+    } catch (e) {
+      addToast({
+        title: 'Generation Failed',
+        message: e?.message || 'Could not generate quotation.',
+        type: 'error'
+      });
+    } finally {
+      setIsSubmitting(false);
+      hideLoader();
     }
   };
 
@@ -3999,7 +3991,7 @@ export default function CreateQuotation() {
                 Generate official 4-page branded PDF ready for preview &amp; WhatsApp sharing.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 min-w-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
               <button
                 onClick={handleReset}
                 type="button"
@@ -4014,6 +4006,7 @@ export default function CreateQuotation() {
                 disabled={isSubmitting}
                 type="button"
                 className="h-10 px-2 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 disabled:opacity-50 min-w-0"
+                title="Save as Draft to Database"
               >
                 <span className="material-symbols-outlined text-[16px] text-secondary shrink-0">bookmark_border</span>
                 <span className="truncate">{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
@@ -4022,10 +4015,21 @@ export default function CreateQuotation() {
                 onClick={handlePreview}
                 disabled={isSubmitting}
                 type="button"
-                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                className="h-10 px-2 rounded-lg bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 border border-sky-500/30 transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                title="Preview proposal in-memory without saving to database"
               >
+                <span className="material-symbols-outlined text-[16px] shrink-0">visibility</span>
                 <span className="truncate">Preview</span>
-                <span className="material-symbols-outlined text-[16px] shrink-0">arrow_forward</span>
+              </button>
+              <button
+                onClick={handleGenerateQuotation}
+                disabled={isSubmitting}
+                type="button"
+                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                title="Generate and officially save quotation to database table"
+              >
+                <span className="material-symbols-outlined text-[16px] shrink-0">check_circle</span>
+                <span className="truncate">{isSubmitting ? 'Generating...' : 'Generate'}</span>
               </button>
             </div>
           </div>

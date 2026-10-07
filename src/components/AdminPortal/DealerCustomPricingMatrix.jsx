@@ -17,7 +17,7 @@ const getDealerInitial = (d) => {
   return (str && typeof str === 'string' && str.length > 0) ? str.charAt(0).toUpperCase() : 'D';
 };
 
-export default function DealerCustomPricingMatrix({ onShowToast }) {
+export default function DealerCustomPricingMatrix({ onShowToast, initialCategory = null }) {
   const {
     dealers,
     pricingMaster,
@@ -50,11 +50,11 @@ export default function DealerCustomPricingMatrix({ onShowToast }) {
   const [productTargetDealerId, setProductTargetDealerId] = useState(() => {
     return accessibleDealers[0]?.id || '';
   });
-  const [productCategory, setProductCategory] = useState('module'); // 'module' | 'inverter' | 'bom'
+  const [productCategory, setProductCategory] = useState(initialCategory || 'module'); // 'module' | 'inverter' | 'bom'
   const [selectedProductId, setSelectedProductId] = useState('');
   const [customProductRateInput, setCustomProductRateInput] = useState('');
   const [productLedgerFilter, setProductLedgerFilter] = useState('current'); // 'current' | 'all'
-  const [productLedgerCategory, setProductLedgerCategory] = useState('all'); // 'all' | 'module' | 'inverter' | 'bom'
+  const [productLedgerCategory, setProductLedgerCategory] = useState(initialCategory || 'all'); // 'all' | 'module' | 'inverter' | 'bom'
   const [productLedgerSearch, setProductLedgerSearch] = useState('');
 
   // Current target dealer object

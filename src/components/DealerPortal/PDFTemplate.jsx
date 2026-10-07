@@ -720,7 +720,9 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                       High Efficiency String Inverter ({resolvedInverterCap}), Dual MPPT, IP65, Built-in WiFi Logger
                     </td>
                     <td className="py-1 px-2.5 text-center border-r border-slate-200 font-bold font-mono">1 NOS</td>
-                    <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">{effectiveInverterMake} / Any Reputed</td>
+                    <td className="py-1 px-2.5 text-center font-bold text-[#0B2545]">
+                      {effectiveInverterMake.includes('/') ? effectiveInverterMake : `${effectiveInverterMake} / Any Reputed`}
+                    </td>
                   </tr>
 
                   {/* 3. STRUCTURE */}

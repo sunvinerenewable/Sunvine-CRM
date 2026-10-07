@@ -29,22 +29,8 @@ export default function AppUpdateModal() {
     const alreadySeeded = notifications?.some(n => n.id === RELEASE_NOTIF_ID);
     const isDismissed = dismissedNotifIds?.includes(RELEASE_NOTIF_ID);
 
-    if (isNewVersion || (!alreadySeeded && !isDismissed)) {
-      addNotification({
-        id: RELEASE_NOTIF_ID,
-        title: `System Updated to ${CURRENT_APP_VERSION}`,
-        description: `${CURRENT_RELEASE_CHANGELOG?.title || 'System Update'} (${RELEASE_DATE}). Highlights: ${(CURRENT_RELEASE_CHANGELOG?.highlights ?? []).join(' | ')}`,
-        type: 'success',
-        icon: 'system_update',
-        audience: 'all',
-        isRelease: true,
-        version: CURRENT_APP_VERSION,
-        changelog: CURRENT_RELEASE_CHANGELOG
-      });
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('sunvine_installed_version', CURRENT_APP_VERSION);
-      }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('sunvine_installed_version', CURRENT_APP_VERSION);
     }
 
     // Auto-update Service Worker in background

@@ -2747,6 +2747,10 @@ const safeSetItem = (key, value) => {
   const visibleNotifications = useMemo(() => {
     return notifications
       .filter(n => {
+        // Exclude developer / system update logs per user directive (only real business notifications: item created, price update, etc.)
+        if (n.isRelease || n.id?.startsWith('release-') || n.title?.toLowerCase().includes('system updated') || n.title?.toLowerCase().includes('update log')) {
+          return false;
+        }
         if (dismissedNotifIds.includes(n.id)) return false;
         const aud = n.audience || 'all';
         if (aud === 'all') return true;

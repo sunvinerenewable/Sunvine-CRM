@@ -49,12 +49,12 @@ export default function PricingMaster() {
     inverterBenchmarkMatrix: globalInverterBenchmarks
   } = useApp();
 
-  // Initialize tab from URL query param if present (?tab=base|modules|bom|bank|dealer_custom)
+  // Initialize tab from URL query param if present (?tab=base|modules|inverters|bom|bank|dealer_custom)
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (['base', 'modules', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
+      if (['base', 'modules', 'inverters', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
         return tabParam;
       }
     }
@@ -281,7 +281,7 @@ export default function PricingMaster() {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const tabParam = params.get('tab');
-        if (['base', 'modules', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
+        if (['base', 'modules', 'inverters', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
           setActiveTab(tabParam);
         }
       }
@@ -838,6 +838,7 @@ ${origin}/?tab=pricing_master
                 <span className="material-symbols-outlined text-[22px] leading-none flex items-center justify-center select-none">
                   {activeTab === 'base' && 'payments'}
                   {activeTab === 'modules' && 'solar_power'}
+                  {activeTab === 'inverters' && 'electric_bolt'}
                   {activeTab === 'bom' && 'inventory_2'}
                   {activeTab === 'bank' && 'account_balance'}
                   {activeTab === 'dealer_custom' && 'tune'}
@@ -846,8 +847,9 @@ ${origin}/?tab=pricing_master
               <div className="flex flex-col text-left min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-on-surface truncate">
-                    {activeTab === 'base' && 'Base Pricing & Subsidy Slabs'}
-                    {activeTab === 'modules' && 'Modules & Inverters Master'}
+                    {activeTab === 'base' && 'Turnkey Presets (Plant Slabs)'}
+                    {activeTab === 'modules' && 'Solar Panels (Modules)'}
+                    {activeTab === 'inverters' && 'Solar Inverters'}
                     {activeTab === 'bom' && 'Default Bill of Material (BOM)'}
                     {activeTab === 'bank' && 'Company Bank Details & Terms'}
                     {activeTab === 'dealer_custom' && 'Dealer Custom Pricing Matrix'}
@@ -857,9 +859,10 @@ ${origin}/?tab=pricing_master
                   </span>
                 </div>
                 <span className="text-[11px] text-secondary truncate">
-                  {activeTab === 'base' && 'Official BOS Matrix & Subsidy Rates'}
-                  {activeTab === 'modules' && `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Hardware Items Catalog`}
-                  {activeTab === 'bom' && `${pdfBomSpecs?.length || 8} Slabs Capacity Presets`}
+                  {activeTab === 'base' && 'Panel-Wise Complete Quotation Matrix'}
+                  {activeTab === 'modules' && `${modulesList?.length ?? 0} Panels Master & Dealer Rates`}
+                  {activeTab === 'inverters' && `${(invertersList?.length ?? 0) + (inverterBenchmarkMatrix?.length ?? 0)} Inverter Models & Sizing`}
+                  {activeTab === 'bom' && `${pdfBomSpecs?.length || 8} Slabs Capacity Presets & Dealer Rates`}
                   {activeTab === 'bank' && 'Payment Terms & Bank Info'}
                   {activeTab === 'dealer_custom' && `${totalDealersCount} Dealers Custom Margins`}
                 </span>
@@ -888,16 +891,23 @@ ${origin}/?tab=pricing_master
                   {
                     id: 'base',
                     icon: 'payments',
-                    title: 'Base Pricing & Subsidy Slabs',
-                    subtitle: 'Official BOS Matrix & Subsidy Rates',
-                    badge: 'BOS Slabs'
+                    title: 'Turnkey Presets (Plant Slabs)',
+                    subtitle: 'Panel-Wise Complete Quotation Matrix',
+                    badge: `${localBosMatrix?.length || 13} Slabs`
                   },
                   {
                     id: 'modules',
                     icon: 'solar_power',
-                    title: 'Modules & Inverters Master',
-                    subtitle: `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Hardware Items`,
-                    badge: `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Items`
+                    title: 'Solar Panels (Modules)',
+                    subtitle: `${modulesList?.length ?? 0} Panels & Dealer Rates`,
+                    badge: `${modulesList?.length ?? 0} Panels`
+                  },
+                  {
+                    id: 'inverters',
+                    icon: 'electric_bolt',
+                    title: 'Solar Inverters',
+                    subtitle: `${invertersList?.length ?? 0} Inverter Models & Sizing Matrix`,
+                    badge: `${invertersList?.length ?? 0} Inverters`
                   },
                   {
                     id: 'bom',
@@ -977,7 +987,7 @@ ${origin}/?tab=pricing_master
         </div>
 
         {/* Desktop / Tablet Segmented Tabs */}
-        <div className="hidden sm:grid grid-cols-5 gap-2 p-1.5 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-xs">
+        <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 p-1.5 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-xs">
           {/* TAB 1: Base Pricing & Subsidy Slabs */}
           <button
             type="button"
@@ -992,18 +1002,18 @@ ${origin}/?tab=pricing_master
               <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'base' ? 'text-primary' : 'text-secondary'}`}>
                 payments
               </span>
-              <span className="text-xs tracking-tight truncate">Base Pricing</span>
+              <span className="text-xs tracking-tight truncate">Turnkey Presets</span>
             </div>
             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
               activeTab === 'base'
                 ? 'bg-primary text-surface-container-lowest'
                 : 'bg-surface-container text-secondary'
             }`}>
-              {activeTab === 'base' ? 'Active' : 'Slabs'}
+              {activeTab === 'base' ? 'Active' : 'Matrix'}
             </span>
           </button>
 
-          {/* TAB 2: Modules & Inverters Master */}
+          {/* TAB 2: Solar Panels (Modules) */}
           <button
             type="button"
             onClick={() => handleTabChange('modules')}
@@ -1017,18 +1027,43 @@ ${origin}/?tab=pricing_master
               <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'modules' ? 'text-primary' : 'text-secondary'}`}>
                 solar_power
               </span>
-              <span className="text-xs tracking-tight truncate">Hardware</span>
+              <span className="text-xs tracking-tight truncate">Solar Panels</span>
             </div>
             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
               activeTab === 'modules'
                 ? 'bg-primary text-surface-container-lowest'
                 : 'bg-surface-container text-secondary'
             }`}>
-              {activeTab === 'modules' ? 'Active' : `${(modulesList?.length ?? 0) + (invertersList?.length ?? 0)} Items`}
+              {activeTab === 'modules' ? 'Active' : `${modulesList?.length ?? 0} P`}
             </span>
           </button>
 
-          {/* TAB 3: Default Bill of Material (BOM) */}
+          {/* TAB 3: Solar Inverters */}
+          <button
+            type="button"
+            onClick={() => handleTabChange('inverters')}
+            className={`flex items-center justify-between gap-1.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer text-left border min-w-0 ${
+              activeTab === 'inverters'
+                ? 'bg-primary/10 border-primary text-primary font-bold shadow-xs'
+                : 'bg-transparent border-transparent text-secondary hover:text-on-surface hover:bg-surface-container-low'
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'inverters' ? 'text-primary' : 'text-secondary'}`}>
+                electric_bolt
+              </span>
+              <span className="text-xs tracking-tight truncate">Inverters</span>
+            </div>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
+              activeTab === 'inverters'
+                ? 'bg-primary text-surface-container-lowest'
+                : 'bg-surface-container text-secondary'
+            }`}>
+              {activeTab === 'inverters' ? 'Active' : `${invertersList?.length ?? 0} Inv`}
+            </span>
+          </button>
+
+          {/* TAB 4: Default Bill of Material (BOM) */}
           <button
             type="button"
             onClick={() => handleTabChange('bom')}
@@ -1042,7 +1077,7 @@ ${origin}/?tab=pricing_master
               <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'bom' ? 'text-primary' : 'text-secondary'}`}>
                 inventory_2
               </span>
-              <span className="text-xs tracking-tight truncate">BOM Master</span>
+              <span className="text-xs tracking-tight truncate">BOM Items</span>
             </div>
             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
               activeTab === 'bom'
@@ -1053,7 +1088,7 @@ ${origin}/?tab=pricing_master
             </span>
           </button>
 
-          {/* TAB 4: Company Bank Details & Terms */}
+          {/* TAB 5: Company Bank Details & Terms */}
           <button
             type="button"
             onClick={() => handleTabChange('bank')}
@@ -1078,7 +1113,7 @@ ${origin}/?tab=pricing_master
             </span>
           </button>
 
-          {/* TAB 5: Dealer Custom Pricing Matrix */}
+          {/* TAB 6: Dealer Custom Pricing Matrix */}
           <button
             type="button"
             onClick={() => handleTabChange('dealer_custom')}
@@ -1092,7 +1127,7 @@ ${origin}/?tab=pricing_master
               <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'dealer_custom' ? 'text-primary' : 'text-secondary'}`}>
                 tune
               </span>
-              <span className="text-xs tracking-tight truncate">Dealer Pricing</span>
+              <span className="text-xs tracking-tight truncate">Dealer Rates</span>
             </div>
             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
               activeTab === 'dealer_custom'
@@ -1515,7 +1550,8 @@ ${origin}/?tab=pricing_master
                 )}
               </div>
 
-              {/* DEDICATED INVERTER SIZING & BENCHMARK PRICING MATRIX (SR-57) */}
+              {/* DEDICATED INVERTER SIZING MOVED TO INVERTERS TAB */}
+              {false && (
               <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-4 sm:p-6 shadow-sm overflow-hidden">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-surface-container-low gap-3">
                   <div className="flex items-center gap-3">
@@ -1797,6 +1833,7 @@ ${origin}/?tab=pricing_master
                   </div>
                 )}
               </div>
+              )}
 
               {/* SECTION A: Base Turnkey Pricing per kW */}
               <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm">
@@ -2135,11 +2172,11 @@ ${origin}/?tab=pricing_master
           )}
 
           {/* ========================================================================= */}
-          {/* TAB 2: MODULES & INVERTERS MASTER                                         */}
+          {/* TAB 2: SOLAR PANELS (MODULES) MASTER & DEALER RATES                      */}
           {/* ========================================================================= */}
           {activeTab === 'modules' && (
             <>
-              {/* Hardware Defaults Form for Quotation Generator */}
+              {/* Module Hardware Defaults */}
               <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm">
                 <div className="flex items-center justify-between pb-4 mb-4 border-b border-surface-container-low">
                   <div className="flex items-center gap-3">
@@ -2147,21 +2184,20 @@ ${origin}/?tab=pricing_master
                       <span className="material-symbols-outlined text-xl">solar_power</span>
                     </div>
                     <div>
-                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Default System Specifications for Quotation Generator</h2>
+                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Default Solar Module Specification</h2>
                       <p className="font-body-sm text-body-sm text-secondary">These hardware specifications auto-populate when a dealer creates a new residential or light-commercial estimate.</p>
                     </div>
                   </div>
-                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Tier-1 Hardware</span>
+                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">ALMM Approved</span>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {/* Module Defaults */}
+                <div className="w-full">
                   <div className="border border-surface-container-highest rounded-lg p-4 bg-surface-container-low">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-primary text-xl">grid_view</span>
                         <h3 className="font-label-md text-label-md font-bold text-on-surface">Default Solar Module</h3>
                       </div>
-                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">ALMM Approved</span>
+                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">ALMM List-I</span>
                     </div>
                     <div className="space-y-3">
                       <div>
@@ -2178,7 +2214,7 @@ ${origin}/?tab=pricing_master
                           <option>Rayzone 550W Bifacial TOPCon</option>
                         </select>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                           <label className="font-body-sm text-body-sm text-secondary block mb-1">Module Rating</label>
                           <input
@@ -2197,69 +2233,15 @@ ${origin}/?tab=pricing_master
                             onChange={(e) => setModuleEfficiency(e.target.value)}
                           />
                         </div>
-                      </div>
-                      <div>
-                        <label className="font-body-sm text-body-sm text-secondary block mb-1">Warranty Term Rendered on PDF</label>
-                        <input
-                          className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
-                          type="text"
-                          value={moduleWarranty}
-                          onChange={(e) => setModuleWarranty(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Inverter Defaults */}
-                  <div className="border border-surface-container-highest rounded-lg p-4 bg-surface-container-low">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-xl">electrical_services</span>
-                        <h3 className="font-label-md text-label-md font-bold text-on-surface">Default Solar Inverter</h3>
-                      </div>
-                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Cloud IoT Sync</span>
-                    </div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="font-body-sm text-body-sm text-secondary block mb-1">Assigned Make &amp; Series</label>
-                        <select
-                          value={selectedDefaultInverter}
-                          onChange={(e) => setSelectedDefaultInverter(e.target.value)}
-                          className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:border-primary-container focus:ring-1 focus:ring-primary-container"
-                        >
-                          <option>Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)</option>
-                          <option>Solis S6 Pro Series 5kW 3-Phase</option>
-                          <option>Sungrow SG5.0RS Residential Grid-Tied</option>
-                        </select>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Topology &amp; Interface</label>
+                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Warranty Term Rendered on PDF</label>
                           <input
                             className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
                             type="text"
-                            value={inverterTopology}
-                            onChange={(e) => setInverterTopology(e.target.value)}
+                            value={moduleWarranty}
+                            onChange={(e) => setModuleWarranty(e.target.value)}
                           />
                         </div>
-                        <div>
-                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Peak Efficiency</label>
-                          <input
-                            className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
-                            type="text"
-                            value={inverterEfficiency}
-                            onChange={(e) => setInverterEfficiency(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="font-body-sm text-body-sm text-secondary block mb-1">Warranty Term Rendered on PDF</label>
-                        <input
-                          className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
-                          type="text"
-                          value={inverterWarranty}
-                          onChange={(e) => setInverterWarranty(e.target.value)}
-                        />
                       </div>
                     </div>
                   </div>
@@ -2365,6 +2347,86 @@ ${origin}/?tab=pricing_master
                       })}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Individual Dealer-Wise Panel Pricing Matrix */}
+              <DealerCustomPricingMatrix initialCategory="module" onShowToast={triggerToast} />
+            </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 3: SOLAR INVERTERS MASTER & DEALER RATES                              */}
+          {/* ========================================================================= */}
+          {activeTab === 'inverters' && (
+            <>
+              {/* Inverter Hardware Defaults Form */}
+              <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm">
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-surface-container-low">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary-container/10 text-primary">
+                      <span className="material-symbols-outlined text-xl">electrical_services</span>
+                    </div>
+                    <div>
+                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Default Solar Inverter Specification</h2>
+                      <p className="font-body-sm text-body-sm text-secondary">These hardware specifications auto-populate when a dealer creates a new residential or light-commercial estimate.</p>
+                    </div>
+                  </div>
+                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Cloud IoT Sync</span>
+                </div>
+                <div className="w-full">
+                  <div className="border border-surface-container-highest rounded-lg p-4 bg-surface-container-low">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary text-xl">electrical_services</span>
+                        <h3 className="font-label-md text-label-md font-bold text-on-surface">Default Solar Inverter</h3>
+                      </div>
+                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Cloud IoT Sync</span>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="font-body-sm text-body-sm text-secondary block mb-1">Assigned Make &amp; Series</label>
+                        <select
+                          value={selectedDefaultInverter}
+                          onChange={(e) => setSelectedDefaultInverter(e.target.value)}
+                          className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:border-primary-container focus:ring-1 focus:ring-primary-container"
+                        >
+                          <option>Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)</option>
+                          <option>Solis S6 Pro Series 5kW 3-Phase</option>
+                          <option>Sungrow SG5.0RS Residential Grid-Tied</option>
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Topology &amp; Interface</label>
+                          <input
+                            className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
+                            type="text"
+                            value={inverterTopology}
+                            onChange={(e) => setInverterTopology(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Peak Efficiency</label>
+                          <input
+                            className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
+                            type="text"
+                            value={inverterEfficiency}
+                            onChange={(e) => setInverterEfficiency(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="font-body-sm text-body-sm text-secondary block mb-1">Warranty Term Rendered on PDF</label>
+                          <input
+                            className="w-full py-2 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface"
+                            type="text"
+                            value={inverterWarranty}
+                            onChange={(e) => setInverterWarranty(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2474,125 +2536,292 @@ ${origin}/?tab=pricing_master
                 </div>
               </div>
 
-              {/* Active Dealer Negotiated Hardware Rates Table */}
-              {(() => {
-                const hardwareOverrides = [];
-                (dealers || []).forEach(d => {
-                  const cfg = d.pricingConfig || {};
-                  const rates = cfg.customProductRates || {};
-                  const details = cfg.productDetails || {};
-                  Object.keys(rates).forEach(prodId => {
-                    const detail = details[prodId];
-                    if (!detail || detail.category === 'module' || detail.category === 'inverter' || prodId.startsWith('mod-') || prodId.startsWith('inv-')) {
-                      hardwareOverrides.push({
-                        dealerId: d.id,
-                        dealerName: getDealerDisplayName(d),
-                        dealerFirm: d.firmName || d.businessName || 'Channel Partner',
-                        dealerCity: d.city || 'Gujarat',
-                        productId: prodId,
-                        productName: detail?.name || prodId,
-                        category: detail?.category || (prodId.startsWith('mod-') ? 'module' : 'inverter'),
-                        customPrice: rates[prodId],
-                        unit: detail?.unit || (prodId.startsWith('mod-') ? '₹/Wp' : '₹/unit')
-                      });
-                    }
-                  });
-                });
-
-                return (
-                  <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm flex flex-col gap-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-surface-container">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-lg bg-primary-container/15 text-primary">
-                          <span className="material-symbols-outlined text-[20px]">assignment_turned_in</span>
-                        </div>
-                        <div>
-                          <h3 className="font-headline-sm text-sm font-bold text-inverse-surface flex items-center gap-2">
-                            Active Dealer-Wise Negotiated Hardware Rates Ledger
-                            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                              {hardwareOverrides.length} Configured
-                            </span>
-                          </h3>
-                          <p className="text-xs text-secondary mt-0.5">
-                            Specific price overrides configured per authorized dealer. When quotes are generated, these prices auto-populate.
-                          </p>
-                        </div>
-                      </div>
+              {/* DEDICATED INVERTER SIZING & BENCHMARK PRICING MATRIX */}
+              <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-4 sm:p-6 shadow-sm overflow-hidden">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 mb-4 border-b border-surface-container-low gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
+                      <span className="material-symbols-outlined text-xl">electric_bolt</span>
                     </div>
-
-                    <div className="overflow-x-auto border border-surface-container rounded-xl">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="border-b border-surface-container bg-surface-container-low text-secondary font-semibold uppercase text-[10px] tracking-wider">
-                            <th className="py-2.5 px-3">Dealer Partner</th>
-                            <th className="py-2.5 px-3">Hardware Product</th>
-                            <th className="py-2.5 px-3">Category</th>
-                            <th className="py-2.5 px-3 text-right">Negotiated Custom Rate</th>
-                            <th className="py-2.5 px-3 text-center">Status</th>
-                            <th className="py-2.5 px-3 text-center">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-surface-container">
-                          {hardwareOverrides.length > 0 ? (
-                            hardwareOverrides.map((row, idx) => (
-                              <tr key={`${row.dealerId}-${row.productId}-${idx}`} className="hover:bg-surface-container-low/50 transition-colors">
-                                <td className="py-2.5 px-3">
-                                  <div className="font-bold text-on-surface">{row.dealerName}</div>
-                                  <div className="text-[10px] text-secondary">{row.dealerFirm} • {row.dealerCity}</div>
-                                </td>
-                                <td className="py-2.5 px-3 font-medium text-on-surface">
-                                  {row.productName}
-                                </td>
-                                <td className="py-2.5 px-3">
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    row.category === 'module'
-                                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                                  }`}>
-                                    {row.category === 'module' ? 'Solar Module' : 'Solar Inverter'}
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-right font-mono font-bold text-primary">
-                                  ₹{Number(row.customPrice).toLocaleString('en-IN')} {row.unit}
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                    Active for Dealer
-                                  </span>
-                                </td>
-                                <td className="py-2.5 px-3 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (window.confirm(`Remove custom rate for ${row.productName} on ${row.dealerName}?`)) {
-                                        if (removeDealerProductRate) {
-                                          removeDealerProductRate(row.dealerId, row.productId);
-                                        }
-                                        triggerToast(`Removed custom rate for ${row.productName}`);
-                                      }
-                                    }}
-                                    className="px-2 py-1 rounded text-secondary hover:text-error hover:bg-error/10 transition-colors text-[11px] font-medium cursor-pointer"
-                                    title="Reset to benchmark"
-                                  >
-                                    <span className="material-symbols-outlined text-[16px]">delete</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          ) : (
-                            <tr>
-                              <td colSpan={6} className="py-6 text-center text-secondary text-xs">
-                                No dealer hardware overrides configured yet. Click "Set Dealer Rate" on any module or inverter above to set dealer-specific prices.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
+                          Inverter Sizing &amp; Benchmark Pricing Matrix
+                        </h2>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                          {inverterBenchmarkMatrix.length} Ratings
+                        </span>
+                      </div>
+                      <p className="font-body-sm text-xs sm:text-body-sm text-secondary mt-0.5">
+                        Standard grid-tied string inverter benchmark pricing and phase topologies decoupled from module BOS tiers.
+                      </p>
                     </div>
                   </div>
-                );
-              })()}
+
+                  <div className="flex items-center gap-2 self-start sm:self-center">
+                    <button
+                      type="button"
+                      onClick={handleOpenAddInvModal}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                      <span>Add Inverter Spec</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isInlineEditingInverters) {
+                          handleSaveInverterMatrix();
+                        } else {
+                          setIsInlineEditingInverters(true);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                        isInlineEditingInverters
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                          : 'bg-surface-container hover:bg-surface-container-high text-on-surface'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {isInlineEditingInverters ? 'check' : 'edit'}
+                      </span>
+                      <span>{isInlineEditingInverters ? 'Save Inverter Prices' : 'Edit Inverter Prices'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* MOBILE VIEW: Responsive Inverter Cards (< md) */}
+                <div className="block md:hidden space-y-3">
+                  {inverterBenchmarkMatrix.map((inv, idx) => (
+                    <div
+                      key={inv.id || idx}
+                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-surface-container-high/60 pb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isInlineEditingInverters ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] font-semibold text-secondary">KW:</span>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={inv.capacityKW}
+                                onChange={(e) => handleInverterCellChange(idx, 'capacityKW', e.target.value)}
+                                className="w-16 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-center"
+                              />
+                            </div>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg bg-inverse-surface text-surface-container-lowest font-mono font-bold text-xs">
+                              {inv.capacityKW} kW
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            {inv.phase}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditInvModal(idx)}
+                            className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-secondary hover:text-primary transition-colors cursor-pointer"
+                            title="Edit inverter benchmark"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteInverterBenchmark(idx)}
+                            className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 transition-colors cursor-pointer"
+                            title="Delete inverter benchmark"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <div className="text-[10px] text-secondary font-medium">Brand</div>
+                          {isInlineEditingInverters ? (
+                            <input
+                              type="text"
+                              value={inv.brand}
+                              onChange={(e) => handleInverterCellChange(idx, 'brand', e.target.value)}
+                              className="w-full px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-bold"
+                            />
+                          ) : (
+                            <div className="font-bold text-on-surface">{inv.brand}</div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-secondary font-medium">Series / Topology</div>
+                          {isInlineEditingInverters ? (
+                            <input
+                              type="text"
+                              value={inv.series}
+                              onChange={(e) => handleInverterCellChange(idx, 'series', e.target.value)}
+                              className="w-full px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs"
+                            />
+                          ) : (
+                            <div className="text-secondary">{inv.series}</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-surface-container-high/60">
+                        <span className="text-[11px] font-semibold text-secondary">Benchmark Price:</span>
+                        {isInlineEditingInverters ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-mono font-bold">₹</span>
+                            <input
+                              type="number"
+                              value={inv.benchmarkPrice}
+                              onChange={(e) => handleInverterCellChange(idx, 'benchmarkPrice', e.target.value)}
+                              className="w-24 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-right"
+                            />
+                          </div>
+                        ) : (
+                          <span className="font-mono font-bold text-sm text-primary">
+                            ₹ {Number(inv.benchmarkPrice || 0).toLocaleString('en-IN')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DESKTOP TABLE VIEW (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[700px]">
+                    <thead>
+                      <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-10 border-none">
+                        <th className="px-3 py-2 text-xs">Rated kW</th>
+                        <th className="px-3 py-2 text-xs">Preferred Brand</th>
+                        <th className="px-3 py-2 text-xs">Series / Specs</th>
+                        <th className="px-3 py-2 text-xs">Phase Topology</th>
+                        <th className="px-3 py-2 text-xs text-right">Benchmark Price (₹)</th>
+                        <th className="px-3 py-2 text-xs text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
+                      {inverterBenchmarkMatrix.map((inv, idx) => (
+                        <tr key={inv.id || idx} className="hover:bg-surface-container-low/60 transition-colors">
+                          <td className="px-3 py-2.5 font-mono font-bold text-inverse-surface whitespace-nowrap">
+                            {isInlineEditingInverters ? (
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={inv.capacityKW}
+                                onChange={(e) => handleInverterCellChange(idx, 'capacityKW', e.target.value)}
+                                className="w-20 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-mono font-bold"
+                              />
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-surface-container-high text-on-surface">
+                                {inv.capacityKW} kW
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2.5 font-bold text-on-surface whitespace-nowrap">
+                            {isInlineEditingInverters ? (
+                              <input
+                                type="text"
+                                value={inv.brand}
+                                onChange={(e) => handleInverterCellChange(idx, 'brand', e.target.value)}
+                                className="w-32 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-bold"
+                              />
+                            ) : (
+                              <span>{inv.brand}</span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2.5 text-secondary whitespace-nowrap">
+                            {isInlineEditingInverters ? (
+                              <input
+                                type="text"
+                                value={inv.series}
+                                onChange={(e) => handleInverterCellChange(idx, 'series', e.target.value)}
+                                className="w-48 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs"
+                              />
+                            ) : (
+                              <span>{inv.series}</span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            {isInlineEditingInverters ? (
+                              <input
+                                type="text"
+                                value={inv.phase}
+                                onChange={(e) => handleInverterCellChange(idx, 'phase', e.target.value)}
+                                className="w-36 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs"
+                              />
+                            ) : (
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {inv.phase}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2.5 text-right font-mono font-bold text-inverse-surface whitespace-nowrap tabular-nums">
+                            {isInlineEditingInverters ? (
+                              <input
+                                type="number"
+                                value={inv.benchmarkPrice}
+                                onChange={(e) => handleInverterCellChange(idx, 'benchmarkPrice', e.target.value)}
+                                className="w-28 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono font-bold"
+                              />
+                            ) : (
+                              <span>₹ {Number(inv.benchmarkPrice || 0).toLocaleString('en-IN')}</span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditInvModal(idx)}
+                                className="p-1 rounded hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
+                                title="Edit inverter benchmark"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteInverterBenchmark(idx)}
+                                className="p-1 rounded hover:bg-rose-50 text-secondary hover:text-rose-600 transition-colors cursor-pointer"
+                                title="Delete inverter benchmark"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {isInlineEditingInverters && (
+                  <div className="mt-4 pt-3 border-t border-surface-container-low flex items-center justify-between">
+                    <span className="text-xs text-secondary italic">
+                      Tip: Edit prices or capacities inline, then click &quot;Save Inverter Prices&quot; to apply.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveInverterMatrix()}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-label-md text-xs font-bold rounded-lg shadow-sm cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">save</span>
+                      <span>Save Inverter Prices</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Individual Dealer-Wise Inverter Pricing Matrix */}
+              <DealerCustomPricingMatrix initialCategory="inverter" onShowToast={triggerToast} />
             </>
           )}
 
@@ -3042,6 +3271,9 @@ ${origin}/?tab=pricing_master
                     </p>
                   </div>
                 </div>
+
+                {/* Individual Dealer-Wise BOM Hardware Pricing Matrix */}
+                <DealerCustomPricingMatrix initialCategory="bom" onShowToast={triggerToast} />
               </>
             );
           })()}
