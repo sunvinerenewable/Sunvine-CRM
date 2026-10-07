@@ -120,3 +120,35 @@ test('HC-04: Stored subsidy retrieval extracts stored subsidy amount without har
   assert.equal(getStoredSubsidy({ subsidy: 45000 }), 45000);
   assert.equal(getStoredSubsidy({}), 0);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REALTIME LOCKDOWN & LIFECYCLE CLEANUP ASSERTIONS (BUG-06 / AUDIT-R3)
+// ─────────────────────────────────────────────────────────────────────────────
+test('BUG-06 & Area 1: AppContext.jsx has zero realtime subscriptions on sensitive tables', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const appContextContent = fs.readFileSync(path.resolve(process.cwd(), 'src/context/AppContext.jsx'), 'utf8');
+
+  const sensitiveTables = [
+    'quotations',
+    'customer_files',
+    'dealer_accounts',
+    'staff_accounts',
+    'dealer_custom_pricing',
+    'notifications'
+  ];
+
+  for (const table of sensitiveTables) {
+    const tableSubRegex = new RegExp(`table:\\s*['"\`]${table}['"\`]`, 'i');
+    assert.equal(
+      tableSubRegex.test(appContextContent),
+      false,
+      `AppContext.jsx must NOT have Supabase realtime subscription on sensitive table: ${table}`
+    );
+  }
+
+  // Verify BroadcastChannel and event cleanup exists in AppContext.jsx
+  assert.ok(appContextContent.includes("window.removeEventListener('focus'"));
+  assert.ok(appContextContent.includes("document.removeEventListener('visibilitychange'"));
+  assert.ok(appContextContent.includes('broadcastChannel.close()'));
+});

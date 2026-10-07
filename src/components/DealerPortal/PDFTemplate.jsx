@@ -121,7 +121,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     inverterCapacity,
     inverterCount = '1 NOS',
     inverterType = 'Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)',
-    baseRatePerKW = 59800,
+    baseRatePerKW = 0,
     dealerMarginPerKW = 0,
     dealerName,
     isDirectCompanyQuote,
@@ -132,7 +132,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     selectedInverterMake = '',
     coverImage,
     customCoverUrl,
-    bomItems
+    bomItems,
+    companyProfile = quotation.companyProfile || quotation.company_profile || {}
   } = quotation;
 
   // Resolve numerical capacity and dimensions
@@ -958,7 +959,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
             <div>
               <strong className="block font-bold text-gray-900">Validity:</strong>
               <ul className="list-disc pl-4 text-gray-800">
-                <li>Our offer is valid for 15 days from the date of this offer</li>
+                <li>{companyProfile.validityText || 'Our offer is valid for 15 days from the date of this offer'}</li>
               </ul>
             </div>
 
@@ -970,7 +971,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
           {/* Large Centered Banner */}
           <div className="text-center my-2 p-2 bg-[#F0FDF4] border border-[#6CBF3D]/40 rounded-lg">
             <h3 className="text-xs font-black text-[#2E7D32] tracking-wide uppercase">
-              THANK YOU FOR CHOOSING SUNVINE RENEWABLE
+              THANK YOU FOR CHOOSING {companyProfile.name || 'SUNVINE RENEWABLE'}
             </h3>
             <p className="text-[10px] text-gray-600 mt-0.5">Committed to Green Energy Independence &amp; Sustainable Growth</p>
           </div>
@@ -996,15 +997,15 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider">
-                    For Sunvine Renewable Energy
+                    For {companyProfile.name || 'Sunvine Renewable Energy'}
                   </span>
                   <span className="text-[9px] text-[#2E7D32] font-bold">Authorized Seal</span>
                 </div>
                 <p className="text-[9.5px] text-gray-700 mt-0.5">
-                  G-705, Second Gate, Metoda GIDC, Rajkot - 360021 (Guj.)
+                  {companyProfile.address || 'Gujarat, India'}
                 </p>
                 <div className="text-[9.5px] text-gray-700 font-mono mt-0.5">
-                  +91 95865 33750 • sunvinerenewable@gmail.com
+                  {companyProfile.whatsapp || companyProfile.helpdesk || '+91 80000 50580'} • {companyProfile.email || 'support@sunvinerenewable.com'}
                 </div>
               </div>
               <div className="border-t border-dashed border-gray-400 pt-1 flex items-center justify-between text-[10px] text-gray-700 mt-4">

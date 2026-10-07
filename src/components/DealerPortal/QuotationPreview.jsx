@@ -510,8 +510,14 @@ export default function QuotationPreview({
     );
   }
 
+  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+
   if (!activeQuotation) {
     if (isPublicView) {
+      const supportPhone = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+      const cleanWaPhone = String(companyProfile.whatsapp || '918000050580').replace(/\D/g, '');
+      const compName = companyProfile.name || 'Sunvine';
+
       return (
         <div className="max-w-2xl mx-auto my-12 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-md border border-surface-container-high">
           <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto mb-4">
@@ -523,14 +529,14 @@ export default function QuotationPreview({
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <a
-              href="tel:+918000050580"
+              href={`tel:${supportPhone.replace(/\s+/g, '')}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-xs shadow-sm hover:opacity-90 transition-all"
             >
               <span className="material-symbols-outlined text-[18px]">call</span>
-              <span>Call Helpline: +91 80000 50580</span>
+              <span>Call Helpline: {supportPhone}</span>
             </a>
             <a
-              href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
+              href={`https://api.whatsapp.com/send?phone=${cleanWaPhone}&text=${encodeURIComponent(`Hello ${compName} Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-semibold text-xs shadow-sm hover:bg-[#1EBE5B] transition-all"

@@ -1053,7 +1053,8 @@ export default function CreateQuotation() {
       customCoverUrl: customCoverUrl || null,
       bomItems,
       bomTotals,
-      pricingMode: bomPricingMode
+      pricingMode: bomPricingMode,
+      companyProfile: systemSettings?.companyProfile || systemSettings?.company_profile || null
     };
 
     setIsSubmitting(true);

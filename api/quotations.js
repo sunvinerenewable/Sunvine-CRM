@@ -415,6 +415,7 @@ async function handleSave(req, res, jwt, db) {
     loanTenureYears: Number(body.loan_tenure_years) || 5,
     isDirectCompanyQuote: isDirectCompany,
     isInterState,
+    companyProfile: settings?.company_profile || null,
     computedAt: new Date().toISOString(),
     serverVersion: '2.1'
   };

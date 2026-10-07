@@ -55,23 +55,23 @@ export async function getSettings(db) {
         gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
       },
       company_profile: {
-        name: company.name || 'Sunvine Renewable Energy Private Limited',
-        gstin: company.gstin || '24AAACS1234A1Z5',
-        address: company.address || 'Ahmedabad, Gujarat, India',
-        state: company.state || 'Gujarat',
-        whatsapp: company.whatsapp || '+91 80000 50580',
-        helpdesk: company.helpdesk || '+91 80000 50580',
-        website: company.website || 'https://sunvinerenewable.com',
-        email: company.email || 'support@sunvinerenewable.com',
+        name: company.name || '',
+        gstin: company.gstin || '',
+        address: company.address || '',
+        state: company.state || '',
+        whatsapp: company.whatsapp || '',
+        helpdesk: company.helpdesk || '',
+        website: company.website || '',
+        email: company.email || '',
         bank: {
-          bankName: company.bank?.bankName || 'State Bank of India',
-          accountNumber: company.bank?.accountNumber || '999900001111',
-          ifsc: company.bank?.ifsc || 'SBIN0001234',
-          branch: company.bank?.branch || 'Ahmedabad Main Branch',
-          accountHolder: company.bank?.accountHolder || 'Sunvine Renewable Energy Private Limited'
+          bankName: company.bank?.bankName || '',
+          accountNumber: company.bank?.accountNumber || '',
+          ifsc: company.bank?.ifsc || '',
+          branch: company.bank?.branch || '',
+          accountHolder: company.bank?.accountHolder || ''
         },
-        terms: company.terms || '1. Validity: 15 Days from quotation date.\n2. Net-metering approval is subject to DISCOM policy.\n3. Subsidy disbursement is directly into customer bank account via PM Surya Ghar National Portal.',
-        validityText: company.validityText || '15 Days from generation date'
+        terms: company.terms || '',
+        validityText: company.validityText || ''
       }
     };
   });

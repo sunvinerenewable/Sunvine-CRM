@@ -56,25 +56,31 @@ export function getPublicProposalUrl(quoteOrId) {
 }
 
 // Generate the official proposal WhatsApp message
-export function buildProposalWhatsAppMessage(quote) {
+export function buildProposalWhatsAppMessage(quote, customUrl = null, profile = null) {
   const customerName = quote.customerName || 'Valued Customer';
   const capacity = quote.systemCapacityKW 
     ? `${quote.systemCapacityKW} KW` 
-    : (quote.capacity || '280.20 kW');
-  const quoteId = quote.id || 'SV-2026-Q801';
+    : (quote.capacity || `${Number(quote.system_capacity_kw || 0)} kW`);
+  const quoteId = quote.id || quote.quotation_id || 'SV-QUOTATION';
   const amount = typeof quote.amount === 'string'
     ? quote.amount
-    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : '67,24,800');
-  const moduleInfo = quote.solarModule || quote.moduleType || '600 WP TOPCon Mono Bifacial Panel';
-  const invInfo = quote.inverterCapacity || '125 KW Grid-Tied Inverter';
+    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : (quote.totalAmount ? quote.totalAmount.toLocaleString('en-IN') : '0'));
+  const moduleInfo = quote.solarModule || quote.moduleType || quote.panelType || 'Tier-1 Certified PV Module';
+  const invInfo = quote.inverterCapacity || quote.inverterType || 'Grid-Tied Solar Inverter';
   const date = quote.date || new Date().toLocaleDateString('en-GB');
-  const publicUrl = getPublicProposalUrl(quote);
+  const publicUrl = customUrl || getPublicProposalUrl(quote);
 
-  return `*☀️ SUNVINE RENEWABLE ENERGY - SOLAR EPC PROPOSAL*
+  const companyProfile = profile || quote.companyProfile || quote.company_profile || {};
+  const compName = companyProfile.name || 'Sunvine Renewable Energy';
+  const helpline = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+  const email = companyProfile.email || 'support@sunvinerenewable.com';
+  const office = companyProfile.address || 'Gujarat, India';
+
+  return `*☀️ ${compName.toUpperCase()} - SOLAR EPC PROPOSAL*
 
 Dear *${customerName}*,
 
-Greetings from *Sunvine Renewable Energy*! We are pleased to share your customized official turnkey solar power proposal.
+Greetings from *${compName}*! We are pleased to share your customized official turnkey solar power proposal.
 
 📋 *QUOTATION SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━
@@ -93,9 +99,9 @@ Your official 4-page turnkey proposal document with Bill of Materials (BOM), Tec
 🔗 *View / Download Proposal Online:*
 ${publicUrl}
 
-📞 *Sunvine Helpline:* +91 80000 50580
-📧 *Email:* sunvinerenewable@gmail.com
-🏢 *Corporate Office:* G-705, Metoda GIDC, Rajkot, Gujarat.
+📞 *Helpline:* ${helpline}
+📧 *Email:* ${email}
+🏢 *Corporate Office:* ${office}
 
 _Empowering The Future with Solar Energy_`;
 }
