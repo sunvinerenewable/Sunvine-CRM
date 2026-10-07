@@ -847,7 +847,7 @@ ${origin}/?tab=pricing_master
               <div className="flex flex-col text-left min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-on-surface truncate">
-                    {activeTab === 'base' && 'Turnkey Presets (Plant Slabs)'}
+                    {activeTab === 'base' && 'System Presets (Plant Slabs)'}
                     {activeTab === 'modules' && 'Solar Panels (Modules)'}
                     {activeTab === 'inverters' && 'Solar Inverters'}
                     {activeTab === 'bom' && 'Default Bill of Material (BOM)'}
@@ -891,7 +891,7 @@ ${origin}/?tab=pricing_master
                   {
                     id: 'base',
                     icon: 'payments',
-                    title: 'Turnkey Presets (Plant Slabs)',
+                    title: 'System Presets (Plant Slabs)',
                     subtitle: 'Panel-Wise Complete Quotation Matrix',
                     badge: `${localBosMatrix?.length || 13} Slabs`
                   },
@@ -1002,7 +1002,7 @@ ${origin}/?tab=pricing_master
               <span className={`material-symbols-outlined text-[18px] shrink-0 ${activeTab === 'base' ? 'text-primary' : 'text-secondary'}`}>
                 payments
               </span>
-              <span className="text-xs tracking-tight truncate">Turnkey Presets</span>
+              <span className="text-xs tracking-tight truncate">System Presets</span>
             </div>
             <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 font-semibold ${
               activeTab === 'base'

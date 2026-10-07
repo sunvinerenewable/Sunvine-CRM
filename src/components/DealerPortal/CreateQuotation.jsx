@@ -1944,7 +1944,7 @@ export default function CreateQuotation() {
                     )}
                   </div>
                   <p className="text-xs text-secondary hidden sm:block">
-                    {isMarginBased ? 'Presets matrix kW slab, manufacturer make & turnkey pricing' : 'Hardware configuration, inverter tier & module capacity'}
+                    {isMarginBased ? 'Presets matrix kW slab, manufacturer make & system pricing' : 'Hardware configuration, inverter tier & module capacity'}
                   </p>
                 </div>
               </div>
@@ -3105,7 +3105,7 @@ export default function CreateQuotation() {
                 <div className="flex items-center justify-between pb-2 border-b border-surface-container-high/60 gap-2">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-[18px]">engineering</span>
-                    <h3 className="text-xs sm:text-sm font-bold text-on-surface">5. Site Engineering, Logistics &amp; Turnkey Services</h3>
+                    <h3 className="text-xs sm:text-sm font-bold text-on-surface">5. Site Engineering, Logistics &amp; Installation Services</h3>
                   </div>
                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
                     Auto-Scaled to {kw} kW
@@ -3501,10 +3501,10 @@ export default function CreateQuotation() {
               <div className="space-y-2 pt-1 border-t border-emerald-200">
                 {isMarginBased ? (
                   <>
-                    {/* Turnkey Base Package Price from Matrix */}
+                    {/* Base Package Price from Matrix */}
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex flex-col min-w-0">
-                        <span className="text-slate-800 font-semibold truncate">Turnkey Solar Package (Base)</span>
+                        <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
                         <span className="text-[10px] text-slate-500">
                           {currentPresetMake.name} ({currentPresetMake.watt}W) • {panelQuantity} Modules • {kw} kW
                         </span>
@@ -3614,7 +3614,7 @@ export default function CreateQuotation() {
               {/* Total Project Cost */}
               <div className="flex items-center justify-between gap-2 py-1.5 border-t border-dashed border-primary/30">
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-on-surface font-black">Gross Turnkey EPC Cost</span>
+                  <span className="text-xs text-on-surface font-black">Total Project Cost</span>
                   <span className="text-[10px] text-secondary">Inclusive of GST, freight &amp; liaisoning</span>
                 </div>
                 <span className="text-base text-on-secondary-fixed font-black tabular-nums whitespace-nowrap shrink-0">
