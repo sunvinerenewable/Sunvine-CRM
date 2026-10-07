@@ -13,7 +13,7 @@ import {
   FIELD_BOM_MASTER_CATALOG
 } from '../../data/standardBomData';
 import { calculateSubsidy as calcSharedSubsidy, calcEMI as calcSharedEMI } from '../../shared/pricing/calculations';
-
+import { PDF_BOS_PRICE_MATRIX } from '../../data/gujaratDatabase';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -22,6 +22,59 @@ const formatINR = (val) => {
 
 export const STANDARD_WATTS = [540, 550, 585, 600, 610, 615];
 export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
+
+export const PRESET_MAKES = [
+  {
+    id: 'adani_bifi',
+    name: 'Adani Bi-Fi',
+    fullName: 'Adani Bi-Fi 550W Vertex Mono PERC Bifacial',
+    brand: 'Adani Solar',
+    watt: 550,
+    priceKey: 'adaniBiFiPrice',
+    badge: 'Tier-1 ALMM',
+    tech: '550W Bi-Fi TOPCon'
+  },
+  {
+    id: 'aps_bifi',
+    name: 'APS Bi-Fi',
+    fullName: 'APS Bi-Fi 550W TOPCon Dual Glass',
+    brand: 'APS Solar',
+    watt: 550,
+    priceKey: 'apsBiFiPrice',
+    badge: 'Dual Glass',
+    tech: '550W Bi-Fi TOPCon'
+  },
+  {
+    id: 'rayzone',
+    name: 'Rayzone',
+    fullName: 'Rayzone 550W Bi-Fi TOPCon High-Efficiency',
+    brand: 'Rayzone Solar',
+    watt: 550,
+    priceKey: 'rayzonePrice',
+    badge: 'High Yield',
+    tech: '550W Bi-Fi TOPCon'
+  },
+  {
+    id: 'waaree_585',
+    name: 'Waaree 585W TOPCon',
+    fullName: 'Waaree 585W TOPCon Bifacial (ALMM List-I)',
+    brand: 'Waaree Energies',
+    watt: 585,
+    priceKey: 'waaree585Price',
+    badge: 'Featured',
+    tech: '585W TOPCon'
+  },
+  {
+    id: 'aps_topcon_600',
+    name: 'APS TOPCon 600W',
+    fullName: 'APS TOPCon 600W Bi-Fi High-Yield',
+    brand: 'APS Solar',
+    watt: 600,
+    priceKey: 'apsTopcon600Price',
+    badge: '600W Ultra',
+    tech: '600W Bi-Fi'
+  }
+];
 
 export const BOM_MOBILE_CATEGORIES = [
   { id: 'all', label: 'All Items' },
@@ -71,7 +124,8 @@ export default function CreateQuotation() {
     bomCatalog,
     bomRates,
     deletedBomItemIds,
-    seenCatalogItemIds
+    seenCatalogItemIds,
+    pdfBosMatrix
   } = useApp();
 
   const { addToast } = useToast();
@@ -105,6 +159,12 @@ export default function CreateQuotation() {
   const effectiveDealer = isDirectCompanyQuote
     ? null
     : ((isAdmin || isStaff) ? (accessibleDealers?.find(d => d.id === assignedDealerId) || currentDealer) : currentDealer);
+
+  // Dealer category resolution: Margin Based vs Kit Based
+  const effectiveDealerCategory = isDirectCompanyQuote
+    ? 'Margin Based'
+    : (effectiveDealer?.category || effectiveDealer?.pricingConfig?.category || 'Margin Based');
+  const isMarginBased = effectiveDealerCategory === 'Margin Based';
 
   // Pricing mode: 'standard' (Company Base Price) vs 'custom' (Dealer Negotiated Price)
   const [bomPricingMode, setBomPricingMode] = useState(() => {
@@ -234,6 +294,83 @@ export default function CreateQuotation() {
   };
 
   // Step 1.2 Dynamic Hardware: Brand -> Wattage (Wp) -> Panel Quantity -> Auto kW
+  // Available BOS Presets Matrix (Live database synced from Supabase bos_pricing_matrix)
+  const activeBosMatrix = useMemo(() => {
+    return Array.isArray(pdfBosMatrix) && pdfBosMatrix.length > 0 ? pdfBosMatrix : PDF_BOS_PRICE_MATRIX;
+  }, [pdfBosMatrix]);
+
+  // Selected kW for margin-based presets flow (defaults to 3.3 kW or initialSource)
+  const [selectedPresetKw, setSelectedPresetKw] = useState(() => {
+    if (initialSource?.systemCapacityKW || initialSource?.capacityKW) {
+      return Number(initialSource.systemCapacityKW || initialSource.capacityKW);
+    }
+    return 3.3;
+  });
+
+  // Selected Make Brand ID for margin-based presets flow
+  const [selectedPresetMakeId, setSelectedPresetMakeId] = useState(() => {
+    if (initialSource?.selectedModuleMake) {
+      const found = PRESET_MAKES.find(m => m.name.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()) || m.brand.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()));
+      if (found) return found.id;
+    }
+    return 'adani_bifi';
+  });
+
+  // Active slab matching selected kW
+  const matchedSlab = useMemo(() => {
+    const match = activeBosMatrix.find(r => Math.abs(Number(r.capacityKW) - Number(selectedPresetKw)) < 0.05);
+    return match || activeBosMatrix[0] || { capacityKW: 3.3, noOfModules: 6, inverterCapacityKW: 3.6, adaniBiFiPrice: 138385, apsBiFiPrice: 127500, rayzonePrice: 128193, waaree585Price: 148308, apsTopcon600Price: 140257 };
+  }, [activeBosMatrix, selectedPresetKw]);
+
+  // Active Make object
+  const currentPresetMake = useMemo(() => {
+    return PRESET_MAKES.find(m => m.id === selectedPresetMakeId) || PRESET_MAKES[0];
+  }, [selectedPresetMakeId]);
+
+  // Preset Turnkey Base Price from the database matrix for current kW & make
+  const activePresetBasePrice = useMemo(() => {
+    if (!matchedSlab || !currentPresetMake) return 0;
+    const price = matchedSlab[currentPresetMake.priceKey];
+    return Number(price) || 0;
+  }, [matchedSlab, currentPresetMake]);
+
+  // User-edited price entry override (null = use activePresetBasePrice)
+  const [customPresetBasePrice, setCustomPresetBasePrice] = useState(() => {
+    if (initialSource?.baseCost && (initialSource?.pricingCategory === 'Margin Based' || initialSource?.pricingMode === 'margin_based')) {
+      return Number(initialSource.baseCost);
+    }
+    return null;
+  });
+
+  // Effective turnkey base price for calculation
+  const effectiveMarginBasePrice = (customPresetBasePrice !== null && customPresetBasePrice !== undefined)
+    ? Number(customPresetBasePrice)
+    : activePresetBasePrice;
+
+  // Handlers for Margin-Based kW and Make selection
+  const handleSelectPresetKw = (kwVal) => {
+    const numKw = Number(kwVal);
+    setSelectedPresetKw(numKw);
+    const targetSlab = activeBosMatrix.find(r => Math.abs(Number(r.capacityKW) - numKw) < 0.05) || matchedSlab;
+    if (targetSlab) {
+      const modules = Number(targetSlab.noOfModules) || 6;
+      setPanelQuantity(modules);
+      const invCap = parseFloat(targetSlab.inverterCapacityKW) || numKw;
+      setInverterCapacityKw(invCap);
+    }
+    setCustomPresetBasePrice(null);
+  };
+
+  const handleSelectPresetMake = (makeId) => {
+    setSelectedPresetMakeId(makeId);
+    const targetMake = PRESET_MAKES.find(m => m.id === makeId);
+    if (targetMake) {
+      setPanelBrand(targetMake.brand);
+      setPanelWatt(targetMake.watt);
+    }
+    setCustomPresetBasePrice(null);
+  };
+
   const [panelBrand, setPanelBrand] = useState(() => {
     if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
     if (initialSource?.solarModule) {
@@ -255,10 +392,32 @@ export default function CreateQuotation() {
     return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
   });
 
-  // Auto-calculated System Capacity (kW) = (Wattage * Quantity) / 1000
-  const kw = Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
-  const moduleCount = panelQuantity;
+  // Auto-calculated System Capacity (kW)
+  const kw = isMarginBased
+    ? Number(selectedPresetKw)
+    : Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
+  const moduleCount = isMarginBased ? (Number(matchedSlab?.noOfModules) || panelQuantity) : panelQuantity;
   const rooftopAreaSqFt = Math.round(kw * 64);
+
+  // Synchronize Margin-Based state with component hardware state
+  useEffect(() => {
+    if (isMarginBased && matchedSlab) {
+      const targetModules = Number(matchedSlab.noOfModules) || 6;
+      if (panelQuantity !== targetModules) {
+        setPanelQuantity(targetModules);
+      }
+      if (panelWatt !== currentPresetMake.watt) {
+        setPanelWatt(currentPresetMake.watt);
+      }
+      if (panelBrand !== currentPresetMake.brand) {
+        setPanelBrand(currentPresetMake.brand);
+      }
+      const invCap = parseFloat(matchedSlab.inverterCapacityKW) || Number(selectedPresetKw);
+      if (inverterCapacityKw !== invCap) {
+        setInverterCapacityKw(invCap);
+      }
+    }
+  }, [isMarginBased, matchedSlab, currentPresetMake, selectedPresetKw]);
 
   // Modules available for the currently selected brand
   const brandModules = useMemo(() => {
@@ -807,8 +966,8 @@ export default function CreateQuotation() {
   };
 
 
-  // Turnkey Base Cost before dealer margin strictly follows Field BOM Totals!
-  const baseProjectCost = bomTotals.grossTurnkeyCost;
+  // Turnkey Base Cost before dealer margin (Preset Matrix Base Price in Margin-Based flow; Field BOM Totals in Kit-Based flow)
+  const baseProjectCost = isMarginBased ? effectiveMarginBasePrice : bomTotals.grossTurnkeyCost;
 
   // Commercial margin computation (triple mode: per_kw, percent, or fixed ₹ amount)
   // For dealer partners: Custom Dealer Margin. For direct company quotes: Sunvine HO Company Margin.
@@ -1030,11 +1189,11 @@ export default function CreateQuotation() {
       type: `${panelBrand.split(' ')[0]} • ${projectType}`,
       systemCapacityKW: kw,
       capacityKW: kw,
-      panelType: fullPanelDescription,
-      solarModule: fullPanelDescription,
-      selectedModuleMake: panelBrand,
+      panelType: isMarginBased ? currentPresetMake.fullName : fullPanelDescription,
+      solarModule: isMarginBased ? currentPresetMake.fullName : fullPanelDescription,
+      selectedModuleMake: isMarginBased ? currentPresetMake.name : panelBrand,
       selectedInverterMake: inverterBrand,
-      moduleWattage: panelWatt,
+      moduleWattage: isMarginBased ? currentPresetMake.watt : panelWatt,
       moduleCount: panelQuantity,
       ratePerWp: ratePerWp,
       multiBrandComparison,
@@ -1106,7 +1265,8 @@ export default function CreateQuotation() {
       customCoverUrl: customCoverUrl || null,
       bomItems,
       bomTotals,
-      pricingMode: bomPricingMode
+      pricingMode: isMarginBased ? 'margin_based' : bomPricingMode,
+      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based'
     };
 
     setIsSubmitting(true);
@@ -1654,14 +1814,298 @@ export default function CreateQuotation() {
                   <span className="material-symbols-outlined text-[18px] sm:text-[20px]">solar_power</span>
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">System Details</h2>
-                  <p className="text-xs text-secondary hidden sm:block">Hardware configuration, inverter tier &amp; module capacity</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">System Details</h2>
+                    {isMarginBased && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 uppercase tracking-wider">
+                        Margin-Based Presets
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-secondary hidden sm:block">
+                    {isMarginBased ? 'Presets matrix kW slab, manufacturer make & turnkey pricing' : 'Hardware configuration, inverter tier & module capacity'}
+                  </p>
                 </div>
               </div>
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.2</span>
             </div>
 
-            <div className="flex flex-col gap-4">
+            {isMarginBased ? (
+              <div className="flex flex-col gap-4">
+                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — FIRST ELEMENT CREATED IN PRESETS ADMIN PANEL */}
+                <div className="p-4 rounded-xl bg-surface-container-low border-2 border-emerald-500/40 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                        kW
+                      </div>
+                      <div>
+                        <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetKwSelect">
+                          <span>1. System Capacity (kW) *</span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 rounded font-extrabold uppercase">
+                            Admin Presets Matrix
+                          </span>
+                        </label>
+                        <p className="text-[11px] text-secondary">
+                          Select standard sanctioned solar plant capacity created in Admin Presets
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                        {matchedSlab?.noOfModules || 6} Panels • {matchedSlab?.inverterCapacityKW || kw} kW Inverter
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quick Select Buttons Grid for All Available kW Values */}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {activeBosMatrix.map((slab) => {
+                      const slabKw = Number(slab.capacityKW);
+                      const isSelected = Math.abs(slabKw - Number(selectedPresetKw)) < 0.05;
+                      return (
+                        <button
+                          key={`slab-kw-${slabKw}`}
+                          type="button"
+                          onClick={() => handleSelectPresetKw(slabKw)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 font-mono ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400'
+                              : 'bg-surface-container-lowest border border-surface-container-high text-on-surface hover:border-emerald-400 hover:bg-emerald-50/50'
+                          }`}
+                        >
+                          <span>{slabKw} kW</span>
+                          {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Direct Dropdown Selector for Fast Navigation */}
+                  <div className="relative pt-1">
+                    <select
+                      id="presetKwSelect"
+                      value={selectedPresetKw}
+                      onChange={(e) => handleSelectPresetKw(e.target.value)}
+                      className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                    >
+                      {activeBosMatrix.map((slab) => {
+                        const slabKw = Number(slab.capacityKW);
+                        return (
+                          <option key={`opt-kw-${slabKw}`} value={slabKw}>
+                            {slabKw} kW System — {slab.noOfModules} Panels ({slab.inverterCapacityKW || slabKw} kW Inverter Bundled)
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                  </div>
+                </div>
+
+                {/* 2. COMPANY MAKE / BRAND COLUMN & PRESET PRICES */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-surface-container-high/60">
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5">
+                        <span>2. Company Make / Brand &amp; Preset Turnkey Price *</span>
+                      </label>
+                      <p className="text-[11px] text-secondary">
+                        Select manufacturer make. Turnkey prices are live-synced from Admin Presets Matrix.
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-secondary font-mono">
+                      For {kw} kW Plant
+                    </span>
+                  </div>
+
+                  {/* Grid of All Available Make Brands */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {PRESET_MAKES.map((make) => {
+                      const isSelected = selectedPresetMakeId === make.id;
+                      const makePresetPrice = matchedSlab ? (Number(matchedSlab[make.priceKey]) || 0) : 0;
+                      return (
+                        <div
+                          key={make.id}
+                          onClick={() => handleSelectPresetMake(make.id)}
+                          className={`p-3 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                            isSelected
+                              ? 'border-emerald-500 bg-emerald-500/10 shadow-sm ring-1 ring-emerald-500'
+                              : 'border-surface-container-high bg-surface-container-lowest hover:border-surface-container-highest hover:bg-surface-container/30'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-on-surface">{make.name}</span>
+                                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-surface-container text-secondary border border-surface-container-high">
+                                  {make.badge}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-secondary mt-0.5">{make.tech}</p>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                              isSelected ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-secondary/40'
+                            }`}>
+                              {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-surface-container-high/60 flex items-center justify-between">
+                            <span className="text-[10px] text-secondary font-medium">Preset Price:</span>
+                            <span className="text-xs sm:text-sm font-bold font-mono text-emerald-700">
+                              {formatINR(makePresetPrice)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. TURNKEY PACKAGE BASE PRICE ENTRY (REPLACES MANUAL WATT-PIC CONTROLS) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-surface-container-high/60">
+                    <div>
+                      <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="packageBasePriceInput">
+                        <span>3. Turnkey Package Base Price (₹) *</span>
+                        <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-bold">
+                          Replaces Wp Rate
+                        </span>
+                      </label>
+                      <p className="text-[11px] text-secondary">
+                        Auto-populated from {currentPresetMake.name} preset for {kw} kW. You may adjust if needed.
+                      </p>
+                    </div>
+                    {customPresetBasePrice !== null && customPresetBasePrice !== activePresetBasePrice && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomPresetBasePrice(null)}
+                        className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 self-start sm:self-auto"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">restart_alt</span>
+                        Reset to Matrix ({formatINR(activePresetBasePrice)})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    <div>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-secondary font-bold select-none">₹</span>
+                        <input
+                          id="packageBasePriceInput"
+                          type="number"
+                          min="10000"
+                          max="5000000"
+                          step="100"
+                          value={customPresetBasePrice !== null && customPresetBasePrice !== undefined ? customPresetBasePrice : activePresetBasePrice}
+                          onChange={(e) => setCustomPresetBasePrice(e.target.value === '' ? null : Number(e.target.value))}
+                          className="w-full h-11 pl-8 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-mono font-bold text-base outline-none shadow-sm border-2 border-emerald-500/50 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
+                        />
+                      </div>
+                      <span className="text-[10px] text-secondary mt-1 block">
+                        {customPresetBasePrice !== null && customPresetBasePrice !== activePresetBasePrice
+                          ? `⚡ Custom turnkey base price entered (Matrix preset: ${formatINR(activePresetBasePrice)})`
+                          : `✓ Live synchronized with Admin Presets matrix`}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-surface-container-lowest border border-surface-container-high text-xs space-y-1">
+                      <div className="flex justify-between text-secondary">
+                        <span>Base Turnkey Rate:</span>
+                        <span className="font-mono font-bold text-on-surface">
+                          ₹{kw > 0 ? Math.round(effectiveMarginBasePrice / kw).toLocaleString('en-IN') : 0} / kW
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-secondary">
+                        <span>Per-Module Equivalent:</span>
+                        <span className="font-mono font-bold text-on-surface">
+                          ₹{panelQuantity > 0 ? Math.round(effectiveMarginBasePrice / panelQuantity).toLocaleString('en-IN') : 0} / Panel
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. AUTO-GENERATED PLANT CAPACITY & HARDWARE TELEMETRY BANNER */}
+                <div className="p-3.5 sm:p-4 bg-emerald-500/15 border-2 border-emerald-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5 sm:mt-0">
+                      <span className="material-symbols-outlined text-[24px]">electric_bolt</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase font-extrabold tracking-wider bg-emerald-700 text-white px-2 py-0.5 rounded-full shrink-0">
+                          Auto-Generated Plant Capacity
+                        </span>
+                        <span className="text-[11px] font-medium text-emerald-800">
+                          {matchedSlab?.noOfModules || panelQuantity} Panels × {currentPresetMake.watt}W ({currentPresetMake.name})
+                        </span>
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
+                        {kw} kW System <span className="text-sm sm:text-base font-bold text-emerald-800">({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center pt-2 sm:pt-0 border-t border-emerald-500/30 sm:border-t-0 sm:border-l sm:border-emerald-300 sm:pl-4 shrink-0">
+                    <div className="text-left sm:text-right">
+                      <div className="text-[11px] font-semibold text-emerald-800">Rooftop Area Required</div>
+                      <div className="text-[10px] text-emerald-700">Shadow-free roof space</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm sm:text-base font-bold text-emerald-950 font-mono">~{rooftopAreaSqFt} Sq. Ft.</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
+                <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-surface-container text-secondary flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">apartment</span>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-on-surface">Project Scheme &amp; Subsidy Eligibility</h4>
+                        <p className="text-[11px] text-secondary">Residential (PM Surya Ghar DBT up to ₹78,000) or Commercial/Industrial</p>
+                      </div>
+                    </div>
+                    <div className="w-full sm:w-80">
+                      <div className="relative">
+                        <select
+                          className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs outline-none shadow-sm border border-surface-container-high focus:border-primary-container font-semibold appearance-none cursor-pointer"
+                          id="projectType"
+                          value={projectType}
+                          onChange={(e) => setProjectType(e.target.value)}
+                        >
+                          <option value="Residential">Residential (PM Surya Ghar Subsidy Eligible)</option>
+                          <option value="Commercial">Commercial / Industrial (Accelerated Depr.)</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. MARGIN-BASED FLOW NOTICE: TECHNICAL BOM COMPILED FOR PRINT */}
+                <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-primary text-[20px] shrink-0">description</span>
+                    <div className="text-xs">
+                      <span className="font-bold text-on-surface block">Technical Engineering Bill of Materials (BOM)</span>
+                      <span className="text-[11px] text-secondary">
+                        BOM equipment items, inverter specs ({matchedSlab?.inverterCapacityKW || kw} kW) &amp; mounting accessories are compiled automatically in the background and presented on Page 2 of the customer quotation print / PDF.
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full shrink-0">
+                    Print Ready
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
               {/* BRAND SELECTION & WATTAGE */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {/* Panel Brand Selector */}
@@ -2882,7 +3326,8 @@ export default function CreateQuotation() {
                 )}
               </div>
             </div>
-          </section>
+          )}
+        </section>
 
           {/* Full 2D / 3D Layout Studio Modal - Full Window Workspace */}
           {showLayoutStudio && (
@@ -2959,55 +3404,79 @@ export default function CreateQuotation() {
 
               {/* Itemized Cost Breakdown */}
               <div className="space-y-2 pt-1 border-t border-emerald-200">
-                {/* 1. Major Equipment & Hardware */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Tier-1 PV Modules &amp; Inverter</span>
-                    <span className="text-[10px] text-slate-500">{panelQuantity} Pcs {panelBrand.split(' ')[0]} + {inverterModel.split(' ')[0]}</span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(moduleEstimatedCost + inverterEstimatedCost)}
-                  </span>
-                </div>
+                {isMarginBased ? (
+                  <>
+                    {/* Turnkey Base Package Price from Matrix */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Turnkey Solar Package (Base)</span>
+                        <span className="text-[10px] text-slate-500">
+                          {currentPresetMake.name} ({currentPresetMake.watt}W) • {panelQuantity} Modules • {kw} kW
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(baseProjectCost)}
+                      </span>
+                    </div>
 
-                {/* 2. Structure & BOS Hardware */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Mounting Structure &amp; BOS Hardware</span>
-                    <span className="text-[10px] text-slate-500">HDGI MMS, DC/AC Wires, ACDB/DCDB, Earthing</span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(structureEstimatedCost + bosEstimatedCost)}
-                  </span>
-                </div>
+                    {/* Bundled Equipment & Scope Note */}
+                    <div className="text-[10px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 leading-snug">
+                      Includes Tier-1 PV Modules, {matchedSlab?.inverterCapacityKW || kw} kW Inverter, Mounting Structure, BOS Cables, Switchgear &amp; GST
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* 1. Major Equipment & Hardware */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Tier-1 PV Modules &amp; Inverter</span>
+                        <span className="text-[10px] text-slate-500">{panelQuantity} Pcs {panelBrand.split(' ')[0]} + {inverterModel.split(' ')[0]}</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(moduleEstimatedCost + inverterEstimatedCost)}
+                      </span>
+                    </div>
 
-                {/* 3. Doorstep Freight & Logistics Summary */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Doorstep Freight &amp; Logistics</span>
-                    <span className="text-[10px] text-slate-500">
-                      {transportPreset === 'rajkot_local' ? 'Rajkot Local Area (₹1k)' : (transportPreset === 'dealer_scope' ? 'Dealer / Client Scope (₹0)' : 'Outstation / Custom Freight')}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {effectiveTransportCharge > 0 ? formatINR(effectiveTransportCharge) : <span className="text-emerald-700 font-bold">₹0 (Dealer Scope)</span>}
-                  </span>
-                </div>
+                    {/* 2. Structure & BOS Hardware */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Mounting Structure &amp; BOS Hardware</span>
+                        <span className="text-[10px] text-slate-500">HDGI MMS, DC/AC Wires, ACDB/DCDB, Earthing</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(structureEstimatedCost + bosEstimatedCost)}
+                      </span>
+                    </div>
 
-                {/* 4. Installation Charge Summary */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Installation Charge</span>
-                    <span className="text-[10px] text-slate-500">
-                      {installationPricingMode === 'fixed'
-                        ? `Flat General Charge • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`
-                        : `₹${installationRatePerKw}/kW • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(installationEstimatedCost)}
-                  </span>
-                </div>
+                    {/* 3. Doorstep Freight & Logistics Summary */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Doorstep Freight &amp; Logistics</span>
+                        <span className="text-[10px] text-slate-500">
+                          {transportPreset === 'rajkot_local' ? 'Rajkot Local Area (₹1k)' : (transportPreset === 'dealer_scope' ? 'Dealer / Client Scope (₹0)' : 'Outstation / Custom Freight')}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {effectiveTransportCharge > 0 ? formatINR(effectiveTransportCharge) : <span className="text-emerald-700 font-bold">₹0 (Dealer Scope)</span>}
+                      </span>
+                    </div>
+
+                    {/* 4. Installation Charge Summary */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Installation Charge</span>
+                        <span className="text-[10px] text-slate-500">
+                          {installationPricingMode === 'fixed'
+                            ? `Flat General Charge • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`
+                            : `₹${installationRatePerKw}/kW • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(installationEstimatedCost)}
+                      </span>
+                    </div>
+                  </>
+                )}
 
                 {/* 5. Dealer / Channel Margin */}
                 <div className="flex items-center justify-between text-xs">
