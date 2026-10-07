@@ -70,7 +70,7 @@ export default function Navigation() {
     { id: 'create_quote', label: 'New Quotation', mobileLabel: 'New Quote', icon: 'note_add' },
     { id: 'my_quotes', label: 'My Quotations', mobileLabel: 'My Quotes', icon: 'folder_open' },
     { id: 'my_applications', label: 'My Applications', mobileLabel: 'Applications', icon: 'assignment' },
-    { id: 'dealer_ledger', label: 'My Ledger & Payments', mobileLabel: 'Ledger', icon: 'account_balance_wallet' },
+    { id: 'dealer_ledger', label: 'My Ledger & Payments', mobileLabel: 'Ledger', icon: 'account_balance_wallet', badge: 'Soon' },
     { id: 'dealer_performance', label: 'My Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
     { id: 'docs', label: 'Agreements & Docs', mobileLabel: 'Docs', icon: 'description' },
@@ -78,7 +78,7 @@ export default function Navigation() {
 
   const adminMenu = [
     { id: 'admin_dashboard', label: 'Executive Overview', mobileLabel: 'Overview', icon: 'dashboard' },
-    { id: 'admin_ledger', label: 'Dealer Ledger & Payments', mobileLabel: 'Payments', icon: 'account_balance_wallet' },
+    { id: 'admin_ledger', label: 'Dealer Ledger & Payments', mobileLabel: 'Payments', icon: 'account_balance_wallet', badge: 'Soon' },
     { id: 'admin_performance', label: 'Business Performance', mobileLabel: 'Performance', icon: 'monitoring' },
     { id: 'dealers_mgmt', label: 'Dealer Partners', mobileLabel: 'Dealers', icon: 'group' },
     { id: 'staff_mgmt', label: 'Sales Team & Files', mobileLabel: 'Sales Team', icon: 'badge' },
@@ -100,7 +100,7 @@ export default function Navigation() {
 
   const verificationStaffMenu = [
     { id: 'verification_desk', label: 'Verification Desk', mobileLabel: 'Verification', icon: 'verified_user' },
-    { id: 'admin_ledger', label: 'Dealer Ledger & Payments', mobileLabel: 'Payments', icon: 'account_balance_wallet' },
+    { id: 'admin_ledger', label: 'Dealer Ledger & Payments', mobileLabel: 'Payments', icon: 'account_balance_wallet', badge: 'Soon' },
     { id: 'staff_files', label: 'Customer Files', mobileLabel: 'Files', icon: 'folder' },
     { id: 'docs', label: 'Policies & Docs', mobileLabel: 'Docs', icon: 'description' },
   ];
@@ -155,7 +155,12 @@ export default function Navigation() {
                     }`}
                 >
                   <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                  <span className="text-xs truncate">{item.label}</span>
+                  <span className="text-xs truncate flex-1 min-w-0">{item.label}</span>
+                  {item.badge && (
+                    <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase tracking-wider shrink-0 font-mono">
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -470,6 +475,11 @@ export default function Navigation() {
                     {item.icon}
                   </span>
                   <span className="text-xs truncate flex-1 min-w-0">{item.label}</span>
+                  {item.badge && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase tracking-wider shrink-0 font-mono mr-1">
+                      {item.badge}
+                    </span>
+                  )}
                   {isActive && (
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
                   )}

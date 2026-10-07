@@ -89,7 +89,21 @@ function PortalContent() {
         case 'admin_dashboard':
           return <AdminDashboard />;
         case 'admin_ledger':
-          return <DealerPaymentLedger />;
+          return (
+            <ComingSoonPlaceholder
+              title="Dealer Financial Ledger & Accounting"
+              subtitle="Feature Under Construction"
+              icon="account_balance_wallet"
+              description="Banking-grade dual-entry ledger (Debit Dr. / Credit Cr.), kit dispatch billing reconciliation, customer file balance tracking, and automated dealer payment statements are currently under development and will be unlocked in the upcoming version."
+              backTab="admin_dashboard"
+              highlights={[
+                'Dual-Entry Banking Ledger (Dr. / Cr.)',
+                'Kit Dispatch Billing Reconciliation',
+                'Customer File Outstanding Dues',
+                'Official WhatsApp Payment Statements'
+              ]}
+            />
+          );
         case 'admin_performance':
           return <BusinessPerformance />;
         case 'create_quote':
@@ -126,7 +140,21 @@ function PortalContent() {
         case 'staff_verification':
           return <VerificationDesk />;
         case 'admin_ledger':
-          return <DealerPaymentLedger />;
+          return (
+            <ComingSoonPlaceholder
+              title="Dealer Financial Ledger & Accounting"
+              subtitle="Feature Under Construction"
+              icon="account_balance_wallet"
+              description="Banking-grade dual-entry ledger (Debit Dr. / Credit Cr.), kit dispatch billing reconciliation, customer file balance tracking, and automated dealer payment statements are currently under development and will be unlocked in the upcoming version."
+              backTab={isVerificationStaff ? 'verification_desk' : 'staff_dashboard'}
+              highlights={[
+                'Dual-Entry Banking Ledger (Dr. / Cr.)',
+                'Kit Dispatch Billing Reconciliation',
+                'Customer File Outstanding Dues',
+                'Official WhatsApp Payment Statements'
+              ]}
+            />
+          );
         case 'staff_dashboard':
           return <StaffDashboard />;
         case 'create_quote':
@@ -171,7 +199,21 @@ function PortalContent() {
       case 'dashboard':
         return <DealerDashboard />;
       case 'dealer_ledger':
-        return <DealerPaymentLedger isDealerMode={true} />;
+        return (
+          <ComingSoonPlaceholder
+            title="My Financial Statement & Ledger"
+            subtitle="Feature Under Construction"
+            icon="account_balance_wallet"
+            description="Dealer financial statements, kit dispatch billing reconciliation, received payments, and customer file accounting are currently under development and will be unlocked in the upcoming version."
+            backTab="dashboard"
+            highlights={[
+              'Live Running Statement (Dr. & Cr.)',
+              'Kit Dispatch Billing Breakdown',
+              'Customer Project Payment Tracking',
+              'Instant Remittance Receipts'
+            ]}
+          />
+        );
       case 'create_quote':
         return <CreateQuotation />;
       case 'my_quotes':
