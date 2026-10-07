@@ -884,80 +884,17 @@ const safeSetItem = (key, value) => {
     hydrateAllFromSupabase();
   }, [hydrateAllFromSupabase]);
 
-  // Real-time Supabase Database Subscriptions on public catalogue tables only (011 compliance)
-  useEffect(() => {
-    const channel = supabase
-      .channel('public-catalog-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
-        hardwareService.getAllModules().then(data => {
-          if (Array.isArray(data)) {
-            setModulesList(data);
-            cacheManager.set('modules_list', data);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
-        hardwareService.getAllInverters().then(data => {
-          if (Array.isArray(data)) {
-            setInvertersList(data);
-            cacheManager.set('inverters_list', data);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pricing_presets' }, () => {
-        pricingService.getPricingPresets().then(data => { if (data) setPricingPresets(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bos_pricing_matrix' }, () => {
-        pricingService.getBosMatrix().then(data => { if (data) setPdfBosMatrix(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
-        pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
-        hardwareService.getAllBomItems().then(data => {
-          if (Array.isArray(data)) {
-            setBomCatalog(data);
-            cacheManager.set('bom_catalog', data);
-            setBomRates(() => {
-              const next = {};
-              data.forEach(it => {
-                if (it.defaultRate !== undefined) {
-                  next[it.id] = it.defaultRate;
-                }
-              });
-              return next;
-            });
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_master' }, async () => {
-        try {
-          const freshDocs = await documentMasterService.fetchDocumentMaster();
-          if (freshDocs && Array.isArray(freshDocs.registry) && freshDocs.registry.length > 0) {
-            setMasterDocRegistry(freshDocs.registry);
-            if (freshDocs.rules) setCategoryDocRules(freshDocs.rules);
-          }
-        } catch (err) {
-          console.warn('[AppContext] Realtime document_master sync error:', err);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // Multi-Tab Focus & Periodic Auto-Sync (Instant update when user adds rows in Supabase Table Editor or other tabs)
+  // Periodic Auto-Sync & Visibility Change Hydration (60s background interval + instant focus sync)
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers] = await Promise.allSettled([
-          customerFileService.getAllCustomerFiles(),
+        const [files, quotes, docMaster, freshStaff, freshDealers, freshNotifs] = await Promise.allSettled([
+          customerFileService.getAllCustomerFiles({ throwOnError: false }),
           quotationService.getAllQuotations(100),
           documentMasterService.fetchDocumentMaster(),
           staffService.getAllStaff(),
-          dealerService.getAllDealers()
+          dealerService.getAllDealers(),
+          auditLogService.getNotifications()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
@@ -982,7 +919,6 @@ const safeSetItem = (key, value) => {
             return prev;
           });
         }
-        // Only update if DB returned actual rows; empty [] means network error — don't overwrite valid state
         if (freshStaff.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
           setStaffList(freshStaff.value);
         }
@@ -990,6 +926,9 @@ const safeSetItem = (key, value) => {
           const attributed = ensureDealerAttribution(freshDealers.value);
           setDealers(attributed);
           cacheManager.set('dealers_list', attributed);
+        }
+        if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
+          setNotifications(freshNotifs.value);
         }
         if (docMaster.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
           setMasterDocRegistry(docMaster.value.registry);
@@ -1010,13 +949,24 @@ const safeSetItem = (key, value) => {
       const now = Date.now();
       if (now - lastSyncTime < MIN_SYNC_INTERVAL_MS) return;
       lastSyncTime = now;
-      if (document.visibilityState !== 'hidden') {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
         syncFreshData();
       }
     };
 
-    window.addEventListener('focus', throttledSync);
-    document.addEventListener('visibilitychange', throttledSync);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', throttledSync);
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', throttledSync);
+    }
+
+    // 60-second periodic background polling interval (ITEM-6)
+    const intervalTimer = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        syncFreshData();
+      }
+    }, 60000);
 
     // BroadcastChannel for instant intentional cross-tab updates (when user actively edits data)
     let broadcastChannel;
@@ -1036,8 +986,13 @@ const safeSetItem = (key, value) => {
     } catch (_) {}
 
     return () => {
-      window.removeEventListener('focus', throttledSync);
-      document.removeEventListener('visibilitychange', throttledSync);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', throttledSync);
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', throttledSync);
+      }
+      clearInterval(intervalTimer);
       if (broadcastChannel) broadcastChannel.close();
     };
   }, []);

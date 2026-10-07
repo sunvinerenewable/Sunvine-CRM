@@ -147,8 +147,18 @@ test('BUG-06 & Area 1: AppContext.jsx has zero realtime subscriptions on sensiti
     );
   }
 
-  // Verify BroadcastChannel and event cleanup exists in AppContext.jsx
+  // Verify no dead supabase.channel subscriptions exist in AppContext.jsx (ITEM-6)
+  assert.equal(
+    appContextContent.includes('supabase.channel('),
+    false,
+    'AppContext.jsx must NOT contain dead supabase.channel subscriptions'
+  );
+
+  // Verify 60s interval and event cleanup exists in AppContext.jsx (ITEM-6)
+  assert.ok(appContextContent.includes('60000'), 'AppContext.jsx must contain 60s periodic polling interval');
   assert.ok(appContextContent.includes("window.removeEventListener('focus'"));
   assert.ok(appContextContent.includes("document.removeEventListener('visibilitychange'"));
+  assert.ok(appContextContent.includes('clearInterval(intervalTimer)'));
   assert.ok(appContextContent.includes('broadcastChannel.close()'));
 });
+
