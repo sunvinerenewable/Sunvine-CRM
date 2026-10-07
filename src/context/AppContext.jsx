@@ -593,10 +593,7 @@ const safeSetItem = (key, value) => {
     }
   ]);
 
-  // Catalog items viewed by dealer (for "NEW" badge management)
-  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
-    return safeJsonParse('sunvine_seen_catalog_items', []);
-  });
+
 
   // Quotations List (Live Supabase Database + SWR Cache)
   const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
@@ -616,6 +613,28 @@ const safeSetItem = (key, value) => {
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
     return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
+  });
+
+  // Dynamic user-scoped storage key so Admin acknowledging an item never clears the "NEW" badge for Dealers
+  const getCatalogSeenStorageKey = useCallback(() => {
+    if (role === 'dealer' && currentDealer?.id) {
+      return `sunvine_seen_catalog_dealer_${currentDealer.id}`;
+    }
+    if (role === 'staff' && currentStaff?.id) {
+      return `sunvine_seen_catalog_staff_${currentStaff.id}`;
+    }
+    return `sunvine_seen_catalog_${role || 'admin'}`;
+  }, [role, currentDealer?.id, currentStaff?.id]);
+
+  // Catalog items viewed by dealer (for "NEW" badge management) - Scoped per user/role
+  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
+    const curRole = localStorage.getItem('sunvine_role') || 'dealer';
+    const curDlr = safeJsonParse('sunvine_current_dealer', null);
+    const curStf = safeJsonParse('sunvine_current_staff', null);
+    let key = `sunvine_seen_catalog_${curRole}`;
+    if (curRole === 'dealer' && curDlr?.id) key = `sunvine_seen_catalog_dealer_${curDlr.id}`;
+    if (curRole === 'staff' && curStf?.id) key = `sunvine_seen_catalog_staff_${curStf.id}`;
+    return safeJsonParse(key, []);
   });
 
   // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
@@ -792,8 +811,13 @@ const safeSetItem = (key, value) => {
         setIsHardwareDbConnected(true);
       }
       if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
-        setInvertersList(dbInverters.value);
-        cacheManager.set('inverters_list', dbInverters.value);
+        const canonicalInverters = dbInverters.value.map(inv => {
+          if (!inv.brand) return inv;
+          const cleanBrand = inv.brand.trim();
+          return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+        });
+        setInvertersList(canonicalInverters);
+        cacheManager.set('inverters_list', canonicalInverters);
         setIsHardwareDbConnected(true);
       }
       if (dbPresets.status === 'fulfilled' && dbPresets.value) {
@@ -948,8 +972,13 @@ const safeSetItem = (key, value) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
         hardwareService.getAllInverters().then(data => {
           if (Array.isArray(data)) {
-            setInvertersList(data);
-            cacheManager.set('inverters_list', data);
+            const canonicalInverters = data.map(inv => {
+              if (!inv.brand) return inv;
+              const cleanBrand = inv.brand.trim();
+              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+            });
+            setInvertersList(canonicalInverters);
+            cacheManager.set('inverters_list', canonicalInverters);
           }
         });
       })
@@ -1038,12 +1067,16 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers] = await Promise.allSettled([
+        const [files, quotes, docMaster, freshStaff, freshDealers, freshModules, freshInverters, freshBom, freshNotifs] = await Promise.allSettled([
           customerFileService.getAllCustomerFiles(),
           quotationService.getAllQuotations(100),
           documentMasterService.fetchDocumentMaster(),
           staffService.getAllStaff(),
-          dealerService.getAllDealers()
+          dealerService.getAllDealers(),
+          hardwareService.getAllModules(),
+          hardwareService.getAllInverters(),
+          hardwareService.getAllBomItems(),
+          auditLogService.getNotifications()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
@@ -1082,6 +1115,26 @@ const safeSetItem = (key, value) => {
           if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
             setCategoryDocRules(docMaster.value.rules);
           }
+        }
+        if (freshModules.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
+          setModulesList(freshModules.value);
+          cacheManager.set('modules_list', freshModules.value);
+        }
+        if (freshInverters.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
+          const canonicalInverters = freshInverters.value.map(inv => {
+            if (!inv.brand) return inv;
+            const cleanBrand = inv.brand.trim();
+            return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+          });
+          setInvertersList(canonicalInverters);
+          cacheManager.set('inverters_list', canonicalInverters);
+        }
+        if (freshBom.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
+          setBomCatalog(freshBom.value);
+          cacheManager.set('bom_catalog', freshBom.value);
+        }
+        if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
+          setNotifications(freshNotifs.value);
         }
       } catch (err) {
         // silent background sync
@@ -1217,9 +1270,17 @@ const safeSetItem = (key, value) => {
     safeSetItem('sunvine_current_staff', currentStaff);
   }, [currentStaff]);
 
+  // Switch seen IDs when user or role changes
   useEffect(() => {
-    safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
-  }, [seenCatalogItemIds]);
+    const key = getCatalogSeenStorageKey();
+    const stored = safeJsonParse(key, []);
+    setSeenCatalogItemIds(stored);
+  }, [getCatalogSeenStorageKey]);
+
+  useEffect(() => {
+    const key = getCatalogSeenStorageKey();
+    safeSetItem(key, seenCatalogItemIds);
+  }, [seenCatalogItemIds, getCatalogSeenStorageKey]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -1298,12 +1359,21 @@ const safeSetItem = (key, value) => {
     await hardwareService.saveBomItem(merged);
   };
 
+  const [deletedBomItemIds, setDeletedBomItemIds] = useState(() => {
+    return safeJsonParse('sunvine_deleted_bom_ids', []);
+  });
+
   const deleteBomItem = async (itemId) => {
     setBomCatalog(prev => prev.filter(i => i.id !== itemId));
     setBomRates(prev => {
       const next = { ...prev };
       delete next[itemId];
       return next;
+    });
+    setDeletedBomItemIds(prev => {
+      const updated = Array.from(new Set([...prev, itemId]));
+      safeSetItem('sunvine_deleted_bom_ids', updated);
+      return updated;
     });
     await hardwareService.deleteBomItem(itemId);
   };
@@ -1314,7 +1384,8 @@ const safeSetItem = (key, value) => {
   };
 
   const addNewModule = async (newModule) => {
-    const brand = newModule.brand?.trim() || 'Custom';
+    const existingBrandMatch = (modulesList || []).find(m => m.brand?.toLowerCase() === newModule.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newModule.brand?.trim() || 'Custom');
     const model = newModule.model?.trim() || 'Solar Module';
     const id = newModule.id || `mod-${Date.now()}`;
     const moduleEntry = {
@@ -1334,8 +1405,8 @@ const safeSetItem = (key, value) => {
     addNotification({
       type: 'success',
       icon: 'solar_power',
-      title: 'New Solar Module Added',
-      description: `Admin introduced ${brand} ${model} (${moduleEntry.wattage}W) to dealer catalogs.`,
+      title: `Sunvine Solar: New Solar Module Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${moduleEntry.wattage}W) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1344,7 +1415,8 @@ const safeSetItem = (key, value) => {
   };
 
   const addNewInverter = async (newInverter) => {
-    const brand = newInverter.brand?.trim() || 'Custom';
+    const existingBrandMatch = (invertersList || []).find(i => i.brand?.toLowerCase() === newInverter.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newInverter.brand?.trim() || 'Custom');
     const model = newInverter.model?.trim() || 'Solar Inverter';
     const id = newInverter.id || `inv-${Date.now()}`;
     const capStr = newInverter.capacity ? (String(newInverter.capacity).toLowerCase().includes('kw') ? newInverter.capacity : `${newInverter.capacity} kW`) : '5.0 kW';
@@ -1366,8 +1438,8 @@ const safeSetItem = (key, value) => {
     addNotification({
       type: 'success',
       icon: 'bolt',
-      title: 'New Solar Inverter Added',
-      description: `Admin introduced ${brand} ${model} (${inverterEntry.capacity}) to dealer catalogs.`,
+      title: `Sunvine Solar: New Inverter Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${inverterEntry.capacity}) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1379,17 +1451,18 @@ const safeSetItem = (key, value) => {
     if (!itemId) return;
     setSeenCatalogItemIds(prev => {
       if (prev.includes(itemId)) return prev;
-      return [...prev, itemId];
+      const updated = [...prev, itemId];
+      const key = getCatalogSeenStorageKey();
+      safeSetItem(key, updated);
+      return updated;
     });
   };
 
   const isCatalogItemNew = (item) => {
-    if (!item) return false;
-    const itemId = item.id || `${item.brand}-${item.model}`;
+    if (!item || !item.isNew) return false;
+    const itemId = item.id || `${item.brand}-${item.model || item.wattage || item.capacityKW}`;
     if (seenCatalogItemIds.includes(itemId)) return false;
-    if (item.isNew) return true;
-    if (item.createdAt && (Date.now() - item.createdAt < 7 * 24 * 3600 * 1000)) return true;
-    return false;
+    return true;
   };
 
   const getResolvedBom = (capacityKW) => {
@@ -2713,7 +2786,7 @@ const safeSetItem = (key, value) => {
     const newNotif = {
       id: notif.id || `notif-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      audience: notif.audience || (role === 'admin' ? 'admin' : 'dealer'),
+      audience: notif.audience || 'all',
       type: notif.type || 'info',
       ...notif
     };
@@ -2727,6 +2800,7 @@ const safeSetItem = (key, value) => {
       const filtered = prev.filter(n => n.id !== newNotif.id);
       return [newNotif, ...filtered];
     });
+    auditLogService.saveNotification(newNotif).catch(() => {});
   };
 
   // Master Document Registry & Dynamic Category Rules Engine
@@ -3010,6 +3084,7 @@ const safeSetItem = (key, value) => {
     updateBomItem,
     deleteBomItem,
     archiveBomItem,
+    deletedBomItemIds,
     // Dynamic Catalogs & 'NEW' Badge Tracking
     addNewModule,
     addNewInverter,

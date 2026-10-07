@@ -572,13 +572,13 @@ ${origin}/?tab=pricing_master
     }
   };
 
-  const handleSaveModuleForm = (e) => {
+  const handleSaveModuleForm = async (e) => {
     e.preventDefault();
     if (!newModuleForm.brand.trim() || !newModuleForm.model.trim()) {
       triggerToast('Please provide both Brand and Model name');
       return;
     }
-    const created = addNewModule(newModuleForm);
+    const created = await addNewModule(newModuleForm);
     setShowAddModuleModal(false);
     setNewModuleForm({
       brand: '',
@@ -589,7 +589,7 @@ ${origin}/?tab=pricing_master
       ratePerWp: 19.50,
       warranty: '30 Yrs'
     });
-    triggerToast(`Added ${created.brand} ${created.model} - "NEW" badge active for dealers!`);
+    triggerToast(`Added ${created?.brand || newModuleForm.brand} ${created?.model || newModuleForm.model} - "NEW" badge active for dealers!`);
   };
 
   const handleDeleteModule = async (idx) => {
@@ -603,13 +603,18 @@ ${origin}/?tab=pricing_master
     }
   };
 
-  const handleSaveInverterForm = (e) => {
+  const handleSaveInverterForm = async (e) => {
     e.preventDefault();
     if (!newInverterForm.brand.trim() || !newInverterForm.model.trim()) {
       triggerToast('Please provide both Brand and Series/Model name');
       return;
     }
-    const created = addNewInverter(newInverterForm);
+    const existingBrandMatch = (invertersList || []).find(i => i.brand?.toLowerCase() === newInverterForm.brand.trim().toLowerCase());
+    const canonicalBrand = existingBrandMatch ? existingBrandMatch.brand : newInverterForm.brand.trim();
+    const created = await addNewInverter({
+      ...newInverterForm,
+      brand: canonicalBrand
+    });
     setShowAddInverterModal(false);
     setNewInverterForm({
       brand: '',
@@ -620,7 +625,7 @@ ${origin}/?tab=pricing_master
       warranty: '8 Years',
       cloud: 'Integrated Wi-Fi'
     });
-    triggerToast(`Added ${created.brand} ${created.model} - "NEW" badge active for dealers!`);
+    triggerToast(`Added ${canonicalBrand} ${newInverterForm.model.trim()} - "NEW" badge active for dealers!`);
   };
 
   const handleDeleteInverter = async (idx) => {

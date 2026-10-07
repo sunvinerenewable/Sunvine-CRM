@@ -718,7 +718,8 @@ export function generateFieldBOM({
   installationPricingMode = 'per_kw',
   installationFixedAmount = 0,
   customBomRates = {},
-  customCatalog = null
+  customCatalog = null,
+  deletedBomItemIds = []
 } = {}) {
   const safeRates = (customBomRates && typeof customBomRates === 'object') ? customBomRates : {};
   const panelPricePerPiece = Math.round(panelWatt * ratePerWp);
@@ -860,6 +861,7 @@ export function generateFieldBOM({
 
   const dynamicBosItems = catalog
     .filter(i => i.id !== 'transportation' && i.id !== 'turnkey_installation')
+    .filter(i => !i.isArchived && i.status !== 'archived' && !deletedBomItemIds.includes(i.id))
     .map(item => {
       const qty = getDynamicQty(item);
       if (qty <= 0) return null;

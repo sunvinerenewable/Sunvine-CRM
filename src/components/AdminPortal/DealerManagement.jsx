@@ -4,7 +4,7 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList } = useApp();
+  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList, quotations, customerFiles } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -293,6 +293,7 @@ export default function DealerManagement() {
       'Default Margin / kW (INR)',
       'Max Margin Cap / kW (INR)',
       'Total Quotes Issued',
+      'Total Files Issued',
       'Capacity Sold (kW)',
       'GSTIN',
       'PAN Number',
@@ -309,6 +310,14 @@ export default function DealerManagement() {
     const csvRows = [headers.join(',')];
 
     dataToExport.forEach(d => {
+      const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+      const dFiles = (customerFiles || []).filter(f => {
+        if (!f) return false;
+        const fDId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '');
+        const fDName = (f.dealerName || f.dealer_name || '').trim().toLowerCase();
+        const dFirm = (d.firmName || '').trim().toLowerCase();
+        return (cleanId && fDId === cleanId) || (dFirm && fDName === dFirm);
+      });
       const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                       (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                       (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
@@ -321,7 +330,7 @@ export default function DealerManagement() {
         escapeCsv(d.firmName),
         escapeCsv(d.contactPerson),
         escapeCsv(d.mobile),
-        escapeCsv(d.email),
+        escapeCsv(d.email && !d.email.includes('@sunvinedealer.in') ? d.email : ''),
         escapeCsv(d.assignedStaffId || 'STF-801'),
         escapeCsv(d.assignedStaffName || 'Sunvine Sales Staff'),
         escapeCsv(d.city || 'Gujarat'),
@@ -331,6 +340,7 @@ export default function DealerManagement() {
         escapeCsv(defaultMargin),
         escapeCsv(marginCap),
         escapeCsv(d.totalQuotes || 0),
+        escapeCsv(dFiles.length),
         escapeCsv(d.totalCapacityKw || 0),
         escapeCsv(d.gstin || '24AFPFS7402A1Z7'),
         escapeCsv(d.pan || (d.gstin ? d.gstin.slice(2, 12) : 'AFPFS7402A')),
@@ -1530,20 +1540,20 @@ export default function DealerManagement() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto xl:overflow-x-hidden">
+          <div className="w-full overflow-x-auto xl:overflow-x-visible">
             <table className="w-full text-left border-collapse table-auto">
             <thead>
               <tr className="bg-[#0F1B2E] text-white text-label-xs uppercase tracking-wider h-11 select-none">
-                <th className="py-3 px-3.5 font-semibold text-left whitespace-nowrap min-w-[120px]">Dealer ID</th>
-                <th className="py-3 px-3.5 font-semibold text-left min-w-[210px]">Dealer / Firm Name</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[130px]">Region &amp; DISCOM</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[150px]">Assigned Salesman</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[135px]">Pricing &amp; Margin</th>
-                <th className="py-3 px-3 font-semibold text-right min-w-[95px]">Quotes Issued</th>
-                <th className="py-3 px-3 font-semibold text-right min-w-[110px]">Capacity Sold</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[135px]">KYC &amp; GSTIN</th>
-                <th className="py-3 px-3 font-semibold text-center min-w-[90px]">Portal Status</th>
-                <th className="py-3 px-3 font-semibold text-center min-w-[95px]">Actions</th>
+                <th className="py-3 px-2.5 font-semibold text-left whitespace-nowrap w-[110px]">Dealer ID</th>
+                <th className="py-3 px-2.5 font-semibold text-left min-w-[170px]">Dealer / Firm Name</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[125px]">Region &amp; DISCOM</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[130px]">Assigned Salesman</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[120px]">Pricing &amp; Margin</th>
+                <th className="py-3 px-2 font-semibold text-right w-[85px]">Quotes</th>
+                <th className="py-3 px-2 font-semibold text-right w-[85px]">Files</th>
+                <th className="py-3 px-2.5 font-semibold text-right w-[95px]">Capacity Sold</th>
+                <th className="py-3 px-2 font-semibold text-center w-[80px]">Status</th>
+                <th className="py-3 px-2 font-semibold text-center w-[90px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
@@ -1566,54 +1576,44 @@ export default function DealerManagement() {
                     : isGold
                     ? 'bg-amber-50 text-amber-800 border-amber-200'
                     : 'bg-gray-100 text-gray-800 border-gray-300';
-                  const initials = (d.firmName || 'ST').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
                   const discomText = (d.discom || '').includes('Circle') ? d.discom : `${d.discom || 'PGVCL'} Circle`;
 
                   return (
                     <tr key={d.id} className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group">
-                      <td className="py-4 px-3.5 align-top whitespace-nowrap">
+                      <td className="py-3.5 px-2.5 align-top whitespace-nowrap">
                         <span className="font-mono text-label-xs font-semibold text-[#0F1B2E] bg-surface-container px-2 py-1 rounded inline-block whitespace-nowrap">
                           #{d.id}
                         </span>
                       </td>
-                      <td className="py-4 px-3.5 align-top">
-                        <div className="flex items-start gap-2.5">
-                          {d.avatar ? (
-                            <img
-                              alt={d.contactPerson}
-                              className="w-9 h-9 rounded-full object-cover ring-2 ring-[#6CBF3D]/40 shrink-0 mt-0.5"
-                              src={d.avatar}
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-surface-container-high text-primary font-bold flex items-center justify-center text-xs shrink-0 border border-primary/20 mt-0.5">
-                              {initials}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            {/* Line 1: Firm Name */}
-                            <div className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
-                              {d.firmName}
-                            </div>
-                            {/* Line 2: Contact Person */}
-                            <div className="text-[12px] font-medium text-on-surface/90 mt-1 leading-tight">
-                              {d.contactPerson}
-                            </div>
-                            {/* Line 3: Phone & Email */}
-                            <div className="text-[11px] text-secondary flex items-center gap-1.5 mt-1 leading-tight flex-wrap font-mono">
-                              <span>{d.mobile}</span>
-                              <span className="text-outline-variant font-sans">•</span>
-                              <span className="truncate max-w-[170px]">{d.email}</span>
-                            </div>
+                      <td className="py-3.5 px-2.5 align-top">
+                        <div className="min-w-0">
+                          {/* Line 1: Firm Name */}
+                          <div className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
+                            {d.firmName}
+                          </div>
+                          {/* Line 2: Contact Person */}
+                          <div className="text-[12px] font-medium text-on-surface/90 mt-1 leading-tight">
+                            {d.contactPerson}
+                          </div>
+                          {/* Line 3: Phone & Genuine Email Only */}
+                          <div className="text-[11px] text-secondary flex items-center gap-1.5 mt-1 leading-tight flex-wrap font-mono">
+                            <span>{d.mobile}</span>
+                            {d.email && !d.email.includes('@sunvinedealer.in') && !d.email.startsWith(d.mobile) && (
+                              <>
+                                <span className="text-outline-variant font-sans">•</span>
+                                <span className="truncate max-w-[170px]">{d.email}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         <div className="font-medium text-on-surface text-[13px] leading-tight">{d.city}, Gujarat</div>
                         <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 whitespace-nowrap">
                           {discomText}
                         </span>
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         {d.assignedStaffId === 'STF-DIRECT' ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium text-[11px] shadow-xs">
                             <span className="material-symbols-outlined text-[15px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
@@ -1625,23 +1625,18 @@ export default function DealerManagement() {
                           const staffName = matchedStaff?.name || (!isLegacy && d.assignedStaffName) || salesStaffList[0]?.name || 'Sunvine Sales Staff';
                           const staffId = matchedStaff?.id || (!isLegacy && d.assignedStaffId) || salesStaffList[0]?.id || 'STF-801';
                           return (
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/20">
-                                {staffName.slice(0, 2).toUpperCase()}
+                            <div className="min-w-0">
+                              <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
+                                {staffName}
                               </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
-                                  {staffName}
-                                </div>
-                                <div className="text-[10px] text-secondary font-mono mt-0.5">
-                                  {staffId}
-                                </div>
+                              <div className="text-[10px] text-secondary font-mono mt-0.5">
+                                {staffId}
                               </div>
                             </div>
                           );
                         })()}
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         {(() => {
                           const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                           (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
@@ -1670,30 +1665,68 @@ export default function DealerManagement() {
                           );
                         })()}
                       </td>
-                      <td className="py-4 px-3 text-right align-top">
-                        <div className="font-semibold text-on-surface font-poppins text-[13px]">{d.totalQuotes} Quotes</div>
-                        <div className="text-[11px] text-[#2E7D32] mt-0.5">Active partner</div>
+                      {/* Quotes Issued */}
+                      <td className="py-3.5 px-2 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dQuotes = (quotations || []).filter(q => {
+                            const qDId = String(q.dealerId || q.dealer_id || q.dealerCode || '').replace(/^#/, '');
+                            return qDId === cleanId;
+                          });
+                          const quotesCount = d.totalQuotes !== undefined ? d.totalQuotes : dQuotes.length;
+                          return (
+                            <>
+                              <div className="font-semibold text-on-surface font-poppins text-[13px]">{quotesCount} Quotes</div>
+                              <div className="text-[11px] text-[#2E7D32] mt-0.5">Active</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 text-right align-top">
-                        <div className="font-bold text-on-surface font-poppins text-[13px]">
-                          {d.totalCapacityKw >= 1000 ? `${(d.totalCapacityKw / 1000).toFixed(2)} MW` : `${d.totalCapacityKw} kW`}
-                        </div>
-                        <div className="w-20 ml-auto mt-1.5 bg-surface-container rounded-full h-1.5 overflow-hidden">
-                          <div className="bg-[#6CBF3D] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(20, (d.totalCapacityKw / 30)))}%` }}></div>
-                        </div>
-                        <div className="text-[10px] text-secondary mt-0.5">Gujarat Grid</div>
+                      {/* Files Issued */}
+                      <td className="py-3.5 px-2 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dFiles = (customerFiles || []).filter(f => {
+                            if (!f) return false;
+                            const fDId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '');
+                            const fDName = (f.dealerName || f.dealer_name || '').trim().toLowerCase();
+                            const dFirm = (d.firmName || '').trim().toLowerCase();
+                            return (cleanId && fDId === cleanId) || (dFirm && fDName === dFirm);
+                          });
+                          return (
+                            <>
+                              <div className="font-semibold text-on-surface font-poppins text-[13px]">{dFiles.length} Files</div>
+                              <div className="text-[11px] text-teal-700 mt-0.5">Live DB</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 align-top">
-                        <div className="flex items-center gap-1 font-mono text-[11px] text-on-surface font-medium whitespace-nowrap">
-                          <span>{d.gstin || '24AFPFS7402A1Z7'}</span>
-                          <span className="material-symbols-outlined text-[14px] text-[#2E7D32]" title="GSTIN Active & Verified">check_circle</span>
-                        </div>
-                        <div className="flex items-center gap-1 mt-1">
-                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-green-50 text-green-700 font-semibold whitespace-nowrap">PAN OK</span>
-                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-green-50 text-green-700 font-semibold whitespace-nowrap">Aadhaar e-KYC</span>
-                        </div>
+                      {/* Capacity Sold */}
+                      <td className="py-3.5 px-2.5 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dQuotes = (quotations || []).filter(q => {
+                            const qDId = String(q.dealerId || q.dealer_id || q.dealerCode || '').replace(/^#/, '');
+                            return qDId === cleanId;
+                          });
+                          const capVal = d.totalCapacityKw !== undefined
+                            ? Number(d.totalCapacityKw)
+                            : dQuotes.reduce((acc, q) => acc + (parseFloat(q.systemCapacityKw || q.capacity_kw || q.capacityKw) || 0), 0);
+                          return (
+                            <>
+                              <div className="font-bold text-on-surface font-poppins text-[13px]">
+                                {capVal >= 1000 ? `${(capVal / 1000).toFixed(2)} MW` : `${Number(capVal.toFixed(1))} kW`}
+                              </div>
+                              <div className="w-16 ml-auto mt-1.5 bg-surface-container rounded-full h-1.5 overflow-hidden">
+                                <div className="bg-[#6CBF3D] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(15, (capVal / 30) * 100))}%` }}></div>
+                              </div>
+                              <div className="text-[10px] text-secondary mt-0.5">Gujarat Grid</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 text-center align-top whitespace-nowrap">
+                      {/* Portal Status */}
+                      <td className="py-3.5 px-2 text-center align-top whitespace-nowrap">
                         <div className={`text-[10px] font-semibold inline-flex items-center gap-1 ${
                           d.status === 'Active' ? 'text-[#2E7D32]' : d.status === 'Pending' ? 'text-amber-700' : 'text-slate-500'
                         }`}>

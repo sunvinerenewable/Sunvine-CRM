@@ -69,7 +69,9 @@ export default function CreateQuotation() {
     getAccessibleDealers,
     updateDealerPricing,
     bomCatalog,
-    bomRates
+    bomRates,
+    deletedBomItemIds,
+    seenCatalogItemIds
   } = useApp();
 
   const { addToast } = useToast();
@@ -140,7 +142,20 @@ export default function CreateQuotation() {
   }, [modulesList]);
 
   const availablePanelBrands = useMemo(() => {
-    return Array.from(new Set(activeModules.map(m => m.brand))).filter(Boolean);
+    const brandMap = new Map();
+    (activeModules || []).forEach(m => {
+      if (!m.brand) return;
+      const lower = m.brand.trim().toLowerCase();
+      if (!brandMap.has(lower)) {
+        brandMap.set(lower, m.brand.trim());
+      } else {
+        const current = brandMap.get(lower);
+        if (current === current.toLowerCase() && m.brand !== m.brand.toLowerCase()) {
+          brandMap.set(lower, m.brand.trim());
+        }
+      }
+    });
+    return Array.from(brandMap.values());
   }, [activeModules]);
 
   const activeInverters = useMemo(() => {
@@ -148,7 +163,21 @@ export default function CreateQuotation() {
   }, [invertersList]);
 
   const availableInverterBrands = useMemo(() => {
-    return Array.from(new Set(activeInverters.map(i => i.brand))).filter(Boolean);
+    const brandMap = new Map();
+    (activeInverters || []).forEach(i => {
+      if (!i.brand) return;
+      const lower = i.brand.trim().toLowerCase();
+      if (!brandMap.has(lower)) {
+        brandMap.set(lower, i.brand.trim());
+      } else {
+        const current = brandMap.get(lower);
+        // Prefer Title/Proper case like "Deye" over "deye"
+        if (current === current.toLowerCase() && i.brand !== i.brand.toLowerCase()) {
+          brandMap.set(lower, i.brand.trim());
+        }
+      }
+    });
+    return Array.from(brandMap.values());
   }, [activeInverters]);
 
   // Helper to extract numeric price from string/number
@@ -245,6 +274,26 @@ export default function CreateQuotation() {
     return brandModules.find(m => Number(m.wattage) === Number(panelWatt)) || brandModules[0] || activeModules[0] || null;
   }, [brandModules, panelWatt, activeModules]);
 
+  // Tracking "NEW" tags for Panels, Wattages, and Inverters (cleared once selected)
+  const isBrandNew = (bName) => {
+    if (!bName) return false;
+    if (seenCatalogItemIds?.includes(`brand_${bName}`)) return false;
+    return (activeModules || []).some(m => (m.brand?.toLowerCase() === bName?.toLowerCase()) && isCatalogItemNew(m));
+  };
+
+  const isWattNew = (bName, w) => {
+    if (!bName || !w) return false;
+    if (seenCatalogItemIds?.includes(`watt_${bName}_${w}`)) return false;
+    const mRecord = (activeModules || []).find(m => (m.brand?.toLowerCase() === bName?.toLowerCase()) && Number(m.wattage) === Number(w));
+    return mRecord ? isCatalogItemNew(mRecord) : false;
+  };
+
+  const isInvBrandNew = (bName) => {
+    if (!bName) return false;
+    if (seenCatalogItemIds?.includes(`inv_${bName}`)) return false;
+    return (activeInverters || []).some(i => (i.brand?.toLowerCase() === bName?.toLowerCase()) && isCatalogItemNew(i));
+  };
+
   // Dedicated Inverter Controls (Brand, Capacity kW, Quantity, Unit Rate) - Issue SR-61
   const [inverterBrand, setInverterBrand] = useState(() => {
     if (initialSource?.selectedInverterMake) {
@@ -268,12 +317,14 @@ export default function CreateQuotation() {
     if (brandInverters.length > 0) {
       return brandInverters.map(inv => {
         const numPrice = parseNumericPrice(inv.basePrice, 15500);
+        const isNew = isCatalogItemNew(inv);
         return {
           kw: Number(inv.capacityKW) || 3.3,
-          label: `${inv.capacityKW} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}`,
+          label: `${inv.capacityKW} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}${isNew ? ' 🟢 NEW' : ''}`,
           phase: inv.phase || 'Single Phase',
           price: numPrice,
-          inverter: inv
+          inverter: inv,
+          isNew
         };
       });
     }
@@ -286,7 +337,7 @@ export default function CreateQuotation() {
       { kw: 8.0, label: '8.0 kW (Three Phase) — ₹48,000', phase: 'Three Phase', price: 48000 },
       { kw: 10.0, label: '10.0 kW (Three Phase) — ₹54,000', phase: 'Three Phase', price: 54000 }
     ];
-  }, [brandInverters]);
+  }, [brandInverters, seenCatalogItemIds]);
 
   const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
     if (initialSource?.inverterCapacity) {
@@ -582,10 +633,17 @@ export default function CreateQuotation() {
         installationFixedAmount: Number(installationFixedAmount) || 0,
         installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
         customBomRates: activeCustomRates,
-        customCatalog: bomCatalog
+        customCatalog: bomCatalog,
+        deletedBomItemIds: deletedBomItemIds || []
       });
     });
-  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterBrand, inverterCapacityKw, inverterQuantity, inverterUnitPrice, structureType, hybridMonorailPercent, effectiveTransportCharge, installationPricingMode, installationFixedAmount, installationRatePerKw, defaultInstallationRatePerKw, bomCatalog, bomRates, bomPricingMode, effectiveDealer]);
+  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterBrand, inverterCapacityKw, inverterQuantity, inverterUnitPrice, structureType, hybridMonorailPercent, effectiveTransportCharge, installationPricingMode, installationFixedAmount, installationRatePerKw, defaultInstallationRatePerKw, bomCatalog, bomRates, bomPricingMode, effectiveDealer, deletedBomItemIds]);
+
+  // Reactive exclusion: if any BOM material is deleted in HardwareMaster, purge immediately from quotation BOM
+  useEffect(() => {
+    if (!deletedBomItemIds || deletedBomItemIds.length === 0) return;
+    setBomItems(prev => prev.filter(item => !deletedBomItemIds.includes(item.id)));
+  }, [deletedBomItemIds]);
 
   // Live BOM Totals
   const bomTotals = useMemo(() => {
@@ -1628,6 +1686,7 @@ export default function CreateQuotation() {
                       onChange={(e) => {
                         const val = e.target.value;
                         setPanelBrand(val);
+                        if (markCatalogItemSeen) markCatalogItemSeen(`brand_${val}`);
                         const matchMods = activeModules.filter(m => m.brand === val);
                         if (matchMods.length > 0) {
                           const targetMod = matchMods.find(m => Number(m.wattage) === Number(panelWatt)) || matchMods[0];
@@ -1642,7 +1701,7 @@ export default function CreateQuotation() {
                     >
                       {availablePanelBrands.map((bName) => (
                         <option key={bName} value={bName}>
-                          {bName} Solar Modules
+                          {bName} Solar Modules{isBrandNew(bName) ? ' 🟢 NEW' : ''}
                         </option>
                       ))}
                     </select>
@@ -1656,7 +1715,7 @@ export default function CreateQuotation() {
                 {/* Wattage per piece (Wp) and Dual Reactive Rate Controls */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <label className="font-label-sm text-label-sm text-on-surface font-semibold">
+                    <label className="font-label-sm text-label-sm text-on-surface font-semibold" htmlFor="panelWatt">
                       2. Watt per Piece (Wp) *
                     </label>
                     <span className="text-[11px] text-primary font-bold">
@@ -1670,6 +1729,11 @@ export default function CreateQuotation() {
                       onChange={(e) => {
                         const newWatt = Number(e.target.value);
                         setPanelWatt(newWatt);
+                        if (markCatalogItemSeen) {
+                          markCatalogItemSeen(`watt_${panelBrand}_${newWatt}`);
+                          const mRecord = brandModules.find(m => Number(m.wattage) === newWatt);
+                          if (mRecord?.id) markCatalogItemSeen(mRecord.id);
+                        }
                         const mod = brandModules.find(m => Number(m.wattage) === newWatt) || currentModuleRecord;
                         if (mod && !hasCustomDealerPricing) {
                           const newRate = parseNumericPrice(mod.ratePerWp, ratePerWp);
@@ -1683,9 +1747,10 @@ export default function CreateQuotation() {
                     >
                       {availableWattages.map((w) => {
                         const mRecord = brandModules.find(m => Number(m.wattage) === w);
+                        const isNew = isWattNew(panelBrand, w);
                         return (
                           <option key={w} value={w}>
-                            {w} Wp — {mRecord?.model || `${panelBrand} (${mRecord?.cellTech || 'TOPCon Bifacial'})`}
+                            {w} Wp — {mRecord?.model || `${panelBrand} (${mRecord?.cellTech || 'TOPCon Bifacial'})`}{isNew ? ' 🟢 NEW' : ''}
                           </option>
                         );
                       })}
@@ -1879,11 +1944,12 @@ export default function CreateQuotation() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   {/* Control 1: Inverter Brand */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-label-sm text-xs text-on-surface font-semibold">
+                    <label className="font-label-sm text-xs text-on-surface font-semibold" htmlFor="inverterBrandSelect">
                       Inverter Brand / Make *
                     </label>
                     <div className="relative">
                       <select
+                        id="inverterBrandSelect"
                         value={inverterBrand}
                         onChange={(e) => {
                           const newBrand = e.target.value;
@@ -1892,12 +1958,13 @@ export default function CreateQuotation() {
                           const matched = getAutoInverterMatch(kw, newBrand);
                           setInverterCapacityKw(matched.capacityKW);
                           setInverterUnitPrice(matched.price);
+                          if (markCatalogItemSeen) markCatalogItemSeen(`inv_${newBrand}`);
                         }}
                         className="w-full h-10 pl-3 pr-8 rounded-lg bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary-container outline-none appearance-none cursor-pointer"
                       >
                         {availableInverterBrands.map((bName) => (
                           <option key={bName} value={bName}>
-                            {bName}
+                            {bName}{isInvBrandNew(bName) ? ' 🟢 NEW' : ''}
                           </option>
                         ))}
                       </select>
@@ -1921,6 +1988,7 @@ export default function CreateQuotation() {
                           setInverterCapacityKw(newCap);
                           setUserOverrodeInverter(true);
                           const targetInv = brandInverters.find(i => Math.abs(Number(i.capacityKW) - newCap) < 0.05);
+                          if (targetInv?.id && markCatalogItemSeen) markCatalogItemSeen(targetInv.id);
                           const newPrice = targetInv ? parseNumericPrice(targetInv.basePrice, 15500) : getInverterBenchmarkRate(inverterBrand, newCap);
                           setInverterUnitPrice(newPrice);
                         }}
