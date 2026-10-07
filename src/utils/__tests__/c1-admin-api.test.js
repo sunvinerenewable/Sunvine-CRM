@@ -274,12 +274,12 @@ test('Report Error: public access allows client crash reporting without auth tok
   assert.equal(res._body?.success, true);
 });
 
-test('Report Error: rate limits to 10 requests per minute per IP', async () => {
+test('Report Error: rate limits to 5 requests per minute per IP', async () => {
   const testIp = '192.168.100.50';
   await resetAllRateLimits();
 
-  // Send 10 allowed requests
-  for (let i = 0; i < 10; i++) {
+  // Send 5 allowed requests
+  for (let i = 0; i < 5; i++) {
     const req = mockReq({
       action: 'report-error',
       ip: testIp,
@@ -290,15 +290,15 @@ test('Report Error: rate limits to 10 requests per minute per IP', async () => {
     assert.equal(res._status, 200, `Attempt ${i + 1} should succeed within rate limit`);
   }
 
-  // 11th request from same IP must be rate limited with 429
+  // 6th request from same IP must be rate limited with 429
   const limitedReq = mockReq({
     action: 'report-error',
     ip: testIp,
-    body: { errorCode: 'ERR_FLOOD', message: 'Exceeding attempt 11' }
+    body: { errorCode: 'ERR_FLOOD', message: 'Exceeding attempt 6' }
   });
   const limitedRes = mockRes();
   await authActionHandler(reqToAction(limitedReq), limitedRes);
-  assert.equal(limitedRes._status, 429, '11th attempt must return 429 Rate Limit Exceeded');
+  assert.equal(limitedRes._status, 429, '6th attempt must return 429 Rate Limit Exceeded');
   assert.match(limitedRes._body?.error, /rate limit exceeded/i);
 });
 

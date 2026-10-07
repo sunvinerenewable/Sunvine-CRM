@@ -1280,7 +1280,15 @@ export async function handleAdminAuditLogs(req, res) {
   }
 }
 
-// ── 8. Report Error Handler (Slack Webhook Rate-Limited) ─────────────────────
+// Helper to escape mrkdwn special characters in Slack webhook payload
+function escapeSlackMrkdwn(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// ── 8. Report Error Handler (Slack Webhook Rate-Limited & Sanitized) ────────
 
 export async function reportErrorHandler(req, res) {
   if (req.method !== 'POST') {
@@ -1288,21 +1296,29 @@ export async function reportErrorHandler(req, res) {
   }
 
   const clientIp = getClientIp(req);
+  // Stricter rate limit: 5 error reports per minute per IP
   const rateLimitResult = await checkDistributedRateLimit(`report-error:${clientIp}`, {
-    maxAttempts: 10,
+    maxAttempts: 5,
     windowMs: 60 * 1000
   });
 
   if (!rateLimitResult.allowed) {
-    return res.status(429).json({ error: 'Rate limit exceeded. Maximum 10 error reports per minute.' });
+    return res.status(429).json({ error: 'Rate limit exceeded. Maximum 5 error reports per minute.' });
   }
 
   const { errorCode, message, context } = req.body || {};
 
-  // Sanitize text inputs
-  const cleanCode = String(errorCode || 'CLIENT_ERROR').slice(0, 100);
-  const cleanMessage = String(message || 'Unspecified runtime exception').slice(0, 1000);
-  const cleanContext = typeof context === 'object' && context !== null ? context : {};
+  // Sanitize text inputs and escape Slack mrkdwn
+  const cleanCode = escapeSlackMrkdwn(String(errorCode || 'CLIENT_ERROR').slice(0, 80));
+  const cleanMessage = escapeSlackMrkdwn(String(message || 'Unspecified runtime exception').slice(0, 500));
+  
+  // Cap context object size to max 512 bytes
+  let safeContextStr = '{}';
+  try {
+    const rawContext = typeof context === 'object' && context !== null ? context : {};
+    const stringified = JSON.stringify(rawContext).slice(0, 512);
+    safeContextStr = stringified;
+  } catch (_) {}
 
   const webhookUrl =
     process.env.SLACK_CRASH_WEBHOOK_URL ||
@@ -1316,7 +1332,7 @@ export async function reportErrorHandler(req, res) {
         blocks: [
           {
             type: 'header',
-            text: { type: 'plain_text', text: `🚨 Client Diagnostic Alert: ${cleanCode}` }
+            text: { type: 'plain_text', text: `🚨 Client Diagnostic Alert: ${cleanCode.slice(0, 50)}` }
           },
           {
             type: 'section',
@@ -1324,7 +1340,7 @@ export async function reportErrorHandler(req, res) {
               { type: 'mrkdwn', text: `*Code:*\n\`${cleanCode}\`` },
               { type: 'mrkdwn', text: `*IP:*\n\`${clientIp}\`` },
               { type: 'mrkdwn', text: `*Timestamp:*\n${new Date().toISOString()}` },
-              { type: 'mrkdwn', text: `*Route:*\n${cleanContext.route || cleanContext.path || 'Unknown'}` }
+              { type: 'mrkdwn', text: `*Context:*\n\`${safeContextStr.slice(0, 100)}\`` }
             ]
           },
           {

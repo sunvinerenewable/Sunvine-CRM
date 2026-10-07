@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
+import { requireUser } from './_lib/requireAuth.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 
 function parseCookies(cookieHeader = '') {
@@ -38,18 +39,18 @@ export async function getSettings(db) {
         max_system_kw: governance.max_system_kw !== undefined ? Number(governance.max_system_kw) : 1000,
         quote_prefix: governance.quote_prefix || 'SV',
         validity_days: governance.validity_days !== undefined ? Number(governance.validity_days) : 15,
-        default_specific_yield: governance.default_specific_yield !== undefined ? Number(governance.default_specific_yield) : 1440,
-        default_tariff: governance.default_tariff !== undefined ? Number(governance.default_tariff) : 6.67,
-        default_loan_rate: governance.default_loan_rate !== undefined ? Number(governance.default_loan_rate) : 8.5,
+        default_specific_yield: governance.default_specific_yield !== undefined && governance.default_specific_yield !== null ? Number(governance.default_specific_yield) : null,
+        default_tariff: governance.default_tariff !== undefined && governance.default_tariff !== null ? Number(governance.default_tariff) : null,
+        default_loan_rate: governance.default_loan_rate !== undefined && governance.default_loan_rate !== null ? Number(governance.default_loan_rate) : null,
         upload_max_mb: governance.upload_max_mb !== undefined ? Number(governance.upload_max_mb) : 2,
         allow_custom_bom_lines: Boolean(governance.allow_custom_bom_lines),
         max_custom_bom_value: Number(governance.max_custom_bom_value || 0)
       },
       statutory_taxes: {
         subsidy: {
-          slab1Rate: statutory.subsidy?.slab1Rate !== undefined ? Number(statutory.subsidy.slab1Rate) : 30000,
-          slab2Rate: statutory.subsidy?.slab2Rate !== undefined ? Number(statutory.subsidy.slab2Rate) : 18000,
-          cap: statutory.subsidy?.cap !== undefined ? Number(statutory.subsidy.cap) : 78000,
+          slab1Rate: statutory.subsidy?.slab1Rate !== undefined && statutory.subsidy?.slab1Rate !== null ? Number(statutory.subsidy.slab1Rate) : null,
+          slab2Rate: statutory.subsidy?.slab2Rate !== undefined && statutory.subsidy?.slab2Rate !== null ? Number(statutory.subsidy.slab2Rate) : null,
+          cap: statutory.subsidy?.cap !== undefined && statutory.subsidy?.cap !== null ? Number(statutory.subsidy.cap) : null,
           breakpointKw: statutory.subsidy?.breakpointKw !== undefined ? Number(statutory.subsidy.breakpointKw) : 3
         },
         gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
@@ -200,6 +201,13 @@ export default async function handler(req, res) {
   }
 
   const type = req.query?.type || 'bootstrap';
+
+  // Protected catalog sections require authenticated user (any role: dealer, staff, admin)
+  const PROTECTED_CATALOG_TYPES = new Set(['bootstrap', 'settings', 'tier_margins', 'presets']);
+  if (PROTECTED_CATALOG_TYPES.has(type)) {
+    const user = await requireUser(req, res);
+    if (!user) return;
+  }
 
   try {
     if (type === 'bootstrap') {
