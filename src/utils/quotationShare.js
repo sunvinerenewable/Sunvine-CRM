@@ -1,4 +1,4 @@
-import { quotationService } from '../services/quotationService';
+import { quotationService } from '../services/quotationService.js';
 
 // Clean customer phone number to Indian 10-digit format with country code 91
 export function cleanCustomerPhone(phoneStr) {
@@ -10,7 +10,7 @@ export function cleanCustomerPhone(phoneStr) {
   return '919825012345';
 }
 
-// Encode compact quotation payload for portable instant URL loading
+// Encode safe compact quotation payload for portable instant URL loading (No sensitive dealer margins or customer phone)
 export function encodeQuotationPayload(quote) {
   if (!quote || typeof quote !== 'object') return '';
   try {
@@ -18,7 +18,6 @@ export function encodeQuotationPayload(quote) {
       id: quote.id,
       date: quote.date,
       customerName: quote.customerName,
-      customerPhone: quote.customerPhone,
       city: quote.city || quote.location,
       state: quote.state,
       discom: quote.discom,
@@ -30,8 +29,6 @@ export function encodeQuotationPayload(quote) {
       grandTotalCustomer: quote.grandTotalCustomer || quote.totalAmount,
       subsidyAmount: quote.subsidyAmount,
       netPayable: quote.netPayable,
-      baseRatePerKW: quote.baseRatePerKW,
-      dealerMarginPerKW: quote.dealerMarginPerKW,
       dealerName: quote.dealerName,
       isDirectCompanyQuote: quote.isDirectCompanyQuote,
       bomItems: quote.bomItems,
@@ -44,18 +41,18 @@ export function encodeQuotationPayload(quote) {
   }
 }
 
-// Generate online link for customer proposal with instant portable payload
+// Generate online link for customer proposal using share token when available
 export function getPublicProposalUrl(quoteOrId) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvinerenewable.com';
   if (typeof quoteOrId === 'object' && quoteOrId !== null) {
-    const id = quoteOrId.id || 'SV-2026-Q801';
-    const dataEncoded = encodeQuotationPayload(quoteOrId);
-    if (dataEncoded) {
-      return `${origin}/?view=quote&id=${encodeURIComponent(id)}&data=${encodeURIComponent(dataEncoded)}`;
+    const id = quoteOrId.id || '';
+    const shareToken = quoteOrId.shareToken || quoteOrId.share_token;
+    if (shareToken) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(shareToken)}`;
     }
     return `${origin}/?view=quote&id=${encodeURIComponent(id)}`;
   }
-  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || 'SV-2026-Q801')}`;
+  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || '')}`;
 }
 
 // Generate the official proposal WhatsApp message

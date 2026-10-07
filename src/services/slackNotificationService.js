@@ -4,71 +4,33 @@
  * to the configured Slack incoming webhook.
  */
 
-const SLACK_WEBHOOK_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SLACK_FILES_UPDATE) ||
-  (typeof process !== 'undefined' && (process.env?.SLACK_FILES_UPDATE || process.env?.VITE_SLACK_FILES_UPDATE)) ||
-  '';
-
 /**
- * Format IST timestamp
- */
-function getTimestampIST() {
-  return new Date().toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric'
-  });
-}
-
-/**
- * Raw dispatch to Slack Incoming Webhook (Client-side / Browser safe)
+ * Raw dispatch to Slack through secure backend /api/push-notify (Server-side webhook only)
  */
 async function postToSlack(payload) {
-  // If webhook is not configured, silently return
-  if (!SLACK_WEBHOOK_URL) {
-    return { success: false, reason: 'SLACK_WEBHOOK_NOT_CONFIGURED' };
-  }
-
   try {
-    // We use text/plain or no-cors fallback to ensure compatibility with browser fetch to Slack Webhooks
-    const res = await fetch(SLACK_WEBHOOK_URL, {
+    const res = await fetch('/api/push-notify', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        action: 'slack-raw',
+        slackPayload: payload
+      })
     });
-
     if (res.ok) {
       return { success: true };
     }
     return { success: false, status: res.status };
   } catch (err) {
-    // Attempt fallback via backend serverless proxy /api/push-notify
-    try {
-      const proxyRes = await fetch('/api/push-notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'slack-raw',
-          slackPayload: payload
-        })
-      });
-      if (proxyRes.ok) return { success: true };
-    } catch (_) {}
-
-    console.warn('[SlackNotificationService] Webhook dispatch warning:', err?.message || err);
+    console.warn('[SlackNotificationService] Failed to dispatch Slack notification via server:', err?.message || err);
     return { success: false, error: err?.message };
   }
 }
 
 export const slackNotificationService = {
   isConfigured() {
-    return Boolean(SLACK_WEBHOOK_URL);
+    return true; // Server-side webhook handles dispatch
   },
 
   /**

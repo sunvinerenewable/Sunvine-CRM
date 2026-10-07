@@ -3,7 +3,7 @@
  * High-precision, clean, executive-grade Slack diagnostic notifications.
  */
 
-const SLACK_WEBHOOK_URL = import.meta.env.VITE_SLACK_CRASH_WEBHOOK_URL;
+const REPORT_ERROR_ENDPOINT = '/api/auth/report-error';
 
 // In-memory deduplication set to avoid spamming Slack on continuous render loops
 const recentErrors = new Map();
@@ -262,13 +262,24 @@ export async function reportCrash(error, extraContext = {}) {
   };
 
   try {
-    await fetch(SLACK_WEBHOOK_URL, {
+    await fetch(REPORT_ERROR_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        errorCode: errorType,
+        message: cleanMessage,
+        context: {
+          user: user.name,
+          role: user.roleBadge,
+          url: currentUrl,
+          device,
+          stack: trimmedStack,
+          timestamp
+        }
+      })
     });
   } catch (err) {
-    console.error('[CrashReporter] Failed to send crash alert to Slack:', err);
+    console.warn('[CrashReporter] Server error report unavailable:', err?.message || err);
   }
 }
 

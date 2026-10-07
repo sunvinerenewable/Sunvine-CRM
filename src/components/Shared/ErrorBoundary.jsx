@@ -12,23 +12,21 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    const errorDetails = {
-      message: error?.message || 'Unknown render error',
-      stack: error?.stack?.slice(0, 500),
-      componentStack: errorInfo?.componentStack?.slice(0, 300),
-      timestamp: new Date().toISOString()
+    const sanitizedSummary = {
+      code: error?.name || 'RenderError',
+      timestamp: Date.now()
     };
 
-    console.error('[Sunvine Error Boundary Caught]:', errorDetails);
+    console.error('[Sunvine Error Boundary Caught]:', sanitizedSummary.code);
 
-    // Send instant crash alert to Slack
+    // Send instant crash alert to Slack via secure server proxy
     reportCrash(error, {
       type: 'ReactErrorBoundaryCrash',
       componentStack: errorInfo?.componentStack
     });
 
     try {
-      localStorage.setItem('sunvine_last_error', JSON.stringify(errorDetails));
+      localStorage.setItem('sunvine_last_error', JSON.stringify(sanitizedSummary));
     } catch (_) {}
 
     // Auto-recover once on live deployment chunk mismatch
