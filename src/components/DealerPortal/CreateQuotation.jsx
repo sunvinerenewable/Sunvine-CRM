@@ -797,9 +797,9 @@ export default function CreateQuotation() {
   const subsidyCap = pricingPresets?.subsidyCap ?? systemSettings?.statutory_taxes?.subsidy?.cap ?? 0;
   const subsidy = calcSharedSubsidy(kw, projectType, subsidyCap);
   const finalPayable = Math.max(0, totalCost - subsidy);
-  const specificYield = Number(systemSettings?.governance_settings?.default_specific_yield) || 1440;
-  const tariff = Number(systemSettings?.governance_settings?.default_tariff) || 6.67;
-  const loanRate = Number(systemSettings?.governance_settings?.default_loan_rate) || 8.5;
+  const specificYield = Number(systemSettings?.governance_settings?.default_specific_yield) || 0;
+  const tariff = Number(systemSettings?.governance_settings?.default_tariff) || 0;
+  const loanRate = Number(systemSettings?.governance_settings?.default_loan_rate) || 0;
   const annualGenerationUnits = Math.round(kw * specificYield);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
   const annualSavings = Math.round(annualGenerationUnits * tariff);

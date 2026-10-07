@@ -207,10 +207,10 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
 
   // Telemetry metrics
-  const specificYield = Number(quotation.specificYield || quotation.peakSunHours || 1440);
-  const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * specificYield);
-  const tariff = Number(quotation.tariff || 6.67);
-  const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * tariff);
+  const specificYield = Number(quotation.specificYield || quotation.peakSunHours || systemSettings?.governance_settings?.default_specific_yield || 0);
+  const annualGenUnits = quotation.annualGenerationUnits || (specificYield > 0 ? Math.round(resolvedCapKW * specificYield) : 0);
+  const tariff = Number(quotation.tariff || systemSettings?.governance_settings?.default_tariff || 0);
+  const annualSavings = quotation.annualSavings || (tariff > 0 ? Math.round(annualGenUnits * tariff) : 0);
   const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '0.0');
 
   // Multi-brand comparative proposal packages
