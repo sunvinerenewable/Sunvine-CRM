@@ -1,5 +1,7 @@
 import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
 import { hashBcrypt } from './security.js';
+import { applyCors } from './cors.js';
+import { requireAdmin } from './requireAuth.js';
 
 ensureEnvLoaded();
 
@@ -11,10 +13,7 @@ ensureEnvLoaded();
  * across Dealer Onboarding, Staff Creation, and Verification Desk management.
  */
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -23,6 +22,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
   }
+
+  // --- Admin authentication guard (SEC-001) ---
+  const adminPayload = requireAdmin(req, res);
+  if (!adminPayload) return; // requireAdmin already sent 401/403
 
   const { action, payload } = req.body || {};
 
@@ -451,7 +454,11 @@ export default async function handler(req, res) {
         if (cleanMobile.length !== 10) {
           return res.status(400).json({ error: 'Valid 10-digit mobile number is required.' });
         }
-        const plainPassword = String(password || 'admin123').trim();
+        // Require a strong password; no default (SEC-001)
+        if (!password || String(password).trim().length < 10) {
+          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        }
+        const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
         const adminRole = role || 'admin';
 
@@ -494,10 +501,12 @@ export default async function handler(req, res) {
           updates.push(`role = $${idx++}`);
           params.push(role);
         }
-        if (password && String(password).trim().length >= 1) {
+        if (password && String(password).trim().length >= 10) {
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
+        } else if (password) {
+          return res.status(422).json({ error: 'Password must be at least 10 characters.' });
         }
 
         if (updates.length === 0) {
