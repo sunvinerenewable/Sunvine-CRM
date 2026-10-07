@@ -1832,68 +1832,30 @@ export default function CreateQuotation() {
 
             {isMarginBased ? (
               <div className="flex flex-col gap-4">
-                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — FIRST ELEMENT CREATED IN PRESETS ADMIN PANEL */}
-                <div className="p-4 rounded-xl bg-surface-container-low border-2 border-emerald-500/40 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-                        kW
-                      </div>
-                      <div>
-                        <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetKwSelect">
-                          <span>1. System Capacity (kW) *</span>
-                          <span className="text-[10px] bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 rounded font-extrabold uppercase">
-                            Admin Presets Matrix
-                          </span>
-                        </label>
-                        <p className="text-[11px] text-secondary">
-                          Select standard sanctioned solar plant capacity created in Admin Presets
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
-                      <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                        {matchedSlab?.noOfModules || 6} Panels • {matchedSlab?.inverterCapacityKW || kw} kW Inverter
-                      </span>
-                    </div>
+                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — DROPDOWN ONLY (NO BOXES) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetKwSelect">
+                      <span>1. System Capacity (kW) *</span>
+                    </label>
+                    <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                      {matchedSlab?.noOfModules || 6} Panels Required
+                    </span>
                   </div>
 
-                  {/* Quick Select Buttons Grid for All Available kW Values */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {activeBosMatrix.map((slab) => {
-                      const slabKw = Number(slab.capacityKW);
-                      const isSelected = Math.abs(slabKw - Number(selectedPresetKw)) < 0.05;
-                      return (
-                        <button
-                          key={`slab-kw-${slabKw}`}
-                          type="button"
-                          onClick={() => handleSelectPresetKw(slabKw)}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 font-mono ${
-                            isSelected
-                              ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-400'
-                              : 'bg-surface-container-lowest border border-surface-container-high text-on-surface hover:border-emerald-400 hover:bg-emerald-50/50'
-                          }`}
-                        >
-                          <span>{slabKw} kW</span>
-                          {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Direct Dropdown Selector for Fast Navigation */}
-                  <div className="relative pt-1">
+                  {/* Dropdown-only Selection for kW / System Size */}
+                  <div className="relative">
                     <select
                       id="presetKwSelect"
                       value={selectedPresetKw}
                       onChange={(e) => handleSelectPresetKw(e.target.value)}
-                      className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                      className="w-full h-11 pl-3.5 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
                     >
                       {activeBosMatrix.map((slab) => {
                         const slabKw = Number(slab.capacityKW);
                         return (
                           <option key={`opt-kw-${slabKw}`} value={slabKw}>
-                            {slabKw} kW System — {slab.noOfModules} Panels ({slab.inverterCapacityKW || slabKw} kW Inverter Bundled)
+                            {slabKw} kW System — {slab.noOfModules} Panels
                           </option>
                         );
                       })}
@@ -1902,132 +1864,36 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
-                {/* 2. COMPANY MAKE / BRAND COLUMN & PRESET PRICES */}
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-surface-container-high/60">
-                    <div>
-                      <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5">
-                        <span>2. Company Make / Brand &amp; Preset Turnkey Price *</span>
-                      </label>
-                      <p className="text-[11px] text-secondary">
-                        Select manufacturer make. Turnkey prices are live-synced from Admin Presets Matrix.
-                      </p>
-                    </div>
-                    <span className="text-[10px] text-secondary font-mono">
-                      For {kw} kW Plant
+                {/* 2. SOLAR PANEL SELECTION — DROPDOWN ONLY (NO CARDS, NO PRICES) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetMakeSelect">
+                      <span>2. Select Solar Panel *</span>
+                    </label>
+                    <span className="text-[11px] text-secondary font-mono">
+                      {currentPresetMake.tech}
                     </span>
                   </div>
 
-                  {/* Grid of All Available Make Brands */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {PRESET_MAKES.map((make) => {
-                      const isSelected = selectedPresetMakeId === make.id;
-                      const makePresetPrice = matchedSlab ? (Number(matchedSlab[make.priceKey]) || 0) : 0;
-                      return (
-                        <div
-                          key={make.id}
-                          onClick={() => handleSelectPresetMake(make.id)}
-                          className={`p-3 rounded-xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-2 ${
-                            isSelected
-                              ? 'border-emerald-500 bg-emerald-500/10 shadow-sm ring-1 ring-emerald-500'
-                              : 'border-surface-container-high bg-surface-container-lowest hover:border-surface-container-highest hover:bg-surface-container/30'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-on-surface">{make.name}</span>
-                                <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-surface-container text-secondary border border-surface-container-high">
-                                  {make.badge}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-secondary mt-0.5">{make.tech}</p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                              isSelected ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-secondary/40'
-                            }`}>
-                              {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
-                            </div>
-                          </div>
-
-                          <div className="pt-2 border-t border-surface-container-high/60 flex items-center justify-between">
-                            <span className="text-[10px] text-secondary font-medium">Preset Price:</span>
-                            <span className="text-xs sm:text-sm font-bold font-mono text-emerald-700">
-                              {formatINR(makePresetPrice)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                  {/* Dropdown-only Selection for Panel Make */}
+                  <div className="relative">
+                    <select
+                      id="presetMakeSelect"
+                      value={selectedPresetMakeId}
+                      onChange={(e) => handleSelectPresetMake(e.target.value)}
+                      className="w-full h-11 pl-3.5 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                    >
+                      {PRESET_MAKES.map((make) => (
+                        <option key={make.id} value={make.id}>
+                          {make.name} ({make.tech})
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
                   </div>
                 </div>
 
-                {/* 3. TURNKEY PACKAGE BASE PRICE ENTRY (REPLACES MANUAL WATT-PIC CONTROLS) */}
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-surface-container-high/60">
-                    <div>
-                      <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="packageBasePriceInput">
-                        <span>3. Turnkey Package Base Price (₹) *</span>
-                        <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-bold">
-                          Replaces Wp Rate
-                        </span>
-                      </label>
-                      <p className="text-[11px] text-secondary">
-                        Auto-populated from {currentPresetMake.name} preset for {kw} kW. You may adjust if needed.
-                      </p>
-                    </div>
-                    {customPresetBasePrice !== null && customPresetBasePrice !== activePresetBasePrice && (
-                      <button
-                        type="button"
-                        onClick={() => setCustomPresetBasePrice(null)}
-                        className="text-[11px] text-emerald-700 font-bold hover:underline flex items-center gap-1 cursor-pointer bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 self-start sm:self-auto"
-                      >
-                        <span className="material-symbols-outlined text-[13px]">restart_alt</span>
-                        Reset to Matrix ({formatINR(activePresetBasePrice)})
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
-                    <div>
-                      <div className="relative">
-                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-secondary font-bold select-none">₹</span>
-                        <input
-                          id="packageBasePriceInput"
-                          type="number"
-                          min="10000"
-                          max="5000000"
-                          step="100"
-                          value={customPresetBasePrice !== null && customPresetBasePrice !== undefined ? customPresetBasePrice : activePresetBasePrice}
-                          onChange={(e) => setCustomPresetBasePrice(e.target.value === '' ? null : Number(e.target.value))}
-                          className="w-full h-11 pl-8 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-mono font-bold text-base outline-none shadow-sm border-2 border-emerald-500/50 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20"
-                        />
-                      </div>
-                      <span className="text-[10px] text-secondary mt-1 block">
-                        {customPresetBasePrice !== null && customPresetBasePrice !== activePresetBasePrice
-                          ? `⚡ Custom turnkey base price entered (Matrix preset: ${formatINR(activePresetBasePrice)})`
-                          : `✓ Live synchronized with Admin Presets matrix`}
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-surface-container-lowest border border-surface-container-high text-xs space-y-1">
-                      <div className="flex justify-between text-secondary">
-                        <span>Base Turnkey Rate:</span>
-                        <span className="font-mono font-bold text-on-surface">
-                          ₹{kw > 0 ? Math.round(effectiveMarginBasePrice / kw).toLocaleString('en-IN') : 0} / kW
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-secondary">
-                        <span>Per-Module Equivalent:</span>
-                        <span className="font-mono font-bold text-on-surface">
-                          ₹{panelQuantity > 0 ? Math.round(effectiveMarginBasePrice / panelQuantity).toLocaleString('en-IN') : 0} / Panel
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. AUTO-GENERATED PLANT CAPACITY & HARDWARE TELEMETRY BANNER */}
+                {/* 3. AUTO-GENERATED PLANT CAPACITY & HARDWARE TELEMETRY BANNER */}
                 <div className="p-3.5 sm:p-4 bg-emerald-500/15 border-2 border-emerald-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950">
                   <div className="flex items-start sm:items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5 sm:mt-0">
@@ -2059,7 +1925,7 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
-                {/* 5. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
+                {/* 4. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
                 <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
@@ -2088,7 +1954,7 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
-                {/* 6. MARGIN-BASED FLOW NOTICE: TECHNICAL BOM COMPILED FOR PRINT */}
+                {/* 5. MARGIN-BASED FLOW NOTICE: TECHNICAL BOM COMPILED FOR PRINT */}
                 <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <span className="material-symbols-outlined text-primary text-[20px] shrink-0">description</span>
