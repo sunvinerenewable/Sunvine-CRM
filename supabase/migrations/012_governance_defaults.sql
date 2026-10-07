@@ -61,19 +61,19 @@ INSERT INTO public.system_settings (
   }'::jsonb,
   '{
     "name": "Sunvine Renewable Energy Private Limited",
-    "gstin": "24AAACS1234A1Z5",
-    "address": "Ahmedabad, Gujarat, India",
+    "gstin": "",
+    "address": "",
     "state": "Gujarat",
-    "whatsapp": "+91 80000 50580",
-    "helpdesk": "+91 80000 50580",
+    "whatsapp": "",
+    "helpdesk": "",
     "website": "https://sunvinerenewable.com",
     "email": "support@sunvinerenewable.com",
     "bank": {
-      "bankName": "State Bank of India",
-      "accountNumber": "999900001111",
-      "ifsc": "SBIN0001234",
-      "branch": "Ahmedabad Main Branch",
-      "accountHolder": "Sunvine Renewable Energy Private Limited"
+      "bankName": "",
+      "accountNumber": "",
+      "ifsc": "",
+      "branch": "",
+      "accountHolder": ""
     },
     "terms": "1. Validity: 15 Days from quotation date.\n2. Net-metering approval is subject to DISCOM policy.\n3. Subsidy disbursement is directly into customer bank account via PM Surya Ghar National Portal.",
     "validityText": "15 Days from generation date"
@@ -81,10 +81,10 @@ INSERT INTO public.system_settings (
   timezone('utc'::text, now())
 )
 ON CONFLICT (id) DO UPDATE SET
-  governance_settings = EXCLUDED.governance_settings,
-  statutory_taxes = EXCLUDED.statutory_taxes,
-  company_profile = EXCLUDED.company_profile,
-  updated_at = EXCLUDED.updated_at;
+  governance_settings = EXCLUDED.governance_settings || COALESCE(system_settings.governance_settings, '{}'::jsonb),
+  statutory_taxes = EXCLUDED.statutory_taxes || COALESCE(system_settings.statutory_taxes, '{}'::jsonb),
+  company_profile = EXCLUDED.company_profile || COALESCE(system_settings.company_profile, '{}'::jsonb),
+  updated_at = timezone('utc'::text, now());
 
 -- ── 2. Add is_verification to staff_accounts ─────────────────────────────────
 ALTER TABLE public.staff_accounts

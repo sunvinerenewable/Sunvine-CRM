@@ -136,6 +136,33 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     companyProfile = quotation.companyProfile || quotation.company_profile || {}
   } = quotation;
 
+  // Verify company billing completeness (GSTIN and Bank Account must be non-empty)
+  const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
+  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number;
+  const hasBank = Boolean(bankAcc && String(bankAcc).trim());
+  const isBillingProfileComplete = hasGstin && hasBank;
+
+  if (!isBillingProfileComplete) {
+    return (
+      <div data-testid="pdf-blocking-message" className="pdf-document w-full max-w-2xl mx-auto my-12 p-8 bg-red-950/20 border-2 border-red-500/50 rounded-2xl text-center flex flex-col items-center gap-4 text-white">
+        <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
+          <span className="material-symbols-outlined text-4xl">error_outline</span>
+        </div>
+        <h2 className="text-xl font-bold text-red-200">Quotation PDF Generation Blocked</h2>
+        <p className="text-sm text-red-300/90 max-w-md">
+          Company GSTIN and Bank Account details are required before generating, previewing, or exporting official quotation documents.
+        </p>
+        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs font-mono text-red-300 text-left w-full max-w-xs">
+          <div>GSTIN: {hasGstin ? 'Configured' : 'MISSING (Empty)'}</div>
+          <div>Bank Account: {hasBank ? 'Configured' : 'MISSING (Empty)'}</div>
+        </div>
+        <p className="text-xs text-gray-400">
+          Please navigate to Admin Settings &gt; Company Profile to configure the official billing profile.
+        </p>
+      </div>
+    );
+  }
+
   // Resolve numerical capacity and dimensions
   const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(2));
   const rawWattMatch = (solarModule || '').match(/(\d{3})\s*W/i);
