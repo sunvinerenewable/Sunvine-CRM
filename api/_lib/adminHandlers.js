@@ -150,7 +150,9 @@ export async function handleAdminDealers(req, res) {
 
         const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
         const cleanTier = tier || 'Gold EPC Partner';
-        const cleanCap = Number(maxMarginCapPerKw) || 6000;
+        const cleanCap = maxMarginCapPerKw !== undefined && maxMarginCapPerKw !== null && maxMarginCapPerKw !== ''
+          ? Number(maxMarginCapPerKw)
+          : null;
         const cleanStatus = (status || 'Active').toLowerCase();
         const cleanEmail = email || `${cleanMobile}@sunvinedealer.in`;
         const cleanCity = city || 'Ahmedabad';
@@ -680,8 +682,8 @@ export async function handleAdminPricing(req, res) {
         await safeQuery(sql, [
           tierId,
           tier.tier_name || tier.tierName || tierId,
-          Number(tier.default_margin_per_kw || tier.defaultMarginPerKw) || 2000,
-          Number(tier.max_margin_cap_per_kw || tier.maxMarginCapPerKw) || 6000,
+          Number(tier.default_margin_per_kw ?? tier.defaultMarginPerKw ?? 0),
+          Number(tier.max_margin_cap_per_kw ?? tier.maxMarginCapPerKw ?? 0),
           tier.description || ''
         ]);
 

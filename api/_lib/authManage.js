@@ -70,7 +70,9 @@ export default async function handler(req, res) {
         const passwordHash = hashBcrypt(plainPassword, 10);
         const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
         const cleanTier = tier || 'Gold EPC Partner';
-        const cleanCap = Number(maxMarginCapPerKw) || 6000;
+        const cleanCap = maxMarginCapPerKw !== undefined && maxMarginCapPerKw !== null && maxMarginCapPerKw !== ''
+          ? Number(maxMarginCapPerKw)
+          : null;
         const cleanStatus = (status || 'Active').toLowerCase();
         const cleanEmail = email || `${cleanMobile}@sunvinedealer.in`;
         const cleanCity = city || 'Ahmedabad';
