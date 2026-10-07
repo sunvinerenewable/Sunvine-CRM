@@ -5,7 +5,7 @@ import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 export default function StaffNewLead() {
-  const { currentStaff, addCustomerFile, setActiveTab, dealers } = useApp();
+  const { currentStaff, addCustomerFile, setActiveTab, dealers, pricingPresets } = useApp();
   const { addToast } = useToast();
 
   const [customerName, setCustomerName] = useState('');

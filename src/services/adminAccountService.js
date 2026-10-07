@@ -41,8 +41,47 @@ export const adminAccountService = {
       console.warn('[adminAccountService] Failed to load accounts from server API:', e.message);
     }
 
+    // 2. Direct Supabase fallback
+    try {
+      const [dealersRes, staffRes, adminsRes] = await Promise.allSettled([
+        supabase.from('dealer_accounts').select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at').order('updated_at', { ascending: false }),
+        supabase.from('staff_accounts').select('id, name, role, department, phone, email, status, onboarded_date, zone, city, created_at, updated_at').order('created_at', { ascending: true }),
+        supabase.from('admin_accounts').select('id, email, full_name, role, mobile_number, two_factor_enabled, last_login, created_at').order('created_at', { ascending: true })
+      ]);
+
+      const dealers = dealersRes.status === 'fulfilled' && Array.isArray(dealersRes.value?.data) ? dealersRes.value.data : [];
+      const staff = staffRes.status === 'fulfilled' && Array.isArray(staffRes.value?.data) ? staffRes.value.data : [];
+      const rawAdmins = adminsRes.status === 'fulfilled' && Array.isArray(adminsRes.value?.data) ? adminsRes.value.data : [];
+
+      return {
+        admins: rawAdmins.length > 0 ? rawAdmins : [
+          {
+            id: '0e839c92-3f19-4879-bb6d-cdc7ce526480',
+            email: 'admin@sunvinerenewable.com',
+            full_name: 'Admin Desk',
+            role: 'admin',
+            mobile_number: '8000050580',
+            created_at: new Date().toISOString()
+          }
+        ],
+        dealers,
+        staff
+      };
+    } catch (sbErr) {
+      console.warn('[adminAccountService] Direct Supabase fallback error:', sbErr.message);
+    }
+
     return {
-      admins: [],
+      admins: [
+        {
+          id: '0e839c92-3f19-4879-bb6d-cdc7ce526480',
+          email: 'admin@sunvinerenewable.com',
+          full_name: 'Admin Desk',
+          role: 'admin',
+          mobile_number: '8000050580',
+          created_at: new Date().toISOString()
+        }
+      ],
       dealers: [],
       staff: []
     };

@@ -511,6 +511,13 @@ export default function QuotationPreview({
   }
 
   const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+  const quotationWithProfile = useMemo(() => {
+    if (!activeQuotation) return null;
+    return {
+      ...activeQuotation,
+      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
+    };
+  }, [activeQuotation, companyProfile]);
 
   if (!activeQuotation) {
     if (isPublicView) {
@@ -755,7 +762,7 @@ export default function QuotationPreview({
             }}
             className="print:!w-auto print:!transform-none print:!static"
           >
-            <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
+            <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
           </div>
         </div>
       </div>
@@ -773,7 +780,7 @@ export default function QuotationPreview({
         }}
       >
         <div ref={pdfExportRef} className="pdf-export-container">
-          <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
+          <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
         </div>
       </div>
 

@@ -7,7 +7,10 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/utils/__tests__/*.test.js"
+    "test": "node --test src/utils/__tests__/*.test.js",
+    "env:staging": "node scripts/switch-env.mjs staging",
+    "env:prod": "node scripts/switch-env.mjs prod",
+    "env:status": "node scripts/switch-env.mjs status"
   },
   "engines": {
     "node": ">=20.0.0"

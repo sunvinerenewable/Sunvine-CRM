@@ -158,8 +158,6 @@ function getConciseDevice() {
  * @param {Object} [extraContext]
  */
 export async function reportCrash(error, extraContext = {}) {
-  if (!SLACK_WEBHOOK_URL) return;
-
   const rawMessage =
     error?.message ||
     (typeof error === 'string' ? error : 'Unknown runtime exception');

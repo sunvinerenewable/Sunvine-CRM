@@ -973,8 +973,8 @@ export default function AllQuotations() {
                             <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
                               {isFlagged ? 'warning' : 'check_circle'}
                             </span>
-                            <span>₹{(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))).toLocaleString('en-IN')}</span>
-                            <span className="text-[10px] font-normal opacity-90">(₹{marginPerKw}/kW)</span>
+                            <span>₹{Number(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5)) || 0).toLocaleString('en-IN')}</span>
+                            <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW)</span>
                           </span>
                         </div>
                       </div>
@@ -1092,8 +1092,8 @@ export default function AllQuotations() {
                           <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
                             {isFlagged ? 'warning' : 'check_circle'}
                           </span>
-                          <span className="whitespace-nowrap font-mono">₹{(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))).toLocaleString('en-IN')}</span>
-                          <span className="font-normal font-mono whitespace-nowrap text-[10px] opacity-90">(₹{marginPerKw.toLocaleString('en-IN')}/kW)</span>
+                          <span className="whitespace-nowrap font-mono">₹{Number(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5)) || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-normal font-mono whitespace-nowrap text-[10px] opacity-90">(₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW)</span>
                         </span>
                         {isFlagged && <span className="text-[10px] text-red-600 font-bold mt-0.5 whitespace-nowrap">Flagged for Audit</span>}
                       </div>
@@ -1261,8 +1261,8 @@ export default function AllQuotations() {
                   </div>
                   <p className="mt-0.5 text-secondary">
                     {isFlagged
-                      ? `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW exceeds the assigned margin threshold of ₹${dealerCap.toLocaleString('en-IN')}/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
-                      : `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW is within partner tier guidelines (≤ ₹${dealerCap.toLocaleString('en-IN')}/kW). Eligible for automated EPC dispatch.`}
+                      ? `Dealer spread of ₹${Number(marginPerKw || 0).toLocaleString('en-IN')}/kW exceeds the assigned margin threshold of ₹${Number(dealerCap || 0).toLocaleString('en-IN')}/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
+                      : `Dealer spread of ₹${Number(marginPerKw || 0).toLocaleString('en-IN')}/kW is within partner tier guidelines (≤ ₹${Number(dealerCap || 0).toLocaleString('en-IN')}/kW). Eligible for automated EPC dispatch.`}
                   </p>
                 </div>
               </div>
@@ -1297,41 +1297,41 @@ export default function AllQuotations() {
                   <div className="p-2.5 flex items-center justify-between hover:bg-surface-container-low/50">
                     <div>
                       <div className="font-medium text-on-surface">Base Procurement &amp; EPC Cost</div>
-                      <div className="text-[10px] text-secondary font-mono">{capKw} kW @ ₹{baseRate.toLocaleString('en-IN')}/kW</div>
+                      <div className="text-[10px] text-secondary font-mono">{capKw} kW @ ₹{Number(baseRate || 0).toLocaleString('en-IN')}/kW</div>
                     </div>
-                    <span className="font-bold font-mono">₹ {baseCost.toLocaleString('en-IN')}</span>
+                    <span className="font-bold font-mono">₹ {Number(baseCost || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className={`p-2.5 flex items-center justify-between ${isFlagged ? 'bg-amber-50/50' : ''}`}>
                     <div>
                       <div className="font-semibold text-on-surface flex items-center gap-1.5">
                         <span>Partner Commercial Margin</span>
                         <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isFlagged ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
-                          ₹{marginPerKw.toLocaleString('en-IN')}/kW spread
+                          ₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW spread
                         </span>
                       </div>
                       <div className="text-[10px] text-secondary">Added on top of base EPC cost</div>
                     </div>
                     <span className={`font-bold font-mono ${isFlagged ? 'text-red-700' : 'text-emerald-700'}`}>
-                      + ₹ {totalMargin.toLocaleString('en-IN')}
+                      + ₹ {Number(totalMargin || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
                   <div className="p-2.5 flex items-center justify-between bg-surface-container-low/30 font-bold">
                     <span className="text-on-surface">Total Quoted to Customer</span>
-                    <span className="font-mono text-sm">₹ {totalAmt.toLocaleString('en-IN')}</span>
+                    <span className="font-mono text-sm">₹ {Number(totalAmt || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="p-2.5 flex items-center justify-between text-secondary">
                     <div>
                       <div className="font-medium text-primary">PM Surya Ghar Central Subsidy (DBT)</div>
                       <div className="text-[10px] text-secondary">Disbursed directly into consumer bank account</div>
                     </div>
-                    <span className="font-bold font-mono text-primary">- ₹ {subsidy.toLocaleString('en-IN')}</span>
+                    <span className="font-bold font-mono text-primary">- ₹ {Number(subsidy || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="p-3 flex items-center justify-between bg-[#F0FDF4] border-t-2 border-[#6CBF3D]/50">
                     <div>
                       <div className="font-bold text-on-surface text-sm uppercase">Net Customer Payable</div>
                       <div className="text-[10px] text-secondary">Out-of-pocket investment after subsidy</div>
                     </div>
-                    <span className="text-base font-black font-mono text-[#0F1B2E]">₹ {netPayable.toLocaleString('en-IN')}</span>
+                    <span className="text-base font-black font-mono text-[#0F1B2E]">₹ {Number(netPayable || 0).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>
@@ -1380,7 +1380,6 @@ export default function AllQuotations() {
           onClose={() => setConvertingQuote(null)}
           onSuccess={(newCust) => {
             setConvertingQuote(null);
-            if (refreshQuotations) refreshQuotations();
           }}
         />
       )}

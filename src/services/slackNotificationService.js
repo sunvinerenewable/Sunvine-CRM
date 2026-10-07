@@ -28,6 +28,17 @@ async function postToSlack(payload) {
   }
 }
 
+function getTimestampIST() {
+  return new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }) + ' IST';
+}
+
 export const slackNotificationService = {
   isConfigured() {
     return true; // Server-side webhook handles dispatch

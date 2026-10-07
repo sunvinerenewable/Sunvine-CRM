@@ -23,13 +23,20 @@ async function invalidateCaches(keys = []) {
   );
 }
 
+export const isUuid = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || '').replace(/^#/, '').trim());
+
 // ── Database Fallback Helpers ────────────────────────────────────────────────
 
+let lastDirectWarn = 0;
 async function safeQuery(sql, params = []) {
   try {
     return await query(sql, params);
   } catch (err) {
-    console.warn('[adminHandlers] Direct SQL query notice:', err.message);
+    const now = Date.now();
+    if (now - lastDirectWarn > 30000 && !err.message?.includes('Direct PostgreSQL pooler is paused')) {
+      console.warn('[adminHandlers] Direct SQL pooler notice (falling back to Supabase REST):', err.message);
+      lastDirectWarn = now;
+    }
     throw err;
   }
 }
@@ -47,7 +54,25 @@ export async function generateCollisionFreeDealerCode() {
       const match = res.rows[0].dealer_code.match(/\d+/);
       if (match) seq = parseInt(match[0], 10) + 1;
     }
-  } catch (_) {}
+  } catch (_) {
+    try {
+      const db = getSupabaseServiceClient();
+      const { data } = await db
+        .from('dealer_accounts')
+        .select('dealer_code')
+        .order('dealer_code', { ascending: false })
+        .limit(20);
+      if (data && data.length > 0) {
+        const nums = data.map(d => {
+          const m = String(d.dealer_code || '').match(/(\d+)/);
+          return m ? parseInt(m[1], 10) : null;
+        }).filter(n => n !== null && !isNaN(n));
+        if (nums.length > 0) {
+          seq = Math.max(...nums) + 1;
+        }
+      }
+    } catch (__) {}
+  }
 
   while (true) {
     const candidate = `SV-DLR-${String(seq).padStart(4, '0')}`;
@@ -55,7 +80,13 @@ export async function generateCollisionFreeDealerCode() {
       const check = await safeQuery('SELECT id FROM dealer_accounts WHERE dealer_code = $1', [candidate]);
       if (!check?.rows?.length) return candidate;
     } catch (_) {
-      return candidate;
+      try {
+        const db = getSupabaseServiceClient();
+        const { data } = await db.from('dealer_accounts').select('id').eq('dealer_code', candidate).limit(1);
+        if (!data || data.length === 0) return candidate;
+      } catch (__) {
+        return candidate;
+      }
     }
     seq++;
   }
@@ -74,7 +105,25 @@ export async function generateCollisionFreeStaffCode() {
       const match = res.rows[0].id.match(/\d+/);
       if (match) seq = parseInt(match[0], 10) + 1;
     }
-  } catch (_) {}
+  } catch (_) {
+    try {
+      const db = getSupabaseServiceClient();
+      const { data } = await db
+        .from('staff_accounts')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(20);
+      if (data && data.length > 0) {
+        const nums = data.map(s => {
+          const m = String(s.id || '').match(/(\d+)/);
+          return m ? parseInt(m[1], 10) : null;
+        }).filter(n => n !== null && !isNaN(n));
+        if (nums.length > 0) {
+          seq = Math.max(...nums) + 1;
+        }
+      }
+    } catch (__) {}
+  }
 
   while (true) {
     const candidate = `STF-${String(seq).padStart(3, '0')}`;
@@ -82,7 +131,13 @@ export async function generateCollisionFreeStaffCode() {
       const check = await safeQuery('SELECT id FROM staff_accounts WHERE id = $1', [candidate]);
       if (!check?.rows?.length) return candidate;
     } catch (_) {
-      return candidate;
+      try {
+        const db = getSupabaseServiceClient();
+        const { data } = await db.from('staff_accounts').select('id').eq('id', candidate).limit(1);
+        if (!data || data.length === 0) return candidate;
+      } catch (__) {
+        return candidate;
+      }
     }
     seq++;
   }
@@ -147,11 +202,15 @@ export async function handleAdminDealers(req, res) {
           return res.status(200).json({ success: true, dealer: qRes.rows[0] });
         } catch (_) {
           const db = getSupabaseServiceClient();
-          const { data, error } = await db
+          let q = db
             .from('dealer_accounts')
-            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at')
-            .or(`dealer_code.eq.${targetId},id.eq.${targetId}`)
-            .maybeSingle();
+            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at');
+          if (isUuid(targetId)) {
+            q = q.or(`dealer_code.eq.${targetId},id.eq.${targetId}`);
+          } else {
+            q = q.eq('dealer_code', targetId);
+          }
+          const { data, error } = await q.maybeSingle();
 
           if (error) throw error;
           if (!data) return res.status(404).json({ error: 'Dealer not found.' });
@@ -166,79 +225,135 @@ export async function handleAdminDealers(req, res) {
           return res.status(400).json({ error: 'Dealer payload is required.' });
         }
 
-        const targetId = id || dealer.id;
-        const isUpdate = op === 'update' || (op === 'upsert' && Boolean(targetId));
+        if (dealer.password !== undefined && dealer.password !== null && String(dealer.password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(dealer.password);
+          if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+        }
+
+        const targetId = id || dealer.id || dealer.dealerCode;
+        let existing = null;
+        if (targetId) {
+          try {
+            const existingRes = await safeQuery('SELECT id, dealer_code, password_hash FROM dealer_accounts WHERE id::text = $1 OR dealer_code = $1', [String(targetId)]);
+            if (existingRes?.rows?.length) {
+              existing = existingRes.rows[0];
+            }
+          } catch (_) {
+            const db = getSupabaseServiceClient();
+            let q = db.from('dealer_accounts').select('id, dealer_code, password_hash');
+            if (isUuid(targetId)) {
+              q = q.or(`dealer_code.eq.${targetId},id.eq.${targetId}`);
+            } else {
+              q = q.eq('dealer_code', targetId);
+            }
+            const { data } = await q.maybeSingle();
+            if (data) existing = data;
+          }
+        }
+
+        if (op === 'update' && !existing) {
+          return res.status(404).json({ error: `Dealer "${targetId}" not found for update.` });
+        }
+
+        const isUpdate = (op === 'update' || op === 'upsert') && Boolean(existing);
 
         if (isUpdate) {
-          // Check if dealer exists
-          const existingRes = await safeQuery('SELECT id, dealer_code, password_hash FROM dealer_accounts WHERE id::text = $1 OR dealer_code = $1', [String(targetId)]);
-          if (!existingRes?.rows?.length) {
-            return res.status(404).json({ error: `Dealer "${targetId}" not found for update.` });
-          }
-          const existing = existingRes.rows[0];
-
           let passwordHash = existing.password_hash;
           if (dealer.password !== undefined && dealer.password !== null && String(dealer.password).trim() !== '') {
-            const passCheck = validatePasswordComplexity(dealer.password);
-            if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
             passwordHash = hashBcrypt(String(dealer.password).trim(), 10);
           }
 
           const cleanMobile = dealer.mobile ? String(dealer.mobile).replace(/\D/g, '').slice(-10) : null;
           const staffId = dealer.assignedStaffId || 'STF-DIRECT';
           const staffName = staffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (dealer.assignedStaffName || 'Sunvine Sales Staff');
-          const finalPricingConfig = typeof dealer.pricingConfig === 'object' && dealer.pricingConfig !== null
-            ? JSON.stringify({ ...dealer.pricingConfig, assignedStaffId: staffId, assignedStaffName: staffName })
-            : JSON.stringify({ assignedStaffId: staffId, assignedStaffName: staffName });
+          const finalPricingConfig = {
+            ...(typeof dealer.pricingConfig === 'object' && dealer.pricingConfig !== null ? dealer.pricingConfig : {}),
+            ...(dealer.address ? { address: dealer.address.trim() } : {}),
+            assignedStaffId: staffId,
+            assignedStaffName: staffName
+          };
 
-          const updateSql = `
-            UPDATE dealer_accounts SET
-              firm_name = COALESCE($2, firm_name),
-              contact_person = COALESCE($3, contact_person),
-              mobile_number = COALESCE($4, mobile_number),
-              email = COALESCE($5, email),
-              city = COALESCE($6, city),
-              state = COALESCE($7, state),
-              discom = COALESCE($8, discom),
-              tier = COALESCE($9, tier),
-              max_margin_cap_per_kw = COALESCE($10, max_margin_cap_per_kw),
-              status = COALESCE($11, status),
-              address = COALESCE($12, address),
-              gst_number = COALESCE($13, gst_number),
-              pan_number = COALESCE($14, pan_number),
-              assigned_staff_id = $15,
-              assigned_staff_name = $16,
-              pricing_config = $17::jsonb,
-              password_hash = $18,
-              updated_at = NOW()
-            WHERE id::text = $1 OR dealer_code = $1
-            RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
-                      city, state, discom, tier, max_margin_cap_per_kw, status,
-                      assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
-          `;
+          let updated = null;
+          try {
+            const updateSql = `
+              UPDATE dealer_accounts SET
+                firm_name = COALESCE($2, firm_name),
+                contact_person = COALESCE($3, contact_person),
+                mobile_number = COALESCE($4, mobile_number),
+                email = COALESCE($5, email),
+                city = COALESCE($6, city),
+                state = COALESCE($7, state),
+                discom = COALESCE($8, discom),
+                tier = COALESCE($9, tier),
+                max_margin_cap_per_kw = COALESCE($10, max_margin_cap_per_kw),
+                status = COALESCE($11, status),
+                gst_number = COALESCE($12, gst_number),
+                pan_number = COALESCE($13, pan_number),
+                assigned_staff_id = $14,
+                assigned_staff_name = $15,
+                pricing_config = $16::jsonb,
+                password_hash = $17,
+                updated_at = NOW()
+              WHERE id::text = $1 OR dealer_code = $1
+              RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
+                        city, state, discom, tier, max_margin_cap_per_kw, status,
+                        assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
+            `;
 
-          const qRes = await safeQuery(updateSql, [
-            String(targetId),
-            dealer.firmName ? dealer.firmName.trim() : null,
-            dealer.contactPerson ? dealer.contactPerson.trim() : null,
-            cleanMobile,
-            dealer.email ? dealer.email.trim() : null,
-            dealer.city || null,
-            dealer.state || null,
-            dealer.discom || null,
-            dealer.tier || null,
-            dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null ? Number(dealer.maxMarginCapPerKw) : null,
-            dealer.status ? dealer.status.toLowerCase() : null,
-            dealer.address || null,
-            dealer.gstin || null,
-            dealer.pan || null,
-            staffId,
-            staffName,
-            finalPricingConfig,
-            passwordHash
-          ]);
+            const qRes = await safeQuery(updateSql, [
+              String(targetId),
+              dealer.firmName ? dealer.firmName.trim() : null,
+              dealer.contactPerson ? dealer.contactPerson.trim() : null,
+              cleanMobile,
+              dealer.email ? dealer.email.trim() : null,
+              dealer.city || null,
+              dealer.state || null,
+              dealer.discom || null,
+              dealer.tier || null,
+              dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null ? Number(dealer.maxMarginCapPerKw) : null,
+              dealer.status ? dealer.status.toLowerCase() : null,
+              dealer.gstin || null,
+              dealer.pan || null,
+              staffId,
+              staffName,
+              JSON.stringify(finalPricingConfig),
+              passwordHash
+            ]);
 
-          const updated = qRes.rows?.[0];
+            updated = qRes.rows?.[0];
+          } catch (_) {
+            const db = getSupabaseServiceClient();
+            const updateObj = { updated_at: new Date().toISOString() };
+            if (dealer.firmName) updateObj.firm_name = dealer.firmName.trim();
+            if (dealer.contactPerson) updateObj.contact_person = dealer.contactPerson.trim();
+            if (cleanMobile) updateObj.mobile_number = cleanMobile;
+            if (dealer.email) updateObj.email = dealer.email.trim();
+            if (dealer.city) updateObj.city = dealer.city;
+            if (dealer.state) updateObj.state = dealer.state;
+            if (dealer.discom) updateObj.discom = dealer.discom;
+            if (dealer.tier) updateObj.tier = dealer.tier;
+            if (dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null) updateObj.max_margin_cap_per_kw = Number(dealer.maxMarginCapPerKw);
+            if (dealer.status) updateObj.status = dealer.status.toLowerCase();
+            if (dealer.gstin) updateObj.gst_number = dealer.gstin;
+            if (dealer.pan) updateObj.pan_number = dealer.pan;
+            updateObj.assigned_staff_id = staffId;
+            updateObj.assigned_staff_name = staffName;
+            updateObj.pricing_config = finalPricingConfig;
+            if (passwordHash) updateObj.password_hash = passwordHash;
+
+            let q = db.from('dealer_accounts').update(updateObj);
+            if (isUuid(targetId)) {
+              q = q.or(`dealer_code.eq.${targetId},id.eq.${targetId}`);
+            } else {
+              q = q.eq('dealer_code', targetId);
+            }
+            const { data, error } = await q
+              .select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at')
+              .maybeSingle();
+            if (error) throw error;
+            updated = data;
+          }
+
           await invalidateCaches([
             `dealer:rates:${existing.dealer_code}`,
             `dealer:rates:${existing.id}`,
@@ -278,16 +393,26 @@ export async function handleAdminDealers(req, res) {
         }
 
         // Check for collision on code or mobile
-        if (dealerCode) {
-          const collision = await safeQuery('SELECT id, dealer_code FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
-          if (collision?.rows?.length > 0) {
-            return res.status(409).json({ error: `Dealer with code "${dealerCode}" or mobile "${cleanMobile}" already exists.` });
+        let collisionFound = false;
+        try {
+          if (dealerCode) {
+            const collision = await safeQuery('SELECT id, dealer_code FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          } else {
+            const collision = await safeQuery('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
+            if (collision?.rows?.length > 0) collisionFound = true;
           }
-        } else {
-          const collision = await safeQuery('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
-          if (collision?.rows?.length > 0) {
-            return res.status(409).json({ error: `Dealer with mobile "${cleanMobile}" already exists.` });
-          }
+        } catch (_) {
+          const db = getSupabaseServiceClient();
+          const queryBuilder = dealerCode
+            ? db.from('dealer_accounts').select('id, dealer_code').or(`dealer_code.eq.${dealerCode},mobile_number.eq.${cleanMobile}`)
+            : db.from('dealer_accounts').select('id').eq('mobile_number', cleanMobile);
+          const { data } = await queryBuilder;
+          if (data && data.length > 0) collisionFound = true;
+        }
+
+        if (collisionFound) {
+          return res.status(409).json({ error: `Dealer with code "${dealerCode || ''}" or mobile "${cleanMobile}" already exists.` });
         }
 
         let passwordHash = null;
@@ -313,49 +438,81 @@ export async function handleAdminDealers(req, res) {
         const staffName = staffId === 'STF-DIRECT'
           ? 'Direct to Company (HQ Desk)'
           : (assignedStaffName || 'Sunvine Sales Staff');
-        const finalPricingConfig = typeof pricingConfig === 'object' && pricingConfig !== null
-          ? JSON.stringify({ ...pricingConfig, assignedStaffId: staffId, assignedStaffName: staffName })
-          : JSON.stringify({ assignedStaffId: staffId, assignedStaffName: staffName });
+        const finalPricingConfig = {
+          ...(typeof pricingConfig === 'object' && pricingConfig !== null ? pricingConfig : {}),
+          ...(address ? { address: address.trim() } : {}),
+          assignedStaffId: staffId,
+          assignedStaffName: staffName
+        };
 
-        const insertSql = `
-          INSERT INTO dealer_accounts (
-            dealer_code, firm_name, contact_person, mobile_number, email,
-            city, state, discom, tier, max_margin_cap_per_kw,
-            status, address, gst_number, pan_number, assigned_staff_id, assigned_staff_name,
-            pricing_config, password_hash, created_at, updated_at
-          ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16,
-            $17::jsonb, $18, NOW(), NOW()
-          )
-          RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
-                    city, state, discom, tier, max_margin_cap_per_kw, status,
-                    assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
-        `;
+        let saved = null;
+        try {
+          const insertSql = `
+            INSERT INTO dealer_accounts (
+              dealer_code, firm_name, contact_person, mobile_number, email,
+              city, state, discom, tier, max_margin_cap_per_kw,
+              status, gst_number, pan_number, assigned_staff_id, assigned_staff_name,
+              pricing_config, password_hash, created_at, updated_at
+            ) VALUES (
+              $1, $2, $3, $4, $5,
+              $6, $7, $8, $9, $10,
+              $11, $12, $13, $14, $15,
+              $16::jsonb, $17, NOW(), NOW()
+            )
+            RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
+                      city, state, discom, tier, max_margin_cap_per_kw, status,
+                      assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
+          `;
 
-        const qRes = await safeQuery(insertSql, [
-          code,
-          firmName.trim(),
-          contactPerson.trim(),
-          cleanMobile,
-          cleanEmail.trim(),
-          cleanCity,
-          cleanState,
-          cleanDiscom,
-          cleanTier,
-          cleanCap,
-          cleanStatus,
-          address || null,
-          gstin || null,
-          pan || null,
-          staffId,
-          staffName,
-          finalPricingConfig,
-          passwordHash
-        ]);
+          const qRes = await safeQuery(insertSql, [
+            code,
+            firmName.trim(),
+            contactPerson.trim(),
+            cleanMobile,
+            cleanEmail.trim(),
+            cleanCity,
+            cleanState,
+            cleanDiscom,
+            cleanTier,
+            cleanCap,
+            cleanStatus,
+            gstin || null,
+            pan || null,
+            staffId,
+            staffName,
+            JSON.stringify(finalPricingConfig),
+            passwordHash
+          ]);
+          saved = qRes.rows?.[0];
+        } catch (_) {
+          const db = getSupabaseServiceClient();
+          const { data, error } = await db
+            .from('dealer_accounts')
+            .insert({
+              dealer_code: code,
+              firm_name: firmName.trim(),
+              contact_person: contactPerson.trim(),
+              mobile_number: cleanMobile,
+              email: cleanEmail.trim(),
+              city: cleanCity,
+              state: cleanState,
+              discom: cleanDiscom,
+              tier: cleanTier,
+              max_margin_cap_per_kw: cleanCap,
+              status: cleanStatus,
+              gst_number: gstin || null,
+              pan_number: pan || null,
+              assigned_staff_id: staffId,
+              assigned_staff_name: staffName,
+              pricing_config: finalPricingConfig,
+              password_hash: passwordHash
+            })
+            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at')
+            .single();
+          if (error) throw error;
+          saved = data;
+        }
 
-        const saved = qRes.rows?.[0];
         await invalidateCaches([
           `dealer:rates:${code}`,
           `dealer:rates:${saved?.id || code}`,
@@ -366,18 +523,31 @@ export async function handleAdminDealers(req, res) {
       }
 
       case 'delete': {
-        const targetId = id || dealer?.id || dealer?.dealerCode;
-        if (!targetId) {
+        const cleanTargetId = String(id || dealer?.id || dealer?.dealerCode || '').replace(/^#/, '').trim();
+        if (!cleanTargetId) {
           return res.status(400).json({ error: 'Dealer identifier required.' });
         }
 
-        await safeQuery('DELETE FROM dealer_accounts WHERE dealer_code = $1 OR id::text = $1', [String(targetId)]);
+        try {
+          await safeQuery('DELETE FROM dealer_accounts WHERE dealer_code = $1 OR id::text = $1', [cleanTargetId]);
+        } catch (_) {
+          const db = getSupabaseServiceClient();
+          let q = db.from('dealer_accounts').delete();
+          if (isUuid(cleanTargetId)) {
+            q = q.or(`dealer_code.eq.${cleanTargetId},id.eq.${cleanTargetId}`);
+          } else {
+            q = q.eq('dealer_code', cleanTargetId);
+          }
+          const { error } = await q;
+          if (error) throw error;
+        }
+
         await invalidateCaches([
-          `dealer:rates:${targetId}`,
+          `dealer:rates:${cleanTargetId}`,
           'catalog:all'
         ]);
 
-        return res.status(200).json({ success: true });
+        return res.status(200).json({ success: true, message: `Dealer ${cleanTargetId} deleted.` });
       }
 
       default:
@@ -475,20 +645,35 @@ export async function handleAdminStaff(req, res) {
           return res.status(400).json({ error: 'Staff payload is required.' });
         }
 
+        if (staff.password !== undefined && staff.password !== null && String(staff.password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(staff.password);
+          if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+        }
+
         const targetId = id || staff.id;
-        const isUpdate = op === 'update' || (op === 'upsert' && Boolean(targetId));
+        let existing = null;
+        if (targetId) {
+          try {
+            const existingRes = await safeQuery('SELECT id, password_hash FROM staff_accounts WHERE id = $1', [String(targetId)]);
+            if (existingRes?.rows?.length) {
+              existing = existingRes.rows[0];
+            }
+          } catch (_) {
+            const db = getSupabaseServiceClient();
+            const { data } = await db.from('staff_accounts').select('id, password_hash').eq('id', targetId).maybeSingle();
+            if (data) existing = data;
+          }
+        }
+
+        if (op === 'update' && !existing) {
+          return res.status(404).json({ error: `Staff member "${targetId}" not found for update.` });
+        }
+
+        const isUpdate = (op === 'update' || op === 'upsert') && Boolean(existing);
 
         if (isUpdate) {
-          const existingRes = await safeQuery('SELECT id, password_hash FROM staff_accounts WHERE id = $1', [String(targetId)]);
-          if (!existingRes?.rows?.length) {
-            return res.status(404).json({ error: `Staff member "${targetId}" not found for update.` });
-          }
-          const existing = existingRes.rows[0];
-
           let passwordHash = existing.password_hash;
           if (staff.password !== undefined && staff.password !== null && String(staff.password).trim() !== '') {
-            const passCheck = validatePasswordComplexity(staff.password);
-            if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
             passwordHash = hashBcrypt(String(staff.password).trim(), 10);
           }
 
@@ -497,37 +682,60 @@ export async function handleAdminStaff(req, res) {
           const isVerif = staff.is_verification === true || (staffRole && staffRole.toLowerCase().includes('verification')) || String(staff.department || '').toLowerCase().includes('verification');
           const finalDepartment = isVerif ? 'verification' : (staff.department ? String(staff.department).toLowerCase() : null);
 
-          const updateSql = `
-            UPDATE staff_accounts SET
-              name = COALESCE($2, name),
-              phone = COALESCE($3, phone),
-              mobile_number = COALESCE($3, mobile_number),
-              email = COALESCE($4, email),
-              role = COALESCE($5, role),
-              department = COALESCE($6, department),
-              zone = COALESCE($7, zone),
-              city = COALESCE($8, city),
-              status = COALESCE($9, status),
-              password_hash = $10,
-              updated_at = NOW()
-            WHERE id = $1
-            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
-          `;
+          let updated = null;
+          try {
+            const updateSql = `
+              UPDATE staff_accounts SET
+                name = COALESCE($2, name),
+                phone = COALESCE($3, phone),
+                mobile_number = COALESCE($3, mobile_number),
+                email = COALESCE($4, email),
+                role = COALESCE($5, role),
+                department = COALESCE($6, department),
+                zone = COALESCE($7, zone),
+                city = COALESCE($8, city),
+                status = COALESCE($9, status),
+                password_hash = $10,
+                updated_at = NOW()
+              WHERE id = $1
+              RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
+            `;
 
-          const qRes = await safeQuery(updateSql, [
-            String(targetId),
-            staff.name ? staff.name.trim() : null,
-            cleanPhone,
-            staff.email ? staff.email.trim() : null,
-            staffRole,
-            finalDepartment,
-            staff.zone || null,
-            staff.city || null,
-            staff.status ? staff.status.toLowerCase() : null,
-            passwordHash
-          ]);
+            const qRes = await safeQuery(updateSql, [
+              String(targetId),
+              staff.name ? staff.name.trim() : null,
+              cleanPhone,
+              staff.email ? staff.email.trim() : null,
+              staffRole,
+              finalDepartment,
+              staff.zone || null,
+              staff.city || null,
+              staff.status ? staff.status.toLowerCase() : null,
+              passwordHash
+            ]);
 
-          const updated = qRes.rows?.[0];
+            updated = qRes.rows?.[0];
+          } catch (_) {
+            const db = getSupabaseServiceClient();
+            const updateObj = { updated_at: new Date().toISOString() };
+            if (staff.name) updateObj.name = staff.name.trim();
+            if (cleanPhone) {
+              updateObj.phone = cleanPhone;
+              updateObj.mobile_number = cleanPhone;
+            }
+            if (staff.email) updateObj.email = staff.email.trim();
+            if (staffRole) updateObj.role = staffRole;
+            if (finalDepartment) updateObj.department = finalDepartment;
+            if (staff.zone) updateObj.zone = staff.zone;
+            if (staff.city) updateObj.city = staff.city;
+            if (staff.status) updateObj.status = staff.status.toLowerCase();
+            if (passwordHash) updateObj.password_hash = passwordHash;
+
+            const { data, error } = await db.from('staff_accounts').update(updateObj).eq('id', targetId).select().single();
+            if (error) throw error;
+            updated = data;
+          }
+
           return res.status(200).json({
             success: true,
             staff: {
@@ -549,16 +757,26 @@ export async function handleAdminStaff(req, res) {
         }
 
         // Collision check
-        if (staffId) {
-          const collision = await safeQuery('SELECT id FROM staff_accounts WHERE id = $1 OR phone = $2 OR mobile_number = $2', [staffId, cleanPhone]);
-          if (collision?.rows?.length > 0) {
-            return res.status(409).json({ error: `Staff with ID "${staffId}" or phone "${cleanPhone}" already exists.` });
+        let collisionFound = false;
+        try {
+          if (staffId) {
+            const collision = await safeQuery('SELECT id FROM staff_accounts WHERE id = $1 OR phone = $2 OR mobile_number = $2', [staffId, cleanPhone]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          } else {
+            const collision = await safeQuery('SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1', [cleanPhone]);
+            if (collision?.rows?.length > 0) collisionFound = true;
           }
-        } else {
-          const collision = await safeQuery('SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1', [cleanPhone]);
-          if (collision?.rows?.length > 0) {
-            return res.status(409).json({ error: `Staff with phone "${cleanPhone}" already exists.` });
-          }
+        } catch (_) {
+          const db = getSupabaseServiceClient();
+          const queryBuilder = staffId
+            ? db.from('staff_accounts').select('id').or(`id.eq.${staffId},phone.eq.${cleanPhone},mobile_number.eq.${cleanPhone}`)
+            : db.from('staff_accounts').select('id').or(`phone.eq.${cleanPhone},mobile_number.eq.${cleanPhone}`);
+          const { data } = await queryBuilder;
+          if (data && data.length > 0) collisionFound = true;
+        }
+
+        if (collisionFound) {
+          return res.status(409).json({ error: `Staff with ID "${staffId || ''}" or phone "${cleanPhone}" already exists.` });
         }
 
         let passwordHash = null;
@@ -577,29 +795,53 @@ export async function handleAdminStaff(req, res) {
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
 
-        const insertSql = `
-          INSERT INTO staff_accounts (
-            id, name, phone, mobile_number, email, role, department, zone, city,
-            status, password_hash, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-          RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
-        `;
+        let savedStaff = null;
+        try {
+          const insertSql = `
+            INSERT INTO staff_accounts (
+              id, name, phone, mobile_number, email, role, department, zone, city,
+              status, password_hash, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
+          `;
 
-        const qRes = await safeQuery(insertSql, [
-          finalId,
-          name.trim(),
-          cleanPhone,
-          cleanPhone,
-          cleanEmail.trim(),
-          staffRole,
-          finalDepartment,
-          zone || 'Gujarat',
-          city || 'Ahmedabad',
-          cleanStatus,
-          passwordHash
-        ]);
+          const qRes = await safeQuery(insertSql, [
+            finalId,
+            name.trim(),
+            cleanPhone,
+            cleanPhone,
+            cleanEmail.trim(),
+            staffRole,
+            finalDepartment,
+            zone || 'Gujarat',
+            city || 'Ahmedabad',
+            cleanStatus,
+            passwordHash
+          ]);
+          savedStaff = qRes.rows?.[0];
+        } catch (_) {
+          const db = getSupabaseServiceClient();
+          const { data, error } = await db
+            .from('staff_accounts')
+            .insert({
+              id: finalId,
+              name: name.trim(),
+              phone: cleanPhone,
+              mobile_number: cleanPhone,
+              email: cleanEmail.trim(),
+              role: staffRole,
+              department: finalDepartment,
+              zone: zone || 'Gujarat',
+              city: city || 'Ahmedabad',
+              status: cleanStatus,
+              password_hash: passwordHash
+            })
+            .select('id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at')
+            .single();
+          if (error) throw error;
+          savedStaff = data;
+        }
 
-        const savedStaff = qRes.rows?.[0] || { id: finalId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole };
         return res.status(200).json({
           success: true,
           staff: {

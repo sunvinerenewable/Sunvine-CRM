@@ -8,6 +8,8 @@ export default function AdminSettings() {
   const { addToast } = useToast();
   const {
     currentAdmin,
+    dealers = [],
+    staffList = [],
     setStaffList,
     setDealers,
     masterDocRegistry,
@@ -18,7 +20,8 @@ export default function AdminSettings() {
     updateCategoryDocRule,
     resetDocumentRulesToDefault,
     refreshMasterDocuments,
-    applicationCategories
+    applicationCategories,
+    tierMargins
   } = useApp();
 
   const VALID_SETTINGS_TABS = ['account_center', 'document_rules', 'security', 'system'];
@@ -201,8 +204,21 @@ export default function AdminSettings() {
   const [successToast, setSuccessToast] = useState('');
 
   const [adminsList, setAdminsList] = useState([]);
-  const [dealersList, setDealersList] = useState([]);
-  const [staffListState, setStaffListState] = useState([]);
+  const [dealersList, setDealersList] = useState(() => (Array.isArray(dealers) && dealers.length > 0 ? dealers : []));
+  const [staffListState, setStaffListState] = useState(() => (Array.isArray(staffList) && staffList.length > 0 ? staffList : []));
+
+  // Sync with AppContext data if loaded
+  useEffect(() => {
+    if (Array.isArray(dealers) && dealers.length > 0 && dealersList.length === 0) {
+      setDealersList(dealers);
+    }
+  }, [dealers]);
+
+  useEffect(() => {
+    if (Array.isArray(staffList) && staffList.length > 0 && staffListState.length === 0) {
+      setStaffListState(staffList);
+    }
+  }, [staffList]);
 
   // Filters & Search
   const [staffFilter, setStaffFilter] = useState('all'); // 'all' | 'sales' | 'verification'

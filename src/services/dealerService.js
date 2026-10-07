@@ -163,41 +163,24 @@ export const dealerService = {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          op: 'upsert',
+          op: 'create',
           dealer: dealerPayload
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) {
-          return { success: true, id: data.dealer?.dealer_code || dealerCode };
-        }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        invalidateCatalogCache([`dealer:rates:${dealerCode}`, 'directory:dealers:min', 'catalog:all']);
+        return { success: true, id: data.dealer?.dealer_code || dealerCode, dealer: data.dealer };
       }
-    } catch (_) {}
-
-    // 2. Try manage-credentials endpoint
-    try {
-      const res = await fetch('/api/auth/manage-credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          action: 'create-dealer',
-          payload: dealerPayload
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) {
-          return { success: true, id: data.dealer?.dealer_code || dealerCode };
-        }
+      if (data?.error) {
+        return { success: false, error: data.error };
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || 'Failed to create dealer account.' };
     } catch (apiErr) {
       console.error('[dealerService] Create dealer exception:', apiErr);
       return { success: false, error: apiErr.message || 'Dealer creation service unavailable.' };
     }
+
+    return { success: false, error: 'Failed to create dealer account.' };
   },
 
   /**
@@ -278,7 +261,8 @@ export const dealerService = {
    * Delete dealer via backend API
    */
   async deleteDealer(dealerCodeOrId) {
-    if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
+    const cleanId = String(dealerCodeOrId || '').replace(/^#/, '').trim();
+    if (!cleanId) return { success: false, error: 'Dealer identifier is required.' };
 
     // 1. Try /api/auth/admin-dealers
     try {
@@ -288,13 +272,13 @@ export const dealerService = {
         credentials: 'include',
         body: JSON.stringify({
           op: 'delete',
-          id: dealerCodeOrId
+          id: cleanId
         })
       });
       if (res.ok) {
         const data = await res.json();
         if (data?.success) {
-          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
+          invalidateCatalogCache([`dealer:rates:${cleanId}`, 'directory:dealers:min']);
           return { success: true };
         }
       }
@@ -308,13 +292,13 @@ export const dealerService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'delete-dealer',
-          payload: { dealerCode: dealerCodeOrId, id: dealerCodeOrId }
+          payload: { dealerCode: cleanId, id: cleanId }
         })
       });
       if (res.ok) {
         const data = await res.json();
         if (data?.success) {
-          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
+          invalidateCatalogCache([`dealer:rates:${cleanId}`, 'directory:dealers:min']);
           return { success: true };
         }
       }

@@ -70,12 +70,6 @@ export default function StaffRadarMap() {
   const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
   const [geoapifyKeyInput, setGeoapifyKeyInput] = useState(() => getSavedGeoapifyApiKey());
 
-  const handleSaveGeoapifyKey = () => {
-    saveGeoapifyApiKey(geoapifyKeyInput);
-    addToast('Geoapify Places API key saved!', 'success');
-    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
-  };
-
   // Core Search Execution (Phase 5, 8, 9, 10)
   const executeLeadSearch = useCallback(
     async (targetLat = coords.lat, targetLon = coords.lon, targetRadius = radiusMeters, force = false) => {
@@ -120,6 +114,12 @@ export default function StaffRadarMap() {
     },
     [coords.lat, coords.lon, radiusMeters, activeQueries, accuracy, addToast]
   );
+
+  const handleSaveGeoapifyKey = () => {
+    saveGeoapifyApiKey(geoapifyKeyInput);
+    addToast('Geoapify Places API key saved!', 'success');
+    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
+  };
 
   // Initial search on mount
   useEffect(() => {

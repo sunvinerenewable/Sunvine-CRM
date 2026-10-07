@@ -58,6 +58,7 @@ export default function CreateQuotation() {
     setPreviewQuotation,
     addNotification,
     pricingPresets,
+    systemSettings,
     tierMargins,
     modulesList,
     invertersList,
@@ -1111,7 +1112,7 @@ export default function CreateQuotation() {
     if (isMarginExceeded) {
       addToast({
         title: 'Margin Audit Alert',
-        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
+        message: `Configured margin (₹${Number(currentMarginPerKw || 0).toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${Number(maxMarginCapPerKw || 0).toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
         type: 'warning'
       });
     }
@@ -3417,25 +3418,28 @@ export default function CreateQuotation() {
               </button>
             </div>
 
-            <div className="py-4 space-y-3">
-              {availableInverters.map((inv, idx) => (
+            <div className="py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+              {(activeInverters || invertersList || []).map((inv, idx) => (
                 <div
-                  key={idx}
+                  key={inv.id || idx}
                   onClick={() => {
-                    setInverterModel(inv.name);
+                    if (inv.brand || inv.name) setInverterBrand(inv.brand || inv.name);
+                    if (inv.capacityKW || inv.capacity_kw) setInverterCapacityKw(Number(inv.capacityKW || inv.capacity_kw));
+                    if (inv.basePrice || inv.price) setInverterUnitPrice(Number(inv.basePrice || inv.price));
+                    setUserOverrodeInverter(true);
                     setShowInverterModal(false);
                   }}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${inverterModel === inv.name
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${inverterBrand === (inv.brand || inv.name)
                       ? 'border-primary-container bg-primary/5 ring-1 ring-primary-container'
                       : 'border-surface-container-high hover:border-primary/50'
                     }`}
                 >
                   <div>
-                    <h4 className="font-label-md text-sm font-bold text-on-surface">{inv.name}</h4>
-                    <p className="text-xs text-secondary mt-0.5">{inv.specs}</p>
+                    <h4 className="font-label-md text-sm font-bold text-on-surface">{inv.name || inv.brand} ({inv.capacityKW || inv.capacity_kw} kW)</h4>
+                    <p className="text-xs text-secondary mt-0.5">{inv.phase || 'Grid-Tied'} • {inv.specs || 'MNRE Approved'}</p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface-container text-primary shrink-0 ml-2">
-                    {inv.efficiency}
+                    {inv.efficiency || '98.5%'}
                   </span>
                 </div>
               ))}

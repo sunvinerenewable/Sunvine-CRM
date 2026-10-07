@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
 import { resolveCapacityBom } from '../../data/standardBomData';
 import { calculateSubsidy } from '../../shared/pricing/calculations';
 
@@ -11,7 +12,7 @@ const formatINR = (val) => {
 };
 
 // Resolves component manufacturer / brand name (Make)
-export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake = '') {
+function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake = '') {
   if (item?.make && typeof item.make === 'string' && item.make.trim()) {
     return item.make.trim();
   }
@@ -104,6 +105,12 @@ export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverte
 export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport = false }) {
   if (!quotation) return null;
 
+  let appContext = {};
+  try {
+    appContext = useApp() || {};
+  } catch (_) {}
+  const systemSettings = quotation?.systemSettings || appContext?.systemSettings || null;
+
   const {
     id = 'SV-2026-Q801',
     date = new Date().toLocaleDateString('en-GB'),
@@ -138,7 +145,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   // Verify company billing completeness (GSTIN and Bank Account must be non-empty)
   const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
-  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number;
+  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
   const hasBank = Boolean(bankAcc && String(bankAcc).trim());
   const isBillingProfileComplete = hasGstin && hasBank;
 

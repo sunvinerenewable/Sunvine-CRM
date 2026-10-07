@@ -205,39 +205,6 @@ export default function InteractiveImageRoofTracer({
     }
   }, [pendingSegment]);
 
-  // Keyboard listeners (Shift for Ortho, Ctrl+Z for Undo, Enter for dimension confirmation / finish)
-  useEffect(() => {
-    const handleKeyDown = e => {
-      if (e.key === 'Shift') setIsShiftDown(true);
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        handleUndo();
-      } else if (e.key === 'Enter') {
-        if (pendingSegment) {
-          e.preventDefault();
-          confirmPendingSegment();
-        } else if (activeStep === 'draw' && pins.length >= 3) {
-          e.preventDefault();
-          finalizeSidesFromPins(pins);
-        }
-      } else if (e.key === 'Escape' && pendingSegment) {
-        e.preventDefault();
-        cancelPendingSegment();
-      }
-    };
-
-    const handleKeyUp = e => {
-      if (e.key === 'Shift') setIsShiftDown(false);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [activeStep, pins, pendingSegment, segmentLengthInput]);
-
   // Sync initialCorners if AI finishes in background
   useEffect(() => {
     if (initialCorners && initialCorners.length >= 3) {
@@ -613,6 +580,39 @@ export default function InteractiveImageRoofTracer({
     setIsLoopClosed(false);
     setActiveStep('draw');
   };
+
+  // Keyboard listeners (Shift for Ortho, Ctrl+Z for Undo, Enter for dimension confirmation / finish)
+  useEffect(() => {
+    const handleKeyDown = e => {
+      if (e.key === 'Shift') setIsShiftDown(true);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndo();
+      } else if (e.key === 'Enter') {
+        if (pendingSegment) {
+          e.preventDefault();
+          confirmPendingSegment();
+        } else if (activeStep === 'draw' && pins.length >= 3) {
+          e.preventDefault();
+          finalizeSidesFromPins(pins);
+        }
+      } else if (e.key === 'Escape' && pendingSegment) {
+        e.preventDefault();
+        cancelPendingSegment();
+      }
+    };
+
+    const handleKeyUp = e => {
+      if (e.key === 'Shift') setIsShiftDown(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [activeStep, pins, pendingSegment, segmentLengthInput, finalizeSidesFromPins]);
 
   // Reset drawing
   const handleReset = () => {

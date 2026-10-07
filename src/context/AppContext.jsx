@@ -140,6 +140,32 @@ const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   '/admin/quotations': 'all_quotes'
 });
 
+// Safe storage parser and serializer
+const safeJsonParse = (key, fallback) => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const item = localStorage.getItem(key);
+    if (!item || item === 'undefined' || item === 'null') return fallback;
+    const parsed = JSON.parse(item);
+    return parsed ?? fallback;
+  } catch (err) {
+    console.warn(`[Sunvine Storage] Resetting corrupted key: ${key}`);
+    try {
+      localStorage.removeItem(key);
+    } catch (_) {}
+    return fallback;
+  }
+};
+
+const safeSetItem = (key, value) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  } catch (err) {
+    console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
+  }
+};
+
 const isPublicProposalRoute = () => {
   if (typeof window === 'undefined') return false;
   const search = window.location.search || '';
@@ -431,32 +457,6 @@ export const AppProvider = ({ children }) => {
       }
     }
   }, [isAuthenticated, activeTab, role]);
-  
-// Safe storage parser and serializer
-const safeJsonParse = (key, fallback) => {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const item = localStorage.getItem(key);
-    if (!item || item === 'undefined' || item === 'null') return fallback;
-    const parsed = JSON.parse(item);
-    return parsed ?? fallback;
-  } catch (err) {
-    console.warn(`[Sunvine Storage] Resetting corrupted key: ${key}`);
-    try {
-      localStorage.removeItem(key);
-    } catch (_) {}
-    return fallback;
-  }
-};
-
-const safeSetItem = (key, value) => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
-  } catch (err) {
-    console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
-  }
-};
 
   // Startup: One-time purge of legacy business entity keys from browser localStorage
   useEffect(() => {
@@ -1512,7 +1512,7 @@ const safeSetItem = (key, value) => {
     }
   };
 
-  const logActivity = (logEntry) => {
+  function logActivity(logEntry) {
     const newLog = {
       id: logEntry.id || `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
@@ -1967,13 +1967,25 @@ const safeSetItem = (key, value) => {
   };
 
   const addDealer = async (newDealer) => {
-    setDealers(prev => [newDealer, ...prev]);
-    broadcastDbEvent('SYNC_DEALERS');
     try {
-      await dealerService.createDealer(newDealer);
-      broadcastDbEvent('SYNC_DEALERS');
+      const res = await dealerService.createDealer(newDealer);
+      if (res?.success) {
+        const savedDealer = res.dealer ? {
+          ...newDealer,
+          id: res.dealer.dealer_code || res.dealer.id || newDealer.id,
+          dealerCode: res.dealer.dealer_code || newDealer.dealerCode,
+          uuid: res.dealer.id
+        } : newDealer;
+        setDealers(prev => [savedDealer, ...prev.filter(d => (d.id !== savedDealer.id && d.dealerCode !== savedDealer.dealerCode))]);
+        broadcastDbEvent('SYNC_DEALERS');
+        return { success: true, dealer: savedDealer };
+      } else {
+        console.warn('[AppContext] Failed to create dealer in DB:', res?.error);
+        return { success: false, error: res?.error || 'Failed to create dealer in database.' };
+      }
     } catch (e) {
       console.warn('[AppContext] Failed to create dealer in DB:', e);
+      return { success: false, error: e.message || 'Database error occurred while creating dealer.' };
     }
   };
 
@@ -2003,14 +2015,22 @@ const safeSetItem = (key, value) => {
   };
 
   const toggleDealerStatus = async (id) => {
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
     let nextStatus = 'Active';
-    setDealers(prev => prev.map(d => {
-      if (d.id === id) {
-        nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
-        return { ...d, status: nextStatus };
-      }
-      return d;
-    }));
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
+          return { ...d, status: nextStatus };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
+    });
     broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.updateDealer(id, { status: nextStatus });
@@ -2021,12 +2041,27 @@ const safeSetItem = (key, value) => {
   };
 
   const updateDealerMarginCap = async (id, newCap) => {
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
     const numericCap = Number(newCap);
     setDealers(prev => {
-      return prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          return { ...d, maxMarginCapPerKw: numericCap };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
     });
-    if (currentDealer?.id === id) {
-      setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanId || curCode === cleanId) {
+        setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
+      }
     }
     broadcastDbEvent('SYNC_DEALERS');
     try {
@@ -2038,9 +2073,26 @@ const safeSetItem = (key, value) => {
   };
 
   const updateDealerPassword = async (id, newPassword) => {
-    setDealers(prev => prev.map(d => d.id === id ? { ...d, password: newPassword } : d));
-    if (currentDealer?.id === id) {
-      setCurrentDealer(prev => ({ ...prev, password: newPassword }));
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          return { ...d, password: newPassword };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
+    });
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanId || curCode === cleanId) {
+        setCurrentDealer(prev => ({ ...prev, password: newPassword }));
+      }
     }
     broadcastDbEvent('SYNC_DEALERS');
     try {
@@ -2052,37 +2104,63 @@ const safeSetItem = (key, value) => {
   };
 
   const deleteDealer = async (id) => {
-    setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
-    if (currentDealer?.id === id || currentDealer?.dealerCode === id) {
-      setCurrentDealer(null);
-    }
-    // Convert attached customer files from DEALER to DIRECT_STAFF
-    setCustomerFiles(prev => prev.map(f => {
-      if (f.dealerId === id || f.dealer_id === id) {
-        customerFileService.updateCustomerFile(f.id, {
-          sourceType: 'DIRECT_STAFF',
-          source: 'DIRECT_STAFF',
-          dealerId: null,
-          dealerName: null
-        }).catch(() => {});
-        return {
-          ...f,
-          sourceType: 'DIRECT_STAFF',
-          source: 'DIRECT_STAFF',
-          dealerId: null,
-          dealerName: null
-        };
+    if (!id) return;
+    const cleanTargetId = String(id).replace(/^#/, '').trim().toLowerCase();
+
+    setDealers(prev => {
+      const filtered = prev.filter(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        return dId !== cleanTargetId && dCode !== cleanTargetId && dUuid !== cleanTargetId;
+      });
+      cacheManager.set('dealers_list', filtered);
+      return filtered;
+    });
+
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanTargetId || curCode === cleanTargetId) {
+        setCurrentDealer(null);
       }
-      return f;
-    }));
+    }
+
+    // Convert attached customer files from DEALER to DIRECT_STAFF
+    setCustomerFiles(prev => {
+      const updated = prev.map(f => {
+        const fDealerId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '').trim().toLowerCase();
+        if (fDealerId === cleanTargetId) {
+          customerFileService.updateCustomerFile(f.id, {
+            sourceType: 'DIRECT_STAFF',
+            source: 'DIRECT_STAFF',
+            dealerId: null,
+            dealerName: null
+          }).catch(() => {});
+          return {
+            ...f,
+            sourceType: 'DIRECT_STAFF',
+            source: 'DIRECT_STAFF',
+            dealerId: null,
+            dealerName: null
+          };
+        }
+        return f;
+      });
+      cacheManager.set('customer_files', updated);
+      return updated;
+    });
+
     broadcastDbEvent('SYNC_DEALERS');
     broadcastDbEvent('SYNC_FILES');
+
     try {
       await dealerService.deleteDealer(id);
       broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to delete dealer in DB:', e);
     }
+
     logActivity({
       action: 'DELETE_DEALER',
       module: 'DEALER_MANAGEMENT',
@@ -2611,7 +2689,7 @@ const safeSetItem = (key, value) => {
     setNotifications(prev => prev.filter(n => !visibleIds.includes(n.id)));
   };
 
-  const addNotification = (notif) => {
+  function addNotification(notif) {
     const newNotif = {
       id: notif.id || `notif-${Date.now()}`,
       createdAt: new Date().toISOString(),

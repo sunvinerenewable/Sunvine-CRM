@@ -32,6 +32,7 @@ export default function PricingMaster() {
     removeDealerProductRate,
     tierMargins,
     updateTierMargins,
+    pricingPresets,
     modulesList,
     setModulesList,
     invertersList,
@@ -62,6 +63,10 @@ export default function PricingMaster() {
   });
 
   const [toastMessage, setToastMessage] = useState('');
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
   const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
   const totalDealersCount = dealers?.length || 550;
 
@@ -288,11 +293,6 @@ export default function PricingMaster() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-
-  const triggerToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3500);
-  };
 
   // WhatsApp Broadcast Engine (SR-23)
   const getBroadcastMessage = () => {
@@ -3974,7 +3974,7 @@ ${origin}/?tab=pricing_master
                 <div className="text-right">
                   <span className="text-secondary block text-[11px]">Benchmark Rate</span>
                   <span className="font-mono font-bold text-primary">
-                    ₹{dealerOverrideModal.product.benchmarkPrice.toLocaleString('en-IN')} {dealerOverrideModal.product.unit}
+                    ₹{Number(dealerOverrideModal.product.benchmarkPrice || 0).toLocaleString('en-IN')} {dealerOverrideModal.product.unit}
                   </span>
                 </div>
               </div>

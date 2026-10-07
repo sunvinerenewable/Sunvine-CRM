@@ -11,7 +11,9 @@ export default function StaffDashboard() {
     updateFileStatus,
     dealers,
     getAccessibleDealers,
-    updateDealerPricing
+    updateDealerPricing,
+    pricingPresets,
+    tierMargins
   } = useApp();
 
   const { addToast } = useToast();

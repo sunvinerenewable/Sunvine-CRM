@@ -56,6 +56,9 @@ export default function SolarStructure3DViewer({
   const sunLightRef = useRef(null);
   const rendererRef = useRef(null);
   const sceneRef = useRef(null);
+  const controlsRef = useRef(null);
+  const cameraRef = useRef(null);
+  const savedCameraStateRef = useRef(null);
 
   // Animate Sun Position during simulation
   useEffect(() => {
@@ -93,10 +96,6 @@ export default function SolarStructure3DViewer({
     const displayH = whole > 12 ? whole - 12 : whole;
     return `${displayH}:${minStr} ${period}`;
   };
-
-  const controlsRef = useRef(null);
-  const cameraRef = useRef(null);
-  const savedCameraStateRef = useRef(null);
 
   const activeRoof = useMemo(() => {
     return roofConfig || DEFAULT_ROOF_CONFIG;

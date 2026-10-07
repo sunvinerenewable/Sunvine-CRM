@@ -4,7 +4,7 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList } = useApp();
+  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, pricingPresets, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -16,6 +16,7 @@ export default function DealerManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDealer, setEditingDealer] = useState(null);
   const [showTierModal, setShowTierModal] = useState(false);
+  const [credModalDealer, setCredModalDealer] = useState(null);
   const [viewMode, setViewMode] = useTableViewMode('admin_dealer_mgmt');
   const [dealerToDelete, setDealerToDelete] = useState(null);
 
@@ -32,25 +33,27 @@ export default function DealerManagement() {
     return list;
   }, [staffList]);
 
-  const handleConfirmDeleteDealer = () => {
+  const handleConfirmDeleteDealer = async () => {
     if (!dealerToDelete) return;
+    const targetDealer = dealerToDelete;
+    const targetId = targetDealer.dealerCode || targetDealer.id || targetDealer.uuid;
+    setDealerToDelete(null);
+    if (credModalDealer?.id === targetDealer.id) {
+      setCredModalDealer(null);
+    }
+    if (editingDealer?.id === targetDealer.id) {
+      setEditingDealer(null);
+      setShowAddModal(false);
+    }
     if (deleteDealer) {
-      deleteDealer(dealerToDelete.id || dealerToDelete.dealerCode);
+      await deleteDealer(targetId);
     }
     if (addToast) {
       addToast({
         title: 'Dealer Partner Deleted',
-        message: `${dealerToDelete.firmName} (${dealerToDelete.id}) was permanently removed.`,
+        message: `${targetDealer.firmName} (${targetDealer.id || targetDealer.dealerCode}) was permanently removed.`,
         type: 'info'
       });
-    }
-    setDealerToDelete(null);
-    if (credModalDealer?.id === dealerToDelete.id) {
-      setCredModalDealer(null);
-    }
-    if (editingDealer?.id === dealerToDelete.id) {
-      setEditingDealer(null);
-      setShowAddModal(false);
     }
   };
 
@@ -135,7 +138,6 @@ export default function DealerManagement() {
   const [formError, setFormError] = useState('');
 
   // Password / Credentials Modal for Existing Dealers
-  const [credModalDealer, setCredModalDealer] = useState(null);
   const [editMobile, setEditMobile] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
@@ -405,7 +407,7 @@ export default function DealerManagement() {
                     (dealer.tier || '').toLowerCase().includes('silver') ? 'Silver Installer (Quarterly Cap: 500 kW)' :
                     'Gold EPC Partner (Quarterly Cap: 1.5 MW)';
     setNewTier(tierStr);
-    setNewCap(dealer.maxMarginCapPerKw ? dealer.maxMarginCapPerKw.toLocaleString('en-IN') : '5,000');
+    setNewCap(dealer.maxMarginCapPerKw ? Number(dealer.maxMarginCapPerKw).toLocaleString('en-IN') : '5,000');
     setNewPassword(dealer.password || 'Sunvine@2026');
     setFormError('');
     setShowAddModal(true);
@@ -427,7 +429,7 @@ export default function DealerManagement() {
     setShowAddModal(false);
   };
 
-  const handleSaveDealer = (e) => {
+  const handleSaveDealer = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const cleanMobile = (newMobile || '').replace(/\D/g, '').slice(0, 10);
     if (!newFirm.trim() || !newContact.trim() || cleanMobile.length !== 10) {
@@ -591,7 +593,19 @@ export default function DealerManagement() {
       };
 
       if (addDealer) {
-        addDealer(newDealerObj);
+        const createRes = await addDealer(newDealerObj);
+        if (createRes && createRes.success === false) {
+          const errMsg = createRes.error || 'Failed to save dealer account to database.';
+          setFormError(errMsg);
+          if (addToast) {
+            addToast({
+              title: 'Onboarding Failed',
+              message: errMsg,
+              type: 'error'
+            });
+          }
+          return;
+        }
       }
       if (addNotification) {
         addNotification({
@@ -600,6 +614,13 @@ export default function DealerManagement() {
           type: 'success',
           icon: 'person_add',
           audience: 'admin'
+        });
+      }
+      if (addToast) {
+        addToast({
+          title: 'Dealer Onboarded',
+          message: `${newFirm.trim()} (${finalDealerId}) onboarded and synced to database.`,
+          type: 'success'
         });
       }
     }
@@ -1438,9 +1459,9 @@ export default function DealerManagement() {
                         </div>
                         <div className="text-right">
                           <div className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor}`}>
-                            <span className="material-symbols-outlined text-[12px]">military_tech</span> {d.tier || conf.tierName}
+                            <span className="material-symbols-outlined text-[12px]">military_tech</span> {d.tier || conf?.tierName || 'Gold Partner'}
                           </div>
-                          <div className="text-[10px] text-secondary mt-0.5">Cap: ₹{(d.maxMarginCapPerKw || conf.maxMarginCapPerKw).toLocaleString('en-IN')}/kW</div>
+                          <div className="text-[10px] text-secondary mt-0.5">Cap: ₹{Number(d.maxMarginCapPerKw || conf?.maxMarginCapPerKw || 0).toLocaleString('en-IN')}/kW</div>
                         </div>
                       </div>
 
@@ -1672,10 +1693,10 @@ export default function DealerManagement() {
                                 </div>
                               )}
                               <div className="text-[11px] text-secondary mt-1 leading-tight">
-                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{(d.pricingConfig?.pricingMode === 'custom' ? d.pricingConfig.customMarginPerKw : conf.defaultMarginPerKw).toLocaleString('en-IN')}/kW</strong>
+                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{Number(d.pricingConfig?.pricingMode === 'custom' ? (d.pricingConfig.customMarginPerKw || 0) : (conf?.defaultMarginPerKw || 0)).toLocaleString('en-IN')}/kW</strong>
                               </div>
                               <div className="text-[10px] text-secondary mt-0.5 leading-tight whitespace-nowrap">
-                                Cap: ₹{(d.maxMarginCapPerKw || conf.maxMarginCapPerKw).toLocaleString('en-IN')}/kW
+                                Cap: ₹{Number(d.maxMarginCapPerKw || conf?.maxMarginCapPerKw || 0).toLocaleString('en-IN')}/kW
                               </div>
                             </>
                           );
@@ -2284,7 +2305,7 @@ export default function DealerManagement() {
                       const baseMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
                       return (
                         <span className="text-[11px] text-secondary mt-1 block">
-                          Tier baseline: ₹{baseMargin.toLocaleString('en-IN')}/kW
+                          Tier baseline: ₹{Number(baseMargin || 0).toLocaleString('en-IN')}/kW
                         </span>
                       );
                     })()}

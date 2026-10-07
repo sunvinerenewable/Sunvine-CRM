@@ -127,12 +127,16 @@ export function verifyJwt(token) {
 
 /** Generate secure Set-Cookie header for HTTP-only cookie */
 export function createAuthCookieHeader(token, maxAgeSeconds = DEFAULT_EXPIRATION_SECONDS) {
-  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  return `sunvine_auth_token=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`;
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
+  const isLocalhost = !process.env.VERCEL && (process.env.NODE_ENV !== 'production' || !process.env.PG_CA);
+  const isSecure = isVercelProd || (!isLocalhost && process.env.NODE_ENV === 'production');
+  return `sunvine_auth_token=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`;
 }
 
 /** Generate clear Set-Cookie header for logout */
 export function createClearAuthCookieHeader() {
-  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  return `sunvine_auth_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`;
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
+  const isLocalhost = !process.env.VERCEL && (process.env.NODE_ENV !== 'production' || !process.env.PG_CA);
+  const isSecure = isVercelProd || (!isLocalhost && process.env.NODE_ENV === 'production');
+  return `sunvine_auth_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`;
 }
