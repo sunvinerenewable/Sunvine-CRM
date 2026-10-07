@@ -214,10 +214,7 @@ test('SEC-009 & SEC-029: Storage presign enforces tenant prefix on object keys',
       res._body?.path.startsWith('dealer/DLR-777/customer_docs/'),
       `Presigned path "${res._body?.path}" must start with dealer/DLR-777/customer_docs/`
     );
-    assert.ok(
-      res._body?.bucket === process.env.R2_BUCKET_NAME || res._body?.bucket === 'sunvine-documents',
-      `Bucket must match configured R2_BUCKET_NAME (got ${res._body?.bucket})`
-    );
+    assert.equal(res._body?.bucket, 'sunvine-documents-vault');
   }
 });
 
