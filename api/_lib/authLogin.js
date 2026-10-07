@@ -119,14 +119,20 @@ export default async function handler(req, res) {
 
     if (cleanRole === 'admin') {
       const isEmail = cleanIdentifier.includes('@');
+      const cleanMobile = cleanIdentifier.replace(/\D/g, '').slice(-10);
       let candidates = [];
 
       try {
         const table = 'admin_accounts';
-        const sql = isEmail
-          ? `SELECT id, email, full_name, role, password_hash, mobile_number, status FROM ${table} WHERE LOWER(email) = LOWER($1)`
-          : `SELECT id, email, full_name, role, password_hash, mobile_number, status FROM ${table} WHERE mobile_number = $1`;
-        const qRes = await query(sql, [cleanIdentifier]);
+        const sql = `
+          SELECT id, email, full_name, role, password_hash, mobile_number, status 
+          FROM ${table} 
+          WHERE LOWER(email) = LOWER($1) 
+             OR mobile_number = $1 
+             OR mobile_number = $2 
+             OR RIGHT(mobile_number, 10) = $2
+        `;
+        const qRes = await query(sql, [cleanIdentifier, cleanMobile]);
         candidates = qRes.rows || [];
       } catch (dbErr) {
         console.error('[auth/login] PostgreSQL admin lookup failed:', dbErr.message);
@@ -135,13 +141,7 @@ export default async function handler(req, res) {
           let qRes = await db
             .from('admin_accounts')
             .select('id, email, full_name, role, password_hash, mobile_number, status')
-            .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier);
-          if ((!qRes.data || qRes.data.length === 0) && !qRes.error) {
-            qRes = await db
-              .from('admin_users')
-              .select('id, email, full_name, role, password_hash, mobile_number, status')
-              .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier);
-          }
+            .or(`email.ilike.${cleanIdentifier},mobile_number.eq.${cleanIdentifier},mobile_number.eq.${cleanMobile}`);
           candidates = qRes.data || [];
         } catch (supErr) {
           console.error('[auth/login] Supabase admin lookup also failed:', supErr.message);
