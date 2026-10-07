@@ -26,38 +26,48 @@ export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
 export const PRESET_MAKES = [
   {
     id: 'adani_bifi',
-    name: 'Adani Bi-Fi',
-    fullName: 'Adani Bi-Fi 550W Vertex Mono PERC Bifacial',
+    name: 'Adani 555W Bi-Fi',
+    fullName: 'Adani 555W Vertex Mono PERC Bifacial',
     brand: 'Adani Solar',
-    watt: 550,
+    watt: 555,
     priceKey: 'adaniBiFiPrice',
     badge: 'Tier-1 ALMM',
-    tech: '550W Bi-Fi TOPCon'
+    tech: '555W Bi-Fi'
   },
   {
     id: 'aps_bifi',
-    name: 'APS Bi-Fi',
-    fullName: 'APS Bi-Fi 550W TOPCon Dual Glass',
+    name: 'APS 550W Bi-Fi',
+    fullName: 'APS 550W TOPCon Dual Glass',
     brand: 'APS Solar',
     watt: 550,
     priceKey: 'apsBiFiPrice',
     badge: 'Dual Glass',
-    tech: '550W Bi-Fi TOPCon'
+    tech: '550W Bi-Fi'
   },
   {
     id: 'rayzone',
-    name: 'Rayzone',
+    name: 'Rayzone 550W',
     fullName: 'Rayzone 550W Bi-Fi TOPCon High-Efficiency',
     brand: 'Rayzone Solar',
     watt: 550,
     priceKey: 'rayzonePrice',
     badge: 'High Yield',
-    tech: '550W Bi-Fi TOPCon'
+    tech: '550W Bi-Fi'
+  },
+  {
+    id: 'waaree_540',
+    name: 'Waaree 540W Mono',
+    fullName: 'Waaree 540W Mono PERC Half-Cut Module',
+    brand: 'Waaree Energies',
+    watt: 540,
+    priceKey: 'waaree540Price',
+    badge: 'Mono PERC',
+    tech: '540W Mono PERC'
   },
   {
     id: 'waaree_585',
     name: 'Waaree 585W TOPCon',
-    fullName: 'Waaree 585W TOPCon Bifacial (ALMM List-I)',
+    fullName: 'Waaree 585W TOPCon Bifacial (HyperIon)',
     brand: 'Waaree Energies',
     watt: 585,
     priceKey: 'waaree585Price',
@@ -330,8 +340,13 @@ export default function CreateQuotation() {
   // Preset Turnkey Base Price from the database matrix for current kW & make
   const activePresetBasePrice = useMemo(() => {
     if (!matchedSlab || !currentPresetMake) return 0;
-    const price = matchedSlab[currentPresetMake.priceKey];
-    return Number(price) || 0;
+    const camelVal = matchedSlab[currentPresetMake.priceKey];
+    if (camelVal !== undefined && camelVal !== null) return Number(camelVal) || 0;
+    // Snake_case DB fallback
+    const snakeKey = currentPresetMake.priceKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    const snakeVal = matchedSlab[snakeKey];
+    if (snakeVal !== undefined && snakeVal !== null) return Number(snakeVal) || 0;
+    return 0;
   }, [matchedSlab, currentPresetMake]);
 
   // User-edited price entry override (null = use activePresetBasePrice)
@@ -393,10 +408,12 @@ export default function CreateQuotation() {
   });
 
   // Auto-calculated System Capacity (kW)
+  // Accurately calculated from exact module count * panel make watt peak (e.g. 4 modules * 555W = 2.22 kW, 4 * 600W = 2.40 kW, 4 * 585W = 2.34 kW)
+  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules) || panelQuantity) : panelQuantity;
   const kw = isMarginBased
-    ? Number(selectedPresetKw)
+    ? Number(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(2))
     : Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
-  const moduleCount = isMarginBased ? (Number(matchedSlab?.noOfModules) || panelQuantity) : panelQuantity;
+  const moduleCount = actualModuleCount;
   const rooftopAreaSqFt = Math.round(kw * 64);
 
   // Synchronize Margin-Based state with component hardware state

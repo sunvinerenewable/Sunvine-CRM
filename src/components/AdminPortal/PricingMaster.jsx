@@ -88,6 +88,7 @@ export default function PricingMaster() {
     adaniBiFiPrice: '',
     apsBiFiPrice: '',
     rayzonePrice: '',
+    waaree540Price: '',
     topcon585CapacityKW: '',
     waaree585Price: '',
     topcon600CapacityKW: '',
@@ -252,11 +253,12 @@ export default function PricingMaster() {
     if (row.inverter) return row.inverter;
     return '-';
   };
-  const getAdaniPrice = (row) => row.adaniBiFiPrice ?? row.adaniBiFi ?? 0;
-  const getApsBiFiPrice = (row) => row.apsBiFiPrice ?? row.apsBiFi ?? 0;
-  const getRayzonePrice = (row) => row.rayzonePrice ?? row.rayzone ?? 0;
-  const getWaareePrice = (row) => row.waaree585Price ?? row.waaree585Topcon ?? 0;
-  const getApsTopconPrice = (row) => row.apsTopcon600Price ?? row.apsTopcon600 ?? 0;
+  const getAdaniPrice = (row) => row.adaniBiFiPrice ?? row.adaniBiFi ?? row.adani_bifi_price ?? 0;
+  const getApsBiFiPrice = (row) => row.apsBiFiPrice ?? row.apsBiFi ?? row.aps_bifi_price ?? 0;
+  const getRayzonePrice = (row) => row.rayzonePrice ?? row.rayzone ?? row.rayzone_price ?? 0;
+  const getWaaree540Price = (row) => row.waaree540Price ?? row.waaree540 ?? row.waaree_540_price ?? 0;
+  const getWaareePrice = (row) => row.waaree585Price ?? row.waaree585Topcon ?? row.waaree_585_price ?? 0;
+  const getApsTopconPrice = (row) => row.apsTopcon600Price ?? row.apsTopcon600 ?? row.aps_topcon_600_price ?? 0;
 
   const formatINR = (val) => {
     if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -398,6 +400,7 @@ ${origin}/?tab=pricing_master
       adaniBiFiPrice: '',
       apsBiFiPrice: '',
       rayzonePrice: '',
+      waaree540Price: '',
       topcon585CapacityKW: '',
       waaree585Price: '',
       topcon600CapacityKW: '',
@@ -416,6 +419,7 @@ ${origin}/?tab=pricing_master
       adaniBiFiPrice: getAdaniPrice(row),
       apsBiFiPrice: getApsBiFiPrice(row),
       rayzonePrice: getRayzonePrice(row),
+      waaree540Price: getWaaree540Price(row),
       topcon585CapacityKW: row.topcon585CapacityKW ?? '',
       waaree585Price: getWaareePrice(row),
       topcon600CapacityKW: row.topcon600CapacityKW ?? '',
@@ -438,6 +442,7 @@ ${origin}/?tab=pricing_master
       adaniBiFiPrice: Number(slabForm.adaniBiFiPrice) || 0,
       apsBiFiPrice: Number(slabForm.apsBiFiPrice) || 0,
       rayzonePrice: Number(slabForm.rayzonePrice) || 0,
+      waaree540Price: Number(slabForm.waaree540Price) || 0,
       topcon585CapacityKW: Number(slabForm.topcon585CapacityKW) || Number(slabForm.capacityKW),
       waaree585Price: Number(slabForm.waaree585Price) || 0,
       topcon600CapacityKW: Number(slabForm.topcon600CapacityKW) || Number(slabForm.capacityKW),
@@ -1330,19 +1335,22 @@ ${origin}/?tab=pricing_master
                         <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">KW</th>
                         <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">Modules</th>
                         <th className="px-2 py-2 text-xs text-right leading-tight max-w-[90px]">
-                          Adani<br/>Bi-Fi
+                          Adani 555W<br/><span className="text-[10px] font-normal text-emerald-400">Bi-Fi</span>
                         </th>
                         <th className="px-2 py-2 text-xs text-right leading-tight max-w-[90px]">
-                          APS<br/>Bi-Fi
+                          APS 550W<br/><span className="text-[10px] font-normal text-teal-400">Bi-Fi</span>
                         </th>
                         <th className="px-2 py-2 text-xs text-right leading-tight max-w-[85px]">
-                          Rayzone
+                          Rayzone 550W<br/><span className="text-[10px] font-normal text-emerald-400">Bi-Fi</span>
+                        </th>
+                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[95px]">
+                          Waaree 540W<br/><span className="text-[10px] font-normal text-blue-400">Mono PERC</span>
                         </th>
                         <th className="px-2 py-2 text-xs text-right leading-tight max-w-[105px]">
-                          Waaree 585W<br/>TOPCon
+                          Waaree 585W<br/><span className="text-[10px] font-normal text-amber-400">TOPCon</span>
                         </th>
                         <th className="px-2 py-2 text-xs text-right leading-tight max-w-[105px]">
-                          APS TOPCon<br/>600W
+                          APS 600W<br/><span className="text-[10px] font-normal text-cyan-400">TOPCon</span>
                         </th>
                         <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">Actions</th>
                       </tr>
@@ -1379,7 +1387,7 @@ ${origin}/?tab=pricing_master
                             )}
                           </td>
 
-                          {/* Adani Bi-Fi */}
+                          {/* Adani 555W Bi-Fi */}
                           <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
                             {isInlineEditingMatrix ? (
                               <input
@@ -1393,7 +1401,7 @@ ${origin}/?tab=pricing_master
                             )}
                           </td>
 
-                          {/* APS Bi-Fi */}
+                          {/* APS 550W Bi-Fi */}
                           <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
                             {isInlineEditingMatrix ? (
                               <input
@@ -1407,7 +1415,7 @@ ${origin}/?tab=pricing_master
                             )}
                           </td>
 
-                          {/* Rayzone */}
+                          {/* Rayzone 550W */}
                           <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
                             {isInlineEditingMatrix ? (
                               <input
@@ -1418,6 +1426,20 @@ ${origin}/?tab=pricing_master
                               />
                             ) : (
                               <span className="whitespace-nowrap">₹ {Number(getRayzonePrice(row)).toLocaleString('en-IN')}</span>
+                            )}
+                          </td>
+
+                          {/* Waaree 540W Mono PERC */}
+                          <td className="px-2 py-2.5 text-right font-mono font-semibold text-blue-600 whitespace-nowrap tabular-nums">
+                            {isInlineEditingMatrix ? (
+                              <input
+                                type="number"
+                                value={getWaaree540Price(row)}
+                                onChange={(e) => handleMatrixCellChange(idx, 'waaree540Price', e.target.value)}
+                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono text-blue-600 font-semibold"
+                              />
+                            ) : (
+                              <span className="whitespace-nowrap">₹ {Number(getWaaree540Price(row)).toLocaleString('en-IN')}</span>
                             )}
                           </td>
 
@@ -3272,7 +3294,7 @@ ${origin}/?tab=pricing_master
 
                   <div>
                     <label className="block text-xs font-medium text-secondary mb-1">
-                      Rayzone Package (₹)
+                      Rayzone 550W Package (₹)
                     </label>
                     <div className="relative flex items-center">
                       <span className="absolute left-3 text-secondary font-bold text-xs">₹</span>
@@ -3282,6 +3304,22 @@ ${origin}/?tab=pricing_master
                         onChange={(e) => setSlabForm({ ...slabForm, rayzonePrice: e.target.value })}
                         placeholder="e.g. 183150"
                         className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-semibold text-on-surface focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-blue-600 mb-1">
+                      Waaree 540W Package (₹)
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-blue-600 font-bold text-xs">₹</span>
+                      <input
+                        type="number"
+                        value={slabForm.waaree540Price}
+                        onChange={(e) => setSlabForm({ ...slabForm, waaree540Price: e.target.value })}
+                        placeholder="e.g. 155844"
+                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-blue-300 rounded-lg text-xs font-mono font-semibold text-blue-700 focus:outline-none focus:border-blue-500"
                       />
                     </div>
                   </div>
