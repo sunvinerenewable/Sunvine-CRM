@@ -2190,7 +2190,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingAdmin}
-                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
+                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
                     value={adminForm.password}
                     onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
@@ -2393,10 +2393,11 @@ export default function AdminSettings() {
                     <button
                       type="button"
                       onClick={() => {
-                        const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                        const salesStaffList = (staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification'));
+                        const firstStaff = salesStaffList.find(s => (s.department || '').toLowerCase() === 'sales') || salesStaffList[0] || (staffListState || [])[0];
                         setDealerForm(prev => ({
                           ...prev,
-                          assignedStaffId: firstStaff?.id || 'STF-801',
+                          assignedStaffId: firstStaff?.id || '',
                           assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
                         }));
                       }}
@@ -2430,7 +2431,7 @@ export default function AdminSettings() {
                         }}
                         className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                       >
-                        {(staffListState || []).map(s => (
+                        {(staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).map(s => (
                           <option key={s.id} value={s.id}>
                             {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
                           </option>
@@ -2447,7 +2448,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingDealer}
-                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
+                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
                     value={dealerForm.password}
                     onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -2603,7 +2604,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingStaff}
-                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
+                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
                     value={staffForm.password}
                     onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"

@@ -1983,7 +1983,7 @@ ${origin}/?tab=pricing_master
                     { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
                     { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
                   ].map((tier) => {
-                    const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                    const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                     return (
                       <div key={tier.key} className="p-4 rounded-xl border border-surface-container-highest bg-surface-container-low/50 space-y-3">
                         <div className="flex items-center justify-between">

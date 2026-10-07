@@ -5,7 +5,6 @@ import {
   DEFAULT_INVERTERS,
   INITIAL_DEALERS,
   INITIAL_QUOTATIONS,
-  DEFAULT_NOTIFICATIONS,
   PDF_BOS_PRICE_MATRIX,
   PDF_BOM_SPECIFICATIONS,
   SUNVINE_OFFICIAL_PROFILE
@@ -17,8 +16,6 @@ import {
   resolveCapacityBom
 } from '../data/standardBomData';
 import {
-  DEFAULT_STAFF,
-  DEFAULT_CUSTOMER_FILES,
   getAssignedStaffForDealer
 } from '../data/staffData';
 import {
@@ -185,6 +182,7 @@ const getInitialTabFromUrl = () => {
 
 export const AppProvider = ({ children }) => {
   // Authentication & Session State
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('sunvine_auth') === 'true';
   });
@@ -508,14 +506,14 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_current_dealer', null) || null;
   });
 
-  // Master Pricing Presets (Configurable by Admin & synced with PDF)
-  const [pricingMaster, setPricingMaster] = useState(DEFAULT_PRICING_MASTER);
+  // Master Pricing Presets (Configurable by Admin & synced with database)
+  const [pricingMaster, setPricingMaster] = useState(null);
 
   // Benchmark Quotation Presets (Admin & Dealer Sync)
-  const [pricingPresets, setPricingPresets] = useState(() => cacheManager.get('pricing_presets', DEFAULT_PRICING_MASTER.quotationPresets));
+  const [pricingPresets, setPricingPresets] = useState(() => cacheManager.get('pricing_presets', null));
 
   // Commission Margins & Protective Caps by Dealer Tier
-  const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', DEFAULT_PRICING_MASTER.tierMargins));
+  const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', null));
 
   // Admin Master Governance & Policy Settings
   const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
@@ -615,7 +613,7 @@ const safeSetItem = (key, value) => {
 
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
-    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
+    return safeJsonParse('sunvine_current_staff', null) || null;
   });
 
   // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
@@ -660,7 +658,8 @@ const safeSetItem = (key, value) => {
       }
 
       const tierLower = (d.tier || '').toLowerCase();
-      const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
+      const tierKey = tierLower.includes('diamond') ? 'diamond' : tierLower.includes('platinum') ? 'platinum' : tierLower.includes('silver') ? 'silver' : 'gold';
+      const dynamicDefaultMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? (d.pricingConfig?.customMarginPerKw ?? 0);
       return {
         ...d,
         assignedStaffId,
@@ -671,9 +670,9 @@ const safeSetItem = (key, value) => {
           assignedStaffId,
           assignedStaffName,
           pricingMode: d.pricingConfig?.pricingMode || 'standard',
-          customBaseRatePerWp: d.pricingConfig?.customBaseRatePerWp || 18.00,
-          customBaseRatePerKw: d.pricingConfig?.customBaseRatePerKw || 58000,
-          customMarginPerKw: d.pricingConfig?.customMarginPerKw || defaultTierMargin,
+          customBaseRatePerWp: d.pricingConfig?.customBaseRatePerWp ?? null,
+          customBaseRatePerKw: d.pricingConfig?.customBaseRatePerKw ?? null,
+          customMarginPerKw: d.pricingConfig?.customMarginPerKw !== undefined ? d.pricingConfig.customMarginPerKw : dynamicDefaultMargin,
           customDiscountPercent: d.pricingConfig?.customDiscountPercent || 0,
           customNotes: d.pricingConfig?.customNotes || ''
         }
@@ -1263,7 +1262,7 @@ const safeSetItem = (key, value) => {
       name: (newItem.name || 'New Hardware Component').trim(),
       description: newItem.description || '',
       unit: newItem.unit || 'Nos',
-      defaultRate: Number(newItem.defaultRate || newItem.rate) || 100,
+      defaultRate: Number(newItem.defaultRate !== undefined ? newItem.defaultRate : (newItem.rate !== undefined ? newItem.rate : 0)) || 0,
       make: newItem.make || 'Approved Brand',
       specs: newItem.specs || '',
       gstRate: Number(newItem.gstRate !== undefined ? newItem.gstRate : 18),
@@ -1403,11 +1402,13 @@ const safeSetItem = (key, value) => {
     startTransition(() => {
       setIsAuthenticated(true);
       setRole(userRole);
+      setCurrentUser(userProfile ? { ...userProfile, role: userRole } : { role: userRole });
       if (userRole === 'admin') {
         setActiveTab('admin_dashboard');
         pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
       } else if (userRole === 'staff') {
         const isVerification = Boolean(
+          userProfile?.is_verification ||
           String(userProfile?.department || '').toLowerCase() === 'verification' ||
           String(userProfile?.role || '').toLowerCase().includes('verification')
         );
@@ -1428,24 +1429,55 @@ const safeSetItem = (key, value) => {
   const logout = () => {
     startTransition(() => {
       setIsAuthenticated(false);
+      setCurrentUser(null);
       setAuthView('dealer_login', true);
     });
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    localStorage.removeItem('sunvine_current_dealer');
     if (typeof window !== 'undefined') {
       window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
     }
     authService.logout().catch(() => {});
   };
 
-  // The UI flag (localStorage) can outlive the HttpOnly JWT cookie (24h). Validate on load;
-  // only a definite 401 logs the user out (network errors are ignored so offline use still works).
+  // Enterprise Authentication & Server Verification (SEC-014)
+  // On mount, strictly verify session cookie with server. localStorage role is only a transient hint until verified.
   useEffect(() => {
-    if (!isAuthenticated) return;
-    fetch('/api/auth/verify', { credentials: 'include' })
-      .then(res => { if (res.status === 401) logout(); })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let isMounted = true;
+    async function verifyAuthSession() {
+      try {
+        const res = await fetch('/api/auth/verify', { method: 'GET', credentials: 'include' });
+        if (!isMounted) return;
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data?.authenticated && data?.user) {
+            setIsAuthenticated(true);
+            setCurrentUser(data.user);
+            if (data.user.role) {
+              setRole(data.user.role);
+            }
+            if (data.user.role === 'dealer') {
+              setCurrentDealer(prev => ({ ...(prev || {}), ...data.user }));
+            } else if (data.user.role === 'staff') {
+              setCurrentStaff(prev => ({ ...(prev || {}), ...data.user }));
+            }
+            return;
+          }
+        }
+        if (res.status === 401 || !res.ok) {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          localStorage.removeItem('sunvine_auth');
+          localStorage.removeItem('sunvine_current_staff');
+          localStorage.removeItem('sunvine_current_dealer');
+        }
+      } catch (err) {
+        console.warn('[AppContext] Session verification notice:', err);
+      }
+    }
+    verifyAuthSession();
+    return () => { isMounted = false; };
   }, []);
 
   // Staff and Customer File Actions
@@ -2900,6 +2932,8 @@ const safeSetItem = (key, value) => {
   };
 
   const contextValue = useMemo(() => ({
+    currentUser,
+    setCurrentUser,
     isAuthenticated,
     authView,
     setAuthView,
@@ -3052,6 +3086,7 @@ const safeSetItem = (key, value) => {
     // Solar Loan Partner Banks
     solarBanks
   }), [
+    currentUser,
     isAuthenticated,
     authView,
     role,

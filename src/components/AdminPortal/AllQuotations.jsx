@@ -5,8 +5,28 @@ import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 import ConvertQuotationModal from '../DealerPortal/ConvertQuotationModal';
 
 export default function AllQuotations() {
-  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
+  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, tierMargins, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
   const { addToast } = useToast();
+
+  const getDealerForQuote = (q) => {
+    return (dealers || []).find(d => d.id === q.dealerId || d.dealerCode === q.dealerId || d.id === q.dealer_id || d.dealerCode === q.dealer_code);
+  };
+
+  const getDealerCapForQuote = (q) => {
+    const d = getDealerForQuote(q);
+    const tierKey = (d?.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (d?.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (d?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    return d?.maxMarginCapPerKw || d?.pricingConfig?.customMarginPerKw || tierMargins?.[tierKey]?.maxMarginCapPerKw || 8000;
+  };
+
+  const getStoredSubsidy = (q) => {
+    if (q.subsidyAmount !== undefined && q.subsidyAmount !== null) return Number(q.subsidyAmount);
+    if (q.subsidy_amount !== undefined && q.subsidy_amount !== null) return Number(q.subsidy_amount);
+    if (q.subsidy !== undefined && q.subsidy !== null) return Number(q.subsidy);
+    return 0;
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
   const [marginProfileFilter, setMarginProfileFilter] = useState('all');
@@ -181,10 +201,15 @@ export default function AllQuotations() {
     if (activeTabFilter === 'discom' && !statusLower.includes('discom') && !statusLower.includes('sanctioned') && !statusLower.includes('review') && !statusLower.includes('pending')) return false;
     if (activeTabFilter === 'draft' && !statusLower.includes('draft') && !statusLower.includes('stale')) return false;
 
-    const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 0);
-    if (marginProfileFilter === 'high' && marginPerKw <= 4500) return false;
-    if (marginProfileFilter === 'flagged' && marginPerKw <= 5500) return false;
-    if (marginProfileFilter === 'compliant' && marginPerKw > 5500) return false;
+    const capacityKw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || kw || 5.0);
+    const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * capacityKw : 0));
+    const marginPerKw = capacityKw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / capacityKw)) : 0;
+    const dealerCap = getDealerCapForQuote(q);
+    const isFlagged = Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marginPerKw > dealerCap));
+
+    if (marginProfileFilter === 'high' && marginPerKw <= (dealerCap ? Math.round(dealerCap * 0.75) : 4500)) return false;
+    if (marginProfileFilter === 'flagged' && !isFlagged) return false;
+    if (marginProfileFilter === 'compliant' && isFlagged) return false;
 
     // Date range filter
     if (startDate || endDate) {
@@ -235,15 +260,16 @@ export default function AllQuotations() {
 
     const avg = totalKwWithMargin > 0 ? Math.round(totalMarginRupees / totalKwWithMargin) : 0;
 
-    // Flag any quote with margin > ₹5,500/kW as non-compliant
+    // Flag quotes where margin exceeds dealer cap
     const flaggedCount = quotesWithMargin.filter(q => {
       const kw = parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0);
       const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
       const marg = kw > 0 ? Math.round(totalMargin / kw) : 0;
-      return marg > 5500;
+      const dealerCap = getDealerCapForQuote(q);
+      return Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marg > dealerCap));
     }).length;
 
-    const status = flaggedCount > 0 ? 'flagged' : avg > 5000 ? 'review' : 'compliant';
+    const status = flaggedCount > 0 ? 'flagged' : 'compliant';
     return { avgMarginPerKw: avg, avgMarginComplianceStatus: status };
   })();
 
@@ -306,10 +332,10 @@ export default function AllQuotations() {
         escapeCsv(q.inverterType || 'Sunvine Smart Series MPPT Grid-Tied'),
         escapeCsv(q.baseRatePerKW || 59800),
         escapeCsv(q.baseTotalAmount || Math.round((q.systemCapacityKW || 5) * 59800)),
-        escapeCsv(q.dealerMarginPerKW || 4500),
-        escapeCsv(q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 22500)),
+        escapeCsv(q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 0)),
+        escapeCsv(q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 0)),
         escapeCsv(q.grandTotalCustomer || q.totalAmount),
-        escapeCsv(q.subsidyAmount || (q.systemCapacityKW <= 2 ? 60000 : 78000)),
+        escapeCsv(getStoredSubsidy(q)),
         escapeCsv(q.netPayable || q.grandTotalCustomer),
         escapeCsv(q.status)
       ];
@@ -865,7 +891,9 @@ export default function AllQuotations() {
                   const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
                   const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                   const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
-                  const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
+                  const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 0;
+                  const dealerCap = getDealerCapForQuote(q);
+                  const isFlagged = Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marginPerKw > dealerCap));
                   const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                   const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
@@ -1010,8 +1038,9 @@ export default function AllQuotations() {
                 const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
                 const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                 const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
-                const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
-                const isFlagged = marginPerKw > 6000;
+                const dealerCap = getDealerCapForQuote(q);
+                const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : (dealerCap || 0);
+                const isFlagged = dealerCap > 0 ? marginPerKw > dealerCap : false;
                 const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                 const ownership = getQuotationOwnership(q);
 
@@ -1157,14 +1186,15 @@ export default function AllQuotations() {
       {selectedAuditQuote && (() => {
         const q = selectedAuditQuote;
         const capKw = Number(q.systemCapacityKW || q.capacity || 5);
-        const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && capKw ? Math.round(q.dealerTotalMargin / capKw) : 3200);
+        const dealerCap = getDealerCapForQuote(q);
+        const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && capKw ? Math.round(q.dealerTotalMargin / capKw) : (dealerCap || 0));
         const totalMargin = q.dealerTotalMargin || (marginPerKw * capKw);
         const totalAmt = q.grandTotalCustomer || q.totalAmount || 0;
         const baseCost = q.baseCost || (totalAmt - totalMargin);
-        const baseRate = capKw > 0 ? Math.round(baseCost / capKw) : 59800;
-        const subsidy = q.subsidyAmount || (capKw <= 2 ? 60000 : 78000);
+        const baseRate = capKw > 0 ? Math.round(baseCost / capKw) : 0;
+        const subsidy = getStoredSubsidy(q);
         const netPayable = q.netPayable || Math.max(0, totalAmt - subsidy);
-        const isFlagged = marginPerKw > 6000 || q.isFlagged;
+        const isFlagged = (dealerCap > 0 && marginPerKw > dealerCap) || q.isFlagged;
         const quoteRef = q.quoteNumber || q.id || 'QUOTATION';
 
         const handleApproveMargin = () => {
@@ -1231,8 +1261,8 @@ export default function AllQuotations() {
                   </div>
                   <p className="mt-0.5 text-secondary">
                     {isFlagged
-                      ? `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW exceeds the standard Gujarat solar margin threshold of ₹6,000/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
-                      : `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW is within standard partner tier guidelines (≤ ₹6,000/kW). Eligible for automated EPC dispatch.`}
+                      ? `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW exceeds the assigned margin threshold of ₹${dealerCap.toLocaleString('en-IN')}/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
+                      : `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW is within partner tier guidelines (≤ ₹${dealerCap.toLocaleString('en-IN')}/kW). Eligible for automated EPC dispatch.`}
                   </p>
                 </div>
               </div>
