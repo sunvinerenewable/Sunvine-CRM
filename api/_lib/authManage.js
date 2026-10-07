@@ -2,6 +2,7 @@ import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
 import { hashBcrypt, validatePasswordComplexity } from './security.js';
 import { applyCors } from './cors.js';
 import { requireAdmin } from './requireAuth.js';
+import { generateCollisionFreeDealerCode, generateCollisionFreeStaffCode } from './adminHandlers.js';
 
 ensureEnvLoaded();
 
@@ -67,9 +68,23 @@ export default async function handler(req, res) {
         if (!passCheck.valid) {
           return res.status(422).json({ error: passCheck.error });
         }
+
+        // Check duplicate collision
+        if (dealerCode) {
+          const collision = await query('SELECT id FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Dealer with code "${dealerCode}" or mobile "${cleanMobile}" already exists.` });
+          }
+        } else {
+          const collision = await query('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Dealer with mobile "${cleanMobile}" already exists.` });
+          }
+        }
+
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
-        const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
+        const code = dealerCode || (await generateCollisionFreeDealerCode());
         const cleanTier = tier || 'Gold EPC Partner';
         const cleanCap = maxMarginCapPerKw !== undefined && maxMarginCapPerKw !== null && maxMarginCapPerKw !== ''
           ? Number(maxMarginCapPerKw)
@@ -95,24 +110,6 @@ export default async function handler(req, res) {
             password_hash, city, state, discom, tier, max_margin_cap_per_kw,
             status, gst_number, pan_number, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW(), NOW())
-          ON CONFLICT (dealer_code) DO UPDATE SET
-            firm_name = EXCLUDED.firm_name,
-            contact_person = EXCLUDED.contact_person,
-            mobile_number = EXCLUDED.mobile_number,
-            email = EXCLUDED.email,
-            password_hash = EXCLUDED.password_hash,
-            city = EXCLUDED.city,
-            state = EXCLUDED.state,
-            discom = EXCLUDED.discom,
-            tier = EXCLUDED.tier,
-            max_margin_cap_per_kw = EXCLUDED.max_margin_cap_per_kw,
-            status = EXCLUDED.status,
-            gst_number = EXCLUDED.gst_number,
-            pan_number = EXCLUDED.pan_number,
-            assigned_staff_id = EXCLUDED.assigned_staff_id,
-            assigned_staff_name = EXCLUDED.assigned_staff_name,
-            pricing_config = EXCLUDED.pricing_config,
-            updated_at = NOW()
           RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name;
         `;
 
@@ -247,102 +244,57 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Staff name is required.' });
         }
 
-        const staffId = id || `STF-${String(Math.floor(100 + Math.random() * 899))}`;
-        const staffRole = role || 'Field Sales Executive';
-        const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
-        const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
+        // Duplicate check
+        if (id) {
+          const collision = await query('SELECT id FROM staff_accounts WHERE id = $1 OR phone = $2 OR mobile_number = $2', [id, cleanPhone]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Staff with ID "${id}" or phone "${cleanPhone}" already exists.` });
+          }
+        } else {
+          const collision = await query('SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1', [cleanPhone]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Staff with phone "${cleanPhone}" already exists.` });
+          }
+        }
+
         const passCheck = validatePasswordComplexity(password);
         if (!passCheck.valid) {
           return res.status(422).json({ error: passCheck.error });
         }
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
+        const staffId = id || (await generateCollisionFreeStaffCode());
+        const staffRole = role || 'Field Sales Executive';
+        const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
+        const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
 
-        // Check if an account already exists with this phone or ID
-        let existingId = null;
-        try {
-          const checkRes = await query(
-            'SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1 OR id = $2 LIMIT 1',
-            [cleanPhone, staffId]
-          );
-          if (checkRes.rows && checkRes.rows.length > 0) {
-            existingId = checkRes.rows[0].id;
-          }
-        } catch (_) {}
-
-        let staffRecord = null;
-        if (existingId) {
-          const updateSql = `
-            UPDATE staff_accounts SET
-              name = $1,
-              phone = $2,
-              mobile_number = $2,
-              email = $3,
-              role = $4,
-              department = $5,
-              zone = $6,
-              city = $7,
-              status = $8,
-              password_hash = $9,
-              updated_at = NOW()
-            WHERE id = $10
-            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
-          `;
-          const qRes = await query(updateSql, [
-            name.trim(),
-            cleanPhone,
-            cleanEmail,
-            staffRole,
-            finalDepartment,
-            zone || 'Gujarat',
-            city || 'Ahmedabad',
-            cleanStatus,
-            passwordHash,
-            existingId
-          ]);
-          staffRecord = qRes.rows?.[0];
-        } else {
-          const insertSql = `
-            INSERT INTO staff_accounts (
-              id, name, phone, mobile_number, email, role, department, zone, city,
-              status, password_hash, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-            ON CONFLICT (id) DO UPDATE SET
-              name = EXCLUDED.name,
-              phone = EXCLUDED.phone,
-              mobile_number = EXCLUDED.mobile_number,
-              email = EXCLUDED.email,
-              role = EXCLUDED.role,
-              department = EXCLUDED.department,
-              zone = EXCLUDED.zone,
-              city = EXCLUDED.city,
-              status = EXCLUDED.status,
-              password_hash = EXCLUDED.password_hash,
-              updated_at = NOW()
-            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
-          `;
-          const qRes = await query(insertSql, [
-            staffId,
-            name.trim(),
-            cleanPhone,
-            cleanPhone,
-            cleanEmail,
-            staffRole,
-            finalDepartment,
-            zone || 'Gujarat',
-            city || 'Ahmedabad',
-            cleanStatus,
-            passwordHash
-          ]);
-          staffRecord = qRes.rows?.[0];
-        }
+        const insertSql = `
+          INSERT INTO staff_accounts (
+            id, name, phone, mobile_number, email, role, department, zone, city,
+            status, password_hash, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+          RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
+        `;
+        const qRes = await query(insertSql, [
+          staffId,
+          name.trim(),
+          cleanPhone,
+          cleanPhone,
+          cleanEmail,
+          staffRole,
+          finalDepartment,
+          zone || 'Gujarat',
+          city || 'Ahmedabad',
+          cleanStatus,
+          passwordHash
+        ]);
 
         return res.status(200).json({
           success: true,
           message: `${isVerification ? 'Verification Desk' : 'Staff'} account created successfully.`,
-          staff: staffRecord || { id: staffId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole }
+          staff: qRes.rows?.[0] || { id: staffId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole }
         });
       }
 

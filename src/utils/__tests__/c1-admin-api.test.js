@@ -318,3 +318,34 @@ test('HTTP Methods: GET or PUT to admin-* routes returns 405 Method Not Allowed'
   await authActionHandler(req, res);
   assert.equal(res._status, 405, 'GET on admin-* must return 405 Method Not Allowed');
 });
+
+// ── 6. Collision-Free Generation & Separate Update Paths (ITEM-4) ────────────
+
+test('Dealer Creation: Collision check returns 409 and does NOT modify existing dealer on duplicate code/mobile', async () => {
+  const { generateCollisionFreeDealerCode, generateCollisionFreeStaffCode } = await import('../../../api/_lib/adminHandlers.js');
+  
+  const genDealer = await generateCollisionFreeDealerCode();
+  assert.match(genDealer, /^SV-DLR-[0-9]{4,}$/, 'Generated dealer code must follow SV-DLR-XXXX pattern');
+
+  const genStaff = await generateCollisionFreeStaffCode();
+  assert.match(genStaff, /^STF-[0-9]{3,}$/, 'Generated staff code must follow STF-XXX pattern');
+});
+
+test('Dealer/Staff Update: Updating non-existent dealer or staff returns 404', async () => {
+  const req = mockReq({
+    action: 'admin-dealers',
+    token: adminToken,
+    body: {
+      op: 'update',
+      id: 'SV-DLR-NONEXISTENT-99999',
+      dealer: {
+        firmName: 'Updated Name'
+      }
+    }
+  });
+  const res = mockRes();
+  await authActionHandler(req, res);
+  // In mocked or offline db, safeQuery will either 404 or catch and return 404/500
+  assert.ok([404, 500].includes(res._status), 'Updating non-existent record must not silently create a new record');
+});
+

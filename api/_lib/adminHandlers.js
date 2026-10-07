@@ -34,6 +34,60 @@ async function safeQuery(sql, params = []) {
   }
 }
 
+export async function generateCollisionFreeDealerCode() {
+  let seq = 1001;
+  try {
+    const res = await safeQuery(`
+      SELECT dealer_code FROM dealer_accounts 
+      WHERE dealer_code ~ '^SV-DLR-[0-9]+$' 
+      ORDER BY NULLIF(regexp_replace(dealer_code, '\\D', '', 'g'), '')::bigint DESC 
+      LIMIT 1
+    `);
+    if (res?.rows?.[0]?.dealer_code) {
+      const match = res.rows[0].dealer_code.match(/\d+/);
+      if (match) seq = parseInt(match[0], 10) + 1;
+    }
+  } catch (_) {}
+
+  while (true) {
+    const candidate = `SV-DLR-${String(seq).padStart(4, '0')}`;
+    try {
+      const check = await safeQuery('SELECT id FROM dealer_accounts WHERE dealer_code = $1', [candidate]);
+      if (!check?.rows?.length) return candidate;
+    } catch (_) {
+      return candidate;
+    }
+    seq++;
+  }
+}
+
+export async function generateCollisionFreeStaffCode() {
+  let seq = 101;
+  try {
+    const res = await safeQuery(`
+      SELECT id FROM staff_accounts 
+      WHERE id ~ '^STF-[0-9]+$' 
+      ORDER BY NULLIF(regexp_replace(id, '\\D', '', 'g'), '')::bigint DESC 
+      LIMIT 1
+    `);
+    if (res?.rows?.[0]?.id) {
+      const match = res.rows[0].id.match(/\d+/);
+      if (match) seq = parseInt(match[0], 10) + 1;
+    }
+  } catch (_) {}
+
+  while (true) {
+    const candidate = `STF-${String(seq).padStart(3, '0')}`;
+    try {
+      const check = await safeQuery('SELECT id FROM staff_accounts WHERE id = $1', [candidate]);
+      if (!check?.rows?.length) return candidate;
+    } catch (_) {
+      return candidate;
+    }
+    seq++;
+  }
+}
+
 // ── 1. Admin Dealers Handlers ────────────────────────────────────────────────
 
 export async function handleAdminDealers(req, res) {
@@ -105,11 +159,95 @@ export async function handleAdminDealers(req, res) {
         }
       }
 
+      case 'create':
+      case 'update':
       case 'upsert': {
         if (!dealer) {
           return res.status(400).json({ error: 'Dealer payload is required.' });
         }
 
+        const targetId = id || dealer.id;
+        const isUpdate = op === 'update' || (op === 'upsert' && Boolean(targetId));
+
+        if (isUpdate) {
+          // Check if dealer exists
+          const existingRes = await safeQuery('SELECT id, dealer_code, password_hash FROM dealer_accounts WHERE id::text = $1 OR dealer_code = $1', [String(targetId)]);
+          if (!existingRes?.rows?.length) {
+            return res.status(404).json({ error: `Dealer "${targetId}" not found for update.` });
+          }
+          const existing = existingRes.rows[0];
+
+          let passwordHash = existing.password_hash;
+          if (dealer.password !== undefined && dealer.password !== null && String(dealer.password).trim() !== '') {
+            const passCheck = validatePasswordComplexity(dealer.password);
+            if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+            passwordHash = hashBcrypt(String(dealer.password).trim(), 10);
+          }
+
+          const cleanMobile = dealer.mobile ? String(dealer.mobile).replace(/\D/g, '').slice(-10) : null;
+          const staffId = dealer.assignedStaffId || 'STF-DIRECT';
+          const staffName = staffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (dealer.assignedStaffName || 'Sunvine Sales Staff');
+          const finalPricingConfig = typeof dealer.pricingConfig === 'object' && dealer.pricingConfig !== null
+            ? JSON.stringify({ ...dealer.pricingConfig, assignedStaffId: staffId, assignedStaffName: staffName })
+            : JSON.stringify({ assignedStaffId: staffId, assignedStaffName: staffName });
+
+          const updateSql = `
+            UPDATE dealer_accounts SET
+              firm_name = COALESCE($2, firm_name),
+              contact_person = COALESCE($3, contact_person),
+              mobile_number = COALESCE($4, mobile_number),
+              email = COALESCE($5, email),
+              city = COALESCE($6, city),
+              state = COALESCE($7, state),
+              discom = COALESCE($8, discom),
+              tier = COALESCE($9, tier),
+              max_margin_cap_per_kw = COALESCE($10, max_margin_cap_per_kw),
+              status = COALESCE($11, status),
+              address = COALESCE($12, address),
+              gst_number = COALESCE($13, gst_number),
+              pan_number = COALESCE($14, pan_number),
+              assigned_staff_id = $15,
+              assigned_staff_name = $16,
+              pricing_config = $17::jsonb,
+              password_hash = $18,
+              updated_at = NOW()
+            WHERE id::text = $1 OR dealer_code = $1
+            RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
+                      city, state, discom, tier, max_margin_cap_per_kw, status,
+                      assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
+          `;
+
+          const qRes = await safeQuery(updateSql, [
+            String(targetId),
+            dealer.firmName ? dealer.firmName.trim() : null,
+            dealer.contactPerson ? dealer.contactPerson.trim() : null,
+            cleanMobile,
+            dealer.email ? dealer.email.trim() : null,
+            dealer.city || null,
+            dealer.state || null,
+            dealer.discom || null,
+            dealer.tier || null,
+            dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null ? Number(dealer.maxMarginCapPerKw) : null,
+            dealer.status ? dealer.status.toLowerCase() : null,
+            dealer.address || null,
+            dealer.gstin || null,
+            dealer.pan || null,
+            staffId,
+            staffName,
+            finalPricingConfig,
+            passwordHash
+          ]);
+
+          const updated = qRes.rows?.[0];
+          await invalidateCaches([
+            `dealer:rates:${existing.dealer_code}`,
+            `dealer:rates:${existing.id}`,
+            'catalog:all'
+          ]);
+          return res.status(200).json({ success: true, dealer: updated });
+        }
+
+        // CREATE PATH: Plain INSERT with collision check & 409 Conflict
         const {
           dealerCode,
           firmName,
@@ -139,22 +277,34 @@ export async function handleAdminDealers(req, res) {
           return res.status(400).json({ error: 'Firm name and contact person are required.' });
         }
 
+        // Check for collision on code or mobile
+        if (dealerCode) {
+          const collision = await safeQuery('SELECT id, dealer_code FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Dealer with code "${dealerCode}" or mobile "${cleanMobile}" already exists.` });
+          }
+        } else {
+          const collision = await safeQuery('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Dealer with mobile "${cleanMobile}" already exists.` });
+          }
+        }
+
         let passwordHash = null;
         if (password !== undefined && password !== null && String(password).trim() !== '') {
           const passCheck = validatePasswordComplexity(password);
-          if (!passCheck.valid) {
-            return res.status(422).json({ error: passCheck.error });
-          }
-          const plainPassword = String(password).trim();
-          passwordHash = hashBcrypt(plainPassword, 10);
+          if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+          passwordHash = hashBcrypt(String(password).trim(), 10);
+        } else {
+          return res.status(422).json({ error: 'Password is required to create a dealer account.' });
         }
 
-        const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
+        const code = dealerCode || (await generateCollisionFreeDealerCode());
         const cleanTier = tier || 'Gold EPC Partner';
         const cleanCap = maxMarginCapPerKw !== undefined && maxMarginCapPerKw !== null && maxMarginCapPerKw !== ''
           ? Number(maxMarginCapPerKw)
           : null;
-        const cleanStatus = (status || 'Active').toLowerCase();
+        const cleanStatus = (status || 'active').toLowerCase();
         const cleanEmail = email || `${cleanMobile}@sunvinedealer.in`;
         const cleanCity = city || 'Ahmedabad';
         const cleanState = state || 'Gujarat';
@@ -167,7 +317,7 @@ export async function handleAdminDealers(req, res) {
           ? JSON.stringify({ ...pricingConfig, assignedStaffId: staffId, assignedStaffName: staffName })
           : JSON.stringify({ assignedStaffId: staffId, assignedStaffName: staffName });
 
-        const sql = `
+        const insertSql = `
           INSERT INTO dealer_accounts (
             dealer_code, firm_name, contact_person, mobile_number, email,
             city, state, discom, tier, max_margin_cap_per_kw,
@@ -179,31 +329,12 @@ export async function handleAdminDealers(req, res) {
             $11, $12, $13, $14, $15, $16,
             $17::jsonb, $18, NOW(), NOW()
           )
-          ON CONFLICT (dealer_code) DO UPDATE SET
-            firm_name = EXCLUDED.firm_name,
-            contact_person = EXCLUDED.contact_person,
-            mobile_number = EXCLUDED.mobile_number,
-            email = EXCLUDED.email,
-            city = EXCLUDED.city,
-            state = EXCLUDED.state,
-            discom = EXCLUDED.discom,
-            tier = EXCLUDED.tier,
-            max_margin_cap_per_kw = EXCLUDED.max_margin_cap_per_kw,
-            status = EXCLUDED.status,
-            address = COALESCE(EXCLUDED.address, dealer_accounts.address),
-            gst_number = COALESCE(EXCLUDED.gst_number, dealer_accounts.gst_number),
-            pan_number = COALESCE(EXCLUDED.pan_number, dealer_accounts.pan_number),
-            assigned_staff_id = EXCLUDED.assigned_staff_id,
-            assigned_staff_name = EXCLUDED.assigned_staff_name,
-            pricing_config = EXCLUDED.pricing_config,
-            password_hash = COALESCE(EXCLUDED.password_hash, dealer_accounts.password_hash),
-            updated_at = NOW()
           RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
                     city, state, discom, tier, max_margin_cap_per_kw, status,
                     assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at;
         `;
 
-        const qRes = await safeQuery(sql, [
+        const qRes = await safeQuery(insertSql, [
           code,
           firmName.trim(),
           contactPerson.trim(),
@@ -225,12 +356,9 @@ export async function handleAdminDealers(req, res) {
         ]);
 
         const saved = qRes.rows?.[0];
-        const savedId = saved?.id || code;
-
-        // Invalidate Redis cache
         await invalidateCaches([
           `dealer:rates:${code}`,
-          `dealer:rates:${savedId}`,
+          `dealer:rates:${saved?.id || code}`,
           'catalog:all'
         ]);
 
@@ -340,11 +468,76 @@ export async function handleAdminStaff(req, res) {
         }
       }
 
+      case 'create':
+      case 'update':
       case 'upsert': {
         if (!staff) {
           return res.status(400).json({ error: 'Staff payload is required.' });
         }
 
+        const targetId = id || staff.id;
+        const isUpdate = op === 'update' || (op === 'upsert' && Boolean(targetId));
+
+        if (isUpdate) {
+          const existingRes = await safeQuery('SELECT id, password_hash FROM staff_accounts WHERE id = $1', [String(targetId)]);
+          if (!existingRes?.rows?.length) {
+            return res.status(404).json({ error: `Staff member "${targetId}" not found for update.` });
+          }
+          const existing = existingRes.rows[0];
+
+          let passwordHash = existing.password_hash;
+          if (staff.password !== undefined && staff.password !== null && String(staff.password).trim() !== '') {
+            const passCheck = validatePasswordComplexity(staff.password);
+            if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+            passwordHash = hashBcrypt(String(staff.password).trim(), 10);
+          }
+
+          const cleanPhone = staff.phone ? String(staff.phone).replace(/\D/g, '').slice(-10) : null;
+          const staffRole = staff.role || null;
+          const isVerif = staff.is_verification === true || (staffRole && staffRole.toLowerCase().includes('verification')) || String(staff.department || '').toLowerCase().includes('verification');
+          const finalDepartment = isVerif ? 'verification' : (staff.department ? String(staff.department).toLowerCase() : null);
+
+          const updateSql = `
+            UPDATE staff_accounts SET
+              name = COALESCE($2, name),
+              phone = COALESCE($3, phone),
+              mobile_number = COALESCE($3, mobile_number),
+              email = COALESCE($4, email),
+              role = COALESCE($5, role),
+              department = COALESCE($6, department),
+              zone = COALESCE($7, zone),
+              city = COALESCE($8, city),
+              status = COALESCE($9, status),
+              password_hash = $10,
+              updated_at = NOW()
+            WHERE id = $1
+            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
+          `;
+
+          const qRes = await safeQuery(updateSql, [
+            String(targetId),
+            staff.name ? staff.name.trim() : null,
+            cleanPhone,
+            staff.email ? staff.email.trim() : null,
+            staffRole,
+            finalDepartment,
+            staff.zone || null,
+            staff.city || null,
+            staff.status ? staff.status.toLowerCase() : null,
+            passwordHash
+          ]);
+
+          const updated = qRes.rows?.[0];
+          return res.status(200).json({
+            success: true,
+            staff: {
+              ...updated,
+              is_verification: isVerif
+            }
+          });
+        }
+
+        // CREATE PATH: Plain INSERT with collision check & 409 Conflict
         const { id: staffId, name, phone, email, role, department, zone, city, password, status, is_verification } = staff;
         const cleanPhone = String(phone || '').replace(/\D/g, '').slice(-10);
 
@@ -355,44 +548,44 @@ export async function handleAdminStaff(req, res) {
           return res.status(400).json({ error: 'Staff name is required.' });
         }
 
+        // Collision check
+        if (staffId) {
+          const collision = await safeQuery('SELECT id FROM staff_accounts WHERE id = $1 OR phone = $2 OR mobile_number = $2', [staffId, cleanPhone]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Staff with ID "${staffId}" or phone "${cleanPhone}" already exists.` });
+          }
+        } else {
+          const collision = await safeQuery('SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1', [cleanPhone]);
+          if (collision?.rows?.length > 0) {
+            return res.status(409).json({ error: `Staff with phone "${cleanPhone}" already exists.` });
+          }
+        }
+
         let passwordHash = null;
         if (password !== undefined && password !== null && String(password).trim() !== '') {
           const passCheck = validatePasswordComplexity(password);
-          if (!passCheck.valid) {
-            return res.status(422).json({ error: passCheck.error });
-          }
-          const plainPassword = String(password).trim();
-          passwordHash = hashBcrypt(plainPassword, 10);
+          if (!passCheck.valid) return res.status(422).json({ error: passCheck.error });
+          passwordHash = hashBcrypt(String(password).trim(), 10);
+        } else {
+          return res.status(422).json({ error: 'Password is required to create a staff account.' });
         }
 
-        const finalId = staffId || `STF-${String(Math.floor(100 + Math.random() * 899))}`;
+        const finalId = staffId || (await generateCollisionFreeStaffCode());
         const staffRole = role || 'Field Sales Executive';
         const isVerif = is_verification === true || staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
         const finalDepartment = isVerif ? 'verification' : (String(department || 'sales').toLowerCase());
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
 
-        const sql = `
+        const insertSql = `
           INSERT INTO staff_accounts (
             id, name, phone, mobile_number, email, role, department, zone, city,
             status, password_hash, created_at, updated_at
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-          ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            phone = EXCLUDED.phone,
-            mobile_number = EXCLUDED.mobile_number,
-            email = EXCLUDED.email,
-            role = EXCLUDED.role,
-            department = EXCLUDED.department,
-            zone = EXCLUDED.zone,
-            city = EXCLUDED.city,
-            status = EXCLUDED.status,
-            password_hash = COALESCE(EXCLUDED.password_hash, staff_accounts.password_hash),
-            updated_at = NOW()
           RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status, created_at, updated_at;
         `;
 
-        const qRes = await safeQuery(sql, [
+        const qRes = await safeQuery(insertSql, [
           finalId,
           name.trim(),
           cleanPhone,
