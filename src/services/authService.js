@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import bcrypt from 'bcryptjs';
 
 /**
  * Enterprise Authentication Service
@@ -50,17 +49,15 @@ async function callLoginApi(payload) {
     });
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      // Received HTML or non-JSON from local Vite dev server without /api middleware
-      return null;
+      return { ok: false, error: 'Authentication service unavailable.' };
     }
     const data = await res.json().catch(() => null);
-    if (!data) return null;
+    if (!data) return { ok: false, error: 'Invalid response from server.' };
     if (res.ok && data?.success) return { ok: true, data };
     if (res.status === 429) return { ok: false, isRateLimited: true, error: data?.error || 'Too many attempts.' };
     return { ok: false, error: data?.error || 'Authentication failed.' };
   } catch {
-    // API unreachable (local dev without server) — fallback handled below
-    return null;
+    return { ok: false, error: 'Authentication service unavailable. Please check your network connection.' };
   }
 }
 
@@ -92,10 +89,6 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'admin', identifier: cleanIdentifier, password });
-    if (!apiRes) {
-      // Fallback: try Supabase RPC (dev without /api server)
-      return this._rpcLogin('admin', cleanIdentifier, password, rateKey);
-    }
     if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, user: apiRes.data.user }; }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
@@ -112,7 +105,6 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'dealer', identifier: cleanMobile, password });
-    if (!apiRes) return this._rpcLogin('dealer', cleanMobile, password, rateKey);
     if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, dealer: apiRes.data.user }; }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
@@ -128,40 +120,10 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'staff', identifier: cleanMobile, password, staffRole: selectedRole });
-    if (!apiRes) return this._rpcLogin('staff', cleanMobile, password, rateKey, selectedRole);
     if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, staff: apiRes.data.user }; }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };
-  },
-
-  /** RPC fallback for local dev without the API server running.
-   * ⚠️ NEVER runs in production — the raw password would travel through the anon-key client. */
-  async _rpcLogin(userType, identifier, password, rateKey, staffRole) {
-    // Hard block in production — surface a clear error instead of bypassing API security
-    if (import.meta.env.PROD) {
-      recordClientFail(rateKey);
-      return { success: false, error: 'Authentication service unavailable. Please try again.' };
-    }
-    try {
-      const { data, error } = await supabase.rpc('verify_user_credentials', {
-        p_user_type: userType,
-        p_identifier: identifier,
-        p_password: password
-      });
-      if (!error && data?.success) {
-        clearClientLimit(rateKey);
-        const user = data.user || data.dealer || data.staff || data.admin;
-        if (userType === 'dealer') return { success: true, dealer: user };
-        if (userType === 'staff') return { success: true, staff: user };
-        return { success: true, user };
-      }
-      recordClientFail(rateKey);
-      return { success: false, error: data?.error || 'Invalid credentials.' };
-    } catch (err) {
-      recordClientFail(rateKey);
-      return { success: false, error: 'Authentication service unavailable.' };
-    }
   },
 
   async updatePassword(userType, identifier, newPassword) {
@@ -169,7 +131,6 @@ export const authService = {
       return { success: false, error: 'Password cannot be empty.' };
     }
 
-    // 1. Try server-side secure manage-credentials endpoint
     try {
       const action = userType === 'dealer' ? 'update-dealer-credentials' : 'update-staff-credentials';
       const payload = userType === 'dealer'
@@ -182,51 +143,11 @@ export const authService = {
         credentials: 'include',
         body: JSON.stringify({ action, payload })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) return { success: true };
-      }
-    } catch (_) {}
-
-    // 2. Client fallback with Bcrypt hashing
-    try {
-      const passwordHash = bcrypt.hashSync(newPassword, 10);
-      if (userType === 'dealer') {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(identifier || ''));
-        let query = supabase
-          .from('dealer_accounts')
-          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() });
-
-        if (isUuid) {
-          query = query.eq('id', identifier);
-        } else if (String(identifier).startsWith('SV-DLR')) {
-          query = query.eq('dealer_code', identifier);
-        } else {
-          query = query.eq('mobile_number', identifier);
-        }
-
-        const { error } = await query;
-
-        if (error) {
-          console.warn('[authService] Dealer password update warning:', error.message);
-          return { success: false, error: error.message };
-        }
-        return { success: true };
-      } else {
-        const { error } = await supabase
-          .from('staff_accounts')
-          .update({ password_hash: passwordHash, updated_at: new Date().toISOString() })
-          .or(`id.eq.${identifier},phone.eq.${identifier}`);
-
-        if (error) {
-          console.warn('[authService] Staff password update warning:', error.message);
-          return { success: false, error: error.message };
-        }
-        return { success: true };
-      }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) return { success: true };
+      return { success: false, error: data?.error || 'Failed to update password.' };
     } catch (err) {
-      console.error('[authService] Password update exception:', err);
-      return { success: false, error: 'Failed to update password.' };
+      return { success: false, error: 'Authentication service unavailable.' };
     }
   }
 };
