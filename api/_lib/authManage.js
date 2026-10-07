@@ -1,5 +1,5 @@
 import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
-import { hashBcrypt } from './security.js';
+import { hashBcrypt, validatePasswordComplexity } from './security.js';
 import { applyCors } from './cors.js';
 import { requireAdmin } from './requireAuth.js';
 
@@ -63,8 +63,9 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Firm name and contact person are required.' });
         }
 
-        if (!password || String(password).trim().length < 10) {
-          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
         }
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
@@ -161,8 +162,9 @@ export default async function handler(req, res) {
         }
 
         if (password !== undefined && password !== null && String(password).trim() !== '') {
-          if (String(password).trim().length < 10) {
-            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
           }
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
@@ -249,8 +251,9 @@ export default async function handler(req, res) {
         const staffRole = role || 'Field Sales Executive';
         const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
         const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
-        if (!password || String(password).trim().length < 10) {
-          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
         }
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
@@ -401,8 +404,9 @@ export default async function handler(req, res) {
         }
 
         if (password !== undefined && password !== null && String(password).trim() !== '') {
-          if (String(password).trim().length < 10) {
-            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
           }
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
@@ -468,9 +472,10 @@ export default async function handler(req, res) {
         if (cleanMobile.length !== 10) {
           return res.status(400).json({ error: 'Valid 10-digit mobile number is required.' });
         }
-        // Require a strong password; no default (SEC-001)
-        if (!password || String(password).trim().length < 10) {
-          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        // Require a valid password (min 6 chars + 1 special char)
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
         }
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
@@ -515,12 +520,14 @@ export default async function handler(req, res) {
           updates.push(`role = $${idx++}`);
           params.push(role);
         }
-        if (password && String(password).trim().length >= 10) {
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
+          }
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
-        } else if (password) {
-          return res.status(422).json({ error: 'Password must be at least 10 characters.' });
         }
 
         if (updates.length === 0) {

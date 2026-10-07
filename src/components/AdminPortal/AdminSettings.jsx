@@ -2190,7 +2190,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingAdmin}
-                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
+                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={adminForm.password}
                     onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
@@ -2448,7 +2448,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingDealer}
-                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
+                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={dealerForm.password}
                     onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -2604,7 +2604,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingStaff}
-                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'e.g. Min 10 characters'}
+                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={staffForm.password}
                     onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"

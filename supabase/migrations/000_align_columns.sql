@@ -45,7 +45,12 @@ UPDATE public.customer_files
 SET system_kw = solar_system_kw
 WHERE system_kw IS NULL AND solar_system_kw IS NOT NULL;
 
--- ── 6. Sequences & RPCs ──────────────────────────────────────────────────────
+-- ── 6. audit_logs ────────────────────────────────────────────────────────────
+ALTER TABLE public.audit_logs
+  ADD COLUMN IF NOT EXISTS actor_email VARCHAR(255),
+  ADD COLUMN IF NOT EXISTS user_agent TEXT;
+
+-- ── 7. Sequences & RPCs ──────────────────────────────────────────────────────
 CREATE SEQUENCE IF NOT EXISTS public.quotation_seq START WITH 801;
 
 CREATE OR REPLACE FUNCTION public.next_quotation_seq()

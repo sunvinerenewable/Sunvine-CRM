@@ -143,9 +143,9 @@ test('Admin Auth Guard: staff role tokens return 403 Forbidden on admin-*', asyn
   }
 });
 
-// ── 2. Password Length Validation (Enforces >= 10 Chars) ────────────────────
+// ── 2. Password Length & Complexity Validation (Enforces >= 6 Chars + Special Char) ──
 
-test('Password Enforcement: admin-dealers upsert rejects weak password (< 10 chars) with 422', async () => {
+test('Password Enforcement: admin-dealers upsert rejects weak password (< 6 chars or no special char) with 422', async () => {
   const req = mockReq({
     action: 'admin-dealers',
     token: adminToken,
@@ -162,11 +162,11 @@ test('Password Enforcement: admin-dealers upsert rejects weak password (< 10 cha
   });
   const res = mockRes();
   await authActionHandler(req, res);
-  assert.equal(res._status, 422, 'Password < 10 chars must return 422 Unprocessable Entity');
-  assert.match(res._body?.error, /at least 10 characters/i);
+  assert.equal(res._status, 422, 'Password < 6 chars must return 422 Unprocessable Entity');
+  assert.match(res._body?.error, /at least 6 characters|special character/i);
 });
 
-test('Password Enforcement: admin-staff upsert rejects weak password (< 10 chars) with 422', async () => {
+test('Password Enforcement: admin-staff upsert rejects weak password (< 6 chars or no special char) with 422', async () => {
   const req = mockReq({
     action: 'admin-staff',
     token: adminToken,
@@ -181,11 +181,11 @@ test('Password Enforcement: admin-staff upsert rejects weak password (< 10 chars
   });
   const res = mockRes();
   await authActionHandler(req, res);
-  assert.equal(res._status, 422, 'Staff password < 10 chars must return 422');
-  assert.match(res._body?.error, /at least 10 characters/i);
+  assert.equal(res._status, 422, 'Staff password < 6 chars must return 422');
+  assert.match(res._body?.error, /at least 6 characters|special character/i);
 });
 
-test('Password Enforcement: manage-credentials create-dealer rejects password < 10 chars with 422', async () => {
+test('Password Enforcement: manage-credentials create-dealer rejects password < 6 chars with 422', async () => {
   const req = mockReq({
     action: 'manage-credentials',
     token: adminToken,
@@ -202,10 +202,10 @@ test('Password Enforcement: manage-credentials create-dealer rejects password < 
   const res = mockRes();
   await manageCredentialsHandler(req, res);
   assert.equal(res._status, 422);
-  assert.match(res._body?.error, /at least 10 characters/i);
+  assert.match(res._body?.error, /at least 6 characters|special character/i);
 });
 
-test('Password Enforcement: manage-credentials create-staff rejects password < 10 chars with 422', async () => {
+test('Password Enforcement: manage-credentials create-staff rejects password < 6 chars with 422', async () => {
   const req = mockReq({
     action: 'manage-credentials',
     token: adminToken,
@@ -221,7 +221,7 @@ test('Password Enforcement: manage-credentials create-staff rejects password < 1
   const res = mockRes();
   await manageCredentialsHandler(req, res);
   assert.equal(res._status, 422);
-  assert.match(res._body?.error, /at least 10 characters/i);
+  assert.match(res._body?.error, /at least 6 characters|special character/i);
 });
 
 // ── 3. Credential Sanitization: No password_hash or access_code ─────────────

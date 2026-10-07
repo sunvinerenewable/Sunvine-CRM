@@ -1,5 +1,5 @@
 import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
-import { hashBcrypt } from './security.js';
+import { hashBcrypt, validatePasswordComplexity } from './security.js';
 import { redisDel, redisFlushPattern } from './redis.js';
 import { checkDistributedRateLimit, getClientIp } from './rateLimiter.js';
 
@@ -141,10 +141,11 @@ export async function handleAdminDealers(req, res) {
 
         let passwordHash = null;
         if (password !== undefined && password !== null && String(password).trim() !== '') {
-          const plainPassword = String(password).trim();
-          if (plainPassword.length < 10) {
-            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
           }
+          const plainPassword = String(password).trim();
           passwordHash = hashBcrypt(plainPassword, 10);
         }
 
@@ -356,10 +357,11 @@ export async function handleAdminStaff(req, res) {
 
         let passwordHash = null;
         if (password !== undefined && password !== null && String(password).trim() !== '') {
-          const plainPassword = String(password).trim();
-          if (plainPassword.length < 10) {
-            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
           }
+          const plainPassword = String(password).trim();
           passwordHash = hashBcrypt(plainPassword, 10);
         }
 
