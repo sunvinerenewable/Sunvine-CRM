@@ -182,11 +182,19 @@ export default async function handler(req, res) {
 
     // ── 1. Cloudflare R2 Upload Path (Primary) ────────────────────────────────
     if (r2Client) {
-      const command = new PutObjectCommand({
+      const putParams = {
         Bucket: R2_BUCKET,
         Key: filePath,
         ContentType: effectiveType,
-      });
+      };
+      if (fileSize !== undefined && fileSize !== null) {
+        const numSize = Number(fileSize);
+        if (!isNaN(numSize) && numSize > 0) {
+          putParams.ContentLength = numSize;
+        }
+      }
+
+      const command = new PutObjectCommand(putParams);
 
       const signedUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
       const publicBase = R2_PUBLIC_DOMAIN ? R2_PUBLIC_DOMAIN.replace(/\/+$/, '') : `https://${R2_BUCKET}.${CF_ACCOUNT_ID}.r2.dev`;

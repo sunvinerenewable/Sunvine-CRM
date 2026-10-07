@@ -271,3 +271,19 @@ test('SEC-029: Storage presign rejects files exceeding 2 MB size limit (400)', a
   assert.equal(res._status, 400);
   assert.match(res._body?.error || '', /2 MB limit/i);
 });
+
+// ── 5. ITEM-7: HEAD Object & Document Registration Validation ───────────────
+
+test('ITEM-7: validateRegisteredDocuments handles empty or valid document structures', async () => {
+  const { validateRegisteredDocuments } = await import('../../../api/customer-files.js');
+
+  const validResult = await validateRegisteredDocuments({
+    electricityBill: 'dealer/DLR-1/uploads/bill.pdf',
+    sitePhotos: ['dealer/DLR-1/uploads/photo1.jpg']
+  });
+  assert.equal(validResult.valid, true);
+
+  const emptyResult = await validateRegisteredDocuments(null);
+  assert.equal(emptyResult.valid, true);
+});
+

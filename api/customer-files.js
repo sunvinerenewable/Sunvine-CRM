@@ -1,9 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { requireUser } from './_lib/requireAuth.js';
 import { applyCors } from './_lib/cors.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp'
+]);
+const MAX_DOC_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -39,6 +48,56 @@ export function extractAllDocPaths(documents) {
     }
   }
   return [...new Set(paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '')).filter(Boolean))];
+}
+
+export async function validateRegisteredDocuments(documents, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
+  const docPaths = extractAllDocPaths(documents);
+  if (!docPaths || docPaths.length === 0) return { valid: true };
+
+  const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
+  const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
+  if (!CF_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || CF_ACCOUNT_ID.includes('your_')) {
+    return { valid: true };
+  }
+
+  try {
+    const r2 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY
+      }
+    });
+
+    for (const key of docPaths) {
+      if (key.startsWith('http://') || key.startsWith('https://')) continue;
+      try {
+        const head = await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        const size = head.ContentLength || 0;
+        const type = (head.ContentType || '').toLowerCase();
+
+        if (size > MAX_DOC_SIZE_BYTES) {
+          await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => null);
+          return { valid: false, error: `Document "${key}" exceeds maximum 2MB size limit (${Math.round(size / 1024)} KB).` };
+        }
+
+        if (type && !ALLOWED_MIME_TYPES.has(type)) {
+          await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => null);
+          return { valid: false, error: `Document "${key}" has invalid MIME type "${type}". Only PDF and images are allowed.` };
+        }
+      } catch (headErr) {
+        if (headErr?.name !== 'NotFound' && headErr?.$metadata?.httpStatusCode !== 404) {
+          console.warn(`[customer-files] HeadObject check warning for ${key}:`, headErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[customer-files] Document HEAD validation error:', err?.message);
+  }
+
+  return { valid: true };
 }
 
 async function deleteR2Files(keys, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
@@ -250,6 +309,14 @@ export default async function handler(req, res) {
         updated_at: new Date().toISOString()
       };
 
+      // ITEM-7: HEAD validate registered documents (size and MIME type verification)
+      if (file.documents) {
+        const docCheck = await validateRegisteredDocuments(file.documents);
+        if (!docCheck.valid) {
+          return res.status(422).json({ error: docCheck.error });
+        }
+      }
+
       try {
         const { data, error } = await db
           .from('customer_files')
@@ -275,6 +342,14 @@ export default async function handler(req, res) {
       if (user.role !== 'admin') {
         delete updates.dealerId;
         delete updates.dealer_id;
+      }
+
+      // ITEM-7: HEAD validate updated documents
+      if (updates.documents) {
+        const docCheck = await validateRegisteredDocuments(updates.documents);
+        if (!docCheck.valid) {
+          return res.status(422).json({ error: docCheck.error });
+        }
       }
 
       const payload = {
