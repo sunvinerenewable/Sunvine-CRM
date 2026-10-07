@@ -81,7 +81,7 @@ async function verifyLockdown() {
     try {
       const { data, count, error } = await anonClient
         .from(table)
-        .select('id', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true });
 
       if (error) {
         // If table is empty or error occurs

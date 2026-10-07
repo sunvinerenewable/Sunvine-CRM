@@ -1,23 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- Migration 011: RLS Lockdown V2 & Security Remediation
--- Directives: SEC-002, SEC-004, SEC-008, BUG-06
---
--- Take pg_dump first. Apply only after matching code deploy.
---
--- This migration:
--- 1. Drops all overly permissive USING (true) / WITH CHECK (true) policies across public tables (except service_role).
--- 2. Revokes ALL privileges from anon and authenticated on sensitive tables.
--- 3. Drops legacy views (dealers, admin_users, staff_users) that bypass table-level RLS.
--- 4. Removes public/pricing tables from supabase_realtime publication.
--- 5. Enables RLS on all public tables.
--- 6. Restricts anonymous SELECT access strictly to public catalogue tables.
--- 7. Revokes write privileges (INSERT, UPDATE, DELETE) on catalogue tables from anon & authenticated.
--- 8. Drops public_read_by_share_token on quotations (share links route through backend API).
+-- Migration 011: Comprehensive RLS Lockdown & Anon Revocation V2
+-- Fixes: SEC-002, SEC-004, SEC-008, BUG-06 (Eliminates 11 Anon Leak Violations)
 -- ════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 
--- ── 1. Ensure target tables exist prior to policy & privilege changes ────────
+-- ── 1. Ensure required tables exist ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.document_master (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   key TEXT UNIQUE,
@@ -51,7 +39,7 @@ CREATE TABLE IF NOT EXISTS public.push_subscriptions (
   updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
 );
 
--- ── 2. Dynamic Drop of permissive public policies (except service_role) ──────
+-- ── 2. Unconditionally DROP ALL existing policies except service_role ────────
 DO $$
 DECLARE
   pol RECORD;
@@ -61,36 +49,18 @@ BEGIN
     FROM pg_policies
     WHERE schemaname = 'public'
       AND policyname NOT ILIKE '%service_role%'
-      AND (
-        qual = 'true'
-        OR with_check = 'true'
-        OR qual ILIKE '%true%'
-        OR with_check ILIKE '%true%'
-        OR 'anon' = ANY(roles)
-        OR 'authenticated' = ANY(roles)
-        OR 'public' = ANY(roles)
-      )
   ) LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I.%I', pol.policyname, pol.schemaname, pol.tablename);
   END LOOP;
 END $$;
 
--- Explicitly drop legacy policy names if any remain
-DROP POLICY IF EXISTS "public_read_by_share_token" ON public.quotations;
-DROP POLICY IF EXISTS "allow_select_audit_logs" ON public.audit_logs;
-DROP POLICY IF EXISTS "allow_insert_audit_logs" ON public.audit_logs;
-DROP POLICY IF EXISTS "public_read_dealer_pricing" ON public.dealer_custom_pricing;
-DROP POLICY IF EXISTS "public_read_system_settings" ON public.system_settings;
-DROP POLICY IF EXISTS "public_read_solar_banks" ON public.solar_banks;
-DROP POLICY IF EXISTS "public_read_solar_kits" ON public.solar_kits_presets;
-
--- ── 3. Drop legacy views that bypass RLS ─────────────────────────────────────
+-- ── 3. Drop legacy views that bypass table RLS ──────────────────────────────
 DROP VIEW IF EXISTS public.dealers;
 DROP VIEW IF EXISTS public.admin_users;
 DROP VIEW IF EXISTS public.staff_users;
 DROP VIEW IF EXISTS public.audit_log;
 
--- ── 4. Remove sensitive and catalogue tables from Realtime publication ────────
+-- ── 4. Remove all sensitive tables from Realtime Publication ────────────────
 DO $$
 DECLARE
   tbl TEXT;
@@ -128,7 +98,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- ── 5. Enable RLS on every public table ───────────────────────────────────────
+-- ── 5. Enable Row Level Security across ALL public tables ────────────────────
 DO $$
 DECLARE
   t RECORD;
@@ -138,7 +108,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- ── 6. Ensure full service_role access policy exists for every public table ──
+-- ── 6. Create universal service_role policies ────────────────────────────────
 DO $$
 DECLARE
   t RECORD;
@@ -157,28 +127,27 @@ BEGIN
   END LOOP;
 END $$;
 
--- ── 7. REVOKE ALL privileges on sensitive tables from anon, authenticated ────
-REVOKE ALL ON public.dealer_accounts FROM anon, authenticated;
-REVOKE ALL ON public.staff_accounts FROM anon, authenticated;
-REVOKE ALL ON public.admin_accounts FROM anon, authenticated;
-REVOKE ALL ON public.audit_logs FROM anon, authenticated;
-REVOKE ALL ON public.otp_verifications FROM anon, authenticated;
-REVOKE ALL ON public.customer_files FROM anon, authenticated;
-REVOKE ALL ON public.notifications FROM anon, authenticated;
-REVOKE ALL ON public.push_subscriptions FROM anon, authenticated;
-REVOKE ALL ON public.quotations FROM anon, authenticated;
-REVOKE ALL ON public.quotation_bom_snapshots FROM anon, authenticated;
-REVOKE ALL ON public.system_settings FROM anon, authenticated;
-REVOKE ALL ON public.dealer_custom_pricing FROM anon, authenticated;
+-- ── 7. REVOKE ALL privileges on sensitive tables from anon, authenticated, public
+REVOKE ALL ON public.dealer_accounts FROM anon, authenticated, public;
+REVOKE ALL ON public.staff_accounts FROM anon, authenticated, public;
+REVOKE ALL ON public.admin_accounts FROM anon, authenticated, public;
+REVOKE ALL ON public.audit_logs FROM anon, authenticated, public;
+REVOKE ALL ON public.otp_verifications FROM anon, authenticated, public;
+REVOKE ALL ON public.customer_files FROM anon, authenticated, public;
+REVOKE ALL ON public.notifications FROM anon, authenticated, public;
+REVOKE ALL ON public.push_subscriptions FROM anon, authenticated, public;
+REVOKE ALL ON public.quotations FROM anon, authenticated, public;
+REVOKE ALL ON public.quotation_bom_snapshots FROM anon, authenticated, public;
+REVOKE ALL ON public.system_settings FROM anon, authenticated, public;
+REVOKE ALL ON public.dealer_custom_pricing FROM anon, authenticated, public;
 
--- If solar_banks or solar_kits_presets exist, revoke sensitive access
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'solar_banks') THEN
-    EXECUTE 'REVOKE ALL ON public.solar_banks FROM anon, authenticated';
+    EXECUTE 'REVOKE ALL ON public.solar_banks FROM anon, authenticated, public';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'solar_kits_presets') THEN
-    EXECUTE 'REVOKE ALL ON public.solar_kits_presets FROM anon, authenticated';
+    EXECUTE 'REVOKE ALL ON public.solar_kits_presets FROM anon, authenticated, public';
   END IF;
 END $$;
 
@@ -204,7 +173,7 @@ CREATE POLICY "anon_select_document_master" ON public.document_master
 CREATE POLICY "anon_select_inverter_benchmark_matrix" ON public.inverter_benchmark_matrix
   FOR SELECT TO anon, authenticated USING (true);
 
--- ── 9. Ensure grants & revoke write mutations on catalogue tables ────────────
+-- ── 9. Grant read-only & Revoke write mutations on catalogue tables ──────────
 GRANT SELECT ON public.solar_modules TO anon, authenticated;
 GRANT SELECT ON public.solar_inverters TO anon, authenticated;
 GRANT SELECT ON public.bom_catalog TO anon, authenticated;
@@ -213,12 +182,12 @@ GRANT SELECT ON public.pricing_presets TO anon, authenticated;
 GRANT SELECT ON public.document_master TO anon, authenticated;
 GRANT SELECT ON public.inverter_benchmark_matrix TO anon, authenticated;
 
-REVOKE INSERT, UPDATE, DELETE ON public.solar_modules FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.solar_inverters FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.bom_catalog FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.bos_pricing_matrix FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.pricing_presets FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.document_master FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.inverter_benchmark_matrix FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.solar_modules FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.solar_inverters FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.bom_catalog FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.bos_pricing_matrix FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.pricing_presets FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.document_master FROM anon, authenticated, public;
+REVOKE INSERT, UPDATE, DELETE ON public.inverter_benchmark_matrix FROM anon, authenticated, public;
 
 COMMIT;
