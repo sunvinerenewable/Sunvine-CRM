@@ -989,3 +989,78 @@ export function calculateFieldBOMTotals(items = []) {
     grossTurnkeyCost
   };
 }
+
+// Official Sunvine Rooftop Solar Balance of System (BOS) Master Engineering Matrix
+// Source: BOS PRICE LIST ALL (1).pdf (MODULE 535/540/545/550WP Matrix)
+export const BOS_STANDARD_MATRIX = [
+  { kw: 2.16, modules: 4, inverter: 1, dcWireRed: 25, dcWireBlack: 25, acWireRed: 5, acWireBlack: 5, earthingWire: 35, laWire: 25, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 10, pvcElbow: 20, pvcTee: 5, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 16, mc4: '1 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 2.70, modules: 5, inverter: 1, dcWireRed: 25, dcWireBlack: 25, acWireRed: 5, acWireBlack: 5, earthingWire: 35, laWire: 25, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 10, pvcElbow: 20, pvcTee: 5, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 20, mc4: '1 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 3.24, modules: 6, inverter: 1, dcWireRed: 25, dcWireBlack: 25, acWireRed: 5, acWireBlack: 5, earthingWire: 35, laWire: 25, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 12, pvcElbow: 24, pvcTee: 5, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 24, mc4: '2 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 4.32, modules: 8, inverter: 1, dcWireRed: 30, dcWireBlack: 30, acWireRed: 5, acWireBlack: 5, earthingWire: 40, laWire: 30, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 15, pvcElbow: 30, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 32, mc4: '2 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 4.86, modules: 9, inverter: 1, dcWireRed: 35, dcWireBlack: 35, acWireRed: 5, acWireBlack: 5, earthingWire: 45, laWire: 35, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 15, pvcElbow: 30, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 36, mc4: '3 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 5.40, modules: 10, inverter: 1, dcWireRed: 35, dcWireBlack: 35, acWireRed: 7, acWireBlack: 7, earthingWire: 45, laWire: 35, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 15, pvcElbow: 30, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 40, mc4: '3 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 5.94, modules: 11, inverter: 1, dcWireRed: 35, dcWireBlack: 35, acWireRed: 7, acWireBlack: 7, earthingWire: 45, laWire: 35, acdb: '1-6 KW', dcdb: '1-6 KW', earthingKit: 1, pvcPipe: 15, pvcElbow: 30, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 44, mc4: '3 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 7.56, modules: 14, inverter: 1, dcWireRed: 45, dcWireBlack: 45, acWireRed: 7, acWireBlack: 7, earthingWire: 50, laWire: 45, acdb: '6-10 KW', dcdb: '6-10 KW', earthingKit: 1, pvcPipe: 18, pvcElbow: 36, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 56, mc4: '4 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' },
+  { kw: 8.10, modules: 15, inverter: 1, dcWireRed: 45, dcWireBlack: 45, acWireRed: 7, acWireBlack: 7, earthingWire: 50, laWire: 45, acdb: '6-10 KW', dcdb: '6-10 KW', earthingKit: 1, pvcPipe: 18, pvcElbow: 36, pvcTee: 7, pvcClamp: '1 PACKET', angle: 'As Per Requirement', anchorFastner: 'As Per Requirement', cableTie: '1 PACKET', jBolt: 60, mc4: '4 PAIR', zincSpray: 'As Per Requirement', stud: 'As Per Requirement', hotdipPipe: 'As Per Requirement' }
+];
+
+export function getStandardBOSSpecs(capacityKW, moduleCount) {
+  const count = Number(moduleCount) || 6;
+  const kw = Number(capacityKW) || 3.3;
+
+  // Exact module match first
+  let match = BOS_STANDARD_MATRIX.find(r => r.modules === count);
+  if (!match) {
+    match = BOS_STANDARD_MATRIX.reduce((prev, curr) => {
+      const prevDiff = Math.abs(prev.kw - kw);
+      const currDiff = Math.abs(curr.kw - kw);
+      return currDiff < prevDiff ? curr : prev;
+    });
+  }
+
+  if (kw > 8.5 || count > 15) {
+    const diff = Math.max(0, count - 15);
+    return {
+      kw,
+      modules: count,
+      inverter: 1,
+      dcWireRed: `${45 + diff * 3} Mtr`,
+      dcWireBlack: `${45 + diff * 3} Mtr`,
+      acWireRed: '10 Mtr',
+      acWireBlack: '10 Mtr',
+      earthingWire: `${50 + diff * 2} Mtr`,
+      laWire: `${45 + diff * 2} Mtr`,
+      acdb: kw <= 10 ? '6-10 KW' : '10-20 KW',
+      dcdb: kw <= 10 ? '6-10 KW' : '10-20 KW',
+      earthingKit: `${kw > 10 ? 2 : 1} Set`,
+      pvcPipe: `${Math.round(18 + diff * 1.2)} Nos`,
+      pvcElbow: `${Math.round(36 + diff * 2.4)} Nos`,
+      pvcTee: `${Math.round(7 + diff * 0.5)} Nos`,
+      pvcClamp: `${Math.ceil(count / 10)} Packet`,
+      angle: 'As Per Requirement',
+      anchorFastner: 'As Per Requirement',
+      cableTie: `${Math.ceil(count / 10)} Packet`,
+      jBolt: `${count * 4} Nos`,
+      mc4: `${Math.ceil(count / 4)} Pairs`,
+      zincSpray: 'As Per Requirement',
+      stud: 'As Per Requirement',
+      hotdipPipe: 'As Per Requirement'
+    };
+  }
+
+  return {
+    ...match,
+    dcWireRed: `${match.dcWireRed} Mtr`,
+    dcWireBlack: `${match.dcWireBlack} Mtr`,
+    acWireRed: `${match.acWireRed} Mtr`,
+    acWireBlack: `${match.acWireBlack} Mtr`,
+    earthingWire: `${match.earthingWire} Mtr`,
+    laWire: `${match.laWire} Mtr`,
+    earthingKit: `${match.earthingKit} Set`,
+    pvcPipe: `${match.pvcPipe} Nos`,
+    pvcElbow: `${match.pvcElbow} Nos`,
+    pvcTee: `${match.pvcTee} Nos`,
+    jBolt: `${match.jBolt} Nos`,
+    mc4: match.mc4
+  };
+}

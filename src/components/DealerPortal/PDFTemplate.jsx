@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { resolveCapacityBom } from '../../data/standardBomData';
+import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
 import { calculateSubsidy } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
@@ -153,6 +153,178 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     return acc;
   }, {});
 
+  // Official Engineering BOS Matrix Specifications (Source: BOS PRICE LIST ALL (1).pdf)
+  const standardBOSSpecs = useMemo(() => {
+    return getStandardBOSSpecs(resolvedCapKW, resolvedCount);
+  }, [resolvedCapKW, resolvedCount]);
+
+  const bomDisplayItems = useMemo(() => {
+    const s = standardBOSSpecs;
+    return [
+      {
+        sr: 1,
+        name: 'MODULES / PANNELS',
+        desc: `${resolvedWatt}W High-Efficiency TOPCon Mono Bifacial Dual-Glass`,
+        qty: `${resolvedCount} Nos`,
+        make: `${effectiveModuleMake} / Tier-1 ALMM`
+      },
+      {
+        sr: 2,
+        name: 'INVERTER',
+        desc: `High-Efficiency On-Grid String Inverter (${resolvedInverterCap}), Dual MPPT`,
+        qty: '1 Unit',
+        make: effectiveInverterMake.includes('/') ? effectiveInverterMake : `${effectiveInverterMake} / Any Reputed`
+      },
+      {
+        sr: 3,
+        name: 'DC WIRE (RED)',
+        desc: '1C × 4 sq.mm UV/Ozone-resistant Dual-Insulated Solar Cable (EN 50618)',
+        qty: s.dcWireRed,
+        make: 'Polycab / RR Kabel (EN 50618)'
+      },
+      {
+        sr: 4,
+        name: 'DC WIRE (BLACK)',
+        desc: '1C × 4 sq.mm UV/Ozone-resistant Dual-Insulated Solar Cable (EN 50618)',
+        qty: s.dcWireBlack,
+        make: 'Polycab / RR Kabel (EN 50618)'
+      },
+      {
+        sr: 5,
+        name: 'AC WIRE (RED)',
+        desc: 'Multi-Core Copper Cable connecting Inverter AC output to Main Panel (IS 694)',
+        qty: s.acWireRed,
+        make: 'Polycab / Havells / RR Kabel'
+      },
+      {
+        sr: 6,
+        name: 'AC WIRE (BLACK)',
+        desc: 'Multi-Core Copper Cable connecting Inverter AC output to Main Panel (IS 694)',
+        qty: s.acWireBlack,
+        make: 'Polycab / Havells / RR Kabel'
+      },
+      {
+        sr: 7,
+        name: 'EARTHING WIRE',
+        desc: 'Dedicated Grounding Wire for Solar Array, Inverter & Structure (IS 3043)',
+        qty: s.earthingWire,
+        make: 'Polycab / RR Kabel (IS 3043)'
+      },
+      {
+        sr: 8,
+        name: 'LA WIRE',
+        desc: 'Lightning Arrester Down Conductor High-Grade Copper/Al Cable (IS 2309)',
+        qty: s.laWire,
+        make: 'Polycab / Reputed (1C × 16 sq.mm)'
+      },
+      {
+        sr: 9,
+        name: 'ACDB',
+        desc: 'IP65 Weatherproof Enclosure with Class-II Surge Protection (SPD) & MCB',
+        qty: `1 Unit (${s.acdb})`,
+        make: 'L&T / Schneider / ASG'
+      },
+      {
+        sr: 10,
+        name: 'DCDB',
+        desc: 'IP65 Weatherproof Enclosure with Class-II Surge Protection (SPD) & DC Isolator',
+        qty: `1 Unit (${s.dcdb})`,
+        make: 'L&T / Schneider / ASG'
+      },
+      {
+        sr: 11,
+        name: 'EARTHING KIT',
+        desc: 'Maintenance-Free Chemical Gel Earthing Pit with Copper-Bonded Electrode',
+        qty: s.earthingKit,
+        make: 'Vasundhara / Chemical Gel (IS 3043)'
+      },
+      {
+        sr: 12,
+        name: 'PVC PIPE',
+        desc: 'Heavy Duty Rigid PVC Conduit Piping (25mm Heavy Gauge ISI)',
+        qty: s.pvcPipe,
+        make: 'Precision / Reputed (ISI Heavy Duty)'
+      },
+      {
+        sr: 13,
+        name: 'PVC ELBOW',
+        desc: 'Heavy Duty Rigid PVC Conduit Elbow Bends (25mm)',
+        qty: s.pvcElbow,
+        make: 'Precision / Standard Heavy Duty'
+      },
+      {
+        sr: 14,
+        name: 'PVC TEE',
+        desc: 'Heavy Duty Rigid PVC Conduit Three-Way Tee Junctions (25mm)',
+        qty: s.pvcTee,
+        make: 'Precision / Standard Heavy Duty'
+      },
+      {
+        sr: 15,
+        name: 'PVC CLAMP',
+        desc: 'Heavy Duty PVC Saddle Mounting Clamps with Screws',
+        qty: s.pvcClamp,
+        make: 'Standard Heavy Duty Saddle Clips'
+      },
+      {
+        sr: 16,
+        name: 'ANGLE',
+        desc: 'Structural Galvanized L-Angle & Cleat Brackets (IS 2062)',
+        qty: 'As Per Requirement',
+        make: 'Hot-Dip Galvanized (HDGI / MS IS 2062)'
+      },
+      {
+        sr: 17,
+        name: 'ANCHOR FASTNER',
+        desc: 'RCC Heavy-Duty Anchor Mechanical Fasteners (Grade 8.8)',
+        qty: 'As Per Requirement',
+        make: 'Galvanized Mechanical Wedge Fasteners'
+      },
+      {
+        sr: 18,
+        name: 'CABLE TIE',
+        desc: 'UV-Resistant Heavy-Duty Black Nylon Cable Ties',
+        qty: s.cableTie,
+        make: 'Standard Heavy Duty UV Black Pack'
+      },
+      {
+        sr: 19,
+        name: 'J BOLT',
+        desc: 'Module Rail Fastening & Purline J-Bolts with Flange Nuts',
+        qty: s.jBolt,
+        make: 'Galvanized High-Tensile J-Bolts'
+      },
+      {
+        sr: 20,
+        name: 'MC4 CONNECTOR',
+        desc: 'IP68 Weatherproof Dual-Contact Solar MC4 Pairs (Male + Female)',
+        qty: s.mc4,
+        make: 'Multi-Contact / IP68 Certified Pairs'
+      },
+      {
+        sr: 21,
+        name: 'ZINC SPRAY',
+        desc: 'Cold Galvanizing Anti-Rust Protective Coating Spray',
+        qty: 'As Per Requirement',
+        make: 'Anti-Rust Cold Galvanizing Spray'
+      },
+      {
+        sr: 22,
+        name: 'STUD',
+        desc: '12×2M Structural Galvanized Threaded Studs Grade 8.8',
+        qty: 'As Per Requirement',
+        make: 'Galvanized High-Tensile Studs Grade 8.8'
+      },
+      {
+        sr: 23,
+        name: 'HOTDIP PIPE',
+        desc: 'Elevated Hot-Dip Galvanized Structure Pipe (Height 6-8 Ft, 80+ Micron)',
+        qty: 'As Per Requirement',
+        make: 'Hindustan / Fortune HDGI (80μ Coating)'
+      }
+    ];
+  }, [standardBOSSpecs, resolvedWatt, resolvedCount, effectiveModuleMake, effectiveInverterMake, resolvedInverterCap]);
+
   // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
   const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
@@ -277,7 +449,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 {customerPhone && <span className="ml-2 font-mono">| Mo: {customerPhone}</span>}
               </div>
               <div className="text-[10px] text-[#2E7D32] font-bold mt-0.5">
-                Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central DBT)'}
+                Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central Subsidy)'}
               </div>
             </div>
 
@@ -427,7 +599,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <td className="py-2 px-3 text-center border-r border-emerald-300 font-mono">•</td>
                     <td className="py-2 px-3 border-r border-emerald-300">
                       <div className="flex items-center gap-1.5">
-                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold">CENTRAL DBT</span>
+                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold">CENTRAL SUBSIDY</span>
                         <span>Less: PM Surya Ghar Muft Bijli Yojana Central Subsidy</span>
                       </div>
                       <p className="text-[10px] text-emerald-800 font-normal">
@@ -478,7 +650,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <th className="py-1 px-2.5 border-r border-slate-200">BRAND / MODULE TECHNOLOGY</th>
                     <th className="py-1 px-2 text-center border-r border-slate-200 w-28">ARRAY CONFIG</th>
                     <th className="py-1 px-2 text-right border-r border-slate-200 w-24">GROSS COST (₹)</th>
-                    <th className="py-1 px-2 text-right border-r border-slate-200 w-24">DBT SUBSIDY (₹)</th>
+                    <th className="py-1 px-2 text-right border-r border-slate-200 w-24">CENTRAL SUBSIDY (₹)</th>
                     <th className="py-1 px-2.5 text-right font-black text-emerald-900 bg-emerald-50/90 w-28">NET PAYABLE (₹)</th>
                   </tr>
                 </thead>
@@ -608,7 +780,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
       {/* ========================================================
           PAGE 3: ENGINEERING BILL OF MATERIALS (BOM) & COMPLIANCE
           ======================================================== */}
-      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-8 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
+      <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:!p-5 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
         <div>
           {/* Top Header */}
           <div className="flex items-center justify-between pb-2 border-b border-gray-200">
@@ -643,148 +815,45 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-gray-900 font-medium">
-                {/* 1. Solar PV Modules */}
-                <tr className="bg-white">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">1</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">Solar PV Modules (ALMM List-I Tier-1)</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      {resolvedWatt}W High-Efficiency TOPCon Mono Bifacial Dual-Glass Panels (IEC 61215 / 61730 certified)
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    {resolvedCount} Nos
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center font-bold text-[#0B2545] text-[9.5px]">
-                    {effectiveModuleMake} / Tier-1 ALMM
-                  </td>
-                </tr>
-
-                {/* 2. Solar Inverter */}
-                <tr className="bg-slate-50/50">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">2</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">On-Grid String Inverter &amp; Telemetry</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      High Efficiency String Inverter ({resolvedInverterCap}), Dual MPPT, IP65 Weatherproof with Cloud WiFi Logger
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    1 Unit
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center font-bold text-[#0B2545] text-[9.5px]">
-                    {effectiveInverterMake.includes('/') ? effectiveInverterMake : `${effectiveInverterMake} / Any Reputed`}
-                  </td>
-                </tr>
-
-                {/* 3. Module Mounting Structure */}
-                <tr className="bg-white">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">3</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">Module Mounting Structure (MMS)</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      Elevated Hot-Dip Galvanized (HDGI 80+ Micron) / Aluminium structure, Height 6 Ft to 8 Ft, 150 km/h wind velocity rated
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    1 Complete Set
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center text-gray-800 text-[9.5px] font-semibold">
-                    Fortune / Hindustar / Reputed (HDGI 80μ)
-                  </td>
-                </tr>
-
-                {/* 4. DC Solar Cable */}
-                <tr className="bg-slate-50/50">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">4</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">DC Solar Power Cabling &amp; Connectors</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      1C × 4 sq.mm (Red &amp; Black) UV/Ozone-resistant Dual-Insulated Tinned Copper Solar Cable (EN 50618) with IP68 MC4 Connectors
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    Standard Lot
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center font-bold text-[#0B2545] text-[9.5px]">
-                    Polycab / RR Kabel (EN 50618)
-                  </td>
-                </tr>
-
-                {/* 5. AC Grid Power Cable */}
-                <tr className="bg-white">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">5</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">AC Grid Power Cabling</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      Multi-Core Copper / Armoured XLPE Cable connecting Inverter AC output to Main LT Distribution Panel (IS 694)
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    Standard Lot
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center font-bold text-[#0B2545] text-[9.5px]">
-                    Polycab / Havells / RR Kabel
-                  </td>
-                </tr>
-
-                {/* 6. Switchgear */}
-                <tr className="bg-slate-50/50">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">6</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">ACDB &amp; DCDB Array Protection Switchgear</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      IP65 Weatherproof Enclosures with Class-II Surge Protection Devices (SPD), MCBs, Fuses &amp; Rotary DC Isolators
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    1 Combo Set
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center text-gray-800 text-[9.5px] font-semibold">
-                    L&amp;T / Schneider / ASG
-                  </td>
-                </tr>
-
-                {/* 7. Earthing & Lightning Protection */}
-                <tr className="bg-white">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">7</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">Chemical Gel Earthing &amp; Lightning Arrester</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      Maintenance-Free Chemical Gel Earthing Pits (&lt;5Ω) with Copper-Bonded Electrodes + Solid Copper Lightning Arrester (IS 3043)
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-[#0B2545]">
-                    3 Pits + 1 Set
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center text-gray-800 text-[9.5px] font-semibold">
-                    Vasundhara / Chemical Gel (IS 3043)
-                  </td>
-                </tr>
-
-                {/* 8. EPC Services & Net-Metering */}
-                <tr className="bg-slate-50/50">
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono text-gray-500 font-bold">8</td>
-                  <td className="py-1.5 px-3 border-r border-slate-200">
-                    <span className="font-bold text-[#0B2545]">EPC Installation, Commissioning &amp; Liaisoning</span>
-                    <p className="text-[9px] text-gray-600 leading-tight">
-                      Array civil anchoring, string cabling, testing, DISCOM inspection coordination, net-metering application &amp; commissioning
-                    </p>
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center border-r border-slate-200 font-mono font-bold text-xs text-emerald-800">
-                    Complete Scope
-                  </td>
-                  <td className="py-1.5 px-2.5 text-center font-bold text-emerald-900 text-[9.5px]">
-                    Sunvine Authorized EPC Team
-                  </td>
-                </tr>
+                {bomDisplayItems.map((item, idx) => {
+                  const isRequirement = item.qty === 'As Per Requirement';
+                  return (
+                    <tr key={item.sr} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                      <td className="py-1 px-2 text-center border-r border-slate-200 font-mono text-gray-500 font-bold text-[9px]">
+                        {item.sr}
+                      </td>
+                      <td className="py-1 px-2.5 border-r border-slate-200">
+                        <div className="font-bold text-[#0B2545] text-[9.5px] leading-tight">
+                          {item.name}
+                        </div>
+                        {item.desc && (
+                          <div className="text-[8.5px] text-gray-500 leading-tight">
+                            {item.desc}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1 px-2 text-center border-r border-slate-200 font-mono font-bold text-[9px] text-[#0B2545]">
+                        {isRequirement ? (
+                          <span className="text-emerald-800 font-bold text-[8.5px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 inline-block">
+                            As Per Requirement
+                          </span>
+                        ) : (
+                          item.qty
+                        )}
+                      </td>
+                      <td className="py-1 px-2 text-center text-gray-800 text-[9px] font-semibold leading-tight">
+                        {item.make}
+                      </td>
+                    </tr>
+                  );
+                })}
 
                 {/* Compliance Summary Footer */}
                 <tr className="bg-[#0B2545] text-white font-bold text-[9.5px] border-t border-slate-700">
-                  <td colSpan={3} className="py-1.5 px-3 uppercase tracking-wide border-r border-slate-700">
+                  <td colSpan={3} className="py-1 px-3 uppercase tracking-wide border-r border-slate-700">
                     ALL SYSTEM COMPONENTS 100% MNRE APPROVED &amp; BIS / IEC COMPLIANT
                   </td>
-                  <td className="py-1.5 px-2 text-center font-bold text-amber-300 uppercase text-[9px]">
+                  <td className="py-1 px-2 text-center font-bold text-amber-300 uppercase text-[9px]">
                     APPROVED OEM QUALITY
                   </td>
                 </tr>

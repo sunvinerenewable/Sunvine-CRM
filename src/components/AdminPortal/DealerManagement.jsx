@@ -1859,7 +1859,7 @@ export default function DealerManagement() {
                           return (
                             <>
                               <div className="font-semibold text-on-surface font-poppins text-[13px]">{dFiles.length} Files</div>
-                              <div className="text-[11px] text-teal-700 mt-0.5">Live DB</div>
+                              <div className="text-[11px] text-teal-700 mt-0.5">Active</div>
                             </>
                           );
                         })()}

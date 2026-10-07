@@ -1529,8 +1529,8 @@ export default function CreateQuotation() {
     );
 
     setIsSubmitting(true);
-    setSaveStatus('Generating quotation and saving to cloud...');
-    showLoader('Securing Quotation in Database...');
+    setSaveStatus('Generating quotation...');
+    showLoader('Generating Quotation...');
     try {
       if (isEdit && updateQuotation) {
         await updateQuotation(quotePayload);
@@ -1552,7 +1552,7 @@ export default function CreateQuotation() {
 
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Quotation Generated',
-        message: `Quotation #${quotePayload.id} has been generated and saved directly to the database.`,
+        message: `Quotation #${quotePayload.id} has been generated successfully.`,
         type: 'success'
       });
 
@@ -1812,17 +1812,28 @@ export default function CreateQuotation() {
                       <span className="material-symbols-outlined text-[16px] shrink-0">payments</span>
                       <span className="truncate">Cash Case</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setFinanceType('LOAN')}
-                      className={`h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${financeType === 'LOAN'
-                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                          : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-amber-500'
-                        }`}
-                    >
-                      <span className="material-symbols-outlined text-[16px] shrink-0">account_balance</span>
-                      <span className="truncate">Solar Loan (EMI)</span>
-                    </button>
+                    <div className="relative group min-w-0">
+                      <button
+                        type="button"
+                        disabled
+                        aria-disabled="true"
+                        className="w-full h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-not-allowed whitespace-nowrap min-w-0 bg-surface-container-low text-secondary/60 border-surface-container-high opacity-70"
+                        title="Solar Loan financing feature is coming soon. Currently accepting Cash Case settlements only."
+                      >
+                        <span className="material-symbols-outlined text-[16px] shrink-0 text-secondary/60">account_balance</span>
+                        <span className="truncate">Solar Loan (EMI)</span>
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-surface-container-high text-secondary hover:text-on-surface shrink-0 ml-0.5">
+                          <span className="material-symbols-outlined text-[12px]">info</span>
+                        </span>
+                      </button>
+                      {/* Professional English Tooltip on Hover */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none w-60">
+                        <div className="bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-lg shadow-xl text-center leading-snug">
+                          <strong>Solar Loan Financing:</strong> This feature is under integration and will be available in an upcoming release. Currently, only Cash Case proposals are supported.
+                        </div>
+                        <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1937,14 +1948,9 @@ export default function CreateQuotation() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">System Details</h2>
-                    {isMarginBased && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-800 border border-emerald-500/30 uppercase tracking-wider">
-                        Margin-Based Presets
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs text-secondary hidden sm:block">
-                    {isMarginBased ? 'Presets matrix kW slab, manufacturer make & system pricing' : 'Hardware configuration, inverter tier & module capacity'}
+                    {isMarginBased ? 'System capacity slab, manufacturer make & equipment configuration' : 'Hardware configuration, inverter tier & module capacity'}
                   </p>
                 </div>
               </div>
@@ -2034,9 +2040,6 @@ export default function CreateQuotation() {
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetMakeSelectLabel">
                       <span>2. Select Solar Panel *</span>
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-normal">
-                        Live DB Presets ({selectedPresetKw} kW)
-                      </span>
                     </label>
                     <span className="text-[11px] text-secondary font-mono">
                       {compatiblePresetMakes.length} Preset Makes
@@ -2105,12 +2108,7 @@ export default function CreateQuotation() {
                                 </div>
                               </div>
                               <div className="text-right shrink-0 ml-2 flex flex-col items-end">
-                                {slabPrice ? (
-                                  <span className="text-xs font-mono font-bold text-emerald-950">
-                                    {formatINR(slabPrice)}
-                                  </span>
-                                ) : null}
-                                <span className="text-[10px] font-mono text-secondary">
+                                <span className="text-[11px] font-mono font-bold text-emerald-900 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
                                   {slabModules} Panels
                                 </span>
                               </div>
@@ -2163,7 +2161,7 @@ export default function CreateQuotation() {
                       </div>
                       <div>
                         <h4 className="text-xs font-bold text-on-surface">Project Scheme &amp; Subsidy Eligibility</h4>
-                        <p className="text-[11px] text-secondary">Residential (PM Surya Ghar DBT up to ₹78,000) or Commercial/Industrial</p>
+                        <p className="text-[11px] text-secondary">Residential (PM Surya Ghar Subsidy up to ₹78,000) or Commercial/Industrial</p>
                       </div>
                     </div>
                     <div className="w-full sm:w-80">
@@ -2181,22 +2179,6 @@ export default function CreateQuotation() {
                       </div>
                     </div>
                   </div>
-                </div>
-
-                {/* 5. MARGIN-BASED FLOW NOTICE: TECHNICAL BOM COMPILED FOR PRINT */}
-                <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="material-symbols-outlined text-primary text-[20px] shrink-0">description</span>
-                    <div className="text-xs">
-                      <span className="font-bold text-on-surface block">Technical Engineering Bill of Materials (BOM)</span>
-                      <span className="text-[11px] text-secondary">
-                        BOM equipment items, inverter specs ({matchedSlab?.inverterCapacityKW || kw} kW) &amp; mounting accessories are compiled automatically in the background and presented on Page 2 of the customer quotation print / PDF.
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full shrink-0">
-                    Print Ready
-                  </span>
                 </div>
               </div>
             ) : (
@@ -2631,7 +2613,7 @@ export default function CreateQuotation() {
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-on-surface">4. Project Scheme &amp; Subsidy Eligibility</h4>
-                      <p className="text-[11px] text-secondary">Residential (PM Surya Ghar DBT up to ₹78,000) or Commercial/Industrial</p>
+                      <p className="text-[11px] text-secondary">Residential (PM Surya Ghar Subsidy up to ₹78,000) or Commercial/Industrial</p>
                     </div>
                   </div>
                   <div className="w-full sm:w-80">
@@ -3481,7 +3463,7 @@ export default function CreateQuotation() {
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">Pricing &amp; Subsidy</h2>
-                  <p className="text-xs text-secondary hidden sm:block">PM Surya Ghar DBT computation</p>
+                  <p className="text-xs text-secondary hidden sm:block">PM Surya Ghar Subsidy computation</p>
                 </div>
               </div>
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.3</span>
@@ -3492,7 +3474,7 @@ export default function CreateQuotation() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-primary font-label-md font-bold">
                   <span className="material-symbols-outlined text-[20px]">auto_graph</span>
-                  <span>Central DBT Subsidy Calculated</span>
+                  <span>Central Subsidy Calculated</span>
                 </div>
                 <span className="material-symbols-outlined text-primary/20 text-[36px] absolute -top-1 -right-1 pointer-events-none">payments</span>
               </div>
@@ -3626,7 +3608,7 @@ export default function CreateQuotation() {
               <div className="flex items-center justify-between gap-2 bg-emerald-100/70 p-2 rounded-lg">
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs text-emerald-950 font-bold">PM Surya Ghar DBT Subsidy</span>
+                    <span className="text-xs text-emerald-950 font-bold">PM Surya Ghar Subsidy</span>
                     <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold">
                       Central Govt.
                     </span>
@@ -3645,7 +3627,7 @@ export default function CreateQuotation() {
                   <span className="font-label-md text-xs sm:text-sm text-on-secondary-fixed uppercase tracking-wider font-extrabold">
                     Net Effective Investment
                   </span>
-                  <span className="font-body-sm text-[11px] text-secondary">Final customer cost post-DBT reimbursement</span>
+                  <span className="font-body-sm text-[11px] text-secondary">Final customer cost post-subsidy reimbursement</span>
                 </div>
                 <div className="flex items-baseline gap-2 self-start sm:self-auto whitespace-nowrap shrink-0">
                   <span className="text-2xl sm:text-3xl font-black text-on-secondary-fixed tabular-nums whitespace-nowrap inline-flex items-baseline font-mono">
@@ -3953,7 +3935,7 @@ export default function CreateQuotation() {
                 disabled={isSubmitting}
                 type="button"
                 className="h-10 px-2 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 disabled:opacity-50 min-w-0"
-                title="Save as Draft to Database"
+                title="Save as Draft"
               >
                 <span className="material-symbols-outlined text-[16px] text-secondary shrink-0">bookmark_border</span>
                 <span className="truncate">{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
@@ -3963,7 +3945,7 @@ export default function CreateQuotation() {
                 disabled={isSubmitting}
                 type="button"
                 className="h-10 px-2 rounded-lg bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 border border-sky-500/30 transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
-                title="Preview proposal in-memory without saving to database"
+                title="Preview quotation proposal"
               >
                 <span className="material-symbols-outlined text-[16px] shrink-0">visibility</span>
                 <span className="truncate">Preview</span>
@@ -3973,7 +3955,7 @@ export default function CreateQuotation() {
                 disabled={isSubmitting}
                 type="button"
                 className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
-                title="Generate and officially save quotation to database table"
+                title="Generate and issue quotation"
               >
                 <span className="material-symbols-outlined text-[16px] shrink-0">check_circle</span>
                 <span className="truncate">{isSubmitting ? 'Generating...' : 'Generate'}</span>
