@@ -38,50 +38,14 @@ export const adminAccountService = {
         }
       }
     } catch (e) {
-      console.warn('[adminAccountService] Server API unavailable, falling back to read-only DB query:', e.message);
+      console.warn('[adminAccountService] Failed to load accounts from server API:', e.message);
     }
 
-    // 2. Direct read-only query fallback
-    try {
-      const [adminsRes, dealersRes, staffRes] = await Promise.all([
-        supabase.from('admin_accounts').select('*').order('created_at', { ascending: true }),
-        supabase.from('dealer_accounts').select('*').order('updated_at', { ascending: false }),
-        supabase.from('staff_accounts').select('*').order('created_at', { ascending: true })
-      ]);
-
-      const directAdmins = (adminsRes.data && adminsRes.data.length > 0) ? adminsRes.data : [
-        {
-          id: '0e839c92-3f19-4879-bb6d-cdc7ce526480',
-          email: 'admin@sunvinerenewable.com',
-          full_name: 'Admin Desk',
-          role: 'admin',
-          mobile_number: '8000050580',
-          created_at: new Date().toISOString()
-        }
-      ];
-
-      return {
-        admins: directAdmins,
-        dealers: dealersRes.data || [],
-        staff: staffRes.data || []
-      };
-    } catch (err) {
-      console.error('[adminAccountService] Failed to load accounts:', err);
-      return {
-        admins: [
-          {
-            id: '0e839c92-3f19-4879-bb6d-cdc7ce526480',
-            email: 'admin@sunvinerenewable.com',
-            full_name: 'Admin Desk',
-            role: 'admin',
-            mobile_number: '8000050580',
-            created_at: new Date().toISOString()
-          }
-        ],
-        dealers: [],
-        staff: []
-      };
-    }
+    return {
+      admins: [],
+      dealers: [],
+      staff: []
+    };
   },
 
   /**

@@ -1109,9 +1109,7 @@ export async function reportErrorHandler(req, res) {
 
   const webhookUrl =
     process.env.SLACK_CRASH_WEBHOOK_URL ||
-    process.env.VITE_SLACK_CRASH_WEBHOOK_URL ||
     process.env.SLACK_FILES_UPDATE ||
-    process.env.VITE_SLACK_FILES_UPDATE ||
     process.env.SLACK_WEBHOOK_URL;
 
   if (webhookUrl) {
