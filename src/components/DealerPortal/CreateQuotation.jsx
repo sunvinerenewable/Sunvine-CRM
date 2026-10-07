@@ -309,6 +309,67 @@ export default function CreateQuotation() {
     return Array.isArray(pdfBosMatrix) && pdfBosMatrix.length > 0 ? pdfBosMatrix : PDF_BOS_PRICE_MATRIX;
   }, [pdfBosMatrix]);
 
+  // 1. All available panel makes combining PRESET_MAKES and any admin-created active modules
+  const allAvailablePresetMakes = useMemo(() => {
+    const list = [...PRESET_MAKES];
+    (activeModules || []).forEach((m) => {
+      const watt = Number(m.wattage);
+      if (!watt) return;
+      const alreadyExists = list.some(
+        (p) => p.id === m.id || (p.brand?.toLowerCase() === m.brand?.toLowerCase() && p.watt === watt)
+      );
+      if (!alreadyExists) {
+        list.push({
+          id: m.id || `mod_${m.brand?.toLowerCase().replace(/\s+/g, '_')}_${watt}`,
+          name: `${m.brand} ${watt}W`,
+          fullName: `${m.brand} ${m.model || ''} (${watt}W)`.trim(),
+          brand: m.brand,
+          watt: watt,
+          priceKey: watt === 600 ? 'apsTopcon600Price' : watt === 585 ? 'waaree585Price' : watt === 540 ? 'waaree540Price' : 'apsBiFiPrice',
+          badge: m.cellTech || 'ALMM',
+          tech: `${watt}W ${m.cellTech || 'Solar Module'}`
+        });
+      }
+    });
+    return list;
+  }, [activeModules]);
+
+  // 2. Smart kW Options derived from available panel wattages (min 2 panels, increasing by 1) & database presets
+  const availableKwOptions = useMemo(() => {
+    const kwMap = new Map();
+
+    // Generate combinations from each preset make wattage for n >= 2 up to 25
+    allAvailablePresetMakes.forEach((make) => {
+      for (let n = 2; n <= 25; n++) {
+        const rawKw = (n * make.watt) / 1000;
+        const kwVal = Number(rawKw.toFixed(2));
+        if (!kwMap.has(kwVal)) {
+          kwMap.set(kwVal, {
+            kw: kwVal,
+            panelsCount: n,
+            primaryMake: make
+          });
+        }
+      }
+    });
+
+    // Also ensure all nominal capacities from activeBosMatrix are present
+    activeBosMatrix.forEach((slab) => {
+      const slabKw = Number(slab.capacityKW);
+      const modules = Number(slab.noOfModules) || 4;
+      if (!kwMap.has(slabKw)) {
+        kwMap.set(slabKw, {
+          kw: slabKw,
+          panelsCount: modules,
+          primaryMake: allAvailablePresetMakes[0]
+        });
+      }
+    });
+
+    // Return sorted ascending
+    return Array.from(kwMap.values()).sort((a, b) => a.kw - b.kw);
+  }, [allAvailablePresetMakes, activeBosMatrix]);
+
   // Selected kW for margin-based presets flow (defaults to 3.3 kW or initialSource)
   const [selectedPresetKw, setSelectedPresetKw] = useState(() => {
     if (initialSource?.systemCapacityKW || initialSource?.capacityKW) {
@@ -317,25 +378,66 @@ export default function CreateQuotation() {
     return 3.3;
   });
 
+  // Smart Panel Filtering: Only panels whose wattage * N equals selected kW (N >= 2)
+  const compatiblePresetMakes = useMemo(() => {
+    const targetKwW = Math.round(selectedPresetKw * 1000);
+    const matched = allAvailablePresetMakes.filter((make) => {
+      const n = Math.round(targetKwW / make.watt);
+      return n >= 2 && Math.abs(n * make.watt - targetKwW) <= 35;
+    });
+    return matched.length > 0 ? matched : allAvailablePresetMakes;
+  }, [allAvailablePresetMakes, selectedPresetKw]);
+
   // Selected Make Brand ID for margin-based presets flow
   const [selectedPresetMakeId, setSelectedPresetMakeId] = useState(() => {
     if (initialSource?.selectedModuleMake) {
-      const found = PRESET_MAKES.find(m => m.name.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()) || m.brand.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()));
+      const found = PRESET_MAKES.find(
+        (m) =>
+          m.name.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()) ||
+          m.brand.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase())
+      );
       if (found) return found.id;
     }
-    return 'adani_bifi';
+    return 'aps_bifi';
   });
 
-  // Active slab matching selected kW
-  const matchedSlab = useMemo(() => {
-    const match = activeBosMatrix.find(r => Math.abs(Number(r.capacityKW) - Number(selectedPresetKw)) < 0.05);
-    return match || activeBosMatrix[0] || { capacityKW: 3.3, noOfModules: 6, inverterCapacityKW: 3.6, adaniBiFiPrice: 138385, apsBiFiPrice: 127500, rayzonePrice: 128193, waaree585Price: 148308, apsTopcon600Price: 140257 };
-  }, [activeBosMatrix, selectedPresetKw]);
+  // Keep selectedPresetMakeId synchronized when selected kW changes so only valid panel is selected
+  useEffect(() => {
+    if (isMarginBased && compatiblePresetMakes.length > 0) {
+      const isCurrentValid = compatiblePresetMakes.some((m) => m.id === selectedPresetMakeId);
+      if (!isCurrentValid) {
+        const nextMake = compatiblePresetMakes[0];
+        setSelectedPresetMakeId(nextMake.id);
+        setPanelBrand(nextMake.brand);
+        setPanelWatt(nextMake.watt);
+        const reqModules = Math.round((Number(selectedPresetKw) * 1000) / nextMake.watt) || 6;
+        setPanelQuantity(reqModules);
+      }
+    }
+  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId, selectedPresetKw]);
 
   // Active Make object
   const currentPresetMake = useMemo(() => {
-    return PRESET_MAKES.find(m => m.id === selectedPresetMakeId) || PRESET_MAKES[0];
-  }, [selectedPresetMakeId]);
+    return compatiblePresetMakes.find((m) => m.id === selectedPresetMakeId) || compatiblePresetMakes[0] || PRESET_MAKES[0];
+  }, [compatiblePresetMakes, selectedPresetMakeId]);
+
+  // Active slab matching required module count and selected kW
+  const matchedSlab = useMemo(() => {
+    const requiredModules = Math.round((Number(selectedPresetKw) * 1000) / Number(currentPresetMake.watt));
+    const matchByModules = activeBosMatrix.find((r) => Number(r.noOfModules) === requiredModules);
+    const matchByKw = activeBosMatrix.find((r) => Math.abs(Number(r.capacityKW) - Number(selectedPresetKw)) < 0.05);
+    return matchByModules || matchByKw || activeBosMatrix[0] || {
+      capacityKW: 3.3,
+      noOfModules: 6,
+      inverterCapacityKW: 3.6,
+      adaniBiFiPrice: 160173,
+      apsBiFiPrice: 148500,
+      rayzonePrice: 148500,
+      waaree540Price: 155844,
+      waaree585Price: 173043,
+      apsTopcon600Price: 164520
+    };
+  }, [activeBosMatrix, selectedPresetKw, currentPresetMake]);
 
   // Preset Turnkey Base Price from the database matrix for current kW & make
   const activePresetBasePrice = useMemo(() => {
@@ -343,7 +445,7 @@ export default function CreateQuotation() {
     const camelVal = matchedSlab[currentPresetMake.priceKey];
     if (camelVal !== undefined && camelVal !== null) return Number(camelVal) || 0;
     // Snake_case DB fallback
-    const snakeKey = currentPresetMake.priceKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    const snakeKey = currentPresetMake.priceKey.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
     const snakeVal = matchedSlab[snakeKey];
     if (snakeVal !== undefined && snakeVal !== null) return Number(snakeVal) || 0;
     return 0;
@@ -362,14 +464,55 @@ export default function CreateQuotation() {
     ? Number(customPresetBasePrice)
     : activePresetBasePrice;
 
+  // Custom Dropdown UI States & Refs (Max 6 rows visible, vertical scrollbar on overflow)
+  const [kwDropdownOpen, setKwDropdownOpen] = useState(false);
+  const [makeDropdownOpen, setMakeDropdownOpen] = useState(false);
+  const kwDropdownRef = useRef(null);
+  const makeDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (kwDropdownRef.current && !kwDropdownRef.current.contains(event.target)) {
+        setKwDropdownOpen(false);
+      }
+      if (makeDropdownRef.current && !makeDropdownRef.current.contains(event.target)) {
+        setMakeDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setKwDropdownOpen(false);
+        setMakeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   // Handlers for Margin-Based kW and Make selection
   const handleSelectPresetKw = (kwVal) => {
     const numKw = Number(kwVal);
     setSelectedPresetKw(numKw);
-    const targetSlab = activeBosMatrix.find(r => Math.abs(Number(r.capacityKW) - numKw) < 0.05) || matchedSlab;
+    setKwDropdownOpen(false);
+    // Find compatible make
+    const targetKwW = Math.round(numKw * 1000);
+    const compat = allAvailablePresetMakes.filter((make) => {
+      const n = Math.round(targetKwW / make.watt);
+      return n >= 2 && Math.abs(n * make.watt - targetKwW) <= 35;
+    });
+    const validList = compat.length > 0 ? compat : allAvailablePresetMakes;
+    const targetMake = validList.find((m) => m.id === selectedPresetMakeId) || validList[0];
+    const modules = Math.round(targetKwW / targetMake.watt) || 6;
+    setPanelQuantity(modules);
+    setPanelWatt(targetMake.watt);
+    setPanelBrand(targetMake.brand);
+    setSelectedPresetMakeId(targetMake.id);
+    const targetSlab = activeBosMatrix.find((r) => Number(r.noOfModules) === modules) || activeBosMatrix.find((r) => Math.abs(Number(r.capacityKW) - numKw) < 0.05) || matchedSlab;
     if (targetSlab) {
-      const modules = Number(targetSlab.noOfModules) || 6;
-      setPanelQuantity(modules);
       const invCap = parseFloat(targetSlab.inverterCapacityKW) || numKw;
       setInverterCapacityKw(invCap);
     }
@@ -378,10 +521,13 @@ export default function CreateQuotation() {
 
   const handleSelectPresetMake = (makeId) => {
     setSelectedPresetMakeId(makeId);
-    const targetMake = PRESET_MAKES.find(m => m.id === makeId);
+    setMakeDropdownOpen(false);
+    const targetMake = allAvailablePresetMakes.find((m) => m.id === makeId);
     if (targetMake) {
       setPanelBrand(targetMake.brand);
       setPanelWatt(targetMake.watt);
+      const modules = Math.round((Number(selectedPresetKw) * 1000) / targetMake.watt) || panelQuantity;
+      setPanelQuantity(modules);
     }
     setCustomPresetBasePrice(null);
   };
@@ -1849,64 +1995,166 @@ export default function CreateQuotation() {
 
             {isMarginBased ? (
               <div className="flex flex-col gap-4">
-                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — DROPDOWN ONLY (NO BOXES) */}
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — CUSTOM SMART DROPDOWN (MAX 6 ROWS + SCROLLBAR) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5 relative" ref={kwDropdownRef}>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetKwSelect">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetKwSelectLabel">
                       <span>1. System Capacity (kW) *</span>
                     </label>
                     <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                      {matchedSlab?.noOfModules || 6} Panels Required
+                      {panelQuantity || matchedSlab?.noOfModules || 6} Panels Required
                     </span>
                   </div>
 
-                  {/* Dropdown-only Selection for kW / System Size */}
+                  {/* Custom Dropdown Trigger */}
                   <div className="relative">
-                    <select
+                    <button
+                      type="button"
                       id="presetKwSelect"
-                      value={selectedPresetKw}
-                      onChange={(e) => handleSelectPresetKw(e.target.value)}
-                      className="w-full h-11 pl-3.5 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                      onClick={() => {
+                        setKwDropdownOpen((prev) => !prev);
+                        setMakeDropdownOpen(false);
+                      }}
+                      className="w-full h-11 px-3.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 flex items-center justify-between cursor-pointer transition-all text-left"
+                      aria-haspopup="listbox"
+                      aria-expanded={kwDropdownOpen}
                     >
-                      {activeBosMatrix.map((slab) => {
-                        const slabKw = Number(slab.capacityKW);
-                        return (
-                          <option key={`opt-kw-${slabKw}`} value={slabKw}>
-                            {slabKw} kW System — {slab.noOfModules} Panels
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">speed</span>
+                        <span className="truncate">
+                          {selectedPresetKw} kW System — {panelQuantity || matchedSlab?.noOfModules || 6} Panels
+                        </span>
+                      </div>
+                      <span className={`material-symbols-outlined text-secondary text-[22px] shrink-0 transition-transform duration-200 ${kwDropdownOpen ? 'rotate-180 text-emerald-600' : ''}`}>
+                        expand_more
+                      </span>
+                    </button>
+
+                    {/* Custom Dropdown Menu: Max 6 rows visible (max-h-[264px]), vertical scrollbar on overflow */}
+                    {kwDropdownOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-2xl max-h-[264px] overflow-y-auto divide-y divide-surface-container-high/40 scrollbar-thin animate-in fade-in zoom-in-95 duration-100"
+                        role="listbox"
+                        aria-labelledby="presetKwSelectLabel"
+                      >
+                        {availableKwOptions.map((opt) => {
+                          const isSelected = Math.abs(Number(opt.kw) - Number(selectedPresetKw)) < 0.01;
+                          return (
+                            <button
+                              key={`kw-opt-${opt.kw}`}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => handleSelectPresetKw(opt.kw)}
+                              className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
+                                  : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
+                                  {isSelected ? 'check_circle' : 'circle'}
+                                </span>
+                                <span className="truncate">
+                                  {opt.kw} kW System
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-mono text-secondary shrink-0 ml-2 bg-surface-container px-2 py-0.5 rounded">
+                                {opt.panelsCount} Panels
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* 2. SOLAR PANEL SELECTION — DROPDOWN ONLY (NO CARDS, NO PRICES) */}
-                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5">
+                {/* 2. SOLAR PANEL SELECTION — CUSTOM SMART DROPDOWN (ONLY COMPATIBLE PANELS, MAX 6 ROWS + SCROLLBAR) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5 relative" ref={makeDropdownRef}>
                   <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" htmlFor="presetMakeSelect">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetMakeSelectLabel">
                       <span>2. Select Solar Panel *</span>
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-normal">
+                        Smart Filtered for {selectedPresetKw} kW
+                      </span>
                     </label>
                     <span className="text-[11px] text-secondary font-mono">
-                      {currentPresetMake.tech}
+                      {compatiblePresetMakes.length} Compatible Make{compatiblePresetMakes.length > 1 ? 's' : ''}
                     </span>
                   </div>
 
-                  {/* Dropdown-only Selection for Panel Make */}
+                  {/* Custom Dropdown Trigger */}
                   <div className="relative">
-                    <select
+                    <button
+                      type="button"
                       id="presetMakeSelect"
-                      value={selectedPresetMakeId}
-                      onChange={(e) => handleSelectPresetMake(e.target.value)}
-                      className="w-full h-11 pl-3.5 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold outline-none shadow-sm border border-surface-container-high focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                      onClick={() => {
+                        setMakeDropdownOpen((prev) => !prev);
+                        setKwDropdownOpen(false);
+                      }}
+                      className="w-full h-11 px-3.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 flex items-center justify-between cursor-pointer transition-all text-left"
+                      aria-haspopup="listbox"
+                      aria-expanded={makeDropdownOpen}
                     >
-                      {PRESET_MAKES.map((make) => (
-                        <option key={make.id} value={make.id}>
-                          {make.name} ({make.tech})
-                        </option>
-                      ))}
-                    </select>
-                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">solar_power</span>
+                        <span className="truncate">
+                          {currentPresetMake?.name} ({currentPresetMake?.tech || `${currentPresetMake?.watt}W`})
+                        </span>
+                      </div>
+                      <span className={`material-symbols-outlined text-secondary text-[22px] shrink-0 transition-transform duration-200 ${makeDropdownOpen ? 'rotate-180 text-emerald-600' : ''}`}>
+                        expand_more
+                      </span>
+                    </button>
+
+                    {/* Custom Dropdown Menu: Max 6 rows visible (max-h-[264px]), vertical scrollbar on overflow */}
+                    {makeDropdownOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-2xl max-h-[264px] overflow-y-auto divide-y divide-surface-container-high/40 scrollbar-thin animate-in fade-in zoom-in-95 duration-100"
+                        role="listbox"
+                        aria-labelledby="presetMakeSelectLabel"
+                      >
+                        {compatiblePresetMakes.map((make) => {
+                          const isSelected = make.id === selectedPresetMakeId;
+                          const reqModules = Math.round((Number(selectedPresetKw) * 1000) / make.watt);
+                          return (
+                            <button
+                              key={`make-opt-${make.id}`}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => handleSelectPresetMake(make.id)}
+                              className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
+                                  : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
+                                  {isSelected ? 'check_circle' : 'circle'}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="truncate font-bold text-on-surface">
+                                    {make.name}
+                                  </div>
+                                  <div className="text-[10px] text-secondary">
+                                    {make.brand} • {make.tech}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 ml-2">
+                                <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  {reqModules} Panels
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
