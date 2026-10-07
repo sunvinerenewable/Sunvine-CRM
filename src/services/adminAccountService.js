@@ -160,7 +160,7 @@ export const adminAccountService = {
   /**
    * Create new Dealer account in PostgreSQL
    */
-  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -168,7 +168,7 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'create-dealer',
-          payload: { dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
+          payload: { dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category: category || 'Margin Based', maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
         })
       });
       if (res.ok) {
@@ -200,6 +200,11 @@ export const adminAccountService = {
         password_hash: passwordHash,
         assigned_staff_id: assignedStaffId || 'STF-DIRECT',
         assigned_staff_name: assignedStaffName || 'Direct to Company (HQ Desk)',
+        pricing_config: {
+          category: category || 'Margin Based',
+          assignedStaffId: assignedStaffId || 'STF-DIRECT',
+          assignedStaffName: assignedStaffName || 'Direct to Company (HQ Desk)'
+        },
         updated_at: new Date().toISOString()
       };
       const { error } = await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
@@ -213,7 +218,7 @@ export const adminAccountService = {
   /**
    * Update Dealer profile or credentials in PostgreSQL
    */
-  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -221,7 +226,7 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'update-dealer-credentials',
-          payload: { id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
+          payload: { id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
         })
       });
       if (res.ok) {
@@ -246,6 +251,7 @@ export const adminAccountService = {
         status: status ? status.toLowerCase() : 'active',
         assigned_staff_id: assignedStaffId,
         assigned_staff_name: assignedStaffName,
+        ...(category ? { pricing_config: { category } } : {}),
         updated_at: new Date().toISOString()
       };
       if (mobile) {
