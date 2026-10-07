@@ -1,21 +1,24 @@
 import { ensureEnvLoaded, query } from './_lib/db.js';
+import { requireUser } from './_lib/requireAuth.js';
+import { applyCors } from './_lib/cors.js';
 
 ensureEnvLoaded();
 
 export default async function handler(req, res) {
   // CORS / Options preflight handling
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // SEC-010: Require valid JWT
+  const user = requireUser(req, res);
+  if (!user) return;
+
   try {
     if (req.method === 'GET') {
-      const publicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
+      const publicKey = process.env.VAPID_PUBLIC_KEY;
       if (!publicKey) {
         return res.status(500).json({ error: 'VAPID public key not configured on server.' });
       }
@@ -23,14 +26,21 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { action, subscription, userId, role, userAgent } = req.body || {};
+      const { action, subscription, userAgent } = req.body || {};
+
+      // SEC-010: Take userId and role strictly from verified JWT payload
+      const effectiveUserId = String(user.id || user.userId || user.dealer_id || (user.role === 'admin' ? 'admin' : 'unknown')).trim();
+      const effectiveRole = String(user.role || 'staff').trim().toLowerCase();
 
       if (action === 'unsubscribe') {
         const endpoint = subscription?.endpoint || req.body?.endpoint;
         if (!endpoint) {
           return res.status(400).json({ error: 'Subscription endpoint required to unsubscribe.' });
         }
-        await query('DELETE FROM public.push_subscriptions WHERE endpoint = $1', [endpoint]);
+        await query(
+          'DELETE FROM public.push_subscriptions WHERE endpoint = $1 AND (user_id = $2 OR role = $3)',
+          [endpoint, effectiveUserId, effectiveRole]
+        );
         return res.status(200).json({ success: true, message: 'Unsubscribed successfully.' });
       }
 
@@ -39,8 +49,6 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Invalid PushSubscription object with keys.' });
         }
 
-        const effectiveUserId = (userId || (role === 'admin' ? 'admin' : 'unknown')).trim();
-        const effectiveRole = (role || 'staff').trim().toLowerCase();
         const endpoint = subscription.endpoint;
         const p256dh = subscription.keys.p256dh;
         const auth = subscription.keys.auth;

@@ -1,10 +1,12 @@
 import webpush from 'web-push';
 import { ensureEnvLoaded, query } from './_lib/db.js';
+import { requireUser } from './_lib/requireAuth.js';
+import { applyCors } from './_lib/cors.js';
 
 ensureEnvLoaded();
 
-// Configure VAPID details for Web Push protocol
-const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY;
+// Configure VAPID details for Web Push protocol (Server-side environment variables only)
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
 const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:support@sunvinesolar.com';
 
@@ -16,8 +18,8 @@ if (vapidPublicKey && vapidPrivateKey) {
   }
 }
 
-// Configure Slack Webhook for Customer Files & Pipeline Updates
-const slackWebhookUrl = process.env.SLACK_FILES_UPDATE || process.env.VITE_SLACK_FILES_UPDATE;
+// Configure Slack Webhook for Customer Files & Pipeline Updates (Server-side environment variable only)
+const slackWebhookUrl = process.env.SLACK_FILES_UPDATE;
 
 function getTimestampIST() {
   return new Date().toLocaleString('en-IN', {
@@ -50,10 +52,7 @@ async function sendSlackNotification(slackPayload) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -62,6 +61,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // SEC-010: Restrict to admin and staff only
+  const user = requireUser(req, res, { roles: ['admin', 'staff'] });
+  if (!user) return;
 
   const {
     action = 'new-application',
@@ -74,7 +77,6 @@ export default async function handler(req, res) {
     assignedStaffId,
     assignedStaffName,
     targetUserId,
-    role,
     city,
     discom,
     financeType,
@@ -82,14 +84,17 @@ export default async function handler(req, res) {
     stageName,
     status,
     notes,
-    actor,
+    actor: bodyActor,
     docTitle,
     filename,
     reason,
-    cancelledBy,
-    restoredBy,
+    cancelledBy: bodyCancelledBy,
+    restoredBy: bodyRestoredBy,
     slackPayload
   } = req.body || {};
+
+  const callerActor = user.name || user.id || (user.role === 'admin' ? 'Admin Desk' : 'Staff Desk');
+  const actor = bodyActor || callerActor;
 
   // Handle direct Slack raw proxy request
   if (action === 'slack-raw' && slackPayload) {
@@ -104,12 +109,12 @@ export default async function handler(req, res) {
     const timestamp = getTimestampIST();
 
     if (action === 'test') {
-      const userTarget = targetUserId || (role === 'admin' ? 'admin' : null);
+      const userTarget = targetUserId || (user.role === 'admin' ? 'admin' : user.id);
       if (userTarget) targets = [userTarget];
 
       notificationPayload = JSON.stringify({
         title: '⚡ Sunvine Solar EPC Test Alert',
-        body: `OS push notifications are active and connected! (Target: ${userTarget || role || 'User'})`,
+        body: `OS push notifications are active and connected! (Target: ${userTarget})`,
         icon: '/pwa-192x192.png',
         badge: '/favicon.ico',
         url: '/?tab=dashboard',
@@ -121,7 +126,7 @@ export default async function handler(req, res) {
       });
 
       computedSlackPayload = {
-        text: `⚡ Sunvine Solar EPC Test Alert: Push & Slack channel verified for ${userTarget || role || 'User'}`,
+        text: `⚡ Sunvine Solar EPC Test Alert: Push & Slack channel verified for ${userTarget}`,
         blocks: [
           {
             type: 'header',
@@ -135,7 +140,7 @@ export default async function handler(req, res) {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Status:* 🟢 *Active & Operational*\n*Channel:* \`Slack Files Update\` + \`VAPID OS Push\`\n*Target User:* *${userTarget || role || 'User'}*`
+              text: `*Status:* 🟢 *Active & Operational*\n*Channel:* \`Slack Files Update\` + \`VAPID OS Push\`\n*Target User:* *${userTarget}*`
             }
           },
           {
@@ -181,7 +186,7 @@ export default async function handler(req, res) {
               },
               {
                 type: 'mrkdwn',
-                text: `👤 *Updated By:*\n*${actor || 'Staff Desk'}*`
+                text: `👤 *Updated By:*\n*${actor}*`
               }
             ]
           },
@@ -222,7 +227,7 @@ export default async function handler(req, res) {
             elements: [
               {
                 type: 'mrkdwn',
-                text: `👤 *Uploaded By:* ${actor || 'Dealer Partner'} • 🕒 _${timestamp} IST_ • ☁️ *Cloudflare R2 Vault*`
+                text: `👤 *Uploaded By:* ${actor} • 🕒 _${timestamp} IST_ • ☁️ *Cloudflare R2 Vault*`
               }
             ]
           }
@@ -230,6 +235,7 @@ export default async function handler(req, res) {
       };
     } else if (action === 'file-cancel') {
       const safeCust = (customerName || 'Customer').trim();
+      const cancelledBy = bodyCancelledBy || actor;
 
       computedSlackPayload = {
         text: `⚠️ Application Cancelled: ${safeCust} (${fileId || 'N/A'})`,
@@ -246,7 +252,7 @@ export default async function handler(req, res) {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Customer:* *${safeCust}* (\`${fileId || 'N/A'}\`)\n*Reason:* _${reason || 'Cancelled'}_\n*Cancelled By:* *${cancelledBy || 'Admin Desk'}*`
+              text: `*Customer:* *${safeCust}* (\`${fileId || 'N/A'}\`)\n*Reason:* _${reason || 'Cancelled'}_\n*Cancelled By:* *${cancelledBy}*`
             }
           },
           {
@@ -262,6 +268,7 @@ export default async function handler(req, res) {
       };
     } else if (action === 'file-restore') {
       const safeCust = (customerName || 'Customer').trim();
+      const restoredBy = bodyRestoredBy || actor;
 
       computedSlackPayload = {
         text: `♻️ Application Restored: ${safeCust} (${fileId || 'N/A'})`,
@@ -278,7 +285,7 @@ export default async function handler(req, res) {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Customer:* *${safeCust}* (\`${fileId || 'N/A'}\`)\n*Restored By:* *${restoredBy || 'Admin Desk'}*`
+              text: `*Customer:* *${safeCust}* (\`${fileId || 'N/A'}\`)\n*Restored By:* *${restoredBy}*`
             }
           },
           {
