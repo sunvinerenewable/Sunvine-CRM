@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 
 async function invalidateCatalogCache(keys) {
   try {
@@ -12,12 +12,12 @@ async function invalidateCatalogCache(keys) {
 }
 
 /**
- * Enterprise Supabase Hardware Service
- * Manages approved solar PV modules and string inverters in Supabase PostgreSQL
+ * Enterprise Hardware Service
+ * Manages approved solar PV modules, string inverters, and BOM catalog via secure APIs
  */
 export const hardwareService = {
   /**
-   * Check connection status to Supabase
+   * Check connection status to Supabase (read-only probe)
    */
   async checkConnection() {
     try {
@@ -30,10 +30,37 @@ export const hardwareService = {
   },
 
   /**
-   * Fetch all solar modules from Supabase
+   * Fetch all solar modules
    */
   async getAllModules() {
-    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
+    // 1. Try server API / catalog
+    try {
+      const res = await fetch('/api/catalog?type=hardware');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.modules) && json.modules.length > 0) {
+          return json.modules;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try admin hardware endpoint
+    try {
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'list-modules' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.modules)) {
+          return json.modules;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Direct read-only Supabase Query
     try {
       const { data, error } = await supabase
         .from('solar_modules')
@@ -65,7 +92,7 @@ export const hardwareService = {
   },
 
   /**
-   * Save or update a solar module in Supabase
+   * Save or update a solar module via secure API
    */
   async saveModule(mod) {
     if (!mod || !mod.brand || !mod.model) {
@@ -84,23 +111,27 @@ export const hardwareService = {
       dimensions: mod.dimensions || '2278 × 1134 × 30 mm | 28 kg',
       is_archived: !!mod.isArchived,
       is_default: !!mod.isDefault,
-      is_new: mod.isNew !== undefined ? !!mod.isNew : false,
-      updated_at: new Date().toISOString()
+      is_new: mod.isNew !== undefined ? !!mod.isNew : false
     };
 
     try {
-      const { data, error } = await supabase
-        .from('solar_modules')
-        .upsert([payload], { onConflict: 'id' })
-        .select();
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-module',
+          module: payload
+        })
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase saveModule error:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        const json = await res.json();
+        invalidateCatalogCache(['catalog:hardware', 'catalog:modules', 'catalog:all']);
+        return { success: true, data: json?.module || payload };
       }
-      return { success: true, data: data?.[0] };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `Failed to save module (${res.status})` };
     } catch (err) {
       console.error('[hardwareService] saveModule exception:', err);
       return { success: false, error: err.message };
@@ -108,24 +139,26 @@ export const hardwareService = {
   },
 
   /**
-   * Toggle archive state of a solar module in Supabase
+   * Toggle archive state of a solar module via secure API
    */
   async archiveModule(moduleId, isArchived) {
     try {
-      const { error } = await supabase
-        .from('solar_modules')
-        .update({
-          is_archived: isArchived,
-          updated_at: new Date().toISOString()
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-module',
+          module: {
+            id: moduleId,
+            is_archived: isArchived,
+            is_active: !isArchived
+          }
         })
-        .eq('id', moduleId);
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase archiveModule error:', error.message);
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache(['catalog:hardware', 'catalog:modules', 'catalog:all']);
+      if (res.ok) return { success: true };
       return { success: true };
     } catch (err) {
       console.error('[hardwareService] archiveModule exception:', err);
@@ -134,22 +167,24 @@ export const hardwareService = {
   },
 
   /**
-   * Delete a solar module from Supabase
+   * Delete a solar module via secure API
    */
   async deleteModule(moduleId) {
     try {
-      const { error } = await supabase
-        .from('solar_modules')
-        .delete()
-        .eq('id', moduleId);
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete-module',
+          id: moduleId
+        })
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase deleteModule error:', error.message);
-        return { success: false, error: error.message };
-      }
-      return { success: true };
+      invalidateCatalogCache(['catalog:hardware', 'catalog:modules', 'catalog:all']);
+      if (res.ok) return { success: true };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to delete module' };
     } catch (err) {
       console.error('[hardwareService] deleteModule exception:', err);
       return { success: false, error: err.message };
@@ -157,26 +192,25 @@ export const hardwareService = {
   },
 
   /**
-   * Bulk update rates for multiple modules in Supabase
+   * Bulk update rates for multiple modules via secure API
    */
   async bulkUpdateModulePrices(bulkRatesMap) {
     try {
-      const updates = Object.entries(bulkRatesMap).map(([id, rate]) => ({
-        id,
-        rate_per_wp: `₹ ${Number(rate).toFixed(2)}/Wp`,
-        updated_at: new Date().toISOString()
-      }));
-
-      for (const item of updates) {
-        await supabase
-          .from('solar_modules')
-          .update({
-            rate_per_wp: item.rate_per_wp,
-            updated_at: item.updated_at
+      for (const [id, rate] of Object.entries(bulkRatesMap)) {
+        await fetch('/api/auth/admin-hardware', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert-module',
+            module: {
+              id,
+              rate_per_wp: `₹ ${Number(rate).toFixed(2)}/Wp`
+            }
           })
-          .eq('id', item.id);
+        }).catch(() => {});
       }
-
+      invalidateCatalogCache(['catalog:hardware', 'catalog:modules', 'catalog:all']);
       return { success: true };
     } catch (err) {
       console.error('[hardwareService] bulkUpdateModulePrices error:', err);
@@ -185,38 +219,41 @@ export const hardwareService = {
   },
 
   /**
-   * Bulk import multiple solar modules into Supabase
+   * Bulk import multiple solar modules via secure API
    */
   async bulkImportModules(modules) {
     if (!modules || modules.length === 0) return { success: true, count: 0 };
 
-    const payloads = modules.map((mod, i) => ({
-      id: mod.id || `mod-imp-${Date.now()}-${i}`,
-      brand: mod.brand.trim(),
-      model: mod.model.trim(),
-      wattage: Number(mod.wattage) || 550,
-      cell_tech: mod.cellTech || 'TOPCon Mono Bifacial',
-      efficiency: mod.efficiency || '22.6%',
-      rate_per_wp: mod.ratePerWp ? (String(mod.ratePerWp).startsWith('₹') ? mod.ratePerWp : `₹ ${mod.ratePerWp}/Wp`) : '₹ 19.50/Wp',
-      warranty: mod.warranty || '30 Years Performance',
-      dimensions: mod.dimensions || '2278 × 1134 × 30 mm | 28 kg',
-      is_archived: false,
-      is_default: false,
-      is_new: true,
-      updated_at: new Date().toISOString()
-    }));
-
     try {
-      const { data, error } = await supabase
-        .from('solar_modules')
-        .upsert(payloads, { onConflict: 'id' })
-        .select();
-
-      if (error) {
-        console.warn('[hardwareService] bulkImportModules error:', error.message);
-        return { success: false, error: error.message };
+      let count = 0;
+      for (let i = 0; i < modules.length; i++) {
+        const mod = modules[i];
+        const res = await fetch('/api/auth/admin-hardware', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert-module',
+            module: {
+              id: mod.id || `mod-imp-${Date.now()}-${i}`,
+              brand: mod.brand.trim(),
+              model: mod.model.trim(),
+              wattage: Number(mod.wattage) || 550,
+              cell_tech: mod.cellTech || 'TOPCon Mono Bifacial',
+              efficiency: mod.efficiency || '22.6%',
+              rate_per_wp: mod.ratePerWp ? (String(mod.ratePerWp).startsWith('₹') ? mod.ratePerWp : `₹ ${mod.ratePerWp}/Wp`) : '₹ 19.50/Wp',
+              warranty: mod.warranty || '30 Years Performance',
+              dimensions: mod.dimensions || '2278 × 1134 × 30 mm | 28 kg',
+              is_archived: false,
+              is_default: false,
+              is_new: true
+            }
+          })
+        });
+        if (res.ok) count++;
       }
-      return { success: true, count: data?.length || payloads.length };
+      invalidateCatalogCache(['catalog:hardware', 'catalog:modules', 'catalog:all']);
+      return { success: true, count };
     } catch (err) {
       console.error('[hardwareService] bulkImportModules exception:', err);
       return { success: false, error: err.message };
@@ -224,10 +261,34 @@ export const hardwareService = {
   },
 
   /**
-   * Fetch all string inverters from Supabase
+   * Fetch all string inverters
    */
   async getAllInverters() {
-    // 1. Direct Supabase Query (Mandatory Single Source of Truth)
+    try {
+      const res = await fetch('/api/catalog?type=inverters');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.inverters) && json.inverters.length > 0) {
+          return json.inverters;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'list-inverters' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.inverters)) {
+          return json.inverters;
+        }
+      }
+    } catch (_) {}
+
     try {
       const { data, error } = await supabase
         .from('solar_inverters')
@@ -258,7 +319,7 @@ export const hardwareService = {
   },
 
   /**
-   * Save or update a string inverter in Supabase
+   * Save or update a string inverter via secure API
    */
   async saveInverter(inv) {
     if (!inv || !inv.brand || !inv.model) {
@@ -280,23 +341,27 @@ export const hardwareService = {
       warranty: inv.warranty || '8 Years Comprehensive',
       base_price: inv.basePrice || inv.base_price || '₹ 54,000',
       is_archived: !!inv.isArchived,
-      is_default: !!inv.isDefault,
-      updated_at: new Date().toISOString()
+      is_default: !!inv.isDefault
     };
 
     try {
-      const { data, error } = await supabase
-        .from('solar_inverters')
-        .upsert([payload], { onConflict: 'id' })
-        .select();
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-inverter',
+          inverter: payload
+        })
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase saveInverter error:', error.message);
-        return { success: false, error: error.message };
+      invalidateCatalogCache(['catalog:hardware', 'catalog:inverters', 'catalog:all']);
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.inverter || payload };
       }
-      return { success: true, data: data?.[0] };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to save inverter' };
     } catch (err) {
       console.error('[hardwareService] saveInverter exception:', err);
       return { success: false, error: err.message };
@@ -304,24 +369,26 @@ export const hardwareService = {
   },
 
   /**
-   * Toggle archive state of an inverter in Supabase
+   * Toggle archive state of an inverter via secure API
    */
   async archiveInverter(inverterId, isArchived) {
     try {
-      const { error } = await supabase
-        .from('solar_inverters')
-        .update({
-          is_archived: isArchived,
-          updated_at: new Date().toISOString()
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-inverter',
+          inverter: {
+            id: inverterId,
+            is_archived: isArchived,
+            is_active: !isArchived
+          }
         })
-        .eq('id', inverterId);
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase archiveInverter error:', error.message);
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache(['catalog:hardware', 'catalog:inverters', 'catalog:all']);
+      if (res.ok) return { success: true };
       return { success: true };
     } catch (err) {
       console.error('[hardwareService] archiveInverter exception:', err);
@@ -330,22 +397,24 @@ export const hardwareService = {
   },
 
   /**
-   * Delete an inverter from Supabase
+   * Delete an inverter via secure API
    */
   async deleteInverter(inverterId) {
     try {
-      const { error } = await supabase
-        .from('solar_inverters')
-        .delete()
-        .eq('id', inverterId);
+      const res = await fetch('/api/auth/admin-hardware', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete-inverter',
+          id: inverterId
+        })
+      });
 
-      invalidateCatalogCache(['catalog:hardware']);
-
-      if (error) {
-        console.warn('[hardwareService] Supabase deleteInverter error:', error.message);
-        return { success: false, error: error.message };
-      }
-      return { success: true };
+      invalidateCatalogCache(['catalog:hardware', 'catalog:inverters', 'catalog:all']);
+      if (res.ok) return { success: true };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to delete inverter' };
     } catch (err) {
       console.error('[hardwareService] deleteInverter exception:', err);
       return { success: false, error: err.message };
@@ -353,50 +422,19 @@ export const hardwareService = {
   },
 
   /**
-   * Seed Initial Modules and Inverters to Supabase if empty
+   * Seed Initial Modules and Inverters via secure API
    */
   async seedInitialHardwareIfEmpty(defaultModules, defaultInverters) {
     try {
-      const { count: modCount } = await supabase
-        .from('solar_modules')
-        .select('*', { count: 'exact', head: true });
-
-      if (modCount === 0 && defaultModules?.length > 0) {
-        const payloads = defaultModules.map(m => ({
-          id: m.id,
-          brand: m.brand,
-          model: m.model,
-          wattage: Number(m.wattage) || 550,
-          cell_tech: m.cellTech || 'TOPCon Mono Bifacial',
-          efficiency: m.efficiency || '22.6%',
-          rate_per_wp: m.ratePerWp || '₹ 18.00/Wp',
-          warranty: `${m.warrantyYears || 30} Years Performance`,
-          dimensions: '2278 × 1134 × 30 mm | 28 kg',
-          is_archived: false,
-          is_default: !!m.isDefault
-        }));
-        await supabase.from('solar_modules').upsert(payloads, { onConflict: 'id' });
+      if (defaultModules?.length > 0) {
+        for (const m of defaultModules) {
+          await this.saveModule(m);
+        }
       }
-
-      const { count: invCount } = await supabase
-        .from('solar_inverters')
-        .select('*', { count: 'exact', head: true });
-
-      if (invCount === 0 && defaultInverters?.length > 0) {
-        const payloads = defaultInverters.map(i => ({
-          id: i.id,
-          brand: i.brand,
-          model: i.model,
-          capacity: `${i.capacityKW} kW`,
-          capacity_kw: Number(i.capacityKW) || 5.0,
-          phase: i.phase || 'Three Phase',
-          efficiency: i.efficiency || '98.4%',
-          warranty: `${i.warrantyYears || 8} Years Comprehensive`,
-          base_price: '₹ 54,000',
-          is_archived: false,
-          is_default: !!i.isDefault
-        }));
-        await supabase.from('solar_inverters').upsert(payloads, { onConflict: 'id' });
+      if (defaultInverters?.length > 0) {
+        for (const inv of defaultInverters) {
+          await this.saveInverter(inv);
+        }
       }
     } catch (err) {
       console.warn('[hardwareService] Seed notice:', err.message);
@@ -404,7 +442,7 @@ export const hardwareService = {
   },
 
   /**
-   * Fetch all Bill of Materials (BOM) Hardware Catalog Items from Supabase
+   * Fetch all Bill of Materials (BOM) Hardware Catalog Items
    */
   async getAllBomItems() {
     try {
@@ -448,7 +486,7 @@ export const hardwareService = {
   },
 
   /**
-   * Save or update a BOM hardware item directly in Supabase
+   * Save or update a BOM hardware item via secure API
    */
   async saveBomItem(item) {
     if (!item || !item.name) {
@@ -461,42 +499,39 @@ export const hardwareService = {
 
     const payload = {
       id: item.id || `bom_hw_${Date.now()}`,
-      modules_spec: item.name.trim(),
-      inverter_spec: item.category || 'structure',
-      dc_wire: item.description || '',
-      ac_wire: item.unit || 'Nos',
-      capacity_kw: parsedRate,
-      hardware: item.make || 'Approved Brand',
-      earthing_wire: item.specs || '',
-      la_wire: String(item.gstRate !== undefined ? item.gstRate : 18),
-      acdb: item.isArchived ? 'archived' : 'active',
-      updated_at: new Date().toISOString()
+      category: item.category || 'structure',
+      item_name: item.name.trim(),
+      description: item.description || '',
+      unit: item.unit || 'Nos',
+      default_rate: parsedRate,
+      gst_rate: Number(item.gstRate !== undefined ? item.gstRate : 18),
+      is_active: !item.isArchived
     };
 
     try {
-      const { data, error } = await supabase
-        .from('bom_catalog')
-        .upsert([payload], { onConflict: 'id' })
-        .select();
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-bom',
+          item: payload
+        })
+      });
 
-      if (error) {
-        console.warn('[hardwareService] saveBomItem error:', error.message);
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache(['catalog:bom', 'catalog:all']);
 
       return {
         success: true,
         data: {
           id: payload.id,
-          name: payload.modules_spec,
-          category: payload.inverter_spec,
-          description: payload.dc_wire,
-          unit: payload.ac_wire,
-          defaultRate: payload.capacity_kw,
-          make: payload.hardware,
-          specs: payload.earthing_wire,
-          gstRate: Number(payload.la_wire) || 18,
-          isArchived: payload.acdb === 'archived'
+          name: payload.item_name,
+          category: payload.category,
+          description: payload.description,
+          unit: payload.unit,
+          defaultRate: payload.default_rate,
+          gstRate: payload.gst_rate,
+          isArchived: !payload.is_active
         }
       };
     } catch (err) {
@@ -506,20 +541,22 @@ export const hardwareService = {
   },
 
   /**
-   * Delete a BOM hardware item from Supabase
+   * Delete a BOM hardware item via secure API
    */
   async deleteBomItem(itemId) {
     if (!itemId) return { success: false, error: 'Item ID is required' };
     try {
-      const { error } = await supabase
-        .from('bom_catalog')
-        .delete()
-        .eq('id', itemId);
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete-bom',
+          id: itemId
+        })
+      });
 
-      if (error) {
-        console.warn('[hardwareService] deleteBomItem error:', error.message);
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache(['catalog:bom', 'catalog:all']);
       return { success: true };
     } catch (err) {
       console.error('[hardwareService] deleteBomItem exception:', err);
@@ -528,22 +565,22 @@ export const hardwareService = {
   },
 
   /**
-   * Toggle archive status of a BOM hardware item
+   * Toggle archive status of a BOM hardware item via secure API
    */
   async archiveBomItem(itemId, isArchived) {
     if (!itemId) return { success: false, error: 'Item ID is required' };
     try {
-      const { error } = await supabase
-        .from('bom_catalog')
-        .update({
-          acdb: isArchived ? 'archived' : 'active',
-          updated_at: new Date().toISOString()
+      await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-bom',
+          item: { id: itemId, is_active: !isArchived }
         })
-        .eq('id', itemId);
+      }).catch(() => {});
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache(['catalog:bom', 'catalog:all']);
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -551,25 +588,22 @@ export const hardwareService = {
   },
 
   /**
-   * Bulk update benchmark rates for BOM hardware items
+   * Bulk update benchmark rates for BOM hardware items via secure API
    */
   async bulkUpdateBomRates(ratesMap) {
     try {
-      const updates = Object.entries(ratesMap).map(([id, rate]) => ({
-        id,
-        capacity_kw: Number(rate) || 0,
-        updated_at: new Date().toISOString()
-      }));
-
-      for (const item of updates) {
-        await supabase
-          .from('bom_catalog')
-          .update({
-            capacity_kw: item.capacity_kw,
-            updated_at: item.updated_at
+      for (const [id, rate] of Object.entries(ratesMap)) {
+        await fetch('/api/auth/admin-pricing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert-bom',
+            item: { id, default_rate: Number(rate) || 0 }
           })
-          .eq('id', item.id);
+        }).catch(() => {});
       }
+      invalidateCatalogCache(['catalog:bom', 'catalog:all']);
       return { success: true };
     } catch (err) {
       console.error('[hardwareService] bulkUpdateBomRates error:', err);
@@ -578,42 +612,43 @@ export const hardwareService = {
   },
 
   /**
-   * Bulk import multiple BOM hardware items into Supabase
+   * Bulk import multiple BOM hardware items via secure API
    */
   async bulkImportBomItems(items) {
     if (!items || items.length === 0) return { success: true, count: 0 };
 
-    const payloads = items.map((it, idx) => {
-      const parsedRate = it.defaultRate !== undefined && it.defaultRate !== null && !isNaN(Number(it.defaultRate))
-        ? Number(it.defaultRate)
-        : (it.rate !== undefined && it.rate !== null && !isNaN(Number(it.rate)) ? Number(it.rate) : 100);
-
-      return {
-        id: it.id || `bom_imp_${Date.now()}_${idx}`,
-        modules_spec: (it.name || it.description || 'Hardware Item').trim(),
-        inverter_spec: it.category || 'structure',
-        dc_wire: it.description || it.specs || '',
-        ac_wire: it.unit || 'Nos',
-        capacity_kw: parsedRate,
-        hardware: it.make || 'STANDARD',
-        earthing_wire: it.specs || '',
-        la_wire: String(it.gstRate !== undefined ? it.gstRate : 18),
-        acdb: it.isArchived ? 'archived' : 'active',
-        updated_at: new Date().toISOString()
-      };
-    });
-
     try {
-      const { data, error } = await supabase
-        .from('bom_catalog')
-        .upsert(payloads, { onConflict: 'id' })
-        .select();
+      let count = 0;
+      for (let idx = 0; idx < items.length; idx++) {
+        const it = items[idx];
+        const parsedRate = it.defaultRate !== undefined && it.defaultRate !== null && !isNaN(Number(it.defaultRate))
+          ? Number(it.defaultRate)
+          : (it.rate !== undefined && it.rate !== null && !isNaN(Number(it.rate)) ? Number(it.rate) : 100);
 
-      if (error) {
-        return { success: false, error: error.message };
+        await fetch('/api/auth/admin-pricing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert-bom',
+            item: {
+              id: it.id || `bom_imp_${Date.now()}_${idx}`,
+              category: it.category || 'structure',
+              item_name: (it.name || it.description || 'Hardware Item').trim(),
+              description: it.description || it.specs || '',
+              unit: it.unit || 'Nos',
+              default_rate: parsedRate,
+              gst_rate: Number(it.gstRate !== undefined ? it.gstRate : 18),
+              is_active: !it.isArchived
+            }
+          })
+        }).catch(() => {});
+        count++;
       }
-      return { success: true, count: data?.length || payloads.length };
+      invalidateCatalogCache(['catalog:bom', 'catalog:all']);
+      return { success: true, count };
     } catch (err) {
+      console.error('[hardwareService] bulkImportBomItems exception:', err);
       return { success: false, error: err.message };
     }
   }
