@@ -96,10 +96,16 @@ export default defineConfig({
       workbox: {
         importScripts: ['/sw-push.js'],
         maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-        globPatterns: ['**/*.{css,html,ico,png,webp,svg,woff,woff2}', '**/index*.js'],
+        globPatterns: ['**/*.{css,html,ico,webp,svg}', '**/index*.js'],
+        globIgnores: [
+          '**/*.{png,jpg,jpeg,woff2}',
+          '**/vendor-three*',
+          '**/vendor-pdf*'
+        ],
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
-            urlPattern: /\.(?:js|mjs)$/i,
+            urlPattern: ({ url }) => !url.pathname.startsWith('/api') && /\.(?:js|mjs)$/i.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'sunvine-dynamic-chunks',
