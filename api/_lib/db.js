@@ -51,10 +51,14 @@ ensureEnvLoaded();
 export function getDbPool() {
   ensureEnvLoaded();
   if (!pool && process.env.DATABASE_URL) {
+    const ssl = process.env.PG_CA
+      ? { ca: process.env.PG_CA, rejectUnauthorized: true }
+      : { rejectUnauthorized: false };
+
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      max: 10,
+      ssl,
+      max: 3,
       idleTimeoutMillis: 30000
     });
   }
