@@ -1,21 +1,69 @@
-import { checkDistributedRateLimit, resetRateLimit, recordFailedAttempt, getClientIp } from './rateLimiter.js';
-import { verifyPassword } from './security.js';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import { checkDistributedRateLimit, resetRateLimit, getClientIp } from './rateLimiter.js';
 import { signJwt, createAuthCookieHeader } from './jwt.js';
 import { query, getSupabaseServiceClient } from './db.js';
+
+/**
+ * Compare password asynchronously against stored bcrypt or PBKDF2 hash.
+ * Compares exact password once.
+ */
+async function verifyCandidatePassword(password, storedHash) {
+  if (!password || !storedHash || typeof storedHash !== 'string') return false;
+
+  // 1. Handle standard bcrypt format ($2a$, $2b$, $2y$, $2x$)
+  if (/^\$2[abxy]\$/.test(storedHash)) {
+    try {
+      return await bcrypt.compare(password, storedHash);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // 2. Handle PBKDF2 format
+  if (storedHash.startsWith('pbkdf2$')) {
+    const parts = storedHash.split('$');
+    if (parts.length !== 4) return false;
+    const iterations = parseInt(parts[1], 10);
+    const salt = parts[2];
+    const originalHash = parts[3];
+
+    return new Promise((resolve) => {
+      crypto.pbkdf2(password, salt, iterations, 64, 'sha512', (err, derivedKey) => {
+        if (err) return resolve(false);
+        const a = derivedKey;
+        const b = Buffer.from(originalHash, 'hex');
+        if (a.length !== b.length) return resolve(false);
+        resolve(crypto.timingSafeEqual(a, b));
+      });
+    });
+  }
+
+  return false;
+}
+
+/**
+ * Record failed login attempt for IP and account identifier
+ */
+async function recordFailedLogin(ip, acct) {
+  await checkDistributedRateLimit(ip, { maxAttempts: 10, windowMs: 5 * 60 * 1000, increment: true }).catch(() => {});
+  if (acct) {
+    await checkDistributedRateLimit(`acct:${acct}`, { maxAttempts: 5, windowMs: 15 * 60 * 1000, increment: true }).catch(() => {});
+  }
+}
 
 /**
  * POST /api/auth/login
  *
  * Authentication flow (server-side only):
- * 1. Distributed Rate-limit check by client IP (Upstash Redis)
+ * 1. Distributed Rate-limit check by client IP & account identifier (Upstash Redis)
  * 2. Validate input shape
- * 3. Look up the user in Supabase via PostgreSQL direct connection or service-role client
- * 4. Verify password via PBKDF2/bcrypt comparison server-side
+ * 3. Look up user in database
+ * 4. Verify password via single async bcrypt/PBKDF2 comparison
  * 5. Issue a signed JWT in an HTTP-only cookie
  *
- * NO plaintext passwords. NO hardcoded credentials. NO bypass lists.
+ * NO plaintext passwords. NO hardcoded credentials. NO magic IDs.
  */
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
@@ -23,8 +71,8 @@ export default async function handler(req, res) {
 
   const clientIp = getClientIp(req);
 
-  // ── 1. Distributed Rate limiting (Upstash Redis) ──────────────────────────
-  const rateCheck = await checkDistributedRateLimit(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+  // ── 1. Distributed Rate limiting (IP level) ──────────────────────────────
+  const rateCheck = await checkDistributedRateLimit(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000, increment: false });
   res.setHeader('RateLimit-Limit', '10');
   res.setHeader('RateLimit-Remaining', String(rateCheck.remaining));
   res.setHeader('RateLimit-Reset', String(rateCheck.resetSeconds));
@@ -50,14 +98,23 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid role. Must be admin, dealer, or staff.' });
   }
 
-  if (!password || password.length < 1 || password.length > 128) {
-    recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+  // ── 2b. Per-identifier rate limit check (5 failures / 15 min window) ───────
+  const acctKey = `acct:${cleanIdentifier}`;
+  const acctCheck = await checkDistributedRateLimit(acctKey, { maxAttempts: 5, windowMs: 15 * 60 * 1000, increment: false });
+  if (!acctCheck.allowed) {
+    return res.status(429).json({
+      error: `Too many failed login attempts for this account. Try again in ${acctCheck.resetSeconds} seconds.`,
+      retryAfter: acctCheck.resetSeconds
+    });
+  }
+
+  if (!password || typeof password !== 'string' || password.length < 1 || password.length > 128) {
+    await recordFailedLogin(clientIp, cleanIdentifier);
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
 
   // ── 3. Database lookup ────────────────────────────────────────────────────
   try {
-    let userRecord = null;
     let userPayload = null;
 
     if (cleanRole === 'admin') {
@@ -67,8 +124,8 @@ export default async function handler(req, res) {
       try {
         const table = 'admin_accounts';
         const sql = isEmail
-          ? `SELECT id, email, full_name, role, password_hash, mobile_number FROM ${table} WHERE LOWER(email) = LOWER($1)`
-          : `SELECT id, email, full_name, role, password_hash, mobile_number FROM ${table} WHERE mobile_number = $1`;
+          ? `SELECT id, email, full_name, role, password_hash, mobile_number, status FROM ${table} WHERE LOWER(email) = LOWER($1)`
+          : `SELECT id, email, full_name, role, password_hash, mobile_number, status FROM ${table} WHERE mobile_number = $1`;
         const qRes = await query(sql, [cleanIdentifier]);
         candidates = qRes.rows || [];
       } catch (dbErr) {
@@ -77,12 +134,12 @@ export default async function handler(req, res) {
           const db = getSupabaseServiceClient();
           let qRes = await db
             .from('admin_accounts')
-            .select('id, email, full_name, role, password_hash, mobile_number')
+            .select('id, email, full_name, role, password_hash, mobile_number, status')
             .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier);
           if ((!qRes.data || qRes.data.length === 0) && !qRes.error) {
             qRes = await db
               .from('admin_users')
-              .select('id, email, full_name, role, password_hash, mobile_number')
+              .select('id, email, full_name, role, password_hash, mobile_number, status')
               .eq(isEmail ? 'email' : 'mobile_number', cleanIdentifier);
           }
           candidates = qRes.data || [];
@@ -92,42 +149,41 @@ export default async function handler(req, res) {
       }
 
       if (!candidates || candidates.length === 0) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
-      // Verify BOTH mobile/email AND password across all candidate admin accounts
+      // Verify password across candidates using single async comparison
       let matchedAdmin = null;
       for (const cand of candidates) {
-        const isValid =
-          verifyPassword(password, cand.password_hash) ||
-          verifyPassword(password.replace(/\s+/g, ''), cand.password_hash) ||
-          verifyPassword(password.trim(), cand.password_hash);
-        if (isValid) {
+        if (await verifyCandidatePassword(password, cand.password_hash)) {
           matchedAdmin = cand;
           break;
         }
       }
 
       if (!matchedAdmin) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
-      userRecord = matchedAdmin;
+      if (matchedAdmin.status === 'suspended' || matchedAdmin.status === 'inactive') {
+        return res.status(403).json({ error: 'Account suspended. Contact Sunvine support.' });
+      }
+
       userPayload = {
-        id: userRecord.id,
+        id: matchedAdmin.id,
         role: 'admin',
-        email: userRecord.email,
-        name: userRecord.full_name,
-        adminRole: userRecord.role
+        email: matchedAdmin.email,
+        name: matchedAdmin.full_name,
+        adminRole: matchedAdmin.role
       };
 
     } else if (cleanRole === 'dealer') {
       const cleanMobile = cleanIdentifier.replace(/\D/g, '').slice(-10);
       if (cleanMobile.length !== 10) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
-        return res.status(401).json({ error: 'Invalid mobile number.' });
+        await recordFailedLogin(clientIp, cleanIdentifier);
+        return res.status(401).json({ error: 'Invalid credentials.' });
       }
       let candidates = [];
 
@@ -150,30 +206,35 @@ export default async function handler(req, res) {
       }
 
       if (!candidates || candidates.length === 0) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
-      // Verify BOTH mobile number AND password across all candidate dealer accounts
+      // Verify password across candidate dealer accounts
       let matchedDealer = null;
       for (const cand of candidates) {
-        const isValid =
-          verifyPassword(password, cand.password_hash) ||
-          verifyPassword(password.replace(/\s+/g, ''), cand.password_hash) ||
-          verifyPassword(password.trim(), cand.password_hash);
-        if (isValid) {
+        if (await verifyCandidatePassword(password, cand.password_hash)) {
           matchedDealer = cand;
           break;
         }
       }
 
       if (!matchedDealer) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
       if (matchedDealer.status === 'suspended' || matchedDealer.status === 'inactive') {
         return res.status(403).json({ error: 'Account suspended. Contact Sunvine support.' });
+      }
+
+      // HC-03: Dealer margin cap must come strictly from database — no hardcoded fallback
+      if (
+        matchedDealer.max_margin_cap_per_kw === null ||
+        matchedDealer.max_margin_cap_per_kw === undefined ||
+        isNaN(Number(matchedDealer.max_margin_cap_per_kw))
+      ) {
+        throw new Error(`Dealer ${matchedDealer.dealer_code || matchedDealer.id} is missing max_margin_cap_per_kw configuration in database.`);
       }
 
       const isDirect = matchedDealer.assigned_staff_id === 'STF-DIRECT';
@@ -189,7 +250,7 @@ export default async function handler(req, res) {
         state: matchedDealer.state,
         discom: matchedDealer.discom,
         tier: matchedDealer.tier,
-        maxMarginCapPerKw: matchedDealer.max_margin_cap_per_kw || 6000,
+        maxMarginCapPerKw: Number(matchedDealer.max_margin_cap_per_kw),
         assignedStaffId: matchedDealer.assigned_staff_id || 'STF-DIRECT',
         assignedStaffName: matchedDealer.assigned_staff_name || (isDirect ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
         pricingConfig: matchedDealer.pricing_config || {}
@@ -200,15 +261,15 @@ export default async function handler(req, res) {
       const { staffRole: reqStaffRole } = req.body || {};
       const cleanMobile = cleanIdentifier.replace(/\D/g, '').slice(-10);
       if (cleanMobile.length !== 10) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
-        return res.status(401).json({ error: 'Invalid mobile number.' });
+        await recordFailedLogin(clientIp, cleanIdentifier);
+        return res.status(401).json({ error: 'Invalid credentials.' });
       }
       let candidates = [];
       const isReqVerification = String(reqStaffRole || '').toLowerCase().includes('verification');
 
       try {
         const sql = `
-          SELECT id, name, phone, mobile_number, email, role, department, city, zone, status, password_hash 
+          SELECT id, name, phone, mobile_number, email, role, department, is_verification, city, zone, status, password_hash 
           FROM staff_accounts 
           WHERE phone = $1 OR mobile_number = $1 OR phone = $2 OR mobile_number = $2
         `;
@@ -220,7 +281,7 @@ export default async function handler(req, res) {
           const db = getSupabaseServiceClient();
           const qRes = await db
             .from('staff_accounts')
-            .select('id, name, phone, mobile_number, email, role, department, city, zone, status, password_hash')
+            .select('id, name, phone, mobile_number, email, role, department, is_verification, city, zone, status, password_hash')
             .or(`phone.eq.${cleanMobile},mobile_number.eq.${cleanMobile},phone.eq.+91${cleanMobile},mobile_number.eq.+91${cleanMobile}`);
           candidates = qRes.data || [];
         } catch (supErr) {
@@ -229,27 +290,21 @@ export default async function handler(req, res) {
       }
 
       if (!candidates || candidates.length === 0) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
-      // Verify BOTH mobile number AND password across all candidate staff accounts.
-      // If reqStaffRole is set (e.g. verification vs sales), prefer the candidate that matches the department/role.
+      // Verify password across candidates
       let matchedStaff = null;
 
       // Pass 1: Match BOTH password AND requested department/role
       for (const cand of candidates) {
-        const passMatch =
-          verifyPassword(password, cand.password_hash) ||
-          verifyPassword(password.replace(/\s+/g, ''), cand.password_hash) ||
-          verifyPassword(password.trim(), cand.password_hash);
-
-        if (passMatch) {
+        if (await verifyCandidatePassword(password, cand.password_hash)) {
+          // HC-12: Use is_verification column / department instead of magic IDs
           const isCandVerification =
+            Boolean(cand.is_verification) ||
             (cand.department || '').toLowerCase().includes('verification') ||
-            (cand.role || '').toLowerCase().includes('verification') ||
-            cand.id === 'STF-800' ||
-            cand.id === 'STF-003';
+            (cand.role || '').toLowerCase().includes('verification');
 
           if (reqStaffRole) {
             if (isCandVerification === isReqVerification) {
@@ -266,11 +321,7 @@ export default async function handler(req, res) {
       // Pass 2: If no role-specific match found, check any candidate matching password
       if (!matchedStaff) {
         for (const cand of candidates) {
-          const passMatch =
-            verifyPassword(password, cand.password_hash) ||
-            verifyPassword(password.replace(/\s+/g, ''), cand.password_hash) ||
-            verifyPassword(password.trim(), cand.password_hash);
-          if (passMatch) {
+          if (await verifyCandidatePassword(password, cand.password_hash)) {
             matchedStaff = cand;
             break;
           }
@@ -278,7 +329,7 @@ export default async function handler(req, res) {
       }
 
       if (!matchedStaff) {
-        recordFailedAttempt(clientIp, { maxAttempts: 10, windowMs: 5 * 60 * 1000 });
+        await recordFailedLogin(clientIp, cleanIdentifier);
         return res.status(401).json({ error: 'Invalid credentials.' });
       }
 
@@ -286,11 +337,11 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Account suspended. Contact Sunvine support.' });
       }
 
+      // HC-12: Check is_verification column or department
       const isVerification =
+        Boolean(matchedStaff.is_verification) ||
         (matchedStaff.department || '').toLowerCase().includes('verification') ||
-        (matchedStaff.role || '').toLowerCase().includes('verification') ||
-        matchedStaff.id === 'STF-800' ||
-        matchedStaff.id === 'STF-003';
+        (matchedStaff.role || '').toLowerCase().includes('verification');
 
       userPayload = {
         id: matchedStaff.id,
@@ -307,8 +358,10 @@ export default async function handler(req, res) {
       };
     }
 
-    // ── 4. Issue JWT ────────────────────────────────────────────────────────
+    // ── 4. Issue JWT & Reset Rate Limits ─────────────────────────────────────
     await resetRateLimit(clientIp);
+    await resetRateLimit(acctKey);
+
     const token = signJwt(userPayload, 24 * 60 * 60);
     res.setHeader('Set-Cookie', createAuthCookieHeader(token, 24 * 60 * 60));
 
