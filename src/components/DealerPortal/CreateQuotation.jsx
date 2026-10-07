@@ -340,34 +340,14 @@ export default function CreateQuotation() {
     const kwMap = new Map();
 
     (activeBosMatrix || []).forEach((slab) => {
-      // Standard nominal capacity (e.g. 2.2, 2.75, 3.3, 3.85, 4.4, 4.95, 5.5, 6.05, 6.6, 7.7, 8.25, 8.8, etc.)
-      const standardKw = Number(slab.capacityKW);
-      const modules = Number(slab.noOfModules) || 6;
+      // Standard nominal capacity strictly from admin database preset slab
+      const standardKw = Number(slab.capacityKW || slab.capacity_kw);
+      const modules = Number(slab.noOfModules || slab.no_of_modules) || 4;
       if (standardKw && !kwMap.has(standardKw)) {
         kwMap.set(standardKw, {
           kw: standardKw,
           panelsCount: modules,
           label: `${standardKw} kW System — ${modules} Panels`
-        });
-      }
-
-      // If 600W TOPCon capacity is explicitly configured in this admin slab (e.g. 2.4, 3.0, 3.6, 4.2, 4.8, 5.4, 6.0, etc.)
-      const topcon600Kw = Number(slab.topcon600CapacityKW);
-      if (topcon600Kw && !kwMap.has(topcon600Kw)) {
-        kwMap.set(topcon600Kw, {
-          kw: topcon600Kw,
-          panelsCount: modules,
-          label: `${topcon600Kw} kW System — ${modules} Panels`
-        });
-      }
-
-      // If 585W TOPCon capacity is explicitly configured in this admin slab (e.g. 2.34, 2.925, 3.51, 4.095, etc.)
-      const topcon585Kw = Number(slab.topcon585CapacityKW);
-      if (topcon585Kw && !kwMap.has(topcon585Kw)) {
-        kwMap.set(topcon585Kw, {
-          kw: topcon585Kw,
-          panelsCount: modules,
-          label: `${topcon585Kw} kW System — ${modules} Panels`
         });
       }
     });
@@ -384,15 +364,10 @@ export default function CreateQuotation() {
     return 3.3;
   });
 
-  // Smart Panel Filtering: Only panels whose wattage * N equals selected kW (N >= 2)
+  // All preset makes created/configured in the database matrix
   const compatiblePresetMakes = useMemo(() => {
-    const targetKwW = Math.round(selectedPresetKw * 1000);
-    const matched = allAvailablePresetMakes.filter((make) => {
-      const n = Math.round(targetKwW / make.watt);
-      return n >= 2 && Math.abs(n * make.watt - targetKwW) <= 35;
-    });
-    return matched.length > 0 ? matched : allAvailablePresetMakes;
-  }, [allAvailablePresetMakes, selectedPresetKw]);
+    return allAvailablePresetMakes;
+  }, [allAvailablePresetMakes]);
 
   // Selected Make Brand ID for margin-based presets flow
   const [selectedPresetMakeId, setSelectedPresetMakeId] = useState(() => {
@@ -407,7 +382,7 @@ export default function CreateQuotation() {
     return 'aps_bifi';
   });
 
-  // Keep selectedPresetMakeId synchronized when selected kW changes so only valid panel is selected
+  // Keep selectedPresetMakeId synchronized with available makes
   useEffect(() => {
     if (isMarginBased && compatiblePresetMakes.length > 0) {
       const isCurrentValid = compatiblePresetMakes.some((m) => m.id === selectedPresetMakeId);
@@ -416,23 +391,21 @@ export default function CreateQuotation() {
         setSelectedPresetMakeId(nextMake.id);
         setPanelBrand(nextMake.brand);
         setPanelWatt(nextMake.watt);
-        const reqModules = Math.round((Number(selectedPresetKw) * 1000) / nextMake.watt) || 6;
-        setPanelQuantity(reqModules);
       }
     }
-  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId, selectedPresetKw]);
+  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId]);
 
   // Active Make object
   const currentPresetMake = useMemo(() => {
     return compatiblePresetMakes.find((m) => m.id === selectedPresetMakeId) || compatiblePresetMakes[0] || PRESET_MAKES[0];
   }, [compatiblePresetMakes, selectedPresetMakeId]);
 
-  // Active slab matching required module count and selected kW
+  // Active slab strictly matching selected kW from the admin matrix
   const matchedSlab = useMemo(() => {
-    const requiredModules = Math.round((Number(selectedPresetKw) * 1000) / Number(currentPresetMake.watt));
-    const matchByModules = activeBosMatrix.find((r) => Number(r.noOfModules) === requiredModules);
-    const matchByKw = activeBosMatrix.find((r) => Math.abs(Number(r.capacityKW) - Number(selectedPresetKw)) < 0.05);
-    return matchByModules || matchByKw || activeBosMatrix[0] || {
+    const matchByKw = (activeBosMatrix || []).find(
+      (r) => Math.abs(Number(r.capacityKW || r.capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    return matchByKw || activeBosMatrix?.[0] || {
       capacityKW: 3.3,
       noOfModules: 6,
       inverterCapacityKW: 3.6,
@@ -443,7 +416,7 @@ export default function CreateQuotation() {
       waaree585Price: 173043,
       apsTopcon600Price: 164520
     };
-  }, [activeBosMatrix, selectedPresetKw, currentPresetMake]);
+  }, [activeBosMatrix, selectedPresetKw]);
 
   // Preset Turnkey Base Price from the database matrix for current kW & make
   const activePresetBasePrice = useMemo(() => {
@@ -504,22 +477,14 @@ export default function CreateQuotation() {
     const numKw = Number(kwVal);
     setSelectedPresetKw(numKw);
     setKwDropdownOpen(false);
-    // Find compatible make
-    const targetKwW = Math.round(numKw * 1000);
-    const compat = allAvailablePresetMakes.filter((make) => {
-      const n = Math.round(targetKwW / make.watt);
-      return n >= 2 && Math.abs(n * make.watt - targetKwW) <= 35;
+    const targetSlab = (activeBosMatrix || []).find((r) => {
+      const slabKw = Number(r.capacityKW || r.capacity_kw);
+      return Math.abs(slabKw - numKw) < 0.05;
     });
-    const validList = compat.length > 0 ? compat : allAvailablePresetMakes;
-    const targetMake = validList.find((m) => m.id === selectedPresetMakeId) || validList[0];
-    const modules = Math.round(targetKwW / targetMake.watt) || 6;
-    setPanelQuantity(modules);
-    setPanelWatt(targetMake.watt);
-    setPanelBrand(targetMake.brand);
-    setSelectedPresetMakeId(targetMake.id);
-    const targetSlab = activeBosMatrix.find((r) => Number(r.noOfModules) === modules) || activeBosMatrix.find((r) => Math.abs(Number(r.capacityKW) - numKw) < 0.05) || matchedSlab;
     if (targetSlab) {
-      const invCap = parseFloat(targetSlab.inverterCapacityKW) || numKw;
+      const modules = Number(targetSlab.noOfModules || targetSlab.no_of_modules) || 4;
+      setPanelQuantity(modules);
+      const invCap = parseFloat(targetSlab.inverterCapacityKW || targetSlab.inverter_capacity_kw) || numKw;
       setInverterCapacityKw(invCap);
     }
     setCustomPresetBasePrice(null);
@@ -532,7 +497,7 @@ export default function CreateQuotation() {
     if (targetMake) {
       setPanelBrand(targetMake.brand);
       setPanelWatt(targetMake.watt);
-      const modules = Math.round((Number(selectedPresetKw) * 1000) / targetMake.watt) || panelQuantity;
+      const modules = Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity;
       setPanelQuantity(modules);
     }
     setCustomPresetBasePrice(null);
@@ -560,10 +525,10 @@ export default function CreateQuotation() {
   });
 
   // Auto-calculated System Capacity (kW)
-  // Accurately calculated from exact module count * panel make watt peak (e.g. 4 modules * 555W = 2.22 kW, 4 * 600W = 2.40 kW, 4 * 585W = 2.34 kW)
-  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules) || panelQuantity) : panelQuantity;
+  // Accurately aligned with Admin preset slab capacity
+  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
   const kw = isMarginBased
-    ? Number(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(2))
+    ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || ((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(2))
     : Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
   const moduleCount = actualModuleCount;
   const rooftopAreaSqFt = Math.round(kw * 64);
@@ -571,7 +536,7 @@ export default function CreateQuotation() {
   // Synchronize Margin-Based state with component hardware state
   useEffect(() => {
     if (isMarginBased && matchedSlab) {
-      const targetModules = Number(matchedSlab.noOfModules) || 6;
+      const targetModules = Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4;
       if (panelQuantity !== targetModules) {
         setPanelQuantity(targetModules);
       }
@@ -581,7 +546,7 @@ export default function CreateQuotation() {
       if (panelBrand !== currentPresetMake.brand) {
         setPanelBrand(currentPresetMake.brand);
       }
-      const invCap = parseFloat(matchedSlab.inverterCapacityKW) || Number(selectedPresetKw);
+      const invCap = parseFloat(matchedSlab.inverterCapacityKW || matchedSlab.inverter_capacity_kw) || Number(selectedPresetKw);
       if (inverterCapacityKw !== invCap) {
         setInverterCapacityKw(invCap);
       }
@@ -2070,11 +2035,11 @@ export default function CreateQuotation() {
                     <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetMakeSelectLabel">
                       <span>2. Select Solar Panel *</span>
                       <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-normal">
-                        Smart Filtered for {selectedPresetKw} kW
+                        Live DB Presets ({selectedPresetKw} kW)
                       </span>
                     </label>
                     <span className="text-[11px] text-secondary font-mono">
-                      {compatiblePresetMakes.length} Compatible Make{compatiblePresetMakes.length > 1 ? 's' : ''}
+                      {compatiblePresetMakes.length} Preset Makes
                     </span>
                   </div>
 
@@ -2111,7 +2076,8 @@ export default function CreateQuotation() {
                       >
                         {compatiblePresetMakes.map((make) => {
                           const isSelected = make.id === selectedPresetMakeId;
-                          const reqModules = Math.round((Number(selectedPresetKw) * 1000) / make.watt);
+                          const slabModules = Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity;
+                          const slabPrice = matchedSlab ? (matchedSlab[make.priceKey] || matchedSlab[make.priceKey?.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)]) : null;
                           return (
                             <button
                               key={`make-opt-${make.id}`}
@@ -2138,9 +2104,14 @@ export default function CreateQuotation() {
                                   </div>
                                 </div>
                               </div>
-                              <div className="text-right shrink-0 ml-2">
-                                <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                  {reqModules} Panels
+                              <div className="text-right shrink-0 ml-2 flex flex-col items-end">
+                                {slabPrice ? (
+                                  <span className="text-xs font-mono font-bold text-emerald-950">
+                                    {formatINR(slabPrice)}
+                                  </span>
+                                ) : null}
+                                <span className="text-[10px] font-mono text-secondary">
+                                  {slabModules} Panels
                                 </span>
                               </div>
                             </button>
@@ -3667,16 +3638,6 @@ export default function CreateQuotation() {
                 </span>
               </div>
 
-              {/* Estimated Annual Savings */}
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-secondary font-medium">Estimated Generation &amp; Savings</span>
-                  <span className="text-[10px] text-secondary">{annualGenerationUnits.toLocaleString()} units/yr @ ~₹6.67/unit</span>
-                </div>
-                <span className="text-on-surface font-bold tabular-nums whitespace-nowrap shrink-0 font-mono">
-                  {formatINR(annualSavings)} <span className="text-[10px] text-secondary font-normal">/ yr</span>
-                </span>
-              </div>
 
               {/* Final Customer Payable */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t-2 border-[#6CBF3D]">
@@ -3715,20 +3676,6 @@ export default function CreateQuotation() {
               )}
             </div>
 
-            {/* ROI & Payback Micro-Telemetry Graphic */}
-            <div className="bg-surface-container-low rounded-xl p-4 flex flex-col gap-3 border border-surface-container-high">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-secondary font-medium">Estimated Payback Period</span>
-                <span className="font-label-md text-on-surface font-bold">{paybackYears} Years</span>
-              </div>
-              <div className="w-full bg-surface-container h-2.5 rounded-full overflow-hidden flex">
-                <div className="bg-primary-container h-full rounded-full transition-all duration-300" style={{ width: `${paybackPercent}%` }}></div>
-              </div>
-              <div className="flex items-center justify-between text-[10px] sm:text-label-xs text-secondary gap-2">
-                <span className="shrink-0">Break-even: {breakEvenYear}</span>
-                <span className="text-right">{25 - Math.ceil(parseFloat(paybackYears))}+ Yrs Free Power</span>
-              </div>
-            </div>
 
             {/* Interactive Commercials Card (Dealer Margin OR Admin Company Margin) */}
             <div className="p-3.5 sm:p-4 bg-surface rounded-xl border border-surface-container-high flex flex-col gap-3">
