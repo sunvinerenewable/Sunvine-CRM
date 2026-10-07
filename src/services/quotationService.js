@@ -1,15 +1,12 @@
-import { supabase } from '../lib/supabase';
-
 /**
  * Enterprise Quotation Service
  * 
- * Routes operations through the secure /api/quotations gateway:
+ * Routes operations exclusively through the secure /api/quotations gateway:
  * - Server-side money recomputation
  * - Role-scoped data isolation
  * - Margin cap enforcement
  * - Status transition state machine
- * 
- * Falls back to direct Supabase / local cache only when the API server is unreachable.
+ * - Zero anonymous direct SELECT / mutation bypasses (BUG-03, SEC-008)
  */
 
 export const quotationService = {
@@ -17,7 +14,6 @@ export const quotationService = {
    * Fetch all quotations (scoped by role via server API)
    */
   async getAllQuotations(limit = 100) {
-    // 1. Try secure API gateway
     try {
       const res = await fetch(`/api/quotations?action=list&limit=${limit}`, {
         credentials: 'include'
@@ -33,45 +29,20 @@ export const quotationService = {
           });
         }
       }
+      return [];
     } catch (err) {
-      if (import.meta.env?.PROD) {
-        console.error('[quotationService] API unreachable in production:', err?.message || err);
-        return [];
-      }
-    }
-
-    // 2. Direct Supabase fallback
-    try {
-      const { data, error } = await supabase
-        .from('quotations')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        console.warn('Supabase quotation fetch notice:', error.message);
-        return [];
-      }
-      return (data || []).map(row => {
-        if (row.quote_payload && typeof row.quote_payload === 'object') {
-          return { ...row.quote_payload, ...row, id: row.id };
-        }
-        return row;
-      });
-    } catch (err) {
-      console.error('Fetch quotations error:', err);
+      console.error('[quotationService] API fetch error:', err?.message || err);
       return [];
     }
   },
 
   /**
-   * Fetch single quotation by ID — DB/API
+   * Fetch single quotation by ID via secure API gateway
    */
   async getQuotationById(id) {
     if (!id) return null;
     const cleanId = String(id).trim();
 
-    // 1. Try secure API gateway first
     try {
       const res = await fetch(`/api/quotations?action=get&id=${encodeURIComponent(cleanId)}`, {
         credentials: 'include'
@@ -85,30 +56,15 @@ export const quotationService = {
             : row;
         }
       }
-    } catch (_) {
-      // API unreachable, fall through
+    } catch (err) {
+      console.error('[quotationService] API get error:', err?.message || err);
     }
-
-    // 2. Try direct Supabase
-    try {
-      const { data, error } = await supabase
-        .from('quotations')
-        .select('*')
-        .eq('id', cleanId)
-        .maybeSingle();
-
-      if (!error && data) {
-        return (data.quote_payload && typeof data.quote_payload === 'object')
-          ? { ...data.quote_payload, ...data, id: data.id }
-          : data;
-      }
-    } catch (_) {}
 
     return null;
   },
 
   /**
-   * Fetch public proposal by unguessable share_token (no auth required)
+   * Fetch public proposal by unguessable share_token (public view)
    */
   async getPublicProposal(shareToken) {
     if (!shareToken) return null;
@@ -125,12 +81,18 @@ export const quotationService = {
   /**
    * Save / Create quotation via server API gateway.
    * Money logic is recomputed server-side; client numbers are never blindly trusted.
+   * Uses idempotent request_id for duplicate submission safety.
    */
   async saveQuotation(quote) {
     if (!quote) return { success: false, error: 'Quotation data required.' };
 
+    const requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
     const apiPayload = {
       action: 'save',
+      request_id: requestId,
       quotation_id: quote.id,
       dealer_id: quote.dealerId || quote.dealer_id,
       dealer_code: quote.dealerCode,
@@ -156,7 +118,6 @@ export const quotationService = {
       bom_items: quote.bomItems || []
     };
 
-    // 1. Send to server API gateway (where money is recomputed)
     try {
       const res = await fetch('/api/quotations', {
         method: 'POST',
@@ -173,50 +134,11 @@ export const quotationService = {
         }
       }
 
-      if (res.status === 422) {
-        const errJson = await res.json().catch(() => ({}));
-        return { success: false, error: errJson.error || 'Quotation failed validation.' };
-      }
-    } catch (_) {
-      // API server not responding (local dev mode without api server)
-    }
-
-    // 2. Local dev fallback (NEVER in production — bypasses server-side money recompute)
-    if (import.meta.env?.PROD) {
-      return { success: false, error: 'Quotation service temporarily unavailable. Please try again.' };
-    }
-    try {
-      const fallbackPayload = {
-        id: quote.id,
-        customer_name: apiPayload.customer_name,
-        customer_phone: apiPayload.customer_phone,
-        customer_city: apiPayload.customer_city,
-        customer_state: apiPayload.customer_state,
-        system_capacity_kw: apiPayload.system_capacity_kw,
-        panel_type: apiPayload.panel_type,
-        inverter_type: apiPayload.inverter_type,
-        structure_type: apiPayload.structure_type,
-        base_cost: Number(quote.baseCost) || 0,
-        dealer_margin: Number(quote.dealerMargin || quote.dealerTotalMargin) || 0,
-        total_amount: Number(quote.totalAmount || quote.grandTotalCustomer) || 0,
-        subsidy_amount: Number(quote.subsidyAmount) || 0,
-        net_payable: Number(quote.netPayable) || 0,
-        status: quote.status || 'Draft',
-        quote_payload: quote,
-        updated_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('quotations')
-        .upsert([fallbackPayload], { onConflict: 'id' })
-        .select();
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-      return { success: true, data: data?.[0] || quote };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `HTTP ${res.status}: Failed to save quotation.` };
     } catch (err) {
-      return { success: false, error: err.message };
+      console.error('[quotationService] Save exception:', err);
+      return { success: false, error: err.message || 'Quotation service temporarily unavailable.' };
     }
   },
 
@@ -240,37 +162,35 @@ export const quotationService = {
           return { success: true };
         }
       }
-      if (res.status === 422 || res.status === 403) {
-        const errJson = await res.json().catch(() => ({}));
-        return { success: false, error: errJson.error || 'Status change not allowed.' };
-      }
-    } catch (_) {}
-
-    // Fallback (dev only — production must go through API state machine)
-    if (import.meta.env?.PROD) {
-      return { success: false, error: 'Status update service temporarily unavailable.' };
-    }
-    try {
-      await supabase
-        .from('quotations')
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', id);
-      return { success: true };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `Status update failed (${res.status}).` };
     } catch (err) {
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Failed to update quotation status.' };
     }
   },
 
   /**
-   * Delete quotation from database
+   * Delete quotation from database via secure API
    */
   async deleteQuotation(id) {
-    if (!id) return { success: false };
+    if (!id) return { success: false, error: 'ID is required.' };
     try {
-      await supabase.from('quotations').delete().eq('id', id);
-      return { success: true };
+      const res = await fetch('/api/quotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'delete', id })
+      });
+
+      if (res.ok) {
+        const json = await res.json().catch(() => null);
+        if (json?.success) return { success: true };
+      }
+
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `Failed to delete quotation (${res.status}).` };
     } catch (err) {
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Failed to delete quotation.' };
     }
   }
 };

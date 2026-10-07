@@ -1,9 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// The anon (publishable) key is intentionally public — it is the standard
-// Supabase design. Security comes from RLS policies + the API gateway.
-// The real DB access for sensitive operations uses the server-only service
-// key, never exposed here.
+// The anon (publishable) key is public for public read-only catalogue queries.
+// Security comes from RLS policies + server API gateway.
+// All write mutations (insert, update, delete, upsert) must go through secure /api endpoints.
 const supabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) || (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_URL);
 const supabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof process !== 'undefined' && process.env?.VITE_SUPABASE_ANON_KEY);
 
@@ -18,8 +17,8 @@ const validKey = supabaseAnonKey || 'placeholder-anon-key';
 
 export const supabase = createClient(validUrl, validKey, {
   auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false  // We use custom JWT, not Supabase Auth URL flow
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
   }
 });

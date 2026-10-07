@@ -1,13 +1,12 @@
-import { supabase } from '../lib/supabase';
-import bcrypt from 'bcryptjs';
+import { supabase } from '../lib/supabase.js';
 
 /**
- * Service to manage Admin, Dealer, and Staff accounts directly against live PostgreSQL database.
- * No mock data. No in-memory only state.
+ * Service to manage Admin, Dealer, and Staff accounts directly against backend APIs.
+ * All mutations go through secure server-side endpoints with credentials: 'include'.
  */
 export const adminAccountService = {
   /**
-   * Fetch all admins, dealers, and staff directly from live database
+   * Fetch all admins, dealers, and staff directly from backend / database
    */
   async fetchAccounts() {
     // 1. Try secure server-side endpoint
@@ -39,10 +38,10 @@ export const adminAccountService = {
         }
       }
     } catch (e) {
-      console.warn('[adminAccountService] Server API unavailable, falling back to direct DB:', e.message);
+      console.warn('[adminAccountService] Server API unavailable, falling back to read-only DB query:', e.message);
     }
 
-    // 2. Direct Supabase query fallback
+    // 2. Direct read-only query fallback
     try {
       const [adminsRes, dealersRes, staffRes] = await Promise.all([
         supabase.from('admin_accounts').select('*').order('created_at', { ascending: true }),
@@ -86,7 +85,7 @@ export const adminAccountService = {
   },
 
   /**
-   * Create new Admin account in PostgreSQL
+   * Create new Admin account
    */
   async createAdmin({ fullName, email, mobileNumber, role, password }) {
     try {
@@ -110,7 +109,7 @@ export const adminAccountService = {
   },
 
   /**
-   * Update Admin profile or password in PostgreSQL
+   * Update Admin profile or password
    */
   async updateAdmin({ id, fullName, email, mobileNumber, role, password }) {
     try {
@@ -134,7 +133,7 @@ export const adminAccountService = {
   },
 
   /**
-   * Delete Admin from PostgreSQL
+   * Delete Admin
    */
   async deleteAdmin(id) {
     try {
@@ -158,9 +157,43 @@ export const adminAccountService = {
   },
 
   /**
-   * Create new Dealer account in PostgreSQL
+   * Create new Dealer account
    */
   async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+    const dealerData = {
+      dealerCode,
+      firmName,
+      contactPerson,
+      mobile,
+      email,
+      city,
+      state,
+      discom,
+      tier,
+      maxMarginCapPerKw,
+      password,
+      status,
+      assignedStaffId,
+      assignedStaffName
+    };
+
+    // 1. Try /api/auth/admin-dealers
+    try {
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'upsert', dealer: dealerData })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          return { success: true, dealer: data.dealer };
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -168,8 +201,48 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'create-dealer',
-          payload: { dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
+          payload: dealerData
         })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to create dealer' };
+      }
+      return { success: true, dealer: data.dealer };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Update Dealer profile or credentials
+   */
+  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+    const dealerData = {
+      id: id || dealerCode,
+      dealerCode: dealerCode || id,
+      firmName,
+      contactPerson,
+      mobile,
+      email,
+      city,
+      state,
+      discom,
+      tier,
+      maxMarginCapPerKw,
+      password,
+      status,
+      assignedStaffId,
+      assignedStaffName
+    };
+
+    // 1. Try /api/auth/admin-dealers
+    try {
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'upsert', dealer: dealerData })
       });
       if (res.ok) {
         const data = await res.json();
@@ -179,41 +252,7 @@ export const adminAccountService = {
       }
     } catch (_) {}
 
-    // Fallback directly via Supabase
-    try {
-      const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
-      const plainPassword = String(password || 'Sunvine@2026').trim();
-      const passwordHash = bcrypt.hashSync(plainPassword, 10);
-      const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
-      const payload = {
-        dealer_code: code,
-        firm_name: firmName,
-        contact_person: contactPerson,
-        mobile_number: cleanMobile,
-        email: (email && String(email).trim()) ? String(email).trim() : null,
-        city: city || 'Ahmedabad',
-        state: state || 'Gujarat',
-        discom: discom || 'UGVCL',
-        tier: tier || 'Gold EPC',
-        max_margin_cap_per_kw: Number(maxMarginCapPerKw) || 6000,
-        status: (status || 'Active').toLowerCase(),
-        password_hash: passwordHash,
-        assigned_staff_id: assignedStaffId || 'STF-DIRECT',
-        assigned_staff_name: assignedStaffName || 'Direct to Company (HQ Desk)',
-        updated_at: new Date().toISOString()
-      };
-      const { error } = await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
-      if (error) return { success: false, error: error.message };
-      return { success: true, dealer: payload };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  },
-
-  /**
-   * Update Dealer profile or credentials in PostgreSQL
-   */
-  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -221,57 +260,38 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'update-dealer-credentials',
-          payload: { id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }
+          payload: dealerData
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) {
-          return { success: true, dealer: data.dealer };
-        }
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to update dealer' };
       }
-    } catch (_) {}
-
-    // Fallback directly via Supabase
-    try {
-      const targetCode = dealerCode || id;
-      const updates = {
-        firm_name: firmName,
-        contact_person: contactPerson,
-        city,
-        state,
-        discom,
-        tier,
-        max_margin_cap_per_kw: Number(maxMarginCapPerKw) || 6000,
-        status: status ? status.toLowerCase() : 'active',
-        assigned_staff_id: assignedStaffId,
-        assigned_staff_name: assignedStaffName,
-        updated_at: new Date().toISOString()
-      };
-      if (mobile) {
-        updates.mobile_number = String(mobile).replace(/\D/g, '').slice(-10);
-      }
-      if (email !== undefined) {
-        updates.email = (email && String(email).trim()) ? String(email).trim() : null;
-      }
-      if (password && String(password).trim().length > 0) {
-        updates.password_hash = bcrypt.hashSync(String(password).trim(), 10);
-      }
-      const { error } = await supabase
-        .from('dealer_accounts')
-        .update(updates)
-        .or(`dealer_code.eq.${targetCode},id.eq.${targetCode}`);
-      if (error) return { success: false, error: error.message };
-      return { success: true, dealer: { ...updates, id: targetCode, dealerCode: targetCode } };
+      return { success: true, dealer: data.dealer };
     } catch (err) {
       return { success: false, error: err.message };
     }
   },
 
   /**
-   * Delete Dealer from PostgreSQL
+   * Delete Dealer
    */
   async deleteDealer(dealerCodeOrId) {
+    // 1. Try /api/auth/admin-dealers
+    try {
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'delete', id: dealerCodeOrId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) return { success: true };
+      }
+    } catch (_) {}
+
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -293,9 +313,28 @@ export const adminAccountService = {
   },
 
   /**
-   * Create new Staff account in PostgreSQL
+   * Create new Staff account
    */
   async createStaff({ id, name, phone, email, role, department, zone, city, password, status }) {
+    const staffData = { id, name, phone, email, role, department, zone, city, password, status };
+
+    // 1. Try /api/auth/admin-staff
+    try {
+      const res = await fetch('/api/auth/admin-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'upsert', staff: staffData })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          return { success: true, staff: data.staff };
+        }
+      }
+    } catch (_) {}
+
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -303,8 +342,32 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'create-staff',
-          payload: { id, name, phone, email, role, department, zone, city, password, status }
+          payload: staffData
         })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to create staff' };
+      }
+      return { success: true, staff: data.staff };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * Update Staff profile or password
+   */
+  async updateStaff({ id, name, phone, email, role, department, zone, city, password, status }) {
+    const staffData = { id, name, phone, email, role, department, zone, city, password, status };
+
+    // 1. Try /api/auth/admin-staff
+    try {
+      const res = await fetch('/api/auth/admin-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'upsert', staff: staffData })
       });
       if (res.ok) {
         const data = await res.json();
@@ -314,37 +377,7 @@ export const adminAccountService = {
       }
     } catch (_) {}
 
-    // Fallback directly via Supabase
-    try {
-      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-      const passwordHash = bcrypt.hashSync(password || 'Sunvine@2026', 10);
-      const isVer = String(role || '').toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
-      const payload = {
-        id,
-        name,
-        phone: cleanPhone,
-        mobile_number: cleanPhone,
-        email: email || `${cleanPhone}@sunvine.in`,
-        role: role || (isVer ? 'Field Verification Officer' : 'Senior Solar Field Executive'),
-        department: String(department || (isVer ? 'verification' : 'sales')).toLowerCase(),
-        zone: zone || 'Gujarat',
-        city: city || 'Ahmedabad',
-        status: String(status || 'active').toLowerCase(),
-        password_hash: passwordHash,
-        updated_at: new Date().toISOString()
-      };
-      const { data, error } = await supabase.from('staff_accounts').upsert([payload], { onConflict: 'id' }).select();
-      if (error) return { success: false, error: error.message };
-      return { success: true, staff: data?.[0] || payload };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  },
-
-  /**
-   * Update Staff profile or password in PostgreSQL
-   */
-  async updateStaff({ id, name, phone, email, role, department, zone, city, password, status }) {
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -352,46 +385,38 @@ export const adminAccountService = {
         credentials: 'include',
         body: JSON.stringify({
           action: 'update-staff-credentials',
-          payload: { id, name, phone, email, role, department, zone, city, password, status }
+          payload: staffData
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) {
-          return { success: true, staff: data.staff };
-        }
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to update staff' };
       }
-    } catch (_) {}
-
-    // Fallback directly via Supabase
-    try {
-      const payload = { updated_at: new Date().toISOString() };
-      if (name) payload.name = name;
-      if (phone) {
-        const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-        payload.phone = cleanPhone;
-        payload.mobile_number = cleanPhone;
-      }
-      if (email) payload.email = email;
-      if (role) payload.role = role;
-      if (department) payload.department = String(department).toLowerCase();
-      if (zone) payload.zone = zone;
-      if (city) payload.city = city;
-      if (status) payload.status = String(status).toLowerCase();
-      if (password) payload.password_hash = bcrypt.hashSync(password, 10);
-
-      const { data, error } = await supabase.from('staff_accounts').update(payload).eq('id', id).select();
-      if (error) return { success: false, error: error.message };
-      return { success: true, staff: data?.[0] || payload };
+      return { success: true, staff: data.staff };
     } catch (err) {
       return { success: false, error: err.message };
     }
   },
 
   /**
-   * Delete Staff from PostgreSQL
+   * Delete Staff
    */
   async deleteStaff(id) {
+    // 1. Try /api/auth/admin-staff
+    try {
+      const res = await fetch('/api/auth/admin-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'delete', id })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) return { success: true };
+      }
+    } catch (_) {}
+
+    // 2. Try manage-credentials
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -402,15 +427,10 @@ export const adminAccountService = {
           payload: { id }
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) return { success: true };
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || 'Failed to delete staff' };
       }
-    } catch (_) {}
-
-    try {
-      const { error } = await supabase.from('staff_accounts').delete().eq('id', id);
-      if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
