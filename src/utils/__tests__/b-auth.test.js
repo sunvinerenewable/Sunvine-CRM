@@ -238,13 +238,13 @@ test('SEC-012: requireUser rejects suspended or inactive accounts with 403 Forbi
 
 test('SEC-012: checkAccountActiveStatus detects suspended and inactive statuses', async () => {
   await redisSet('user:status:staff:STF-INACT-01', 'inactive', 60);
-  const isStaffActive = await checkAccountActiveStatus({ id: 'STF-INACT-01', role: 'staff' });
-  assert.equal(isStaffActive, false, 'Inactive staff must return false');
+  const staffStatus = await checkAccountActiveStatus({ id: 'STF-INACT-01', role: 'staff' });
+  assert.equal(staffStatus, 'inactive', 'Inactive staff must return inactive status');
   await redisDel('user:status:staff:STF-INACT-01');
 
   await redisSet('user:status:admin:ADM-SUSP-01', 'suspended', 60);
-  const isAdminActive = await checkAccountActiveStatus({ id: 'ADM-SUSP-01', role: 'admin' });
-  assert.equal(isAdminActive, false, 'Suspended admin must return false');
+  const adminStatus = await checkAccountActiveStatus({ id: 'ADM-SUSP-01', role: 'admin' });
+  assert.equal(adminStatus, 'suspended', 'Suspended admin must return suspended status');
   await redisDel('user:status:admin:ADM-SUSP-01');
 });
 

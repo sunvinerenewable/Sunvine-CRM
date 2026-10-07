@@ -47,7 +47,7 @@ export default async function handler(req, res) {
   }
 
   // SEC-009: Auth check (no dev bypass — fail closed)
-  const user = requireUser(req, res);
+  const user = await requireUser(req, res);
   if (!user) return;
 
   try {

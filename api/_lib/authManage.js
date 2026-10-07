@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   }
 
   // --- Admin authentication guard (SEC-001) ---
-  const adminPayload = requireAdmin(req, res);
+  const adminPayload = await requireAdmin(req, res);
   if (!adminPayload) return; // requireAdmin already sent 401/403
 
   const { action, payload } = req.body || {};

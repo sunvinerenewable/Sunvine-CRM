@@ -63,7 +63,7 @@ export default async function handler(req, res) {
   }
 
   // SEC-010: Restrict to admin and staff only
-  const user = requireUser(req, res, { roles: ['admin', 'staff'] });
+  const user = await requireUser(req, res, { roles: ['admin', 'staff'] });
   if (!user) return;
 
   const {

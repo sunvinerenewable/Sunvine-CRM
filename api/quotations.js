@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { verifyJwt } from './_lib/jwt.js';
+import { requireUser } from './_lib/requireAuth.js';
 import { getClientIp, checkDistributedRateLimit, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { calculateSubsidy, calcBOMTotals, validateDealerMargin, calcFinalTotals } from '../src/shared/pricing/calculations.js';
@@ -754,12 +754,9 @@ export default async function handler(req, res) {
     return handlePublicView(req, res, db);
   }
 
-  // All other actions require JWT
-  const cookies = parseCookies(req.headers.cookie || '');
-  const token = cookies.sunvine_auth_token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  const jwtResult = verifyJwt(token);
-  if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
-  const jwt = jwtResult.payload;
+  // All other actions require authenticated user
+  const jwt = await requireUser(req, res);
+  if (!jwt) return;
 
   // Rate limit
   const ip = getClientIp(req);

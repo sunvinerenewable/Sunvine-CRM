@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
       }
-      const adminPayload = requireAdmin(req, res);
+      const adminPayload = await requireAdmin(req, res);
       if (!adminPayload) return; // requireAdmin already sent 401/403
       return adminDispatcher(req, res, action, adminPayload);
     }

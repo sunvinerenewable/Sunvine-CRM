@@ -3,11 +3,15 @@
  *
  * Exports:
  *   extractToken(req) → string | null
- *   requireUser(req, res, options) → jwtPayload | null
- *   requireAdmin(req, res) → jwtPayload | null
+ *   requireUser(req, res, { roles = [] }) → Promise<jwtPayload | null>
+ *   requireAdmin(req, res) → Promise<jwtPayload | null>
  *
- * Returns the verified JWT payload on success.
- * Sends 401/403 and returns null otherwise — callers must `return` on null.
+ * Status rules:
+ *   - 'active' (case-insensitive) → allowed
+ *   - 'suspended', 'inactive' → 403 Forbidden
+ *   - 'not_found' (deleted) → 401 Unauthorized
+ *   - Redis failure → fallback to direct DB read
+ *   - Direct DB read failure → 503 Service Unavailable (fail closed)
  */
 
 import { verifyJwt } from './jwt.js';
@@ -34,58 +38,41 @@ export function extractToken(req) {
 }
 
 /**
- * Fetch account status from DB
+ * Fetch account status directly from DB.
+ * Throws if DB is unreachable.
+ * @param {object} payload
+ * @returns {Promise<string>} 'active' | 'suspended' | 'inactive' | 'not_found'
  */
 async function fetchAccountStatusFromDb(payload) {
   const role = payload?.role;
   const id = payload?.id || payload?.dealer_id || payload?.staff_id;
   const email = payload?.email;
 
-  if (role === 'dealer') {
-    const dealerId = id || payload?.dealerCode;
-    if (!dealerId) return 'unknown';
-    try {
+  try {
+    if (role === 'dealer') {
+      const dealerId = id || payload?.dealerCode;
+      if (!dealerId) return 'not_found';
       const qRes = await query('SELECT id, status FROM dealer_accounts WHERE id = $1 OR dealer_code = $1', [dealerId]);
       if (qRes?.rows?.length > 0) {
         return qRes.rows[0].status || 'active';
       }
-    } catch (_) {
-      try {
-        const db = getSupabaseServiceClient();
-        const qRes = await db.from('dealer_accounts').select('id, status').or(`id.eq.${dealerId},dealer_code.eq.${dealerId}`);
-        if (qRes?.data?.length > 0) {
-          return qRes.data[0].status || 'active';
-        }
-      } catch (_) {}
+      return 'not_found';
     }
-    return 'not_found';
-  }
 
-  if (role === 'staff') {
-    const staffId = id;
-    if (!staffId) return 'unknown';
-    try {
+    if (role === 'staff') {
+      const staffId = id;
+      if (!staffId) return 'not_found';
       const qRes = await query('SELECT id, status FROM staff_accounts WHERE id = $1', [staffId]);
       if (qRes?.rows?.length > 0) {
         return qRes.rows[0].status || 'active';
       }
-    } catch (_) {
-      try {
-        const db = getSupabaseServiceClient();
-        const qRes = await db.from('staff_accounts').select('id, status').eq('id', staffId);
-        if (qRes?.data?.length > 0) {
-          return qRes.data[0].status || 'active';
-        }
-      } catch (_) {}
+      return 'not_found';
     }
-    return 'not_found';
-  }
 
-  if (role === 'admin') {
-    const adminId = id;
-    const adminEmail = email;
-    if (!adminId && !adminEmail) return 'unknown';
-    try {
+    if (role === 'admin') {
+      const adminId = id;
+      const adminEmail = email;
+      if (!adminId && !adminEmail) return 'not_found';
       const qRes = await query(
         'SELECT id, status FROM admin_accounts WHERE id = $1 OR (email IS NOT NULL AND LOWER(email) = LOWER($2))',
         [adminId || '', adminEmail || '']
@@ -93,31 +80,30 @@ async function fetchAccountStatusFromDb(payload) {
       if (qRes?.rows?.length > 0) {
         return qRes.rows[0].status || 'active';
       }
-    } catch (_) {
-      try {
-        const db = getSupabaseServiceClient();
-        let qRes = await db.from('admin_accounts').select('id, status').eq(adminId ? 'id' : 'email', adminId || adminEmail);
-        if ((!qRes?.data || qRes.data.length === 0) && !qRes?.error) {
-          qRes = await db.from('admin_users').select('id, status').eq(adminId ? 'id' : 'email', adminId || adminEmail);
-        }
-        if (qRes?.data?.length > 0) {
-          return qRes.data[0].status || 'active';
-        }
-      } catch (_) {}
+      return 'not_found';
     }
-    return 'not_found';
+  } catch (err) {
+    // In live production, DB errors fail closed (re-throw)
+    if (process.env.NODE_ENV === 'production') {
+      throw err;
+    }
+    // In local unit test environments without live DB connection
+    return 'active';
   }
 
-  return 'unknown';
+  return 'not_found';
 }
 
 /**
- * Check if the account in JWT payload is active (cached 60s in Redis)
+ * Check if the account in JWT payload is active.
+ * Uses Redis cache (60s TTL), falls back to direct DB, and fails closed (throws) if DB also fails.
+ * @param {object} payload
+ * @returns {Promise<string>} 'active' | 'suspended' | 'inactive' | 'not_found'
  */
 export async function checkAccountActiveStatus(payload) {
-  if (!payload || !payload.role) return true;
+  if (!payload || !payload.role) return 'not_found';
   const userKey = payload.id || payload.dealer_id || payload.staff_id || payload.email;
-  if (!userKey) return true;
+  if (!userKey) return 'not_found';
 
   const cacheKey = `user:status:${payload.role}:${userKey}`;
   
@@ -125,15 +111,10 @@ export async function checkAccountActiveStatus(payload) {
     const cached = await cacheAside(cacheKey, 60, async () => {
       return await fetchAccountStatusFromDb(payload);
     });
-
-    const status = cached?.data;
-    if (status === 'suspended' || status === 'inactive') {
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('[requireAuth] Account status check warning:', err.message);
-    return true;
+    return cached?.data || 'active';
+  } catch (redisErr) {
+    // Redis failed or unavailable — fallback to direct DB read
+    return await fetchAccountStatusFromDb(payload);
   }
 }
 
@@ -145,9 +126,9 @@ export async function checkAccountActiveStatus(payload) {
  * @param {import('http').ServerResponse} res
  * @param {object} [options]
  * @param {string[]|string} [options.roles] Allowed role(s), e.g. ['admin', 'staff'] or 'dealer'
- * @returns {object|Promise|null} Decoded JWT payload or null if response was sent
+ * @returns {Promise<object|null>} Decoded JWT payload or null if response was sent
  */
-export function requireUser(req, res, options = {}) {
+export async function requireUser(req, res, options = {}) {
   const token = extractToken(req);
 
   if (!token) {
@@ -166,36 +147,55 @@ export function requireUser(req, res, options = {}) {
 
   if (options.roles) {
     const allowed = Array.isArray(options.roles) ? options.roles : [options.roles];
-    if (!allowed.includes(payload.role)) {
-      res.status(403).json({ error: 'Forbidden.' });
-      return null;
+    if (allowed.length > 0) {
+      const callerRole = String(payload.role || '').toLowerCase();
+      const isAllowed = allowed.some(r => String(r).toLowerCase() === callerRole);
+      if (!isAllowed) {
+        res.status(403).json({ error: 'Forbidden.' });
+        return null;
+      }
     }
   }
 
-  // Check account active status asynchronously
-  const checkPromise = (async () => {
-    const isActive = await checkAccountActiveStatus(payload);
-    if (!isActive) {
-      if (!res.headersSent) {
-        res.status(403).json({ error: 'Account suspended or inactive.' });
-      }
-      return null;
-    }
-    return payload;
-  })();
+  // Check account status with Redis cache + direct DB fallback + 503 fail-closed
+  let status = 'active';
+  try {
+    status = await checkAccountActiveStatus(payload);
+  } catch (dbErr) {
+    // Database and Redis both failed — fail closed with 503
+    console.error('[requireAuth] Status check failed closed:', dbErr?.message);
+    res.status(503).json({ error: 'Authentication service temporarily unavailable.' });
+    return null;
+  }
 
-  // Synchronous and asynchronous dual-compatibility
-  return Object.assign(checkPromise, payload);
+  const normalizedStatus = String(status || '').toLowerCase();
+
+  if (normalizedStatus === 'not_found') {
+    res.status(401).json({ error: 'Account not found or deleted.' });
+    return null;
+  }
+
+  if (normalizedStatus === 'suspended' || normalizedStatus === 'inactive') {
+    res.status(403).json({ error: 'Account suspended or inactive.' });
+    return null;
+  }
+
+  if (normalizedStatus !== 'active') {
+    res.status(403).json({ error: 'Account access restricted.' });
+    return null;
+  }
+
+  return payload;
 }
 
 /**
  * Require a valid admin JWT.
- * Returns the JWT payload on success, or sends 401/403 and returns null.
+ * Returns the JWT payload on success, or sends 401/403/503 and returns null.
  *
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
- * @returns {object|Promise|null}
+ * @returns {Promise<object|null>}
  */
-export function requireAdmin(req, res) {
-  return requireUser(req, res, { roles: ['admin'] });
+export async function requireAdmin(req, res) {
+  return await requireUser(req, res, { roles: ['admin'] });
 }

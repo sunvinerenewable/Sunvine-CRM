@@ -114,7 +114,7 @@ export default async function handler(req, res) {
   }
 
   // SEC-011: Require authenticated user
-  const user = requireUser(req, res);
+  const user = await requireUser(req, res);
   if (!user) return;
 
   const clientIp = getClientIp(req);
