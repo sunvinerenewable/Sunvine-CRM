@@ -39,7 +39,7 @@ import {
   calculateOverallBusinessMetrics
 } from '../utils/performanceAnalytics';
 import { hardwareService } from '../services/hardwareService';
-import { quotationService } from '../services/quotationService';
+import { quotationService, normalizeQuotationRow } from '../services/quotationService';
 import { pricingService } from '../services/pricingService';
 import { customerFileService } from '../services/customerFileService';
 import { staffService } from '../services/staffService';
@@ -890,13 +890,11 @@ const safeSetItem = (key, value) => {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          const row = payload.new;
-          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
-          setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
+          const formatted = normalizeQuotationRow(payload.new);
+          if (formatted) setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
         } else if (payload.eventType === 'UPDATE') {
-          const row = payload.new;
-          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
-          setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
+          const formatted = normalizeQuotationRow(payload.new);
+          if (formatted) setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
         } else if (payload.eventType === 'DELETE') {
           setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
@@ -3084,9 +3082,12 @@ const safeSetItem = (key, value) => {
     // Customer File Timeline Progression
     addCustomerFileTimelineEvent,
     // Solar Loan Partner Banks
-    solarBanks
+    solarBanks,
+    // Database Live Hydration
+    refreshDatabase: hydrateAllFromSupabase
   }), [
     currentUser,
+    hydrateAllFromSupabase,
     isAuthenticated,
     authView,
     role,
