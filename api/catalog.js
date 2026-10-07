@@ -20,6 +20,64 @@ function getDb() {
 
 // ── Fetchers ───────────────────────────────────────────────────────────────
 
+export async function getSettings(db) {
+  const { data } = await cacheAside('catalog:settings', 21600, async () => {
+    const { data: row } = await db
+      .from('system_settings')
+      .select('*')
+      .eq('id', 'global_settings')
+      .maybeSingle();
+
+    const governance = row?.governance_settings || {};
+    const statutory = row?.statutory_taxes || {};
+    const company = row?.company_profile || {};
+
+    return {
+      governance_settings: {
+        max_discount_pct: governance.max_discount_pct !== undefined ? Number(governance.max_discount_pct) : 5,
+        max_system_kw: governance.max_system_kw !== undefined ? Number(governance.max_system_kw) : 1000,
+        quote_prefix: governance.quote_prefix || 'SV',
+        validity_days: governance.validity_days !== undefined ? Number(governance.validity_days) : 15,
+        default_specific_yield: governance.default_specific_yield !== undefined ? Number(governance.default_specific_yield) : 1440,
+        default_tariff: governance.default_tariff !== undefined ? Number(governance.default_tariff) : 6.67,
+        default_loan_rate: governance.default_loan_rate !== undefined ? Number(governance.default_loan_rate) : 8.5,
+        upload_max_mb: governance.upload_max_mb !== undefined ? Number(governance.upload_max_mb) : 2,
+        allow_custom_bom_lines: Boolean(governance.allow_custom_bom_lines),
+        max_custom_bom_value: Number(governance.max_custom_bom_value || 0)
+      },
+      statutory_taxes: {
+        subsidy: {
+          slab1Rate: statutory.subsidy?.slab1Rate !== undefined ? Number(statutory.subsidy.slab1Rate) : 30000,
+          slab2Rate: statutory.subsidy?.slab2Rate !== undefined ? Number(statutory.subsidy.slab2Rate) : 18000,
+          cap: statutory.subsidy?.cap !== undefined ? Number(statutory.subsidy.cap) : 78000,
+          breakpointKw: statutory.subsidy?.breakpointKw !== undefined ? Number(statutory.subsidy.breakpointKw) : 3
+        },
+        gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
+      },
+      company_profile: {
+        name: company.name || 'Sunvine Renewable Energy Private Limited',
+        gstin: company.gstin || '24AAACS1234A1Z5',
+        address: company.address || 'Ahmedabad, Gujarat, India',
+        state: company.state || 'Gujarat',
+        whatsapp: company.whatsapp || '+91 80000 50580',
+        helpdesk: company.helpdesk || '+91 80000 50580',
+        website: company.website || 'https://sunvinerenewable.com',
+        email: company.email || 'support@sunvinerenewable.com',
+        bank: {
+          bankName: company.bank?.bankName || 'State Bank of India',
+          accountNumber: company.bank?.accountNumber || '999900001111',
+          ifsc: company.bank?.ifsc || 'SBIN0001234',
+          branch: company.bank?.branch || 'Ahmedabad Main Branch',
+          accountHolder: company.bank?.accountHolder || 'Sunvine Renewable Energy Private Limited'
+        },
+        terms: company.terms || '1. Validity: 15 Days from quotation date.\n2. Net-metering approval is subject to DISCOM policy.\n3. Subsidy disbursement is directly into customer bank account via PM Surya Ghar National Portal.',
+        validityText: company.validityText || '15 Days from generation date'
+      }
+    };
+  });
+  return data;
+}
+
 async function getHardwareCatalog(db) {
   const { data } = await cacheAside('catalog:hardware', 21600, async () => {
     const [modulesRes, invertersRes] = await Promise.all([
@@ -128,6 +186,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, invalidated: keys });
     }
 
+    if (action === 'invalidate_settings') {
+      const defaultKeys = ['catalog:settings', 'catalog:all'];
+      await Promise.all(defaultKeys.map(k => redisDel(k).catch(() => {})));
+      return res.status(200).json({ success: true, invalidated: defaultKeys });
+    }
+
     return res.status(400).json({ error: 'Invalid action or keys array.' });
   }
 
@@ -139,26 +203,34 @@ export default async function handler(req, res) {
 
   try {
     if (type === 'bootstrap') {
-      const [hardware, presets, tierMargins, inverterBenchmarks, bosMatrix, solarBanks] = await Promise.all([
+      const [hardware, presets, tierMargins, inverterBenchmarks, bosMatrix, solarBanks, settings] = await Promise.all([
         getHardwareCatalog(db),
         getPricingPresets(db),
         getTierMargins(db),
         getInverterBenchmarks(db),
         getBosMatrix(db),
-        getSolarBanks(db)
+        getSolarBanks(db),
+        getSettings(db)
       ]);
 
       return res.status(200).json({
         success: true,
+        settings,
         catalog: {
           hardware,
           presets,
           tierMargins,
           inverterBenchmarks,
           bosMatrix,
-          solarBanks
+          solarBanks,
+          settings
         }
       });
+    }
+
+    if (type === 'settings') {
+      const settings = await getSettings(db);
+      return res.status(200).json({ success: true, settings });
     }
 
     if (type === 'hardware') {
@@ -197,3 +269,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to retrieve catalog data.' });
   }
 }
+
