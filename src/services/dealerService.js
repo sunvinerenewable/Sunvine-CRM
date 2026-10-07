@@ -45,6 +45,10 @@ export const dealerService = {
           rating: Number(d.rating) || 4.9,
           tier: d.tier || 'Gold EPC',
           category: d.pricing_config?.category || d.category || 'Margin Based',
+          dealerType: d.dealer_type || d.pricing_config?.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'),
+          defaultCommissionPerKw: Number(d.default_commission_per_kw) || 4500,
+          registrationFeeRate: Number(d.registration_fee_rate) || 2000,
+          distanceFromRajkotKm: Number(d.distance_from_rajkot_km) || 0,
           maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
           assignedStaffId: (() => {
@@ -209,6 +213,18 @@ export const dealerService = {
     if (fields.accountNumber !== undefined) updatePayload.account_number = fields.accountNumber;
     if (fields.ifscCode !== undefined) updatePayload.ifsc_code = fields.ifscCode;
     if (fields.branch !== undefined) updatePayload.branch = fields.branch;
+    if (fields.dealerType !== undefined || fields.dealer_type !== undefined) {
+      updatePayload.dealer_type = fields.dealerType || fields.dealer_type;
+    }
+    if (fields.defaultCommissionPerKw !== undefined || fields.default_commission_per_kw !== undefined) {
+      updatePayload.default_commission_per_kw = Number(fields.defaultCommissionPerKw ?? fields.default_commission_per_kw);
+    }
+    if (fields.registrationFeeRate !== undefined || fields.registration_fee_rate !== undefined) {
+      updatePayload.registration_fee_rate = Number(fields.registrationFeeRate ?? fields.registration_fee_rate);
+    }
+    if (fields.distanceFromRajkotKm !== undefined || fields.distance_from_rajkot_km !== undefined) {
+      updatePayload.distance_from_rajkot_km = Number(fields.distanceFromRajkotKm ?? fields.distance_from_rajkot_km);
+    }
     if (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined || fields.category !== undefined) {
       const finalStaffId = fields.assignedStaffId !== undefined ? fields.assignedStaffId : fields.pricingConfig?.assignedStaffId;
       const finalStaffName = finalStaffId === 'STF-DIRECT'

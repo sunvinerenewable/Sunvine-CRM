@@ -61,6 +61,16 @@ export default function PricingMaster() {
     return 'base';
   });
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (['base', 'modules', 'inverters', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
+
   const [toastMessage, setToastMessage] = useState('');
   const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
   const totalDealersCount = dealers?.length || 550;
@@ -2350,8 +2360,28 @@ ${origin}/?tab=pricing_master
                 </div>
               </div>
 
-              {/* Individual Dealer-Wise Panel Pricing Matrix */}
-              <DealerCustomPricingMatrix initialCategory="module" onShowToast={triggerToast} />
+              {/* Consolidated Dealer Pricing Link */}
+              <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">tune</span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-on-surface">Need dealer-specific panel rates or special margins?</h4>
+                    <p className="text-[11px] text-secondary">
+                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing Matrix.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dealer_custom')}
+                  className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span>Open Dealer Custom Pricing</span>
+                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </button>
+              </div>
             </>
           )}
 
@@ -2820,8 +2850,28 @@ ${origin}/?tab=pricing_master
                 )}
               </div>
 
-              {/* Individual Dealer-Wise Inverter Pricing Matrix */}
-              <DealerCustomPricingMatrix initialCategory="inverter" onShowToast={triggerToast} />
+              {/* Consolidated Dealer Pricing Link */}
+              <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">tune</span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-on-surface">Need dealer-specific inverter rates or special margins?</h4>
+                    <p className="text-[11px] text-secondary">
+                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing Matrix.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dealer_custom')}
+                  className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span>Open Dealer Custom Pricing</span>
+                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </button>
+              </div>
             </>
           )}
 
@@ -3272,8 +3322,28 @@ ${origin}/?tab=pricing_master
                   </div>
                 </div>
 
-                {/* Individual Dealer-Wise BOM Hardware Pricing Matrix */}
-                <DealerCustomPricingMatrix initialCategory="bom" onShowToast={triggerToast} />
+                {/* Consolidated Dealer Pricing Link */}
+                <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[20px]">tune</span>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-on-surface">Need dealer-specific BOM rates or custom margins?</h4>
+                      <p className="text-[11px] text-secondary">
+                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing Matrix.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('dealer_custom')}
+                    className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <span>Open Dealer Custom Pricing</span>
+                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                  </button>
+                </div>
               </>
             );
           })()}

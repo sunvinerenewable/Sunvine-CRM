@@ -1,202 +1,198 @@
 # Sunvine Renewable Energy — Master Engineering & Architecture Rule Book
 
 > **Status**: Permanent, Mandatory & Immutable Project Standard  
-> **Applicability**: Super Admin Portal, Dealer Portal, Staff Portal, Serverless Handlers (`api/`), Shared Services, Contexts, Hooks, and Component Architecture.  
-> **Enforcement**: Strict enforcement for all AI coding assistants, human developers, and git commits.
+> **Applicability**: Super Admin Portal, Dealer Portal, Staff Portal, Serverless Handlers (`api/`), Shared Services, Contexts, Hooks, Component Architecture & Database Operations.  
+> **Enforcement**: Strict enforcement for all AI coding assistants, human developers, subagents, and git commits.
 
 ---
 
 ## Table of Contents
-1. [Rule 1: Absolute Security & Secret Management](#rule-1-absolute-security--secret-management)
-2. [Rule 2: UI Continuity & Mechanism Preservation](#rule-2-ui-continuity--mechanism-preservation)
-3. [Rule 3: Brand Identity, Colors & Typography Integrity](#rule-3-brand-identity-colors--typography-integrity)
-4. [Rule 4: Dynamic Configuration Over Hardcoding](#rule-4-dynamic-configuration-over-hardcoding)
-5. [Rule 5: Zero Synthetic / Hallucinated Data in Production](#rule-5-zero-synthetic--hallucinated-data-in-production)
-6. [Rule 6: Non-Blocking Workflows & Document Policies](#rule-6-non-blocking-workflows--document-policies)
-7. [Rule 7: Live Geolocation, Sensor Telemetry & Race Guards](#rule-7-live-geolocation-sensor-telemetry--race-guards)
-8. [Rule 8: Code Quality, Cleanliness & Pre-Commit Verification](#rule-8-code-quality-cleanliness--pre-commit-verification)
-9. [Rule 9: Direct Database Single Source of Truth (Zero Cache-Only / Zero LocalStorage-Only Data)](#rule-9-direct-database-single-source-of-truth-zero-cache-only--zero-localstorage-only-data)
+1. [Rule 1: Direct Database First & Schema Integrity (Top Priority)](#rule-1-direct-database-first--schema-integrity-top-priority)
+2. [Rule 2: Adversarial Backend Security, Password Hashing & Zero Hardcoded Secrets](#rule-2-adversarial-backend-security-password-hashing--zero-hardcoded-secrets)
+3. [Rule 3: Cross-Touchpoint Fullstack Consistency](#rule-3-cross-touchpoint-fullstack-consistency)
+4. [Rule 4: Senior Fullstack Architecture & Pre-Execution Planning (/plan)](#rule-4-senior-fullstack-architecture--pre-execution-planning-plan)
+5. [Rule 5: Zero Hardcoding & Dynamic Entity/Category Extensibility](#rule-5-zero-hardcoding--dynamic-entitycategory-extensibility)
+6. [Rule 6: UI Continuity, Brand Aesthetics & Ultra-Smooth Performance](#rule-6-ui-continuity-brand-aesthetics--ultra-smooth-performance)
+7. [Rule 7: Non-Blocking Workflows & Document Policies](#rule-7-non-blocking-workflows--document-policies)
+8. [Rule 8: Authentic Real-World Telemetry & Geolocation](#rule-8-authentic-real-world-telemetry--geolocation)
+9. [Rule 9: Pragmatic Package & Dependency Management](#rule-9-pragmatic-package--dependency-management)
+10. [Rule 10: Git Hygiene, sumit-updates Branch & 0-Error Build Verification](#rule-10-git-hygiene-sumit-updates-branch--0-error-build-verification)
 
 ---
 
-## Rule 1: Absolute Security & Secret Management
+## Rule 1: Direct Database First & Schema Integrity (Top Priority)
 
-### 1.1 Zero Hardcoded Secrets in Git
-- **STRICT PROHIBITION**: Never commit, hardcode, or paste any API keys, tokens, secret passwords, database connection strings, webhook secrets, or private keys directly into git-tracked files (`.js`, `.jsx`, `.ts`, `.tsx`, `.json`, `.yml`, etc.).
-- **Environment Isolation**: All sensitive credentials must reside exclusively in `.env` (local) and Vercel/Production Environment Variables.
-- **Gitignore Verification**: Ensure `.env`, `.env.local`, `.env.*.local` remain permanently included in `.gitignore`.
+### 1.1 Direct Database Single Source of Truth (Zero Cache-Only / Zero LocalStorage-Only Data)
+- **STRICT REQUIREMENT ACROSS ALL BRANCHES**: Regardless of branch (`sumit-updates`, `devlopment`, etc.), any entity created, edited, updated, or deleted anywhere in this project MUST be written directly to the database (Supabase / PostgreSQL) via backend APIs or dedicated database services.
+- **Universal Scope**: Includes user accounts, staff, dealers, material items, hardware, pricing matrices, custom categories, units, customer leads, quotations, BOM items, audit logs, and system settings.
+- Data MUST NEVER be stored exclusively in browser memory, React state, or `localStorage`.
 
-### 1.2 Anti-Scanner Trigger Patterns (GitGuardian & GitHub Secret Scanning)
-- Automated scanners detect keyword combinations like `email:` followed by `password:` as corporate credential leaks, even inside mock data.
-- **Rule**: In mock datasets, test fixtures, or demo accounts, NEVER pair corporate email domains (`@sunvine.in`) with literal `password:` keys. Instead, use fields like `accessCode: 'dealer123'`, `authPin: '123456'`, or `passcode: '...'`.
-- Any UI password field must use `type="password"`, must support visibility toggling, and must NEVER log plaintext credentials to the browser console.
+### 1.2 Direct Database Fetch on Mount & Hard Refresh
+- The database is the **Sole Single Source of Truth**.
+- On initial portal boot, tab switch, route navigation, and especially upon a **hard refresh** (`Ctrl + Shift + R` or `F5`), the application MUST fetch active, live records directly from the database.
+- Data must NEVER disappear, desynchronize, or revert to blank / stale mock data after a hard browser reload.
+- `localStorage` is strictly restricted to ephemeral UI preferences (like collapsed sidebar state) and active session tokens. Business data must never depend on it.
 
-### 1.3 Client vs. Server API Key Segregation
-- Sensitive backend API keys (database admin keys, serverless webhook secrets) must NEVER be prefixed with `VITE_` or sent to the client browser.
-- Public client keys (e.g. Maps JS, Geoapify client tier) must support runtime configuration via UI settings/localStorage so users can provide their own key without touching code.
+### 1.3 Pre-Implementation Database Schema Analysis
+- When introducing ANY new feature, the engineer/AI must first inspect the existing database schema.
+- If the feature requires new fields, relations, or tables, design and create the appropriate table/column definitions in the database first.
+- Never force unstructured data into inadequate columns or rely on frontend-only simulations.
 
----
-
-## Rule 2: UI Continuity & Mechanism Preservation
-
-### 2.1 Never Break Established Workflows or Mechanics
-- Do NOT rewrite, refactor, or delete working features or operational mechanisms unless specifically requested by the user.
-- The following existing systems are mission-critical and must NEVER be disrupted:
-  1. **Solar Quotation Engine**: System capacity sizing, inverter sizing, pricing matrices, DISCOM subsidy calculations (PM Surya Ghar).
-  2. **3D Roof CAD Designer**: Shadow analysis, solar panel layout, roof structure angle/height calculations.
-  3. **Customer Files Vault**: Lead tracking pipeline, subsidy file stages, document vaults.
-  4. **Multi-Role Authentication**: Seamless switching between Dealer Console, Staff Portal, and Admin Portal.
-
-### 2.2 Design Consistency Across Portals
-- When building new views or portals (e.g., Staff Login, Staff Radar, Lead Discovery):
-  - The UI style, container borders, background dark-mode palette (`#0D1527`, `#070D18`), card radiuses (`rounded-2xl`, `rounded-xl`), and micro-interactions MUST exactly match the established portal.
-  - Never invent completely alien layouts, non-matching button designs, or conflicting navigation hierarchies.
-
-### 2.3 Backward Compatibility
-- Never break existing `localStorage` keys, user sessions, or saved quote structures. Always provide safe schema fallbacks (`user?.name || 'Solar Partner'`).
+### 1.4 Real Persistence Verification (No Fake or Read-Only Saves)
+- Every time a create or update action is built or modified, verify that the data is genuinely written to and saved in the database.
+- Check against traps where an input field is marked `readOnly`, unmapped in the payload, missing from the SQL update statement, or ignored by backend DTOs.
+- Confirm with direct database verification that the submitted payload actually persists.
 
 ---
 
-## Rule 3: Brand Identity, Colors & Typography Integrity
+## Rule 2: Adversarial Backend Security, Password Hashing & Zero Hardcoded Secrets
 
-### 3.1 Immutable Color Palette
-- The Sunvine brand palette is strictly defined in Tailwind config and CSS tokens. Do NOT replace brand colors with random arbitrary hex codes:
-  - **Brand Primary Accent**: Emerald / Teal energy gradient (`from-emerald-600 to-teal-500`, `hover:from-emerald-500 hover:to-teal-400`).
-  - **Deep Console Dark**: `#0D1527` (card background) and `#070D18` (deep background).
-  - **Surface & Container**: Tailwind `bg-surface`, `bg-surface-container`, `bg-surface-container-low`, `border-surface-container-high`.
-  - **Status Accents**:
-    - Operational / Active: `emerald-600` / `emerald-400`
-    - In Progress / Solar EPC: `blue-600` / `blue-400`
-    - Dealer / Distributor: `purple-600` / `purple-400`
-    - Warnings / Solar Inverter Shop: `amber-500` / `amber-400`
-    - Urgent / Cancelled: `red-600` / `red-400`
+### 2.1 Mandatory Password Hashing (Zero Plaintext Credentials)
+- Passwords MUST ALWAYS be securely hashed (e.g. bcrypt/argon2 / cryptographic hashing) before being saved in the database.
+- Plaintext passwords must NEVER be saved to the database, stored in logs, or printed in error responses.
 
-### 3.2 Typography & Icon Standards
-- **Font Families**: Inter (body font), Space Grotesk (display/headlines), and Roboto Mono / monospace (numeric kW, currency, coordinates, phone numbers).
-- **Icons**: Standard Google `material-symbols-outlined` with proper sizing (`text-[16px]`, `text-[18px]`, `text-[22px]`). Do not mix conflicting icon packages.
+### 2.2 Zero Hardcoded Secrets & Anti-Scanner Compliance
+- Never hardcode, commit, or paste API keys, JWT secrets, database connection strings, or service tokens in any git-tracked files.
+- All secrets must reside exclusively in `.env` (gitignored) and environment variables.
+- In test fixtures and mock datasets, NEVER pair corporate email domains (`@sunvine.in`) with literal `password:` keys (triggers GitGuardian & GitHub Secret Scanning). Use `accessCode: 'dealer123'`, `authPin: '123456'`, or `passcode: '...'`.
 
----
-
-## Rule 4: Dynamic Configuration Over Hardcoding
-
-### 4.1 Zero Hardcoded Business Logic
-- Never hardcode static radius limits, keyword arrays, or pricing coefficients directly inside component render blocks.
-- **Rule**:
-  - Distance filters must be selectable chips (`1 km`, `2 km`, `5 km`, `10 km`, `25 km`).
-  - Category filters must be dynamic (`All`, `EPCs`, `Dealers`, `Installers`, `Shops`).
-  - Search keyword matrices must be configurable via objects (e.g., `PRODUCTION_SOLAR_KEYWORD_MATRIX`).
-  - Pricing, DISCOM tariffs, and subsidies must be driven by data tables or settings, not hardcoded numbers in formulas.
-
-### 4.2 DRY (Don't Repeat Yourself)
-- Reusable utilities (Haversine formula, currency formatting `₹`, date formatting, GST calculations) must reside in dedicated helper modules (`src/utils/` or `src/services/`) and be imported, never copy-pasted across multiple components.
+### 2.3 Adversarial Backend Architecture (Hacker / Breach-Simulation Mindset)
+- Backend APIs (`api/`) must NEVER be weak or vulnerable.
+- When designing or modifying any endpoint, think like an attacker trying to hijack or compromise the system:
+  1. **SQL / Query Injection**: Ensure parameterized queries and sanitized inputs across all database calls.
+  2. **Auth Bypass & Privilege Escalation**: Verify role permissions (`super_admin`, `admin`, `dealer`, `staff`) on every backend route. Never trust client-claimed roles.
+  3. **Broken Object-Level Authorization (IDOR)**: Ensure users can only read/mutate records belonging to their authorized scope or tenancy.
+  4. **Payload Tampering**: Validate and sanitize all request body properties.
+- **Protocol**: Actively probe the backend for security breaches during development. Once potential vulnerabilities are identified, patch them immediately, and then re-test to confirm breach resistance.
 
 ---
 
-## Rule 5: Zero Synthetic / Hallucinated Data in Production
+## Rule 3: Cross-Touchpoint Fullstack Consistency
 
-### 5.1 Real-World Data Authenticity
-- When fetching solar EPCs, dealers, installers, or shops:
-  - NEVER fabricate fake telephone numbers (e.g., `+91 99999 99999`), random coordinates, or fictional business names.
-  - If a company's phone number or website is unlisted on Google Maps/Places API, explicitly display `"Phone unlisted"` or `"Website unlisted"` instead of guessing or hallucinating placeholder data.
-  - Every lead must contain genuine Google Maps deep navigation links (`https://www.google.com/maps/search/?api=1&query=...`).
+### 3.1 Global Entity Rule Propagation
+- If an entity requirement, validation rule, or field is added, modified, made mandatory, or removed (e.g. "make address mandatory for dealers" or "remove field X from profile"):
+  - You MUST identify and update **ALL** locations across the entire project where that entity is created, edited, viewed, or processed.
+  - *Example*: If dealer creation requires a mandatory address, that validation must be applied in Settings > Account, Dealer Partners tab, Admin Portal modals, Staff Portal, and backend registration APIs.
+- Never implement a field change only on the single screen mentioned in the user's prompt while leaving other forms, modals, or sibling tabs broken or inconsistent.
 
-### 5.2 Multi-Tier Discovery Architecture
-- In lead discovery engines:
-  - **Tier 1**: Google Places API (New) if key is provided and active.
-  - **Tier 2**: Free Tier APIs (Geoapify Places API, 3,000 req/day without credit card).
-  - **Tier 3**: High-Precision Regional Solar Directory (pre-verified real-world solar EPCs, distributors, and dealers with exact physical coordinates and phone numbers).
-  - Always calculate true GPS distance via Haversine and sort ascending (closest business is #1 at top).
+### 3.2 Synchronized Frontend & Backend Validation
+- Field validations (mandatory checks, regex formats, length constraints) must exist identically on both the frontend UI and the backend API handler.
 
 ---
 
-## Rule 6: Non-Blocking Workflows & Document Policies
+## Rule 4: Senior Fullstack Architecture & Pre-Execution Planning (/plan)
 
-### 6.1 Non-Mandatory Document Uploads
-- Solar technicians and sales field staff in the field often do site surveys before collecting customer documents.
+### 4.1 Plan Before Execution
+- Before implementing features or making structural modifications, formulate a thorough technical plan (`/plan`) as a Senior Frontend and Backend Architect.
+- Do not just mindlessly or superficially execute single-line prompt instructions. Analyze the end-to-end architecture: Database -> Serverless Backend -> API Handler -> State Management -> UI Components.
+
+### 4.2 Proactive Architectural Ownership
+- Identify edge cases, missing error boundaries, concurrency bottlenecks, and integration points proactively.
+- If a user requests a feature, think two steps ahead to ensure full architectural harmony.
+
+---
+
+## Rule 5: Zero Hardcoding & Dynamic Entity/Category Extensibility
+
+### 5.1 Dynamic Data Over Hardcoding
+- Never hardcode business logic, pricing matrices, category lists, unit options, or DISCOM tariffs in component render blocks or static arrays.
+- Distance filters, lead categories, pricing tiers, and hardware items must be dynamic and driven by data tables or settings.
+
+### 5.2 Mandatory Dynamic Category & Option Management
+- If a feature is implemented that introduces an entity with categories, units, or classifications (e.g., items, hardware, inventory, materials):
+  - You MUST automatically provide dynamic category/unit creation and management options, even if the user did not explicitly mention it.
+  - The user/admin must be able to add, edit, and select new categories directly from the UI without requiring code changes.
+
+### 5.3 Future-Proof Admin Controls
+- When creating any major feature, expose necessary configuration and role permissions in the appropriate admin or settings panel so that future tweaks do not necessitate code changes.
+
+---
+
+## Rule 6: UI Continuity, Brand Aesthetics & Ultra-Smooth Performance
+
+### 6.1 Brand Identity & Color Integrity
+- The Sunvine brand palette is immutable:
+  - **Dark Enterprise Console**: `#0D1527` (card background) and `#070D18` (deep background).
+  - **Energy Accent**: Emerald / Teal gradient (`from-emerald-600 to-teal-500`, `hover:from-emerald-500 hover:to-teal-400`).
+  - **Surface & Container**: Tailwind `bg-surface`, `bg-surface-container`, `border-surface-container-high`.
+  - **Typography**: `Inter` (body font), `Space Grotesk` (display/headlines), and `Roboto Mono` (numeric kW, currency, coordinates, phone numbers).
+  - **Icons**: Google `material-symbols-outlined` with standard sizing (`text-[16px]`, `text-[18px]`, `text-[22px]`).
+
+### 6.2 UI/UX Pro Max Ergonomics
+- `cursor-pointer` on every interactive button, chip, tab, and clickable row.
+- Touch targets >= 44×44px for field technicians and mobile devices.
+- Text contrast ratio >= 4.5:1.
+- All flex children with text must have `min-w-0` to support clean `truncate`.
+- Responsive across all viewports (360px to 1920px) with **zero horizontal root overflow**.
+
+### 6.3 Ultra-Smooth, Fully Optimized Performance
+- Both frontend and backend must be ultra-fast and fully optimized.
+- Eliminate unnecessary re-renders, debounce intensive inputs, memoize heavy computations, and ensure zero UI lag.
+- The user experience must feel instant, fluid, and enterprise-grade.
+
+---
+
+## Rule 7: Non-Blocking Workflows & Document Policies
+
+### 7.1 Non-Mandatory Document Uploads
+- Solar technicians and sales field staff in the field often perform site surveys before collecting customer documents.
 - **RULE**: Document upload (Aadhaar Card, Light Bill, Meter Photo, Site Photo, Bank Passbook) must NEVER be mandatory to create, save, or edit a Customer Lead or generate a Solar Quotation.
 - Customer Files must save successfully in `Sourced` / `Survey Scheduled` stage with 0 documents uploaded.
 - The UI should clearly show document upload progress (e.g. `2/5 Docs Uploaded`), but NEVER block the user from proceeding with a hard validation error.
 
 ---
 
-## Rule 7: Live Geolocation, Sensor Telemetry & Race Guards
+## Rule 8: Authentic Real-World Telemetry & Geolocation
 
-### 7.1 High-Accuracy Hardware Geolocation
-- Always invoke HTML5 Geolocation with high-accuracy parameters:
-  ```javascript
-  {
-    enableHighAccuracy: true,
-    timeout: 12000,
-    maximumAge: 0
-  }
-  ```
-- Continuously listen via `watchPosition` on mobile field devices.
-- Display clear telemetry: Coordinates (6 decimals), GPS Accuracy radius (`±XXm`), and reverse-geocoded locality/street address.
+### 8.1 Zero Synthetic / Hallucinated Data in Production
+- When fetching solar EPCs, dealers, installers, or shops:
+  - NEVER fabricate fake telephone numbers (e.g., `+91 99999 99999`), random coordinates, or fictional business names.
+  - If a company's phone number or website is unlisted, explicitly display `"Phone unlisted"` or `"Website unlisted"`.
+  - Every lead must contain genuine Google Maps deep navigation links.
 
-### 7.2 Adaptive Movement Threshold
-- To prevent battery drain and API flooding when stationary, update the search center only when the salesperson physically moves more than **35 meters** from their previous location.
-
-### 7.3 Race-Condition & Stale Response Guards
-- Always maintain an incrementing Request ID (`activeRequestId`) or `AbortController`.
-- If Request A completes after Request B has already been dispatched, Request A's response MUST be silently discarded to prevent stale coordinates from overwriting newer ones.
-
-### 7.4 Manual Calibration Fallback
-- Desktop computers lack hardware GNSS chips and often resolve coordinates to remote ISP routing hubs.
-- Always provide a **"Pick Manual Spot"** interactive button so desktop users can enter their exact town, address, or PIN code without being blocked.
+### 8.2 High-Accuracy Hardware Geolocation & Race Guards
+- Invoke HTML5 Geolocation with `{ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }`.
+- Update search centers only when the user moves more than **35 meters** to conserve battery and API limits.
+- Implement `activeRequestId` / `AbortController` to prevent stale coordinate responses from overwriting newer queries.
+- Provide a **"Pick Manual Spot"** interactive button for desktop users without GPS hardware.
 
 ---
 
-## Rule 8: Code Quality, Cleanliness & Pre-Commit Verification
+## Rule 9: Pragmatic Package & Dependency Management
 
-### 8.1 No Throwaway or Dead Code
-- Do NOT leave commented-out blocks of dead code, obsolete scratch files, or test scripts (`test-*.js`, `test-*.mjs`, `dump.html`, `inspect-*.json`) in the repository. Clean them up immediately before committing.
+### 9.1 Genuine Dependency Allowance
+- When a package is genuinely required to implement a robust feature, secure cryptography (e.g., password hashing), PDF generation, or barcode/image handling, install it cleanly via `npm`.
+- Ensure new packages are vetted, secure, and actively maintained.
+- Avoid redundant or duplicate packages where existing dependencies or standard library features already suffice.
 
-### 8.2 Mandatory Build Verification
+---
+
+## Rule 10: Git Hygiene, sumit-updates Branch & 0-Error Build Verification
+
+### 10.1 Dedicated Branch Deployment Protocol
+- All development, feature updates, commits, and pushes MUST be made to the **`sumit-updates`** branch on GitHub / Vercel.
+- **NEVER push directly to the `main` branch**. Merging into `main` (Production) requires explicit confirmation from the user.
+
+### 10.2 Mandatory Build Quality Gate
 - Before staging and committing any change:
   - Run `npm run build` locally.
   - The build MUST succeed with **0 errors**.
   - Any JSX syntax errors, missing imports, unclosed tags, or unhandled exceptions must be resolved before pushing.
 
-### 8.3 Git Hygiene & Branch Promotion
-- All development and feature updates are committed and pushed to the `sumit-updates` branch.
-- Once verified via `npm run build` and tested, push only to `sumit-updates` on GitHub / Vercel.
-- **NEVER push directly to the `main` branch**. Merging into `main` (Production) is strictly forbidden without explicit user confirmation.
-
----
-
-## Rule 9: Direct Database Single Source of Truth (Zero Cache-Only / Zero LocalStorage-Only Data)
-
-### 9.1 Mandatory Direct Database Persistence
-- **STRICT REQUIREMENT ACROSS ALL BRANCHES**: Regardless of which branch code is updated in (`devlopment`, `sumit-updates`, `main`), any data created, edited, updated, or deleted anywhere in this project MUST be written directly to the database (Supabase / PostgreSQL) via backend APIs or database services.
-- **Universal Scope**: Includes user credentials, materials / hardware items, pricing matrices, custom categories, custom units, customer files, leads, staff records, dealer accounts, quotations, BOM items, audit logs, and system settings.
-- Data MUST NEVER be stored exclusively in browser memory, React state, or `localStorage`.
-
-### 9.2 Direct Database Fetch on Mount & Hard Refresh
-- The database is the **Sole Single Source of Truth**.
-- On initial portal boot, tab switch, navigation, and especially upon a **hard refresh** (`Ctrl + Shift + R` or `F5`), the application MUST fetch active, live records directly from the database.
-- Data must never disappear, desync, or revert to blank / stale mock data after a hard browser reload.
-
-### 9.3 Client Cache & LocalStorage Restrictions
-- `localStorage` and client caches may only be used for active authentication tokens / session cookies or non-critical ephemeral UI preferences (e.g. collapsed sidebar state).
-- Business entities, application records, and configurations must NEVER rely on `localStorage` as the source of truth.
-- Direct database query takes absolute precedence over static serverless caches on mount and hard refresh.
-
-### 9.4 Mandatory Enforcement on Every Prompt
-- For every user prompt, feature implementation, and bugfix, the AI assistant and developer MUST review against Rule 9:
-  1. Did we ensure newly added or modified data saves directly to the database?
-  2. Did we ensure that reloading/hard-refreshing the page fetches the freshly saved data directly from the database?
-  3. Is zero business data lost upon browser cache flush?
+### 10.3 Zero Dead Code in Repository
+- Clean up all test scripts, temporary dump files (`test-*.js`, `inspect-*.json`), and commented-out code blocks before committing.
 
 ---
 
 ## Enforcement Checklist for Every Change
 
-- [ ] **Zero Secrets**: Checked `git diff` to ensure no API keys, tokens, or passwords are hardcoded.
-- [ ] **No UI Breakage**: Verified that existing styles, colors, fonts, and mechanisms remain untouched.
-- [ ] **Brand Intact**: Primary emerald/teal theme and fonts preserved.
-- [ ] **Dynamic & DRY**: Feature settings are dynamic and not hardcoded.
-- [ ] **Data Authenticity**: All displayed business leads are genuine with real distances.
-- [ ] **Non-Blocking Docs**: Customer files can be saved without mandatory document uploads.
-- [ ] **Direct DB Persistence & Live Fetch (Rule 9)**: All added/updated data writes directly to the DB and is fetched directly from the DB so hard refresh never causes data loss.
-- [ ] **Clean Build**: Executed `npm run build` and confirmed 0 errors.
-
+- [ ] **Direct DB Persistence & Live Fetch (Rule 1)**: All added/updated data writes directly to the DB and is fetched directly from the DB so hard refresh never causes data loss. Verified schema and confirmed no fake/read-only saves.
+- [ ] **Adversarial Backend Security (Rule 2)**: Passwords hashed with secure crypto. No hardcoded secrets or API keys. Backend checked with hacker mindset for IDOR, SQL injection, and auth bypass.
+- [ ] **Cross-Touchpoint Consistency (Rule 3)**: Entity field changes applied across all forms, tabs, modals, and APIs project-wide.
+- [ ] **Senior Fullstack Architecture (Rule 4)**: Thorough technical plan formulated and reviewed before code modification.
+- [ ] **Dynamic & Extensible (Rule 5)**: Zero hardcoding; dynamic category and unit management provided for new entities.
+- [ ] **UI Continuity & Brand Intact (Rule 6)**: Dark enterprise theme (`#0D1527`), emerald/teal gradients, smooth performance, 0 horizontal overflow.
+- [ ] **Non-Blocking Docs (Rule 7)**: Customer files and quotes save without mandatory document uploads.
+- [ ] **Data Authenticity (Rule 8)**: All leads and coordinates genuine with real distance calculations.
+- [ ] **Pragmatic Dependencies (Rule 9)**: Necessary packages installed properly without bloat.
+- [ ] **sumit-updates Branch & Clean Build (Rule 10)**: Executed `npm run build` with 0 errors. Pushing strictly to `sumit-updates`.

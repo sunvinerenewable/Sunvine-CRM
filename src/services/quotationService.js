@@ -307,7 +307,22 @@ export const quotationService = {
   async deleteQuotation(id) {
     if (!id) return { success: false };
     try {
-      await supabase.from('quotations').delete().eq('id', id);
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch('/api/quotations', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ action: 'delete', id })
+      });
+      if (res.ok) {
+        return { success: true };
+      }
+    } catch (_) {}
+
+    try {
+      const { error } = await supabase.from('quotations').delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };

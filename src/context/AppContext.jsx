@@ -184,8 +184,12 @@ const getInitialTabFromUrl = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  // Authentication & Session State
+  // Authentication & Session State (Tab-isolated via sessionStorage first, fallback to device localStorage)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessAuth = sessionStorage.getItem('sunvine_auth');
+      if (sessAuth !== null) return sessAuth === 'true';
+    }
     return localStorage.getItem('sunvine_auth') === 'true';
   });
 
@@ -211,8 +215,14 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Role: 'dealer' or 'admin'
-  const [role, setRole] = useState(() => localStorage.getItem('sunvine_role') || 'dealer');
+  // Role: 'dealer', 'admin', or 'staff' (Tab-scoped)
+  const [role, setRole] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessRole = sessionStorage.getItem('sunvine_role');
+      if (sessRole) return sessRole;
+    }
+    return localStorage.getItem('sunvine_role') || 'dealer';
+  });
   const [activeTab, setActiveTabState] = useState(getInitialTabFromUrl);
 
   const setActiveTab = (newTab, replace = false) => {
@@ -434,27 +444,43 @@ export const AppProvider = ({ children }) => {
     }
   }, [isAuthenticated, activeTab, role]);
   
-// Safe storage parser and serializer
+// Tab-isolated session keys set
+const SESSION_KEYS = new Set([
+  'sunvine_auth',
+  'sunvine_role',
+  'sunvine_tab',
+  'sunvine_current_dealer',
+  'sunvine_current_staff',
+  'sunvine_session_token'
+]);
+
+// Safe storage parser and serializer (sessionStorage takes priority for tab isolation)
 const safeJsonParse = (key, fallback) => {
   if (typeof window === 'undefined') return fallback;
   try {
+    if (SESSION_KEYS.has(key)) {
+      const sessItem = sessionStorage.getItem(key);
+      if (sessItem && sessItem !== 'undefined' && sessItem !== 'null') {
+        return JSON.parse(sessItem) ?? fallback;
+      }
+    }
     const item = localStorage.getItem(key);
     if (!item || item === 'undefined' || item === 'null') return fallback;
     const parsed = JSON.parse(item);
     return parsed ?? fallback;
   } catch (err) {
-    console.warn(`[Sunvine Storage] Resetting corrupted key: ${key}`);
-    try {
-      localStorage.removeItem(key);
-    } catch (_) {}
     return fallback;
   }
 };
 
 const safeSetItem = (key, value) => {
   if (typeof window === 'undefined') return;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   try {
-    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    if (SESSION_KEYS.has(key)) {
+      sessionStorage.setItem(key, serialized);
+    }
+    localStorage.setItem(key, serialized);
   } catch (err) {
     console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
   }
@@ -1477,6 +1503,8 @@ const safeSetItem = (key, value) => {
     startTransition(() => {
       setIsAuthenticated(true);
       setRole(userRole);
+      safeSetItem('sunvine_auth', 'true');
+      safeSetItem('sunvine_role', userRole);
       if (userRole === 'admin') {
         setActiveTab('admin_dashboard');
         pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
@@ -1504,6 +1532,14 @@ const safeSetItem = (key, value) => {
       setIsAuthenticated(false);
       setAuthView('dealer_login', true);
     });
+    try {
+      sessionStorage.removeItem('sunvine_auth');
+      sessionStorage.removeItem('sunvine_role');
+      sessionStorage.removeItem('sunvine_tab');
+      sessionStorage.removeItem('sunvine_current_staff');
+      sessionStorage.removeItem('sunvine_current_dealer');
+      sessionStorage.removeItem('sunvine_session_token');
+    } catch (_) {}
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
     if (typeof window !== 'undefined') {
@@ -1512,11 +1548,13 @@ const safeSetItem = (key, value) => {
     authService.logout().catch(() => {});
   };
 
-  // The UI flag (localStorage) can outlive the HttpOnly JWT cookie (24h). Validate on load;
-  // only a definite 401 logs the user out (network errors are ignored so offline use still works).
+  // The UI flag can outlive the token. Validate on load using tab-isolated token header;
+  // only a definite 401 logs the user out.
   useEffect(() => {
     if (!isAuthenticated) return;
-    fetch('/api/auth/verify', { credentials: 'include' })
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch('/api/auth/verify', { headers, credentials: 'include' })
       .then(res => { if (res.status === 401) logout(); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2138,6 +2176,19 @@ const safeSetItem = (key, value) => {
       }
       return updated;
     });
+  };
+
+  const deleteQuotation = async (id) => {
+    if (!id) return { success: false };
+    setQuotations(prev => prev.filter(q => q.id !== id && q.quoteNumber !== id));
+    try {
+      const res = await quotationService.deleteQuotation(id);
+      broadcastDbEvent('SYNC_FILES');
+      return res;
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete quotation from DB:', e);
+      return { success: false, error: e.message };
+    }
   };
 
   const addDealer = async (newDealer) => {
@@ -3070,6 +3121,7 @@ const safeSetItem = (key, value) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     previewQuotation,
     setPreviewQuotation,
     notifications: visibleNotifications,
@@ -3236,6 +3288,7 @@ const safeSetItem = (key, value) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     openChangelogModal,
     markNotificationAsRead,
     markAllNotificationsAsRead,

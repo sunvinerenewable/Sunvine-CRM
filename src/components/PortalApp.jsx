@@ -37,6 +37,7 @@ const StaffManagement = lazy(() => import('./AdminPortal/StaffManagement'));
 const BusinessPerformance = lazy(() => import('./AdminPortal/BusinessPerformance'));
 const ReportsAnalytics = lazy(() => import('./AdminPortal/ReportsAnalytics'));
 const AuditLogViewer = lazy(() => import('./AdminPortal/AuditLogViewer'));
+const DealerPaymentLedger = lazy(() => import('./AdminPortal/DealerPaymentLedger'));
 
 // Shared Views
 const LeadGenerationComingSoon = lazy(() => import('./Shared/LeadGenerationComingSoon'));
@@ -87,6 +88,8 @@ function PortalContent() {
       switch (activeTab) {
         case 'admin_dashboard':
           return <AdminDashboard />;
+        case 'admin_ledger':
+          return <DealerPaymentLedger />;
         case 'admin_performance':
           return <BusinessPerformance />;
         case 'create_quote':
@@ -122,6 +125,8 @@ function PortalContent() {
         case 'verification_desk':
         case 'staff_verification':
           return <VerificationDesk />;
+        case 'admin_ledger':
+          return <DealerPaymentLedger />;
         case 'staff_dashboard':
           return <StaffDashboard />;
         case 'create_quote':
@@ -165,6 +170,8 @@ function PortalContent() {
     switch (activeTab) {
       case 'dashboard':
         return <DealerDashboard />;
+      case 'dealer_ledger':
+        return <DealerPaymentLedger isDealerMode={true} />;
       case 'create_quote':
         return <CreateQuotation />;
       case 'my_quotes':
