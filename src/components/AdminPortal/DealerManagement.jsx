@@ -11,6 +11,7 @@ export default function DealerManagement() {
   const [discomFilter, setDiscomFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
   const [salesmanFilter, setSalesmanFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
   const [showAddModal, setShowAddModal] = useState(false);
@@ -118,6 +119,7 @@ export default function DealerManagement() {
   const [newPan, setNewPan] = useState('');
   const [newDiscomCode, setNewDiscomCode] = useState('PGVCL-VND-2025-0845');
   const [newTier, setNewTier] = useState('Gold EPC Partner (Quarterly Cap: 1.5 MW)');
+  const [newCategory, setNewCategory] = useState('Margin Based');
   const [newCap, setNewCap] = useState('5,000');
   const [newPassword, setNewPassword] = useState('Sunvine@2026');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -224,6 +226,8 @@ export default function DealerManagement() {
   const activeDealersCount = (dealers || []).filter(d => d.status === 'Active').length;
   const pendingDealersCount = (dealers || []).filter(d => d.status === 'Pending').length;
   const suspendedDealersCount = (dealers || []).filter(d => d.status === 'Suspended').length;
+  const marginDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category || 'Margin Based') === 'Margin Based').length;
+  const kitDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category) === 'Kit Based').length;
   const totalCapacityMw = ((dealers || []).reduce((acc, d) => acc + (d.totalCapacityKw || 0), 0) / 1000).toFixed(1);
 
   // Sort dealers: newly onboarded / updated dealers first
@@ -254,6 +258,8 @@ export default function DealerManagement() {
 
     if (discomFilter !== 'all' && !(d.discom || '').toLowerCase().includes(discomFilter.toLowerCase())) return false;
     if (tierFilter !== 'all' && d.tier !== tierFilter) return false;
+    const cat = d.category || d.pricingConfig?.category || 'Margin Based';
+    if (categoryFilter !== 'all' && cat !== categoryFilter) return false;
     if (salesmanFilter !== 'all') {
       const sId = d.assignedStaffId || 'STF-DIRECT';
       const sName = (d.assignedStaffName || '').toLowerCase();
@@ -367,6 +373,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewCategory('Margin Based');
     setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewZone('Rajkot & Saurashtra Zone (Western Gujarat)');
     setNewAddress('');
@@ -387,6 +394,7 @@ export default function DealerManagement() {
     setNewContact(dealer.contactPerson || '');
     setNewMobile(dealer.mobile || dealer.phone || '');
     setNewEmail(dealer.email || '');
+    setNewCategory(dealer.category || dealer.pricingConfig?.category || 'Margin Based');
     setNewAssignedStaffId(dealer.assignedStaffId || salesStaffList[0]?.id || 'STF-801');
     const zone = (dealer.city || '').toLowerCase().includes('surat') ? 'Surat & South Gujarat Hub' :
                  (dealer.city || '').toLowerCase().includes('vadodara') ? 'Vadodara Industrial Corridor' :
@@ -417,6 +425,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewCategory('Margin Based');
     setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewAddress('');
     setNewGstinState('');
@@ -487,6 +496,7 @@ export default function DealerManagement() {
     if (editingDealer) {
       const updatedDealerObj = {
         ...editingDealer,
+        category: newCategory,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
         mobile: cleanMobile,
@@ -505,12 +515,14 @@ export default function DealerManagement() {
         password: newPassword.trim() || editingDealer.password || '',
         pricingConfig: {
           ...(editingDealer.pricingConfig || {}),
+          category: newCategory,
           assignedStaffId,
           assignedStaffName
         }
       };
 
       const isUnchanged =
+        (editingDealer.category || editingDealer.pricingConfig?.category || 'Margin Based') === newCategory &&
         editingDealer.firmName === updatedDealerObj.firmName &&
         editingDealer.contactPerson === updatedDealerObj.contactPerson &&
         editingDealer.mobile === updatedDealerObj.mobile &&
@@ -563,6 +575,7 @@ export default function DealerManagement() {
       const newDealerObj = {
         id: finalDealerId,
         dealerCode: finalDealerId,
+        category: newCategory,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
         mobile: cleanMobile,
@@ -584,6 +597,7 @@ export default function DealerManagement() {
         joinedDate: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date()),
         password: newPassword.trim() || '',
         pricingConfig: {
+          category: newCategory,
           assignedStaffId,
           assignedStaffName
         }
@@ -595,7 +609,7 @@ export default function DealerManagement() {
       if (addNotification) {
         addNotification({
           title: 'New EPC Dealer Onboarded',
-          description: `${newFirm.trim()} (${tierClean}) added under Salesman ${assignedStaffName}.`,
+          description: `${newFirm.trim()} (${newCategory} • ${tierClean}) added under Salesman ${assignedStaffName}.`,
           type: 'success',
           icon: 'person_add',
           audience: 'admin'
@@ -929,6 +943,121 @@ export default function DealerManagement() {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-6">
+                {/* Dealer Business Model / Category Selection */}
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span>Dealer Operating Model / Category</span>
+                      <span className="text-error">*</span>
+                    </span>
+                    <span className="text-[11px] text-secondary">
+                      Selected: <strong className={newCategory === 'Kit Based' ? 'text-purple-700 font-bold' : 'text-emerald-700 font-bold'}>{newCategory}</strong>
+                    </span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Option 1: Margin Based Partner */}
+                    <div
+                      onClick={() => setNewCategory('Margin Based')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                        newCategory === 'Margin Based'
+                          ? 'border-emerald-600 bg-emerald-50/60 shadow-sm'
+                          : 'border-surface-container-highest hover:border-slate-300 bg-surface-container-lowest'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                              newCategory === 'Margin Based'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-surface-container text-secondary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[18px]">percent</span>
+                            </div>
+                            <div>
+                              <div className="font-poppins font-bold text-on-surface text-[14px] leading-tight">
+                                Margin Based Partner
+                              </div>
+                              <div className="text-[11px] text-secondary mt-0.5">
+                                Standard EPC Quotation Model
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            newCategory === 'Margin Based'
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-slate-300'
+                          }`}>
+                            {newCategory === 'Margin Based' && (
+                              <span className="material-symbols-outlined text-[13px] font-bold">check</span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[12px] text-slate-600 leading-relaxed">
+                          Dealer sets custom margin (₹/kW) above company turnkey pricing. Commission is calculated per kW.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded">
+                          Turnkey Quotation
+                        </span>
+                        <span className="text-slate-500 font-mono">Custom ₹/kW Margin</span>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Kit Based Partner */}
+                    <div
+                      onClick={() => setNewCategory('Kit Based')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                        newCategory === 'Kit Based'
+                          ? 'border-purple-600 bg-purple-50/60 shadow-sm'
+                          : 'border-surface-container-highest hover:border-slate-300 bg-surface-container-lowest'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                              newCategory === 'Kit Based'
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-surface-container text-secondary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+                            </div>
+                            <div>
+                              <div className="font-poppins font-bold text-on-surface text-[14px] leading-tight">
+                                Kit Based Partner
+                              </div>
+                              <div className="text-[11px] text-secondary mt-0.5">
+                                Complete Hardware Kit Procurement
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            newCategory === 'Kit Based'
+                              ? 'border-purple-600 bg-purple-600 text-white'
+                              : 'border-slate-300'
+                          }`}>
+                            {newCategory === 'Kit Based' && (
+                              <span className="material-symbols-outlined text-[13px] font-bold">check</span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[12px] text-slate-600 leading-relaxed">
+                          Dealer purchases complete solar hardware kits (Modules + Inverter + BOS). Fixed package kit rates apply.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-purple-800 bg-purple-100/90 px-2 py-0.5 rounded">
+                          Material Kit Package
+                        </span>
+                        <span className="text-slate-500 font-mono">BOS + Inverter + Modules</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Assigned Partner Tier <span className="text-error">*</span>
@@ -1297,12 +1426,22 @@ export default function DealerManagement() {
               <option value="Standard Tier">Standard Tier (₹5.0k/kW)</option>
               <option value="Diamond Partner">Diamond Partner (₹8.0k/kW)</option>
             </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
+              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none cursor-pointer"
+            >
+              <option value="all">Category / Model (All)</option>
+              <option value="Margin Based">💼 Margin Based ({marginDealersCount})</option>
+              <option value="Kit Based">📦 Kit Based ({kitDealersCount})</option>
+            </select>
             <button
               onClick={() => {
                 setSearchTerm('');
                 setActiveTabFilter('all');
                 setDiscomFilter('all');
                 setTierFilter('all');
+                setCategoryFilter('all');
                 setSalesmanFilter('all');
                 setCurrentPage(1);
               }}
@@ -1419,9 +1558,21 @@ export default function DealerManagement() {
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-poppins font-semibold text-on-surface text-sm truncate leading-tight">
-                            {d.firmName}
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-poppins font-semibold text-on-surface text-sm truncate leading-tight">
+                              {d.firmName}
+                            </h3>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                              (d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based')
+                                ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-[11px]">
+                                {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                              </span>
+                              {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                            </span>
+                          </div>
                           <p className="text-xs text-secondary mt-0.5 font-medium">{d.contactPerson}</p>
                           <p className="text-[11px] text-secondary font-mono mt-0.5 truncate">{d.mobile} • {d.email}</p>
                         </div>
@@ -1587,9 +1738,21 @@ export default function DealerManagement() {
                       </td>
                       <td className="py-3.5 px-2.5 align-top">
                         <div className="min-w-0">
-                          {/* Line 1: Firm Name */}
-                          <div className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
-                            {d.firmName}
+                          {/* Line 1: Firm Name + Category Badge */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
+                              {d.firmName}
+                            </span>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                              (d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based')
+                                ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-[11px]">
+                                {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                              </span>
+                              {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                            </span>
                           </div>
                           {/* Line 2: Contact Person */}
                           <div className="text-[12px] font-medium text-on-surface/90 mt-1 leading-tight">

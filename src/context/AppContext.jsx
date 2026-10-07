@@ -680,13 +680,16 @@ const safeSetItem = (key, value) => {
 
       const tierLower = (d.tier || '').toLowerCase();
       const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
+      const category = d.category || d.pricingConfig?.category || 'Margin Based';
       return {
         ...d,
+        category,
         assignedStaffId,
         assignedStaffName,
         onboardedDate: d.onboardedDate || '2025-06-15',
         pricingConfig: {
           ...(d.pricingConfig || {}),
+          category,
           assignedStaffId,
           assignedStaffName,
           pricingMode: d.pricingConfig?.pricingMode || 'standard',
@@ -2138,10 +2141,19 @@ const safeSetItem = (key, value) => {
   };
 
   const addDealer = async (newDealer) => {
-    setDealers(prev => [newDealer, ...prev]);
+    const finalCategory = newDealer.category || newDealer.pricingConfig?.category || 'Margin Based';
+    const finalNewDealer = {
+      ...newDealer,
+      category: finalCategory,
+      pricingConfig: {
+        ...(newDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
+    setDealers(prev => [finalNewDealer, ...prev]);
     broadcastDbEvent('SYNC_DEALERS');
     try {
-      await dealerService.createDealer(newDealer);
+      await dealerService.createDealer(finalNewDealer);
       broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to create dealer in DB:', e);
@@ -2152,7 +2164,16 @@ const safeSetItem = (key, value) => {
     if (!updatedDealer) return;
     const cleanId = String(updatedDealer.id || updatedDealer.dealerCode || '').replace(/^#/, '');
     const cleanEmail = (updatedDealer.email && String(updatedDealer.email).trim()) ? String(updatedDealer.email).trim() : null;
-    const finalUpdated = { ...updatedDealer, email: cleanEmail };
+    const finalCategory = updatedDealer.category || updatedDealer.pricingConfig?.category || 'Margin Based';
+    const finalUpdated = {
+      ...updatedDealer,
+      category: finalCategory,
+      email: cleanEmail,
+      pricingConfig: {
+        ...(updatedDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
 
     setDealers(prev => prev.map(d => {
       const dCode = String(d.id || d.dealerCode || '').replace(/^#/, '');
