@@ -69,7 +69,8 @@ export default function CreateQuotation() {
     getAccessibleDealers,
     updateDealerPricing,
     bomCatalog,
-    bomRates
+    bomRates,
+    isHardwareDbSyncing
   } = useApp();
 
   const { addToast } = useToast();
@@ -117,7 +118,7 @@ export default function CreateQuotation() {
         (effectiveDealer?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
   const tierConfig = isDirectCompanyQuote
     ? { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 }
-    : (tierMargins?.[dealerTierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 });
+    : (tierMargins?.[dealerTierKey] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 });
 
   // Custom Negotiated Dealer Pricing Resolution
   const hasCustomDealerPricing = Boolean(!isDirectCompanyQuote && (bomPricingMode === 'custom' || effectiveDealer?.pricingConfig?.pricingMode === 'custom'));
@@ -490,7 +491,7 @@ export default function CreateQuotation() {
 
   // 4. Multi-Mode Margin Controls ('per_kw' | 'amount' | 'percent')
   const effectiveMarginPerKw = isDirectCompanyQuote ? 0 : (
-    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 4500)
+    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 0)
   );
 
   const [marginMode, setMarginMode] = useState(() => {
@@ -499,7 +500,7 @@ export default function CreateQuotation() {
   });
   const [marginRatePerKw, setMarginRatePerKw] = useState(() => {
     if (initialSource?.marginRatePerKw !== undefined) return Number(initialSource.marginRatePerKw);
-    return isDirectCompanyQuote ? 0 : (effectiveMarginPerKw || 4500);
+    return isDirectCompanyQuote ? 0 : (effectiveMarginPerKw || 0);
   });
   const [dealerMarginFixed, setDealerMarginFixed] = useState(() => {
     if (initialSource?.dealerTotalMargin !== undefined) return Number(initialSource.dealerTotalMargin);
@@ -1236,6 +1237,30 @@ export default function CreateQuotation() {
       setTimeout(() => hideLoader(), 350);
     }
   };
+
+  if (!isHardwareDbSyncing && !pricingPresets && (!modulesList || modulesList.length === 0)) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-surface-container-lowest rounded-2xl border border-surface-container-high shadow-sm my-8">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+          <span className="material-symbols-outlined text-3xl">cloud_off</span>
+        </div>
+        <h2 className="text-lg font-bold text-on-surface mb-2">Pricing data temporarily unavailable. Please retry.</h2>
+        <p className="text-xs text-secondary max-w-md mb-6">
+          The system could not retrieve real-time pricing presets and catalogue data from the database. Please check your network connection and retry.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') window.location.reload();
+          }}
+          className="px-5 py-2.5 bg-primary text-on-primary rounded-xl font-semibold text-xs hover:bg-primary/90 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-base">refresh</span>
+          <span>Retry Loading Pricing</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full pb-8 min-w-0 overflow-x-hidden">

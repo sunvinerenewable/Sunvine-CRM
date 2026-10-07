@@ -22,13 +22,14 @@ export default function DealerManagement() {
   // Filter out Verification desk officers to only show Sales Team members
   const salesStaffList = useMemo(() => {
     const list = (staffList || []).filter(s => {
-      const dept = (s.department || '').toLowerCase();
-      const role = (s.role || '').toLowerCase();
-      return !dept.includes('verification') && !role.includes('verification');
+      const isVerification = Boolean(
+        s.is_verification ||
+        (s.department || '').toLowerCase().includes('verification') ||
+        (s.role || '').toLowerCase().includes('verification')
+      );
+      return !isVerification;
     });
-    return list.length > 0 ? list : [
-      { id: 'STF-801', name: 'Sunvine Sales Staff', role: 'Senior Solar Field Executive', city: 'Ahmedabad', zone: 'Gujarat Sales Desk', phone: '8000050580' }
-    ];
+    return list;
   }, [staffList]);
 
   const handleConfirmDeleteDealer = () => {
@@ -58,28 +59,36 @@ export default function DealerManagement() {
   const [pricingMode, setPricingMode] = useState('standard');
   const [customWpRate, setCustomWpRate] = useState(18.00);
   const [customKwRate, setCustomKwRate] = useState(58000);
-  const [customMarginKw, setCustomMarginKw] = useState(4500);
+  const [customMarginKw, setCustomMarginKw] = useState(0);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [customNotes, setCustomNotes] = useState('');
 
   const openPricingModal = (d) => {
     setPricingModalDealer(d);
     const cfg = d.pricingConfig || {};
+    const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     setPricingMode(cfg.pricingMode || 'standard');
     setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : 18.00);
     setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : 58000);
-    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : 4500);
+    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : dynMargin);
     setCustomDiscount(cfg.customDiscountPercent || 0);
     setCustomNotes(cfg.customNotes || '');
   };
 
   const handleSaveDealerPricing = () => {
     if (!pricingModalDealer) return;
+    const tierKey = (pricingModalDealer.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (pricingModalDealer.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (pricingModalDealer.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     const newCfg = {
       pricingMode,
       customBaseRatePerWp: Number(customWpRate) || 18.00,
       customBaseRatePerKw: Number(customKwRate) || 58000,
-      customMarginPerKw: Number(customMarginKw) || 4500,
+      customMarginPerKw: Number(customMarginKw) || dynMargin,
       customDiscountPercent: Number(customDiscount) || 0,
       customNotes: customNotes.trim()
     };
@@ -312,9 +321,9 @@ export default function DealerManagement() {
       const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                       (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                       (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-      const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
-      const defaultMargin = conf.defaultMarginPerKw || 4500;
-      const marginCap = d.maxMarginCapPerKw || conf.maxMarginCapPerKw || 6000;
+      const conf = tierMargins?.[tierKey] || {};
+      const defaultMargin = conf.defaultMarginPerKw || 0;
+      const marginCap = d.maxMarginCapPerKw || conf.maxMarginCapPerKw || 0;
 
       const row = [
         escapeCsv(d.id),
@@ -1376,7 +1385,7 @@ export default function DealerManagement() {
                   const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                   (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                                   (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-                  const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                  const conf = tierMargins?.[tierKey] || {};
 
                   return (
                     <div key={d.id} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
@@ -1646,7 +1655,7 @@ export default function DealerManagement() {
                           const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                           (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                                           (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-                          const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                          const conf = tierMargins?.[tierKey] || {};
                           return (
                             <>
                               <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor} whitespace-nowrap`}>
@@ -1830,7 +1839,7 @@ export default function DealerManagement() {
                 { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
                 { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
               ].map((tier) => {
-                const currentConfig = tempTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                const currentConfig = tempTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                 return (
                   <div key={tier.key} className="p-4 rounded-xl border border-surface-container-high bg-surface-container-low/40 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2263,10 +2272,20 @@ export default function DealerManagement() {
                         value={customMarginKw}
                         onChange={(e) => setCustomMarginKw(e.target.value)}
                         className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
-                        placeholder="4500"
+                        placeholder="0"
                       />
                     </div>
-                    <span className="text-[11px] text-secondary mt-1 block">Tier baseline: ₹4,500/kW</span>
+                    {(() => {
+                      const tierKey = (pricingModalDealer?.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                                      (pricingModalDealer?.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                                      (pricingModalDealer?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+                      const baseMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
+                      return (
+                        <span className="text-[11px] text-secondary mt-1 block">
+                          Tier baseline: ₹{baseMargin.toLocaleString('en-IN')}/kW
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Negotiated Discount */}
