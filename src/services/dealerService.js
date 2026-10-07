@@ -42,7 +42,7 @@ export const dealerService = {
             status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
             rating: Number(d.rating) || 4.9,
             tier: d.tier || 'Gold EPC',
-            maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
+            maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 0,
             totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
             assignedStaffId: d.assigned_staff_id || 'STF-DIRECT',
             assignedStaffName: d.assigned_staff_name || 'Direct to Company (HQ Desk)',
@@ -81,7 +81,7 @@ export const dealerService = {
           status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
           rating: Number(d.rating) || 4.9,
           tier: d.tier || 'Gold EPC',
-          maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
+          maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 0,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
           assignedStaffId: (() => {
             const rawId = d.assigned_staff_id || d.pricing_config?.assignedStaffId;
@@ -103,10 +103,10 @@ export const dealerService = {
             }
             return rawName || 'Direct to Company (HQ Desk)';
           })(),
-          bankName: d.bank_name || 'State Bank of India',
-          accountNumber: d.account_number || '394857201948',
-          ifscCode: d.ifsc_code || 'SBIN0001234',
-          branch: d.branch || `${d.city || 'Ahmedabad'} Main Branch`,
+          bankName: d.bank_name || '',
+          accountNumber: d.account_number || '',
+          ifscCode: d.ifsc_code || '',
+          branch: d.branch || '',
           pricingConfig: d.pricing_config || {},
           createdAt: d.created_at
         }));
@@ -133,15 +133,15 @@ export const dealerService = {
 
     const dealerPayload = {
       dealerCode,
-      firmName: dealer.firmName || 'Gujarat Solar EPC',
-      contactPerson: dealer.contactPerson || 'Authorized Partner',
+      firmName: dealer.firmName || '',
+      contactPerson: dealer.contactPerson || '',
       mobile: cleanPhone,
-      email: (dealer.email && String(dealer.email).trim()) ? String(dealer.email).trim() : `${cleanPhone}@sunvinedealer.in`,
-      city: dealer.city || 'Ahmedabad',
-      state: dealer.state || 'Gujarat',
-      discom: dealer.discom || 'UGVCL',
+      email: (dealer.email && String(dealer.email).trim()) ? String(dealer.email).trim() : '',
+      city: dealer.city || '',
+      state: dealer.state || '',
+      discom: dealer.discom || '',
       tier: dealer.tier || 'Gold EPC',
-      maxMarginCapPerKw: Number(dealer.maxMarginCapPerKw) || 6000,
+      maxMarginCapPerKw: Number(dealer.maxMarginCapPerKw) || 0,
       password: plainPassword,
       status: (dealer.status || 'Active').toLowerCase(),
       address: dealer.address || '',

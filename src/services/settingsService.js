@@ -139,9 +139,9 @@ export const settingsService = {
       const tierMarginsObj = data.tier_margins || {};
 
       return {
-        baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
-        subsidyCap: Number(data.subsidy_cap) || 78000,
-        minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
+        baseRatePerKw: Number(data.base_rate_per_kw) || 0,
+        subsidyCap: Number(data.subsidy_cap) || 0,
+        minMarginPerKw: Number(data.min_margin_per_kw) || 0,
         enforceMinMargin: data.enforce_min_margin !== false,
         lastSynced: data.last_synced_by ? `Synced by ${data.last_synced_by}` : 'Synced with Database',
         tierMargins: tierMarginsObj.tiers || tierMarginsObj,

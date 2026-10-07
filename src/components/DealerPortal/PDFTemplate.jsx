@@ -172,16 +172,18 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   // Line item breakdown
   const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : 1000;
-  const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2000);
-  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (quotation.ratePerWp || 18.00));
-  const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
-  const structureCost = quotation.structureEstimatedCost || Math.round(resolvedCount * 3200);
+  const installationCost = quotation.installationEstimatedCost || (quotation.installationPricingMode === 'fixed' ? Number(quotation.installationFixedAmount || 0) : Math.round(resolvedCapKW * Number(quotation.installationRatePerKw || 0)));
+  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * Number(quotation.ratePerWp || 0));
+  const inverterCost = quotation.inverterEstimatedCost || 0;
+  const structureCost = quotation.structureEstimatedCost || 0;
   const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
 
   // Telemetry metrics
-  const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * 1440);
-  const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * 6.67);
-  const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '3.6');
+  const specificYield = Number(quotation.specificYield || quotation.peakSunHours || 1440);
+  const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * specificYield);
+  const tariff = Number(quotation.tariff || 6.67);
+  const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * tariff);
+  const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '0.0');
 
   // Multi-brand comparative proposal packages
   const resolvedMultiBrandPackages = useMemo(() => {

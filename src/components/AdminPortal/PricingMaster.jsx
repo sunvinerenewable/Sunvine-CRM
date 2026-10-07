@@ -213,10 +213,11 @@ export default function PricingMaster() {
     setDealerOverrideModal({ isOpen: false, product: null });
   };
 
-  // Form states initialized with pricingMaster or realistic defaults
-  const [rate1to3, setRate1to3] = useState(pricingMaster?.baseRates?.tier1to3kw || 62000);
-  const [rate3to10, setRate3to10] = useState(pricingMaster?.baseRates?.tier3to10kw || 58000);
-  const [rateCommercial, setRateCommercial] = useState(pricingMaster?.baseRates?.tier10to50kw || 24000);
+  // Form states initialized with pricingMaster or dynamic pricing presets
+  const baseRate = Number(pricingPresets?.baseRatePerKw || pricingMaster?.baseRates?.tier3to10kw || 0);
+  const [rate1to3, setRate1to3] = useState(pricingMaster?.baseRates?.tier1to3kw || (baseRate > 0 ? baseRate + 4000 : 0));
+  const [rate3to10, setRate3to10] = useState(pricingMaster?.baseRates?.tier3to10kw || baseRate);
+  const [rateCommercial, setRateCommercial] = useState(pricingMaster?.baseRates?.tier10to50kw || (baseRate > 0 ? Math.round(baseRate * 0.4) : 0));
 
   // Default Hardware selections
   const [selectedDefaultModule, setSelectedDefaultModule] = useState(
@@ -783,9 +784,10 @@ ${origin}/?tab=pricing_master
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-start xl:self-center shrink-0">
           <button
             onClick={() => {
-              setRate1to3(62000);
-              setRate3to10(58000);
-              setRateCommercial(24000);
+              const base = pricingPresets?.baseRatePerKw || 0;
+              setRate1to3(base > 0 ? base + 2000 : 0);
+              setRate3to10(base);
+              setRateCommercial(base > 0 ? Math.round(base * 0.4) : 0);
               handleResetMatrixToDefault();
               triggerToast('Reset to default system presets');
             }}

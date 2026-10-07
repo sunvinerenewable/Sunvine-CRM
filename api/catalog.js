@@ -103,9 +103,9 @@ async function getPricingPresets(db) {
 
     if (!row) return null;
     return {
-      baseRatePerKw: Number(row.base_rate_per_kw) || 59800,
-      subsidyCap: Number(row.subsidy_cap) || 78000,
-      minMarginPerKw: Number(row.min_margin_per_kw) || 4000,
+      baseRatePerKw: Number(row.base_rate_per_kw) || 0,
+      subsidyCap: Number(row.subsidy_cap) || 0,
+      minMarginPerKw: Number(row.min_margin_per_kw) || 0,
       enforceMinMargin: row.enforce_min_margin !== false,
       lastSynced: row.updated_at ? new Date(row.updated_at).toLocaleDateString() : 'Active',
       updatedBy: row.last_synced_by || 'Operations Desk'

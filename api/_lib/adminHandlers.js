@@ -449,9 +449,9 @@ export async function handleAdminPricing(req, res) {
             return res.status(200).json({
               success: true,
               presets: {
-                baseRatePerKw: 59800,
-                subsidyCap: 78000,
-                minMarginPerKw: 4000,
+                baseRatePerKw: 0,
+                subsidyCap: 0,
+                minMarginPerKw: 0,
                 enforceMinMargin: true,
                 lastSynced: 'Active',
                 updatedBy: 'Operations Desk'
@@ -461,9 +461,9 @@ export async function handleAdminPricing(req, res) {
           return res.status(200).json({
             success: true,
             presets: {
-              baseRatePerKw: Number(row.base_rate_per_kw) || 59800,
-              subsidyCap: Number(row.subsidy_cap) || 78000,
-              minMarginPerKw: Number(row.min_margin_per_kw) || 4000,
+              baseRatePerKw: Number(row.base_rate_per_kw) || 0,
+              subsidyCap: Number(row.subsidy_cap) || 0,
+              minMarginPerKw: Number(row.min_margin_per_kw) || 0,
               enforceMinMargin: row.enforce_min_margin !== false,
               lastSynced: row.updated_at ? new Date(row.updated_at).toLocaleDateString() : 'Active',
               updatedBy: row.last_synced_by || 'Operations Desk'
@@ -475,16 +475,16 @@ export async function handleAdminPricing(req, res) {
           return res.status(200).json({
             success: true,
             presets: row ? {
-              baseRatePerKw: Number(row.base_rate_per_kw) || 59800,
-              subsidyCap: Number(row.subsidy_cap) || 78000,
-              minMarginPerKw: Number(row.min_margin_per_kw) || 4000,
+              baseRatePerKw: Number(row.base_rate_per_kw) || 0,
+              subsidyCap: Number(row.subsidy_cap) || 0,
+              minMarginPerKw: Number(row.min_margin_per_kw) || 0,
               enforceMinMargin: row.enforce_min_margin !== false,
               lastSynced: row.updated_at ? new Date(row.updated_at).toLocaleDateString() : 'Active',
               updatedBy: row.last_synced_by || 'Operations Desk'
             } : {
-              baseRatePerKw: 59800,
-              subsidyCap: 78000,
-              minMarginPerKw: 4000,
+              baseRatePerKw: 0,
+              subsidyCap: 0,
+              minMarginPerKw: 0,
               enforceMinMargin: true,
               lastSynced: 'Active',
               updatedBy: 'Operations Desk'
@@ -509,9 +509,9 @@ export async function handleAdminPricing(req, res) {
             updated_at = NOW();
         `;
         await safeQuery(sql, [
-          Number(presets.baseRatePerKw) || 59800,
-          Number(presets.subsidyCap) || 78000,
-          Number(presets.minMarginPerKw) || 4000,
+          Number(presets.baseRatePerKw) || 0,
+          Number(presets.subsidyCap) || 0,
+          Number(presets.minMarginPerKw) || 0,
           presets.enforceMinMargin !== false,
           presets.updatedBy || 'Operations Desk'
         ]);

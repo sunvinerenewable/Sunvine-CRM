@@ -51,9 +51,9 @@ export const pricingService = {
 
       if (!error && data) {
         return {
-          baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
-          subsidyCap: Number(data.subsidy_cap) || 78000,
-          minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
+          baseRatePerKw: Number(data.base_rate_per_kw) || 0,
+          subsidyCap: Number(data.subsidy_cap) || 0,
+          minMarginPerKw: Number(data.min_margin_per_kw) || 0,
           enforceMinMargin: data.enforce_min_margin !== false,
           lastSynced: data.updated_at ? new Date(data.updated_at).toLocaleDateString() : 'Active',
           updatedBy: data.last_synced_by || 'Operations Desk'
@@ -77,9 +77,9 @@ export const pricingService = {
         body: JSON.stringify({
           op: 'upsert-presets',
           presets: {
-            baseRatePerKw: Number(presets.baseRatePerKw) || 59800,
-            subsidyCap: Number(presets.subsidyCap) || 78000,
-            minMarginPerKw: Number(presets.minMarginPerKw) || 4000,
+            baseRatePerKw: Number(presets.baseRatePerKw) || 0,
+            subsidyCap: Number(presets.subsidyCap) || 0,
+            minMarginPerKw: Number(presets.minMarginPerKw) || 0,
             enforceMinMargin: presets.enforceMinMargin !== false,
             updatedBy: presets.updatedBy || 'Operations Desk'
           }

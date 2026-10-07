@@ -82,11 +82,15 @@ export default function StaffDashboard() {
   }, [getAccessibleDealers, dealers, currentStaff]);
 
   const [editingDealerId, setEditingDealerId] = useState(null);
+  const baseKw = pricingPresets?.baseRatePerKw || 0;
+  const baseWp = baseKw > 0 ? Number((baseKw / 1000).toFixed(2)) : 0;
+  const defaultMargin = tierMargins?.gold?.defaultMarginPerKw || 0;
+
   const [pricingEditForm, setPricingEditForm] = useState({
     pricingMode: 'standard',
-    customBaseRatePerWp: 18.00,
-    customBaseRatePerKw: 58000,
-    customMarginPerKw: 4500,
+    customBaseRatePerWp: baseWp,
+    customBaseRatePerKw: baseKw,
+    customMarginPerKw: defaultMargin,
     customDiscountPercent: 0
   });
 
@@ -103,9 +107,9 @@ export default function StaffDashboard() {
     const cfg = dealer.pricingConfig || {};
     setPricingEditForm({
       pricingMode: cfg.pricingMode || 'standard',
-      customBaseRatePerWp: cfg.customBaseRatePerWp || 18.00,
-      customBaseRatePerKw: cfg.customBaseRatePerKw || 58000,
-      customMarginPerKw: cfg.customMarginPerKw || 4500,
+      customBaseRatePerWp: cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : baseWp,
+      customBaseRatePerKw: cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : baseKw,
+      customMarginPerKw: cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : defaultMargin,
       customDiscountPercent: cfg.customDiscountPercent || 0
     });
   };
@@ -463,7 +467,7 @@ export default function StaffDashboard() {
                         </span>
                         {isCustom ? (
                           <span className="text-slate-700 font-medium">
-                            Base: <strong className="font-mono text-emerald-700">₹{cfg.customBaseRatePerWp || 18.00}/Wp</strong> (₹{Number(cfg.customBaseRatePerKw || 58000).toLocaleString('en-IN')}/kW) • Margin: <strong className="font-mono">₹{cfg.customMarginPerKw || 4500}/kW</strong>
+                            Base: <strong className="font-mono text-emerald-700">₹{cfg.customBaseRatePerWp || (cfg.customBaseRatePerKw ? (cfg.customBaseRatePerKw / 1000).toFixed(2) : 0)}/Wp</strong> (₹{Number(cfg.customBaseRatePerKw || 0).toLocaleString('en-IN')}/kW) • Margin: <strong className="font-mono">₹{cfg.customMarginPerKw || 0}/kW</strong>
                           </span>
                         ) : (
                           <span className="text-slate-500">Standard HO procurement benchmark applies.</span>

@@ -789,26 +789,30 @@ export default function CreateQuotation() {
     : '0.0';
 
   // Tier Margin Cap & Audit Validation
-  const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 6000);
+  const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 0);
   const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
-  const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
+  const isMarginExceeded = isDirectCompanyQuote ? false : (maxMarginCapPerKw > 0 && currentMarginPerKw > maxMarginCapPerKw);
 
   // PM Surya Ghar Central DBT Subsidy Formula (Canonical Shared Engine)
-  const subsidy = calcSharedSubsidy(kw, projectType, pricingPresets?.subsidyCap || 78000);
+  const subsidyCap = pricingPresets?.subsidyCap ?? systemSettings?.statutory_taxes?.subsidy?.cap ?? 0;
+  const subsidy = calcSharedSubsidy(kw, projectType, subsidyCap);
   const finalPayable = Math.max(0, totalCost - subsidy);
-  const annualGenerationUnits = Math.round(kw * 1440);
+  const specificYield = Number(systemSettings?.governance_settings?.default_specific_yield) || 1440;
+  const tariff = Number(systemSettings?.governance_settings?.default_tariff) || 6.67;
+  const loanRate = Number(systemSettings?.governance_settings?.default_loan_rate) || 8.5;
+  const annualGenerationUnits = Math.round(kw * specificYield);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
-  const annualSavings = Math.round(annualGenerationUnits * 6.67);
+  const annualSavings = Math.round(annualGenerationUnits * tariff);
   const monthlySavings = Math.round(annualSavings / 12);
-  const paybackYears = annualSavings > 0 ? (finalPayable / annualSavings).toFixed(1) : '3.8';
+  const paybackYears = annualSavings > 0 ? (finalPayable / annualSavings).toFixed(1) : '0.0';
   const paybackPercent = Math.min(100, Math.round((parseFloat(paybackYears) / 10) * 100));
   const breakEvenYear = new Date().getFullYear() + Math.ceil(parseFloat(paybackYears));
 
   // Solar Bank Loan Estimated Monthly EMI (Canonical Shared Engine - Issue SR-64)
   const estimatedMonthlyEmi = useMemo(() => {
     if (financeType !== 'LOAN') return 0;
-    return calcSharedEMI(finalPayable, 8.5, loanTenureYears);
-  }, [financeType, finalPayable, loanTenureYears]);
+    return calcSharedEMI(finalPayable, loanRate, loanTenureYears);
+  }, [financeType, finalPayable, loanRate, loanTenureYears]);
 
   // Multi-brand comparison package calculator
   const multiBrandPackages = useMemo(() => {
@@ -912,7 +916,7 @@ export default function CreateQuotation() {
     const baseWpRate = customWpRate || parseNumericPrice(defaultMod?.ratePerWp, 24.20);
     setRatePerWp(baseWpRate);
     setPerPanelPrice(Math.round(baseWpRate * defaultWatt));
-    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 59800);
+    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 0);
     setMarginMode('amount');
     if (isAdmin) {
       setQuoteChannel('direct');
@@ -921,7 +925,7 @@ export default function CreateQuotation() {
     } else {
       setQuoteChannel('dealer');
       setDealerMarginRate(8);
-      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 4500) * defaultKw));
+      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 0) * defaultKw));
     }
     setBomPricingMode(isAdmin ? 'standard' : (effectiveDealer?.pricingConfig?.pricingMode === 'custom' ? 'custom' : 'standard'));
     setSelectedKitId('');
@@ -3165,7 +3169,17 @@ export default function CreateQuotation() {
                         ₹0/kW
                       </button>
                     )}
-                    {[3500, 4500, 5500, 6500, 8000].map((rate) => (
+                    {(tierMargins ? [
+                      tierMargins?.silver?.defaultMarginPerKw,
+                      tierMargins?.gold?.defaultMarginPerKw,
+                      tierMargins?.platinum?.defaultMarginPerKw,
+                      tierMargins?.diamond?.defaultMarginPerKw,
+                      effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw
+                    ] : [3500, 4500, 5500, 6500, 8000])
+                      .filter((r) => typeof r === 'number' && r > 0)
+                      .filter((val, idx, arr) => arr.indexOf(val) === idx)
+                      .sort((a, b) => a - b)
+                      .map((rate) => (
                       <button
                         key={rate}
                         type="button"

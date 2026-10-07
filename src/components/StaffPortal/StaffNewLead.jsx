@@ -41,9 +41,10 @@ export default function StaffNewLead() {
   }, [dealers, selectedDealerId]);
 
   const calculatedAmount = useMemo(() => {
-    const kw = parseFloat(solarSystemKw) || 3.3;
-    return Math.round(kw * 58000);
-  }, [solarSystemKw]);
+    const kw = parseFloat(solarSystemKw) || 0;
+    const baseRate = pricingPresets?.baseRatePerKw || 0;
+    return Math.round(kw * baseRate);
+  }, [solarSystemKw, pricingPresets]);
 
   const handleSubmit = (e) => {
     e.preventDefault();

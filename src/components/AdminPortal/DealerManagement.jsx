@@ -57,8 +57,10 @@ export default function DealerManagement() {
   // Dealer Custom Pricing Modal States
   const [pricingModalDealer, setPricingModalDealer] = useState(null);
   const [pricingMode, setPricingMode] = useState('standard');
-  const [customWpRate, setCustomWpRate] = useState(18.00);
-  const [customKwRate, setCustomKwRate] = useState(58000);
+  const baseKw = pricingPresets?.baseRatePerKw || 0;
+  const baseWp = baseKw > 0 ? Number((baseKw / 1000).toFixed(2)) : 0;
+  const [customWpRate, setCustomWpRate] = useState(baseWp);
+  const [customKwRate, setCustomKwRate] = useState(baseKw);
   const [customMarginKw, setCustomMarginKw] = useState(0);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [customNotes, setCustomNotes] = useState('');
@@ -71,8 +73,8 @@ export default function DealerManagement() {
                     (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
     const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     setPricingMode(cfg.pricingMode || 'standard');
-    setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : 18.00);
-    setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : 58000);
+    setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : baseWp);
+    setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : baseKw);
     setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : dynMargin);
     setCustomDiscount(cfg.customDiscountPercent || 0);
     setCustomNotes(cfg.customNotes || '');
@@ -86,8 +88,8 @@ export default function DealerManagement() {
     const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     const newCfg = {
       pricingMode,
-      customBaseRatePerWp: Number(customWpRate) || 18.00,
-      customBaseRatePerKw: Number(customKwRate) || 58000,
+      customBaseRatePerWp: Number(customWpRate) || baseWp,
+      customBaseRatePerKw: Number(customKwRate) || baseKw,
       customMarginPerKw: Number(customMarginKw) || dynMargin,
       customDiscountPercent: Number(customDiscount) || 0,
       customNotes: customNotes.trim()
@@ -2251,10 +2253,10 @@ export default function DealerManagement() {
                         value={customKwRate}
                         onChange={(e) => setCustomKwRate(e.target.value)}
                         className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
-                        placeholder="58000"
+                        placeholder={String(pricingPresets?.baseRatePerKw || '58000')}
                       />
                     </div>
-                    <span className="text-[11px] text-secondary mt-1 block">Company baseline: ₹59,800/kW</span>
+                    <span className="text-[11px] text-secondary mt-1 block">Company baseline: ₹{pricingPresets?.baseRatePerKw ? Number(pricingPresets.baseRatePerKw).toLocaleString('en-IN') : '58,000'}/kW</span>
                   </div>
 
                   {/* Custom Dealer Margin per kW */}
@@ -2333,28 +2335,28 @@ export default function DealerManagement() {
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">3.30 kW (6 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 3.3).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 3.3).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(550 * 6 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(550 * 6 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">4.40 kW (8 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 4.4).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 4.4).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(550 * 8 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(550 * 8 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">6.00 kW (10 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 6.0).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 6.0).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(600 * 10 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(600 * 10 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>

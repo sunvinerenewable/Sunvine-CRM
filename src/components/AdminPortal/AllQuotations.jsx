@@ -17,7 +17,7 @@ export default function AllQuotations() {
     const tierKey = (d?.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                     (d?.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                     (d?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-    return d?.maxMarginCapPerKw || d?.pricingConfig?.customMarginPerKw || tierMargins?.[tierKey]?.maxMarginCapPerKw || 8000;
+    return d?.maxMarginCapPerKw || d?.pricingConfig?.customMarginPerKw || tierMargins?.[tierKey]?.maxMarginCapPerKw || tierMargins?.gold?.maxMarginCapPerKw || 0;
   };
 
   const getStoredSubsidy = (q) => {
@@ -207,7 +207,7 @@ export default function AllQuotations() {
     const dealerCap = getDealerCapForQuote(q);
     const isFlagged = Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marginPerKw > dealerCap));
 
-    if (marginProfileFilter === 'high' && marginPerKw <= (dealerCap ? Math.round(dealerCap * 0.75) : 4500)) return false;
+    if (marginProfileFilter === 'high' && marginPerKw <= (dealerCap ? Math.round(dealerCap * 0.75) : (tierMargins?.gold?.defaultMarginPerKw || 0))) return false;
     if (marginProfileFilter === 'flagged' && !isFlagged) return false;
     if (marginProfileFilter === 'compliant' && isFlagged) return false;
 

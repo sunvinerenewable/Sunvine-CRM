@@ -884,58 +884,10 @@ const safeSetItem = (key, value) => {
     hydrateAllFromSupabase();
   }, [hydrateAllFromSupabase]);
 
-  // Real-time Supabase Database Subscriptions across all major tables
+  // Real-time Supabase Database Subscriptions on public catalogue tables only (011 compliance)
   useEffect(() => {
     const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const formatted = normalizeQuotationRow(payload.new);
-          if (formatted) setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
-        } else if (payload.eventType === 'UPDATE') {
-          const formatted = normalizeQuotationRow(payload.new);
-          if (formatted) setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
-        } else if (payload.eventType === 'DELETE') {
-          setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
-        }
-      })
-
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const formatted = normalizeCustomerFileRow(payload.new);
-          if (formatted) {
-            setCustomerFiles(prev => {
-              const next = [formatted, ...prev.filter(f => f.id !== formatted.id)];
-              cacheManager.set('customer_files', next);
-              return next;
-            });
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          const formatted = normalizeCustomerFileRow(payload.new);
-          if (formatted) {
-            setCustomerFiles(prev => {
-              const next = prev.map(f => f.id === formatted.id ? { ...f, ...formatted } : f);
-              cacheManager.set('customer_files', next);
-              return next;
-            });
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setCustomerFiles(prev => {
-            const next = prev.filter(f => f.id !== payload.old?.id);
-            cacheManager.set('customer_files', next);
-            return next;
-          });
-        }
-
-        // Silent relational sync with database
-        customerFileService.getAllCustomerFiles().then(data => {
-          if (data && Array.isArray(data)) {
-            const attributed = ensureCustomerFileAttribution(data);
-            setCustomerFiles(attributed);
-            cacheManager.set('customer_files', attributed);
-          }
-        });
-      })
+      .channel('public-catalog-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
         hardwareService.getAllModules().then(data => {
           if (Array.isArray(data)) {
@@ -961,40 +913,6 @@ const safeSetItem = (key, value) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
         pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_custom_pricing' }, () => {
-        pricingService.getTierMargins().then(data => { if (data) setTierMargins(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
-        dealerService.getAllDealers().then(data => {
-          if (Array.isArray(data)) {
-            const attributed = ensureDealerAttribution(data);
-            setDealers(attributed);
-            cacheManager.set('dealers_list', attributed);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
-        staffService.getAllStaff().then(data => {
-          if (Array.isArray(data)) setStaffList(data);
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog_items' }, () => {
-        hardwareService.getAllBomItems().then(data => {
-          if (Array.isArray(data)) {
-            setBomCatalog(data);
-            cacheManager.set('bom_catalog', data);
-            setBomRates(() => {
-              const next = {};
-              data.forEach(it => {
-                if (it.defaultRate !== undefined) {
-                  next[it.id] = it.defaultRate;
-                }
-              });
-              return next;
-            });
-          }
-        });
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
         hardwareService.getAllBomItems().then(data => {
           if (Array.isArray(data)) {
@@ -1011,9 +929,6 @@ const safeSetItem = (key, value) => {
             });
           }
         });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
-        auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'document_master' }, async () => {
         try {
