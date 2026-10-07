@@ -220,12 +220,19 @@ async function handleSave(req, res, jwt, db) {
   // For dealers, ignore any dealer_id in body; always enforce effectiveDealerId = jwt.dealer_id
   const effectiveDealerId = role === 'dealer' ? dealer_id : (body.dealer_id || existingQuotation?.dealer_id || null);
 
-  // ── Load panel price from DB ───────────────────────────────────────────────
+  // ── Load panel price and wattage from DB (Item 3a) ─────────────────────────
   let panelRatePerWp = 0;
+  let dbPanelWatt = 0;
+  const rawBomItems = Array.isArray(body.bom_items) ? body.bom_items : [];
+  const hasPanelItem = rawBomItems.some(i => i.id === 'solar_panel') || Boolean(body.panel_id);
+  if (hasPanelItem && !body.panel_id) {
+    return res.status(422).json({ error: 'panel_id is required when solar panels are included.' });
+  }
+
   if (body.panel_id) {
     const { data: panelData } = await db
       .from('solar_modules')
-      .select('rate_per_wp_inr, rate_per_wp')
+      .select('rate_per_wp_inr, rate_per_wp, wattage, wattage_wp, rated_power_w')
       .eq('id', body.panel_id)
       .maybeSingle();
     if (!panelData) return res.status(422).json({ error: `Panel ${body.panel_id} not found.` });
@@ -234,23 +241,54 @@ async function handleSave(req, res, jwt, db) {
       const rawStr = panelData.rate_per_wp || '';
       panelRatePerWp = Number(rawStr.replace(/[^0-9.]/g, '')) || 0;
     }
+    if (!panelRatePerWp || isNaN(panelRatePerWp) || panelRatePerWp <= 0) {
+      return res.status(422).json({ error: `Database rate missing for solar module "${body.panel_id}".` });
+    }
+
+    dbPanelWatt = Number(panelData.wattage || panelData.wattage_wp || panelData.rated_power_w) || 0;
+    if (!dbPanelWatt || isNaN(dbPanelWatt) || dbPanelWatt <= 0) {
+      return res.status(422).json({ error: `Database wattage missing for solar module "${body.panel_id}".` });
+    }
   }
 
-  // ── Load inverter price from DB ────────────────────────────────────────────
+  // ── Load inverter price from DB (Item 3a) ──────────────────────────────────
   let inverterUnitPrice = 0;
+  const hasInverterItem = rawBomItems.some(i => i.id === 'solar_inverter') || Boolean(body.inverter_id);
+  if (hasInverterItem && !body.inverter_id) {
+    return res.status(422).json({ error: 'inverter_id is required when solar inverter is included.' });
+  }
+
   if (body.inverter_id) {
     const { data: invData } = await db
       .from('solar_inverters')
-      .select('base_price_inr, base_price')
+      .select('base_price_inr, base_price, capacity_kw')
       .eq('id', body.inverter_id)
       .maybeSingle();
-    if (invData) {
-      inverterUnitPrice = Number(invData.base_price_inr) || 0;
-      if (!inverterUnitPrice) {
-        const rawStr = invData.base_price || '';
-        inverterUnitPrice = Number(rawStr.replace(/[^0-9.]/g, '')) || 0;
-      }
+    if (!invData) return res.status(422).json({ error: `Inverter ${body.inverter_id} not found.` });
+    inverterUnitPrice = Number(invData.base_price_inr) || 0;
+    if (!inverterUnitPrice) {
+      const rawStr = invData.base_price || '';
+      inverterUnitPrice = Number(rawStr.replace(/[^0-9.]/g, '')) || 0;
     }
+    if (!inverterUnitPrice || isNaN(inverterUnitPrice) || inverterUnitPrice <= 0) {
+      return res.status(422).json({ error: `Database price missing for solar inverter "${body.inverter_id}".` });
+    }
+  }
+
+  // ── Capacity validation against panel quantity * DB wattage (Item 3b) ───────
+  const panelBomItem = rawBomItems.find(i => i.id === 'solar_panel');
+  const panelQty = panelBomItem ? Math.min(10000, Math.max(0, Number(panelBomItem.qty) || 0)) : (Number(body.module_count) || 0);
+
+  let serverValidatedKw = kw;
+  if (dbPanelWatt > 0 && panelQty > 0) {
+    const calculatedKw = (panelQty * dbPanelWatt) / 1000;
+    const tolerance = 0.15; // 0.15 kW tolerance
+    if (Math.abs(kw - calculatedKw) > tolerance) {
+      return res.status(422).json({
+        error: `system_capacity_kw (${kw} kW) does not match panel quantity and database wattage (${panelQty} x ${dbPanelWatt}W = ${calculatedKw.toFixed(2)} kW).`
+      });
+    }
+    serverValidatedKw = Number(calculatedKw.toFixed(2));
   }
 
   // ── Load dealer margin cap strictly from DB (HC-03 / HC-04: No hardcoded fallback) ──
@@ -294,23 +332,23 @@ async function handleSave(req, res, jwt, db) {
     return res.status(422).json({ error: 'Dealer margin cap setting is missing from database.' });
   }
 
-  // ── SEC-006: Server-side price EVERY BOM line item from bom_catalog ────────
+  // ── SEC-006: Server-side price EVERY BOM line item from bom_catalog (Item 3c) ────────
   const bomCatalogMap = await getBomCatalogMap(db);
-  const rawBomItems = Array.isArray(body.bom_items) ? body.bom_items : [];
+  const tolerancePct = settings?.governance_settings?.bom_rate_tolerance_pct !== undefined
+    ? Number(settings.governance_settings.bom_rate_tolerance_pct)
+    : 10;
 
   const sanitizedBom = [];
   for (const item of rawBomItems) {
     if (item.id === 'solar_panel') {
       const qty = Math.min(10000, Math.max(0, Number(item.qty) || 0));
-      const rate = panelRatePerWp > 0
-        ? Math.round(Number(body.panel_watt || 550) * panelRatePerWp)
-        : Math.max(0, Number(item.rate) || 0);
+      const rate = Math.round(dbPanelWatt * panelRatePerWp);
       sanitizedBom.push({ ...item, qty, rate, gstRate: 5 });
       continue;
     }
     if (item.id === 'solar_inverter') {
       const qty = Math.min(10000, Math.max(0, Number(item.qty) || 0));
-      const rate = inverterUnitPrice > 0 ? inverterUnitPrice : Math.max(0, Number(item.rate) || 0);
+      const rate = inverterUnitPrice;
       sanitizedBom.push({ ...item, qty, rate, gstRate: 5 });
       continue;
     }
@@ -332,14 +370,17 @@ async function handleSave(req, res, jwt, db) {
     }
 
     const qty = Math.min(10000, Math.max(0, Number(item.qty) || 0));
+    const defaultRate = Number(catEntry.defaultRate) || 0;
+    const minAllowedRate = defaultRate > 0 ? Math.round((1 - tolerancePct / 100) * defaultRate) : 0;
+    const maxAllowedRate = defaultRate > 0 ? Math.round((1 + tolerancePct / 100) * defaultRate) : (catEntry.maxRate || 100000);
+
     let rate = Number(item.rate);
     if (isNaN(rate) || rate <= 0) {
-      rate = catEntry.defaultRate;
+      rate = defaultRate;
     } else {
-      const minR = catEntry.minRate !== undefined ? catEntry.minRate : 0;
-      const maxR = catEntry.maxRate !== undefined ? catEntry.maxRate : (catEntry.defaultRate > 0 ? catEntry.defaultRate * 2 : 100000);
-      rate = Math.min(maxR, Math.max(minR, rate));
+      rate = Math.min(maxAllowedRate, Math.max(minAllowedRate, rate));
     }
+
     // GST rate strictly from catalogue row, not client
     const gstRate = catEntry.gstRate;
     sanitizedBom.push({
@@ -352,22 +393,32 @@ async function handleSave(req, res, jwt, db) {
     });
   }
 
-  const supplierState = String(body.supplier_state || 'Gujarat').trim();
-  const peakSunHours = Number(body.peak_sun_hours) || settings?.governance_settings?.default_specific_yield || 1440;
+  // ── No hardcoded state/yield fallbacks (Item 3d) ───────────────────────────
+  const supplierState = String(body.supplier_state || settings?.company_profile?.state || '').trim();
+  if (!supplierState) {
+    return res.status(422).json({ error: 'Supplier state is required and missing in company settings.' });
+  }
+
+  const defaultYield = Number(settings?.governance_settings?.default_specific_yield);
+  const peakSunHours = Number(body.peak_sun_hours) || defaultYield;
+  if (!peakSunHours || isNaN(peakSunHours)) {
+    return res.status(422).json({ error: 'Specific yield (peak sun hours) setting is missing from database.' });
+  }
+
   const isInterState = String(body.customer_state || supplierState).trim().toLowerCase() !== supplierState.trim().toLowerCase();
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState, settings?.statutory_taxes?.gstSlabs);
 
-  // Margin validation and capping
+  // Margin validation and capping uses server-validated kW (Item 3b)
   const clientMargin = Number(body.dealer_margin_inr) || 0;
   const isDirectCompany = body.is_direct_company_quote === true;
   const { effectiveMargin, isMarginExceeded } = validateDealerMargin(
     isDirectCompany ? 0 : clientMargin,
-    kw,
+    serverValidatedKw,
     maxMarginCapPerKw
   );
 
-  // PM Surya Ghar Subsidy
-  const subsidyAmount = calculateSubsidy(kw, body.project_type || 'Residential', settings);
+  // PM Surya Ghar Subsidy uses server-validated kW
+  const subsidyAmount = calculateSubsidy(serverValidatedKw, body.project_type || 'Residential', settings);
 
   // Discount validation: fail-closed clamping to governance_settings.max_discount_pct
   const allowedDiscountPct = (maxDiscountPct !== undefined && maxDiscountPct !== null && typeof maxDiscountPct === 'number')
@@ -442,8 +493,8 @@ async function handleSave(req, res, jwt, db) {
     customer_name: String(body.customer_name).trim(),
     customer_phone: String(body.customer_phone).trim(),
     customer_city: body.customer_city || null,
-    customer_state: body.customer_state || 'Gujarat',
-    system_capacity_kw: kw,
+    customer_state: body.customer_state || supplierState,
+    system_capacity_kw: serverValidatedKw,
     panel_type: body.panel_type || null,
     inverter_type: body.inverter_type || null,
     structure_type: body.structure_type || null,
@@ -453,7 +504,7 @@ async function handleSave(req, res, jwt, db) {
     total_amount: totalAmount,
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
-    annual_generation_kwh: Math.round(kw * peakSunHours),
+    annual_generation_kwh: Math.round(serverValidatedKw * peakSunHours),
     ...(isNew && { status: 'Draft' }),
     request_id: body.request_id || null,
     share_expires_at: shareExpiresAt,

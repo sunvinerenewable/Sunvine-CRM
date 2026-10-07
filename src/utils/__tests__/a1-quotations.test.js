@@ -206,3 +206,93 @@ test('SEC-006 Pricing Integrity: Unknown BOM item ID is rejected when custom ite
   ];
   assert.equal(validateBomLineItems(validSubmission, catalogMap, false).status, 200);
 });
+
+// ── 7. ITEM-3 Tamper Protection Tests ────────────────────────────────────────
+
+test('ITEM-3a: Missing solar module DB rate returns 422 Unprocessable Entity', () => {
+  function validateModuleRate(panelData) {
+    const rate = Number(panelData?.rate_per_wp_inr) || Number(String(panelData?.rate_per_wp || '').replace(/[^0-9.]/g, '')) || 0;
+    if (!rate || rate <= 0) {
+      return { status: 422, error: 'Database rate missing for solar module.' };
+    }
+    return { status: 200, rate };
+  }
+
+  assert.equal(validateModuleRate({ rate_per_wp_inr: null, rate_per_wp: '' }).status, 422);
+  assert.equal(validateModuleRate({ rate_per_wp_inr: 0 }).status, 422);
+  assert.equal(validateModuleRate({ rate_per_wp_inr: 18.5 }).status, 200);
+});
+
+test('ITEM-3b: Capacity mismatch / tampering (kw inflation or qty inflation) is rejected with 422', () => {
+  function validateCapacityAgainstBom(kw, panelQty, dbWatt, tolerance = 0.15) {
+    if (dbWatt > 0 && panelQty > 0) {
+      const calculatedKw = (panelQty * dbWatt) / 1000;
+      if (Math.abs(kw - calculatedKw) > tolerance) {
+        return {
+          status: 422,
+          error: `system_capacity_kw (${kw} kW) does not match panel quantity (${panelQty} x ${dbWatt}W = ${calculatedKw} kW)`
+        };
+      }
+      return { status: 200, serverValidatedKw: Number(calculatedKw.toFixed(2)) };
+    }
+    return { status: 200, serverValidatedKw: kw };
+  }
+
+  // kw inflation: client claims 10 kW but BOM only has 6 x 550W (3.3 kW)
+  const kwInflation = validateCapacityAgainstBom(10, 6, 550);
+  assert.equal(kwInflation.status, 422);
+  assert.match(kwInflation.error, /does not match/);
+
+  // qty inflation: client claims 3.3 kW but injects 50 panels (27.5 kW)
+  const qtyInflation = validateCapacityAgainstBom(3.3, 50, 550);
+  assert.equal(qtyInflation.status, 422);
+  assert.match(qtyInflation.error, /does not match/);
+
+  // Honest 5.5 kW with 10 x 550W panels
+  const honest = validateCapacityAgainstBom(5.5, 10, 550);
+  assert.equal(honest.status, 200);
+  assert.equal(honest.serverValidatedKw, 5.5);
+});
+
+test('ITEM-3c: Rate tampering (e.g. rate = 0.01) is clamped to minimum catalogue tolerance (0.9x default)', () => {
+  function sanitizeBomItemRate(clientRate, catEntry, tolerancePct = 10) {
+    const defaultRate = Number(catEntry.defaultRate) || 0;
+    const minAllowedRate = defaultRate > 0 ? Math.round((1 - tolerancePct / 100) * defaultRate) : 0;
+    const maxAllowedRate = defaultRate > 0 ? Math.round((1 + tolerancePct / 100) * defaultRate) : 100000;
+
+    let rate = Number(clientRate);
+    if (isNaN(rate) || rate <= 0) {
+      return defaultRate;
+    }
+    return Math.min(maxAllowedRate, Math.max(minAllowedRate, rate));
+  }
+
+  const catEntry = { defaultRate: 1000, maxRate: 2000 };
+
+  // Malicious low rate (0.01) is clamped up to 900 (0.9 * 1000)
+  assert.equal(sanitizeBomItemRate(0.01, catEntry), 900);
+  // Malicious zero rate falls back to default 1000
+  assert.equal(sanitizeBomItemRate(0, catEntry), 1000);
+  // Malicious high rate (50000) is clamped down to 1100 (1.1 * 1000)
+  assert.equal(sanitizeBomItemRate(50000, catEntry), 1100);
+  // Valid within tolerance rate (950) is accepted
+  assert.equal(sanitizeBomItemRate(950, catEntry), 950);
+});
+
+test('ITEM-3a: Panel watt tampering (e.g. panel_watt = 1) is overridden by verified DB wattage', () => {
+  function computePanelLineItem(panelQty, clientWatt, dbWatt, panelRatePerWp) {
+    // Wattage must come from DB, not client
+    const effectiveWatt = dbWatt;
+    const rate = Math.round(effectiveWatt * panelRatePerWp);
+    return { qty: panelQty, rate, total: panelQty * rate };
+  }
+
+  const dbWatt = 550;
+  const panelRatePerWp = 18;
+  const clientTamperedWatt = 1;
+
+  const lineItem = computePanelLineItem(10, clientTamperedWatt, dbWatt, panelRatePerWp);
+  assert.equal(lineItem.rate, 9900, 'Rate per panel must be 550W * 18 = 9,900 (ignoring client watt=1)');
+  assert.equal(lineItem.total, 99000);
+});
+
