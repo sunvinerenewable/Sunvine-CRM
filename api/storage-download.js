@@ -1,30 +1,57 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
-import { verifyJwt } from './_lib/jwt.js';
+import { createClient } from '@supabase/supabase-js';
+import { requireUser } from './_lib/requireAuth.js';
+import { applyCors } from './_lib/cors.js';
 import { ensureEnvLoaded } from './_lib/db.js';
 
+ensureEnvLoaded();
+
+function extractAllDocPaths(documents) {
+  if (!documents || typeof documents !== 'object') return [];
+  const paths = [];
+  for (const key of Object.keys(documents)) {
+    const val = documents[key];
+    if (!val) continue;
+    if (typeof val === 'string') {
+      paths.push(val);
+    } else if (Array.isArray(val)) {
+      val.forEach(item => {
+        if (typeof item === 'string') paths.push(item);
+        else if (item?.url) paths.push(item.url);
+        else if (item?.path) paths.push(item.path);
+      });
+    } else if (typeof val === 'object') {
+      if (val.url) paths.push(val.url);
+      if (val.path) paths.push(val.path);
+      if (Array.isArray(val.files)) {
+        val.files.forEach(f => {
+          if (typeof f === 'string') paths.push(f);
+          else if (f?.url) paths.push(f.url);
+          else if (f?.path) paths.push(f.path);
+        });
+      }
+    }
+  }
+  return [...new Set(paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '')).filter(Boolean))];
+}
+
 export default async function handler(req, res) {
-  ensureEnvLoaded();
+  applyCors(req, res);
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
   }
 
-  // Auth check
-  const cookies = (req.headers.cookie || '').split(';').reduce((acc, c) => {
-    const [k, ...v] = c.split('=');
-    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
-    return acc;
-  }, {});
-  const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  const token = cookies.sunvine_auth_token || authHeader;
-  const isDev = process.env.NODE_ENV !== 'production';
-  const jwtResult = verifyJwt(token);
-  if (!jwtResult.valid && !isDev) {
-    return res.status(401).json({ error: 'Authentication required to download documents.' });
-  }
+  // SEC-009: Auth check (no dev bypass — fail closed)
+  const user = requireUser(req, res);
+  if (!user) return;
 
   try {
-    const { url, path: objectPath, filename, bucket } = req.query || {};
+    const { url, path: objectPath, filename } = req.query || {};
 
     const targetUrl = url || '';
     let targetPath = objectPath || '';
@@ -39,14 +66,54 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!targetPath && !targetUrl) {
+    const cleanPath = targetPath.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '');
+
+    if (!cleanPath && !targetUrl) {
       return res.status(400).json({ error: 'Document URL or path is required for download.' });
+    }
+
+    // SEC-009: Verify ownership for non-admin/staff callers
+    const role = user.role;
+    const ownerId = String(user.dealer_id || user.id || '');
+
+    if (role !== 'admin' && role !== 'staff') {
+      let isOwner = false;
+
+      if (cleanPath.startsWith(`${role}/${ownerId}/`) || cleanPath.startsWith(`dealer/${ownerId}/`)) {
+        isOwner = true;
+      } else {
+        // Legacy keys (e.g. uploads/<name>): verify dealer ownership via customer_files
+        const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && serviceKey) {
+          try {
+            const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+            const { data: files } = await db.from('customer_files').select('documents').eq('dealer_id', ownerId);
+            if (Array.isArray(files)) {
+              for (const f of files) {
+                const docPaths = extractAllDocPaths(f.documents);
+                if (docPaths.includes(cleanPath)) {
+                  isOwner = true;
+                  break;
+                }
+              }
+            }
+          } catch (dbErr) {
+            console.warn('[Storage Download] Ownership verification error:', dbErr.message);
+          }
+        }
+      }
+
+      if (!isOwner) {
+        return res.status(403).json({ error: 'Forbidden: You do not have access to this document.' });
+      }
     }
 
     const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
     const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
     const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
-    const R2_BUCKET = bucket || process.env.R2_BUCKET_NAME || 'sunvine-documents';
+    // SEC-009: Strictly use server-configured bucket
+    const R2_BUCKET = process.env.R2_BUCKET_NAME || 'sunvine-documents';
 
     const hasR2Config = Boolean(
       CF_ACCOUNT_ID &&
@@ -56,10 +123,10 @@ export default async function handler(req, res) {
       !R2_ACCESS_KEY.includes('your_')
     );
 
-    let cleanFilename = (filename || targetPath.split('/').pop() || 'document.pdf').replace(/["\r\n]/g, '_');
+    let cleanFilename = (filename || cleanPath.split('/').pop() || 'document.pdf').replace(/["\r\n]/g, '_');
 
     // 1. Direct R2 S3 Client fetch (Streaming)
-    if (hasR2Config && targetPath) {
+    if (hasR2Config && cleanPath) {
       try {
         const s3 = new S3Client({
           region: 'auto',
@@ -72,7 +139,7 @@ export default async function handler(req, res) {
 
         const command = new GetObjectCommand({
           Bucket: R2_BUCKET,
-          Key: targetPath,
+          Key: cleanPath,
         });
 
         const s3Res = await s3.send(command);
@@ -96,7 +163,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Server-side fetch fallback (No CORS on server)
+    // 2. Server-side fetch fallback
     if (targetUrl) {
       const response = await fetch(targetUrl);
       if (!response.ok) {
