@@ -63,7 +63,10 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Firm name and contact person are required.' });
         }
 
-        const plainPassword = String(password || 'Sunvine@2026').trim();
+        if (!password || String(password).trim().length < 10) {
+          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        }
+        const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
         const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
         const cleanTier = tier || 'Gold EPC Partner';
@@ -155,7 +158,10 @@ export default async function handler(req, res) {
           params.push(cleanMobile);
         }
 
-        if (password && String(password).trim().length >= 1) {
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          if (String(password).trim().length < 10) {
+            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          }
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
@@ -241,7 +247,10 @@ export default async function handler(req, res) {
         const staffRole = role || 'Field Sales Executive';
         const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
         const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
-        const plainPassword = String(password || 'Sunvine@2026').trim();
+        if (!password || String(password).trim().length < 10) {
+          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        }
+        const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
@@ -389,7 +398,10 @@ export default async function handler(req, res) {
           params.push(String(status).toLowerCase());
         }
 
-        if (password && String(password).trim().length >= 1) {
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          if (String(password).trim().length < 10) {
+            return res.status(422).json({ error: 'Password must be at least 10 characters.' });
+          }
           const passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
