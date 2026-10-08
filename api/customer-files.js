@@ -4,6 +4,7 @@ import { requireUser } from './_lib/requireAuth.js';
 import { applyCors } from './_lib/cors.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+import { syncFile, computeThreadNotification } from './_lib/slackSync.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -338,6 +339,15 @@ export default async function handler(req, res) {
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: single main card creation (safe, never fails the HTTP response)
+        const callerActor = user.name || user.firmName || user.id || (isDealer ? 'Authorized Dealer' : 'Staff Desk');
+        try {
+          await syncFile(data.id, { actor: callerActor });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on save:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Save exception:', err);
@@ -417,6 +427,13 @@ export default async function handler(req, res) {
       }
 
       try {
+        // Fetch existing row for diff calculation & thread notifications
+        let oldRowQuery = db.from('customer_files').select('*').eq('id', fileId);
+        if (isDealer) {
+          oldRowQuery = oldRowQuery.eq('dealer_id', dealerId);
+        }
+        const { data: oldRow } = await oldRowQuery.maybeSingle();
+
         let updateQuery = db
           .from('customer_files')
           .update(payload)
@@ -438,6 +455,16 @@ export default async function handler(req, res) {
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: compute diff for thread comments & update main card
+        const callerActor = user.name || user.firmName || user.id || (isDealer ? 'Authorized Dealer' : 'Staff Desk');
+        const threadText = computeThreadNotification(oldRow, data, callerActor);
+        try {
+          await syncFile(data.id, { threadText, actor: callerActor });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on update:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Update exception:', err);
@@ -507,6 +534,15 @@ export default async function handler(req, res) {
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: update main card status to Cancelled + post thread line
+        const threadText = `Application Cancelled: ${finalReason} (by ${actor})`;
+        try {
+          await syncFile(data.id, { threadText, actor, force: true });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on cancel:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Cancel exception:', err);
@@ -579,6 +615,16 @@ export default async function handler(req, res) {
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: restore main card status to active + post thread line
+        const restoreActor = user.name || user.firmName || user.id || 'User';
+        const threadText = `Application Restored to active pipeline by ${restoreActor}`;
+        try {
+          await syncFile(data.id, { threadText, actor: restoreActor, force: true });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on restore:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Restore exception:', err);
