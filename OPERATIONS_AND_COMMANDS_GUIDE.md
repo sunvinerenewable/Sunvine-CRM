@@ -102,3 +102,30 @@ npm run build
 1. **Ponytail Protocol**: Minimum clean code, zero unused dependencies, reuse existing utilities.
 2. **Direct DB Single Source of Truth**: Koi bhi business data client cache ya localStorage me locked nahi rehta. Mount par live database fetch hota hai.
 3. **Fail-Closed Security**: Missing pricing ya unauthorized token par endpoints fail-closed 401/403/422 return karte hain.
+
+---
+
+## 6. Slack Thread-Sync Architecture & Operations
+
+Sunvine CRM uses a single Slack Block Kit card per customer file, updated in place (`chat.update`) with thread replies strictly for audit events (stage/status changed, document removed, document replaced).
+
+### 6.1 Server Environment Variables (Vercel & .env)
+Configure these server-side only (NEVER expose with `VITE_` prefix):
+- `SLACK_BOT_TOKEN`: Slack Bot User OAuth Token (`xoxb-...`). Must have `chat:write` scope.
+- `SLACK_FILES_CHANNEL_ID`: Channel ID (e.g. `C08G60JFTU8`). The bot must be invited (`/invite @SunvineBot`).
+- `APP_BASE_URL`: Public CRM URL (e.g. `https://sunvine-dealer.vprotech.online` or `https://portal.sunvinesolar.com`) for the "📂 Open Application" button deep links. If unset, the button is omitted safely.
+
+### 6.2 Slack Bot Setup Checklist
+1. In Slack API App Console (`api.slack.com/apps`):
+   - **Scopes**: Under **OAuth & Permissions** → Bot Token Scopes, add `chat:write`.
+   - **Install App**: Install to workspace to get `xoxb-...` bot token.
+2. In Slack Channel:
+   - Invite bot to channel: `/invite @<BotName>`
+3. Set environment variables in Vercel project settings for Production and Preview environments.
+
+### 6.3 Troubleshooting & Operational Notes
+- **`not_in_channel`**: The Slack bot has not been invited to the target channel. Run `/invite @<BotName>` in that Slack channel.
+- **`invalid_auth`**: The `SLACK_BOT_TOKEN` is incorrect, revoked, or expired. Re-check the token in Slack App Console.
+- **`stuck pending` claim**: If an unexpected crash occurs mid-sync, the atomic claim `pending:<timestamp>` auto-expires after 30 seconds. The next event on that customer file automatically reclaims the lock and heals the state.
+- **Fail-Safe Guarantee**: Slack API delays or outages never fail HTTP requests to dealers or staff (capped at ~4s total budget). Errors are logged to `audit_logs` and the crash webhook.
+
