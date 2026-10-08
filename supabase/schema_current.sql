@@ -227,6 +227,8 @@ CREATE TABLE IF NOT EXISTS public.customer_files (
     discom_application_no VARCHAR(100),
     documents JSONB DEFAULT '[]'::jsonb,
     timeline JSONB DEFAULT '[]'::jsonb,
+    slack_channel TEXT,
+    slack_ts TEXT,
     created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );

@@ -50,11 +50,16 @@ UPDATE public.solar_inverters
 SET base_price_inr = CAST(REGEXP_REPLACE(base_price, '[^0-9.]', '', 'g') AS NUMERIC(10,2))
 WHERE base_price_inr IS NULL AND base_price IS NOT NULL AND REGEXP_REPLACE(base_price, '[^0-9.]', '', 'g') != '';
 
+-- 1.6 customer_files slack thread sync columns (018)
+ALTER TABLE public.customer_files ADD COLUMN IF NOT EXISTS slack_channel TEXT;
+ALTER TABLE public.customer_files ADD COLUMN IF NOT EXISTS slack_ts TEXT;
+
 -- ════════════════════════════════════════════════════════════════════
--- STEP 2: HIGH PERFORMANCE INDEXES (013)
+-- STEP 2: HIGH PERFORMANCE INDEXES (013 & 018)
 -- ════════════════════════════════════════════════════════════════════
 CREATE INDEX IF NOT EXISTS idx_quotations_dealer_created ON public.quotations (dealer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_customer_files_dealer_status ON public.customer_files (dealer_id, status);
+CREATE INDEX IF NOT EXISTS idx_customer_files_slack_ts ON public.customer_files (slack_ts) WHERE slack_ts IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_created ON public.audit_logs (actor_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_quotations_share_token ON public.quotations (share_token) WHERE share_token IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_quotations_request_id ON public.quotations (request_id) WHERE request_id IS NOT NULL;
