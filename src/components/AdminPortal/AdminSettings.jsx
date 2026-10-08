@@ -575,6 +575,9 @@ export default function AdminSettings() {
       discom: 'UGVCL',
       tier: 'Gold EPC',
       maxMarginCapPerKw: tierMargins?.gold?.maxMarginCapPerKw || 0,
+      gstin: '',
+      pan: '',
+      address: '',
       status: 'Active',
       password: '',
       assignedStaffId: 'STF-DIRECT',
@@ -586,6 +589,8 @@ export default function AdminSettings() {
 
   const handleOpenEditDealer = (dealer) => {
     setEditingDealer(dealer);
+    const gVal = dealer.gstin || dealer.pricing_config?.gstin || dealer.pricingConfig?.gstin || '';
+    const pVal = dealer.pan || dealer.pricing_config?.pan || dealer.pricingConfig?.pan || '';
     setDealerForm({
       id: dealer.id || dealer.dealer_code,
       dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
@@ -599,6 +604,9 @@ export default function AdminSettings() {
       discom: dealer.discom || 'UGVCL',
       tier: dealer.tier || 'Gold EPC',
       maxMarginCapPerKw: Number(dealer.max_margin_cap_per_kw ?? dealer.maxMarginCapPerKw ?? 0),
+      gstin: gVal,
+      pan: pVal,
+      address: dealer.address || dealer.pricing_config?.address || dealer.pricingConfig?.address || '',
       status: dealer.status || 'Active',
       password: '',
       assignedStaffId: dealer.assigned_staff_id || dealer.assignedStaffId || 'STF-DIRECT',
@@ -648,6 +656,9 @@ export default function AdminSettings() {
           discom: dealerForm.discom,
           tier: dealerForm.tier,
           maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password ? dealerForm.password.trim() : undefined,
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -668,6 +679,9 @@ export default function AdminSettings() {
           discom: dealerForm.discom,
           tier: dealerForm.tier,
           maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password.trim(),
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -2444,6 +2458,56 @@ export default function AdminSettings() {
                     placeholder="partner@sunvinedealer.in"
                     value={dealerForm.email}
                     onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      GSTIN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={15}
+                      placeholder="24AAECB1234F1Z5"
+                      value={dealerForm.gstin}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setDealerForm(prev => ({
+                          ...prev,
+                          gstin: val,
+                          pan: val.length >= 12 ? val.slice(2, 12) : prev.pan
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      PAN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      placeholder="AAECB1234F"
+                      value={dealerForm.pan}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Registered Office Address <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Shop 12, Sunrise Complex, Rajkot"
+                    value={dealerForm.address}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, address: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
