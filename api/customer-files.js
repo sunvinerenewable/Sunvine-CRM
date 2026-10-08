@@ -310,7 +310,6 @@ export default async function handler(req, res) {
           : ((file.staffName === 'Jayesh Patel' || file.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (file.staffName || file.staff_name || 'Sunvine Sales Staff')),
         finance_type: file.financeType || file.paymentMode || file.finance_type || 'CASH',
         loan_bank: file.loanBank || file.loan_bank || null,
-        loan_account_no: file.loanAccountNo || file.loanRefNo || file.loan_account_no || null,
         stage: file.stage || file.currentStage || 'LEAD_SOURCED',
         status: file.status || 'Sourced',
         documents: file.documents || {},
@@ -418,9 +417,6 @@ export default async function handler(req, res) {
       if (updates.documents !== undefined) payload.documents = updates.documents;
       if (updates.loanBank !== undefined || updates.loan_bank !== undefined) {
         payload.loan_bank = updates.loanBank !== undefined ? updates.loanBank : updates.loan_bank;
-      }
-      if (updates.loanAccountNo !== undefined || updates.loanRefNo !== undefined || updates.loan_account_no !== undefined) {
-        payload.loan_account_no = updates.loanAccountNo || updates.loanRefNo || updates.loan_account_no;
       }
       if (updates.financeType !== undefined || updates.paymentMode !== undefined || updates.finance_type !== undefined) {
         payload.finance_type = updates.financeType || updates.paymentMode || updates.finance_type;
