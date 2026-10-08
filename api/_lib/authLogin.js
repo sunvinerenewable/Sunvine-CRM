@@ -138,10 +138,20 @@ export default async function handler(req, res) {
         console.error('[auth/login] PostgreSQL admin lookup failed:', dbErr.message);
         try {
           const db = getSupabaseServiceClient();
-          let qRes = await db
+          const safeIdentifier = String(cleanIdentifier || '').replace(/[%_,()"'\\;]/g, '').trim().toLowerCase();
+          const safeMobile = String(cleanMobile || '').replace(/\D/g, '');
+          let queryBuilder = db
             .from('admin_accounts')
-            .select('id, email, full_name, role, password_hash, mobile_number, status')
-            .or(`email.ilike.${cleanIdentifier},mobile_number.eq.${cleanIdentifier},mobile_number.eq.${cleanMobile}`);
+            .select('id, email, full_name, role, password_hash, mobile_number, status');
+          
+          if (safeIdentifier.includes('@')) {
+            queryBuilder = queryBuilder.eq('email', safeIdentifier);
+          } else if (safeMobile) {
+            queryBuilder = queryBuilder.or(`mobile_number.eq.${safeMobile},mobile_number.eq.+91${safeMobile}`);
+          } else {
+            queryBuilder = queryBuilder.eq('email', safeIdentifier);
+          }
+          const qRes = await queryBuilder;
           candidates = qRes.data || [];
         } catch (supErr) {
           console.error('[auth/login] Supabase admin lookup also failed:', supErr.message);

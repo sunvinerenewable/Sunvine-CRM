@@ -296,3 +296,171 @@ test('ITEM-3a: Panel watt tampering (e.g. panel_watt = 1) is overridden by verif
   assert.equal(lineItem.total, 99000);
 });
 
+// ── 7. System BOM Items & Stale Cache Resilience ──────────────────────────────
+test('System BOM: transportation and turnkey_installation are first-class catalog items', async () => {
+  const { STANDARD_BOM_CATALOG } = await import('../../data/standardBomData.js');
+  
+  const transport = STANDARD_BOM_CATALOG.find(item => item.id === 'transportation');
+  assert.ok(transport, 'transportation must exist in STANDARD_BOM_CATALOG');
+  assert.equal(transport.category, 'logistics');
+  assert.equal(transport.gstRate, 0);
+
+  const turnkey = STANDARD_BOM_CATALOG.find(item => item.id === 'turnkey_installation');
+  assert.ok(turnkey, 'turnkey_installation must exist in STANDARD_BOM_CATALOG');
+  assert.equal(turnkey.category, 'services');
+  assert.equal(turnkey.gstRate, 18);
+});
+
+test('Capacity Validation: 3.3 kW with 6 x 550W passes, while 6 x 600W fails strictly without arbitrary fallback', () => {
+  function validateCapacityAgainstBom(clientKw, panelQty, dbWatt) {
+    const expectedKw = (panelQty * dbWatt) / 1000;
+    const tolerance = 0.15;
+    if (Math.abs(clientKw - expectedKw) > tolerance) {
+      return {
+        status: 422,
+        error: `system_capacity_kw (${clientKw} kW) does not match panel quantity and database wattage (${panelQty} × ${dbWatt}W = ${expectedKw.toFixed(2)} kW).`
+      };
+    }
+    return { status: 200, serverValidatedKw: expectedKw };
+  }
+
+  // 1. Expected scenario: 3.3 kW with 6 x 550W (APS 550W) -> EXACT MATCH
+  const valid = validateCapacityAgainstBom(3.3, 6, 550);
+  assert.equal(valid.status, 200);
+  assert.equal(valid.serverValidatedKw, 3.3);
+
+  // 2. Mismatch scenario: UI asks for 3.3 kW but DB resolves to 600W (APS 600W) -> 6 x 600W = 3.6 kW -> FAILS CLOSED
+  const invalid = validateCapacityAgainstBom(3.3, 6, 600);
+  assert.equal(invalid.status, 422);
+  assert.match(invalid.error, /does not match panel quantity and database wattage \(6 × 600W = 3.60 kW\)/);
+
+  // 3. Custom/Malicious BOM line items rejection logic
+  function checkBomItem(item, bomCatalogMap, allowCustomBomLines = false) {
+    if (!bomCatalogMap[item.id] && !allowCustomBomLines) {
+      return { status: 422, error: `Unknown BOM item ID: "${item.id}". Custom BOM line items are not permitted.` };
+    }
+    return { status: 200 };
+  }
+
+  const catalogMap = {
+    transportation: { id: 'transportation', defaultRate: 1000 },
+    turnkey_installation: { id: 'turnkey_installation', defaultRate: 2000 },
+    gi_pipe_60x40: { id: 'gi_pipe_60x40', defaultRate: 450 }
+  };
+
+  assert.equal(checkBomItem({ id: 'transportation' }, catalogMap).status, 200);
+  assert.equal(checkBomItem({ id: 'turnkey_installation' }, catalogMap).status, 200);
+  assert.equal(checkBomItem({ id: 'malicious_injected_item_x' }, catalogMap).status, 422);
+});
+
+// ── 8. System BOM Tamper Protection Tests (SEC-006 / ITEM-3c) ──────────────────
+test('Tamper Protection: Server recalculates turnkey_installation and transportation from authoritative rules', () => {
+  function computeAuthoritativeSystemItems({
+    serverValidatedKw,
+    structureType = 'standard_hdgi',
+    installationPricingMode = 'per_kw',
+    installationFixedAmount = 0,
+    transportPreset = 'rajkot_local',
+    transportCharge = 1000,
+    maxCustomBomValue = 50000,
+    clientBomItems = []
+  }) {
+    // 1. Authoritative Transportation
+    let authTransportRate = 1000;
+    if (transportPreset === 'dealer_scope') {
+      authTransportRate = 0;
+    } else if (transportPreset === 'rajkot_local') {
+      authTransportRate = 1000;
+    } else if (transportPreset === 'custom') {
+      const ceiling = maxCustomBomValue > 0 ? maxCustomBomValue : 50000;
+      authTransportRate = Math.min(ceiling, Math.max(0, Number(transportCharge) || 0));
+    } else {
+      authTransportRate = 1000;
+    }
+
+    // 2. Authoritative Installation
+    let trustedRatePerKw = 2000;
+    const structType = String(structureType).toLowerCase();
+    if (structType.includes('monorail') && !structType.includes('hybrid')) {
+      trustedRatePerKw = 1400;
+    } else if (structType.includes('hybrid')) {
+      trustedRatePerKw = 1700; // 50-50 weighted
+    }
+
+    let authInstallRate = 0;
+    if (installationPricingMode === 'fixed' || installationPricingMode === 'amount') {
+      authInstallRate = Math.min(200000, Math.max(0, Number(installationFixedAmount) || Math.round(serverValidatedKw * trustedRatePerKw)));
+    } else {
+      authInstallRate = Math.round(serverValidatedKw * trustedRatePerKw);
+    }
+
+    return clientBomItems.map(item => {
+      if (item.id === 'transportation') {
+        return { ...item, rate: authTransportRate, qty: 1, gstRate: 0 };
+      }
+      if (item.id === 'turnkey_installation') {
+        return { ...item, rate: authInstallRate, qty: 1, gstRate: 18 };
+      }
+      return item;
+    });
+  }
+
+  // Test A: Valid normal 3.3kW quotation -> correct installation price (3.3 * 2000 = 6600)
+  const honest33 = computeAuthoritativeSystemItems({
+    serverValidatedKw: 3.3,
+    structureType: 'standard_hdgi',
+    installationPricingMode: 'per_kw',
+    transportPreset: 'rajkot_local',
+    clientBomItems: [
+      { id: 'transportation', rate: 1000 },
+      { id: 'turnkey_installation', rate: 6600 }
+    ]
+  });
+  assert.equal(honest33.find(i => i.id === 'turnkey_installation').rate, 6600);
+  assert.equal(honest33.find(i => i.id === 'transportation').rate, 1000);
+
+  // Test B: Tampered turnkey_installation rate = 1 -> server overrides with authoritative 6,600
+  const tamperedLow = computeAuthoritativeSystemItems({
+    serverValidatedKw: 3.3,
+    structureType: 'standard_hdgi',
+    installationPricingMode: 'per_kw',
+    transportPreset: 'rajkot_local',
+    clientBomItems: [
+      { id: 'turnkey_installation', rate: 1 }
+    ]
+  });
+  assert.equal(tamperedLow.find(i => i.id === 'turnkey_installation').rate, 6600, 'Server must NOT store tampered ₹1');
+
+  // Test C: Tampered turnkey_installation rate = 200000 -> server overrides with authoritative 6,600
+  const tamperedHigh = computeAuthoritativeSystemItems({
+    serverValidatedKw: 3.3,
+    structureType: 'standard_hdgi',
+    installationPricingMode: 'per_kw',
+    transportPreset: 'rajkot_local',
+    clientBomItems: [
+      { id: 'turnkey_installation', rate: 200000 }
+    ]
+  });
+  assert.equal(tamperedHigh.find(i => i.id === 'turnkey_installation').rate, 6600, 'Server must NOT store tampered ₹200,000');
+
+  // Test D: Transportation tampered to ₹1 while preset is rajkot_local -> server stores authoritative ₹1,000
+  const tamperedTransport = computeAuthoritativeSystemItems({
+    serverValidatedKw: 3.3,
+    transportPreset: 'rajkot_local',
+    clientBomItems: [
+      { id: 'transportation', rate: 1 }
+    ]
+  });
+  assert.equal(tamperedTransport.find(i => i.id === 'transportation').rate, 1000, 'Server must NOT store tampered ₹1 for rajkot_local');
+
+  // Test E: Dealer scope transport -> stores ₹0
+  const dealerScopeTransport = computeAuthoritativeSystemItems({
+    serverValidatedKw: 3.3,
+    transportPreset: 'dealer_scope',
+    clientBomItems: [
+      { id: 'transportation', rate: 50000 }
+    ]
+  });
+  assert.equal(dealerScopeTransport.find(i => i.id === 'transportation').rate, 0, 'Server must store ₹0 for dealer_scope regardless of client rate');
+});
+

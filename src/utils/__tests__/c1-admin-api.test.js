@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 
 // Set up JWT_SECRET before loading JWT / auth modules
+process.env.NODE_ENV = 'test';
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = randomBytes(48).toString('hex');
 }

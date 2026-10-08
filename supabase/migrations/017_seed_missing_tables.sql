@@ -26,13 +26,7 @@ VALUES
     ('pvc_tee_25mm', '25mm Heavy PVC Tee Junction Fittings', 'conduits', 'Polycab', 'Nos', 5.00, 18.00, 'Precision Conduit Tee Junction', true, 180),
     ('shadel_clamp', 'Heavy Duty GI Saddle Clamps Packet', 'conduits', 'Heavy Duty GI', 'Pkt', 120.00, 18.00, 'Packet of 50 Pcs Clamps with Screws', true, 190),
     ('transportation', 'Insured Safe Freight & Doorstep Delivery', 'logistics', 'Sunvine Logistics', 'Set', 1000.00, 0.00, 'Direct-to-site insured transit', true, 200)
-ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
-    category = EXCLUDED.category,
-    default_rate = EXCLUDED.default_rate,
-    gst_rate = EXCLUDED.gst_rate,
-    specs = EXCLUDED.specs,
-    updated_at = now();
+ON CONFLICT (id) DO NOTHING;
 
 -- 2. SEED DATA: SOLAR KITS PRESETS
 INSERT INTO public.solar_kits_presets (id, name, capacity_kw, panel_wattage, panel_count, inverter_capacity_kw, base_price)
@@ -41,11 +35,5 @@ VALUES
     ('kit_4_4kw', 'Sunvine 4.4 kW Premier Residential Kit', 4.40, 550, 8, 4.40, 170200.00),
     ('kit_5_5kw', 'Sunvine 5.5 kW Premier Residential Kit', 5.50, 550, 10, 5.00, 203926.00),
     ('kit_6_6kw', 'Sunvine 6.6 kW Premier Residential Kit', 6.60, 550, 12, 6.00, 244530.00)
-ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
-    capacity_kw = EXCLUDED.capacity_kw,
-    panel_wattage = EXCLUDED.panel_wattage,
-    panel_count = EXCLUDED.panel_count,
-    inverter_capacity_kw = EXCLUDED.inverter_capacity_kw,
-    base_price = EXCLUDED.base_price,
-    updated_at = now();
+ON CONFLICT (id) DO NOTHING;
+

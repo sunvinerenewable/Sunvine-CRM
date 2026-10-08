@@ -133,26 +133,29 @@ export const quotationService = {
   async saveQuotation(quote) {
     if (!quote) return { success: false, error: 'Quotation data required.' };
 
-    const requestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+    const isEdit = Boolean(quote.isEdit || quote.is_edit);
+    const requestId = quote.requestId || quote.request_id || ((typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
-      : `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      : `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
 
     const apiPayload = {
       action: 'save',
       request_id: requestId,
-      quotation_id: quote.id,
+      is_edit: isEdit,
+      ...(isEdit && quote.id ? { quotation_id: quote.id } : {}),
+      status: quote.status || 'Active / Generated',
       dealer_id: quote.dealerId || quote.dealer_id,
-      dealer_code: quote.dealerCode,
-      dealer_name: quote.dealerFirm || quote.dealerName,
+      dealer_code: quote.dealerCode || quote.dealer_code,
+      dealer_name: quote.dealerFirm || quote.dealerName || quote.dealer_name,
       customer_name: quote.customerName || 'Valued Customer',
       customer_phone: quote.customerPhone || '',
       customer_city: quote.city || quote.location || 'Ahmedabad',
       customer_state: quote.state || 'Gujarat',
       system_capacity_kw: Number(quote.systemCapacityKW || quote.capacityKW || quote.capacity) || 5.0,
-      panel_id: quote.panelId || quote.selectedPanelId,
-      panel_watt: Number(quote.panelWatt) || 550,
+      panel_id: quote.panelId || quote.selectedPanelId || quote.panel_id,
+      panel_watt: Number(quote.panelWatt || quote.moduleWattage) || 550,
       panel_type: quote.panelType || quote.solarModule || 'Mono PERC Bi-facial (550W)',
-      inverter_id: quote.inverterId || quote.selectedInverterId,
+      inverter_id: quote.inverterId || quote.selectedInverterId || quote.inverter_id,
       inverter_type: quote.inverterType || 'Sungrow 5kW Grid-Tie',
       structure_type: quote.structureType || 'High-Rise Galvanized HDG 2.5m',
       dealer_margin_inr: Number(quote.dealerMargin || quote.dealerTotalMargin) || 0,
@@ -162,7 +165,8 @@ export const quotationService = {
       loan_bank: quote.loanBank,
       loan_tenure_years: Number(quote.loanTenureYears) || 5,
       is_direct_company_quote: quote.isDirectCompanyQuote === true,
-      bom_items: quote.bomItems || []
+      bom_items: quote.bomItems || [],
+      quote_payload: quote
     };
 
     try {

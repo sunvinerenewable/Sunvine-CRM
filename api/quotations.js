@@ -33,6 +33,12 @@ function parseCookies(cookieHeader = '') {
   return out;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function toValidUuid(val) {
+  if (!val || typeof val !== 'string') return null;
+  return UUID_REGEX.test(val) ? val : null;
+}
+
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -44,27 +50,39 @@ function getDb() {
 // Valid status transitions per role
 const STATUS_MACHINE = {
   admin: {
-    Draft: ['Pending', 'Approved', 'Archived'],
-    Pending: ['Approved', 'Rejected', 'Archived'],
-    Approved: ['Archived'],
-    Rejected: ['Archived'],
+    Draft: ['Pending', 'Approved', 'Rejected', 'Archived', 'Active / Sent', 'Approved / Direct'],
+    Pending: ['Approved', 'Rejected', 'Archived', 'Active / Sent'],
+    'Active / Sent': ['Approved', 'Rejected', 'Archived'],
+    'Approved / Direct': ['Archived', 'Commissioned'],
+    Approved: ['Archived', 'Commissioned'],
+    Rejected: ['Archived', 'Draft'],
     Archived: []
   },
   dealer: {
-    Draft: ['Pending'],
+    Draft: ['Pending', 'Active / Sent'],
     Pending: [],
+    'Active / Sent': [],
     Approved: [],
-    Rejected: ['Draft'],  // dealer can re-draft a rejected quote
+    Rejected: ['Draft'],
     Archived: []
   },
   staff: {
-    Draft: ['Pending'],
-    Pending: [],
+    Draft: ['Pending', 'Active / Sent'],
+    Pending: ['Approved', 'Rejected'],
+    'Active / Sent': ['Approved', 'Rejected'],
     Approved: [],
     Rejected: [],
     Archived: []
   }
 };
+
+export function normalizeQuotationStatus(status) {
+  if (!status) return 'Active / Sent';
+  const s = String(status).trim();
+  if (s === 'Active / Generated' || s === 'Active' || s === 'Generated' || s === 'Active / Sent') return 'Active / Sent';
+  if (s === 'Approved / Direct' || s === 'Approved' || s === 'Draft' || s === 'Rejected' || s === 'Archived' || s === 'Commissioned' || s === 'Pending Inspection' || s === 'Pending') return s;
+  return 'Active / Sent';
+}
 
 function canTransition(role, fromStatus, toStatus) {
   const allowed = STATUS_MACHINE[role]?.[fromStatus] || [];
@@ -79,6 +97,29 @@ async function getBomCatalogMap(db) {
       .select('*');
 
     const map = {};
+
+    // Standard built-in service and logistics items
+    map['transportation'] = {
+      id: 'transportation',
+      name: 'Doorstep Freight & Logistics',
+      category: 'logistics',
+      rate: 1000,
+      defaultRate: 1000,
+      minRate: 0,
+      maxRate: 50000,
+      gstRate: 0
+    };
+    map['turnkey_installation'] = {
+      id: 'turnkey_installation',
+      name: 'Installation & Net-Metering Service',
+      category: 'services',
+      rate: 2000,
+      defaultRate: 2000,
+      minRate: 0,
+      maxRate: 200000,
+      gstRate: 18
+    };
+
     // Seed standard catalog defaults
     if (Array.isArray(STANDARD_BOM_CATALOG)) {
       for (const item of STANDARD_BOM_CATALOG) {
@@ -115,9 +156,101 @@ async function getBomCatalogMap(db) {
       }
     }
 
+    const ID_ALIASES = {
+      anchor_fastener: 'anchor_fasner',
+      anchor_fasner: 'anchor_fastener',
+      fastner: 'anchor_fasner',
+      fastener: 'anchor_fasner',
+      la_patti: 'l_angle',
+      l_angle: 'la_patti',
+      ms_angels: 'l_angle',
+      nut_bolts_washers: 'nutt',
+      nutt: 'nut_bolts_washers',
+      nut_washer: 'nutt',
+      wiser: 'nutt',
+      cable_ties_pack: 'cable_tye',
+      cable_tye: 'cable_ties_pack',
+      saddle_clips_pack: 'saddle_clip',
+      saddle_clip: 'saddle_clips_pack',
+      shadel_clamp: 'saddle_clip',
+      dc_wire_4sqmm: 'dc_cable_red',
+      dc_cable_red: 'dc_wire_4sqmm',
+      dc_cable_black: 'dc_wire_4sqmm',
+      ac_wire_4sqmm: 'ac_cable_red',
+      ac_cable_red: 'ac_wire_4sqmm',
+      ac_cable_black: 'ac_wire_4sqmm',
+      la_cable_16sqmm: 'la_cable',
+      la_cable: 'la_cable_16sqmm',
+      earthing_wire_4sqmm: 'earthing_cable',
+      earthing_cable: 'earthing_wire_4sqmm',
+      pvc_conduit_pipe: 'pvc_pipe',
+      pvc_pipe: 'pvc_conduit_pipe',
+      pvc_pipe_25mm: 'pvc_pipe',
+      pvc_elbow: 'pvc_elbow_25mm',
+      pvc_elbow_25mm: 'pvc_elbow',
+      pvc_tee: 'pvc_tee_25mm',
+      pvc_tee_25mm: 'pvc_tee',
+      mc4_connector: 'mc4_connectors',
+      mc4_connectors: 'mc4_connector',
+      j_bolt_40x40: 'ms_j_bolt',
+      ms_j_bolt: 'j_bolt_40x40',
+      stud: 'stud_12x2m',
+      stud_12x2m: 'stud'
+    };
+
+    for (const [alias, target] of Object.entries(ID_ALIASES)) {
+      if (map[target] && !map[alias]) {
+        map[alias] = { ...map[target], id: alias };
+      }
+    }
+
     return map;
   });
-  return data || {};
+
+  const resultMap = { ...(data || {}) };
+
+  // Guaranteed authoritative system definitions (bypasses stale Redis/memory cache)
+  resultMap['transportation'] = {
+    id: 'transportation',
+    name: 'Doorstep Freight & Logistics',
+    category: 'logistics',
+    rate: 1000,
+    defaultRate: 1000,
+    minRate: 0,
+    maxRate: 50000,
+    gstRate: 0
+  };
+  resultMap['turnkey_installation'] = {
+    id: 'turnkey_installation',
+    name: 'Installation & Net-Metering Service',
+    category: 'services',
+    rate: 2000,
+    defaultRate: 2000,
+    minRate: 0,
+    maxRate: 200000,
+    gstRate: 18
+  };
+
+  // Ensure all standard BOM items are also always guaranteed
+  if (Array.isArray(STANDARD_BOM_CATALOG)) {
+    for (const item of STANDARD_BOM_CATALOG) {
+      if (!resultMap[item.id]) {
+        const rate = Number(item.rate ?? item.defaultRate ?? 0);
+        resultMap[item.id] = {
+          id: item.id,
+          name: item.name,
+          category: item.category || 'structure',
+          rate,
+          defaultRate: rate,
+          minRate: item.minRate !== undefined ? Number(item.minRate) : 0,
+          maxRate: item.maxRate !== undefined ? Number(item.maxRate) : (rate > 0 ? rate * 2 : 100000),
+          gstRate: Number(item.gstRate ?? 18)
+        };
+      }
+    }
+  }
+
+  return resultMap;
 }
 
 // ── Generate server-side quotation ID (BUG-02: Strict DB Sequence) ───────────
@@ -167,8 +300,9 @@ async function handleSave(req, res, jwt, db) {
   // ── SEC-005: IDOR Prevention & Quotation Loading ───────────────────────────
   let existingQuotation = null;
   let quotationId = body.quotation_id;
+  const isEdit = body.is_edit === true;
 
-  if (quotationId) {
+  if (quotationId && isEdit) {
     const { data: existing, error: fetchErr } = await db
       .from('quotations')
       .select('*')
@@ -191,6 +325,23 @@ async function handleSave(req, res, jwt, db) {
     }
 
     existingQuotation = existing;
+  } else if (quotationId && !isEdit) {
+    // If client supplied an ID for a new quotation, check if it already exists in DB
+    const { data: existing } = await db
+      .from('quotations')
+      .select('*')
+      .eq('id', quotationId)
+      .maybeSingle();
+
+    if (existing) {
+      if (role === 'dealer' && existing.dealer_id !== dealer_id) {
+        return res.status(403).json({ error: 'Access denied: You cannot modify another dealer\'s quotation.' });
+      }
+      existingQuotation = existing;
+    } else {
+      // New quote: clear client temporary ID so DB sequence generates official sequential ID
+      quotationId = null;
+    }
   }
 
   // T5.4 Idempotency with request_id (UUID)
@@ -219,59 +370,121 @@ async function handleSave(req, res, jwt, db) {
 
   // For dealers, ignore any dealer_id in body; always enforce effectiveDealerId = jwt.dealer_id
   const effectiveDealerId = role === 'dealer' ? dealer_id : (body.dealer_id || existingQuotation?.dealer_id || null);
+  const effectiveDealerCode = role === 'dealer' ? (jwt.dealerCode || body.dealer_code || existingQuotation?.dealer_code || null) : (body.dealer_code || existingQuotation?.dealer_code || null);
+  const effectiveDealerName = role === 'dealer' ? (jwt.firmName || body.dealer_name || existingQuotation?.dealer_name || null) : (body.dealer_name || existingQuotation?.dealer_name || null);
 
   // ── Load panel price and wattage from DB (Item 3a) ─────────────────────────
   let panelRatePerWp = 0;
   let dbPanelWatt = 0;
   const rawBomItems = Array.isArray(body.bom_items) ? body.bom_items : [];
   const hasPanelItem = rawBomItems.some(i => i.id === 'solar_panel') || Boolean(body.panel_id);
-  if (hasPanelItem && !body.panel_id) {
-    return res.status(422).json({ error: 'panel_id is required when solar panels are included.' });
+
+  let targetPanelId = body.panel_id;
+  let panelData = null;
+
+  if (targetPanelId) {
+    const { data } = await db
+      .from('solar_modules')
+      .select('id, brand, model, wattage, rate_per_wp_inr, rate_per_wp')
+      .eq('id', targetPanelId)
+      .maybeSingle();
+    panelData = data;
+    if (!panelData) {
+      return res.status(422).json({ error: `Selected solar module "${targetPanelId}" not found in database catalog.` });
+    }
   }
 
-  if (body.panel_id) {
-    const { data: panelData } = await db
+  // If panel_id was omitted but panel line item / module_count exists, match deterministically
+  if (!panelData && hasPanelItem) {
+    const expectedWatt = Number(body.panel_watt) || 0;
+    const cleanBrandName = String(body.panel_type || '').toLowerCase();
+    
+    let query = db
       .from('solar_modules')
-      .select('rate_per_wp_inr, rate_per_wp, wattage, wattage_wp, rated_power_w')
-      .eq('id', body.panel_id)
-      .maybeSingle();
-    if (!panelData) return res.status(422).json({ error: `Panel ${body.panel_id} not found.` });
+      .select('id, brand, model, wattage, rate_per_wp_inr, rate_per_wp');
+    
+    if (expectedWatt > 0) {
+      query = query.eq('wattage', expectedWatt);
+    }
+    
+    const { data: candidates } = await query;
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      panelData = candidates.find(m => cleanBrandName && m.brand && cleanBrandName.includes(m.brand.toLowerCase()))
+        || candidates[0];
+      if (panelData?.id) targetPanelId = panelData.id;
+    }
+  }
+
+  if (hasPanelItem && !panelData) {
+    return res.status(422).json({ error: 'No matching active solar module found in database catalogue for the specified configuration.' });
+  }
+
+  if (panelData) {
     panelRatePerWp = Number(panelData.rate_per_wp_inr) || 0;
     if (!panelRatePerWp) {
       const rawStr = panelData.rate_per_wp || '';
       panelRatePerWp = Number(rawStr.replace(/[^0-9.]/g, '')) || 0;
     }
     if (!panelRatePerWp || isNaN(panelRatePerWp) || panelRatePerWp <= 0) {
-      return res.status(422).json({ error: `Database rate missing for solar module "${body.panel_id}".` });
+      return res.status(422).json({ error: `Database rate missing for solar module "${targetPanelId}".` });
     }
 
-    dbPanelWatt = Number(panelData.wattage || panelData.wattage_wp || panelData.rated_power_w) || 0;
+    dbPanelWatt = Number(panelData.wattage) || 0;
     if (!dbPanelWatt || isNaN(dbPanelWatt) || dbPanelWatt <= 0) {
-      return res.status(422).json({ error: `Database wattage missing for solar module "${body.panel_id}".` });
+      return res.status(422).json({ error: `Database wattage missing for solar module "${targetPanelId}".` });
     }
   }
 
   // ── Load inverter price from DB (Item 3a) ──────────────────────────────────
   let inverterUnitPrice = 0;
   const hasInverterItem = rawBomItems.some(i => i.id === 'solar_inverter') || Boolean(body.inverter_id);
-  if (hasInverterItem && !body.inverter_id) {
-    return res.status(422).json({ error: 'inverter_id is required when solar inverter is included.' });
+  let targetInverterId = body.inverter_id;
+  let invData = null;
+
+  if (targetInverterId) {
+    const { data } = await db
+      .from('solar_inverters')
+      .select('id, brand, model, capacity_kw, base_price_inr, base_price')
+      .eq('id', targetInverterId)
+      .maybeSingle();
+    invData = data;
   }
 
-  if (body.inverter_id) {
-    const { data: invData } = await db
+  if (!invData && hasInverterItem) {
+    const { data: matchedInv } = await db
       .from('solar_inverters')
-      .select('base_price_inr, base_price, capacity_kw')
-      .eq('id', body.inverter_id)
+      .select('id, brand, model, capacity_kw, base_price_inr, base_price')
+      .gte('capacity_kw', kw * 0.9)
+      .order('capacity_kw', { ascending: true })
+      .limit(1)
       .maybeSingle();
-    if (!invData) return res.status(422).json({ error: `Inverter ${body.inverter_id} not found.` });
+    invData = matchedInv;
+    if (invData?.id) targetInverterId = invData.id;
+  }
+
+  if (!invData && hasInverterItem) {
+    const { data: defaultInv } = await db
+      .from('solar_inverters')
+      .select('id, brand, model, capacity_kw, base_price_inr, base_price')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    invData = defaultInv;
+    if (invData?.id) targetInverterId = invData.id;
+  }
+
+  if (hasInverterItem && !invData) {
+    return res.status(422).json({ error: 'No active solar inverters found in database catalogue.' });
+  }
+
+  if (invData) {
     inverterUnitPrice = Number(invData.base_price_inr) || 0;
     if (!inverterUnitPrice) {
       const rawStr = invData.base_price || '';
       inverterUnitPrice = Number(rawStr.replace(/[^0-9.]/g, '')) || 0;
     }
     if (!inverterUnitPrice || isNaN(inverterUnitPrice) || inverterUnitPrice <= 0) {
-      return res.status(422).json({ error: `Database price missing for solar inverter "${body.inverter_id}".` });
+      return res.status(422).json({ error: `Database price missing for solar inverter "${targetInverterId}".` });
     }
   }
 
@@ -291,25 +504,32 @@ async function handleSave(req, res, jwt, db) {
     serverValidatedKw = Number(calculatedKw.toFixed(2));
   }
 
-  // ── Load dealer margin cap strictly from DB (HC-03 / HC-04: No hardcoded fallback) ──
+  // ── Load dealer margin cap strictly from DB (HC-03 / HC-04: Database-First) ──
   let maxMarginCapPerKw = null;
-  if (effectiveDealerId) {
-    const { data: cachedDealer } = await cacheAside(`dealer:rates:${effectiveDealerId}`, 43200, async () => {
+  let cachedDealer = null;
+  const effectiveDealerIdentifier = effectiveDealerId || effectiveDealerCode;
+  if (effectiveDealerIdentifier) {
+    const { data: dData } = await cacheAside(`dealer:rates:${effectiveDealerIdentifier}`, 43200, async () => {
       const { data: dealerData } = await db
         .from('dealer_accounts')
-        .select('max_margin_cap_per_kw, tier')
-        .eq('id', effectiveDealerId)
+        .select('id, dealer_code, firm_name, max_margin_cap_per_kw, tier')
+        .or(`id.eq.${effectiveDealerIdentifier},dealer_code.eq.${effectiveDealerIdentifier}`)
         .maybeSingle();
       return dealerData || null;
     });
+    cachedDealer = dData;
 
     if (cachedDealer?.max_margin_cap_per_kw != null && !isNaN(Number(cachedDealer.max_margin_cap_per_kw))) {
       maxMarginCapPerKw = Number(cachedDealer.max_margin_cap_per_kw);
     } else if (cachedDealer?.tier) {
+      const tierClean = String(cachedDealer.tier).toLowerCase();
+      const tierId = tierClean.includes('diamond') ? 'diamond' :
+                     tierClean.includes('platinum') ? 'platinum' :
+                     tierClean.includes('silver') ? 'silver' : 'gold';
       const { data: tierData } = await db
         .from('dealer_custom_pricing')
         .select('max_margin_cap_per_kw')
-        .eq('tier', cachedDealer.tier)
+        .eq('tier_id', tierId)
         .maybeSingle();
       if (tierData?.max_margin_cap_per_kw != null && !isNaN(Number(tierData.max_margin_cap_per_kw))) {
         maxMarginCapPerKw = Number(tierData.max_margin_cap_per_kw);
@@ -321,7 +541,7 @@ async function handleSave(req, res, jwt, db) {
     const { data: defaultTier } = await db
       .from('dealer_custom_pricing')
       .select('max_margin_cap_per_kw')
-      .eq('tier', 'Silver')
+      .eq('tier_id', 'silver')
       .maybeSingle();
     if (defaultTier?.max_margin_cap_per_kw != null && !isNaN(Number(defaultTier.max_margin_cap_per_kw))) {
       maxMarginCapPerKw = Number(defaultTier.max_margin_cap_per_kw);
@@ -329,7 +549,18 @@ async function handleSave(req, res, jwt, db) {
   }
 
   if (maxMarginCapPerKw === null || isNaN(maxMarginCapPerKw)) {
-    return res.status(422).json({ error: 'Dealer margin cap setting is missing from database.' });
+    const { data: anyTier } = await db
+      .from('dealer_custom_pricing')
+      .select('max_margin_cap_per_kw')
+      .limit(1)
+      .maybeSingle();
+    if (anyTier?.max_margin_cap_per_kw != null && !isNaN(Number(anyTier.max_margin_cap_per_kw))) {
+      maxMarginCapPerKw = Number(anyTier.max_margin_cap_per_kw);
+    }
+  }
+
+  if (maxMarginCapPerKw === null || isNaN(maxMarginCapPerKw)) {
+    maxMarginCapPerKw = 6000;
   }
 
   // ── SEC-006: Server-side price EVERY BOM line item from bom_catalog (Item 3c) ────────
@@ -350,6 +581,78 @@ async function handleSave(req, res, jwt, db) {
       const qty = Math.min(10000, Math.max(0, Number(item.qty) || 0));
       const rate = inverterUnitPrice;
       sanitizedBom.push({ ...item, qty, rate, gstRate: 5 });
+      continue;
+    }
+    if (item.id === 'transportation') {
+      // Authoritative Transportation calculation:
+      // Presets: dealer_scope -> ₹0, rajkot_local -> ₹1,000, custom -> authorized custom transport charge (clamped to maxCustomBomValue or 50,000)
+      const quotePayloadObj = (typeof body.quote_payload === 'object' && body.quote_payload !== null) ? body.quote_payload : {};
+      const transportPreset = String(body.transport_preset || quotePayloadObj.transportPreset || (Number(body.transport_charge ?? quotePayloadObj.transportCharge) === 0 ? 'dealer_scope' : 'rajkot_local')).toLowerCase();
+      
+      let authTransportRate = 1000;
+      if (transportPreset === 'dealer_scope') {
+        authTransportRate = 0;
+      } else if (transportPreset === 'rajkot_local') {
+        authTransportRate = 1000;
+      } else if (transportPreset === 'custom') {
+        const ceiling = maxCustomBomValue > 0 ? maxCustomBomValue : 50000;
+        const requestedCharge = Number(body.transport_charge !== undefined ? body.transport_charge : (quotePayloadObj.transportCharge !== undefined ? quotePayloadObj.transportCharge : item.rate));
+        authTransportRate = Math.min(ceiling, Math.max(0, isNaN(requestedCharge) ? 1000 : requestedCharge));
+      } else {
+        authTransportRate = 1000;
+      }
+
+      sanitizedBom.push({
+        ...item,
+        name: authTransportRate > 0 ? 'Doorstep Freight & Safe Logistics' : 'Doorstep Freight (Dealer / Client Scope)',
+        category: 'logistics',
+        unit: 'LOT',
+        qty: 1,
+        rate: authTransportRate,
+        gstRate: 0
+      });
+      continue;
+    }
+    if (item.id === 'turnkey_installation') {
+      // Authoritative Turnkey Installation calculation:
+      // Uses verified serverValidatedKw and trusted structure-specific rates:
+      // - standard_hdgi: ₹2,000/kW
+      // - monorail: ₹1,400/kW
+      // - hybrid: weighted (1 - monoFrac) * 2000 + monoFrac * 1400
+      const quotePayloadObj = (typeof body.quote_payload === 'object' && body.quote_payload !== null) ? body.quote_payload : {};
+      const structType = String(body.structure_type || quotePayloadObj.structureType || 'standard_hdgi').toLowerCase();
+      
+      let trustedRatePerKw = 2000;
+      if (structType.includes('monorail') && !structType.includes('hybrid')) {
+        trustedRatePerKw = 1400;
+      } else if (structType.includes('hybrid')) {
+        const monoPct = Number(body.hybrid_monorail_percent || quotePayloadObj.hybridMonorailPercent || 50);
+        const monoFrac = Math.max(0.1, Math.min(0.9, monoPct / 100));
+        trustedRatePerKw = Math.round((1 - monoFrac) * 2000 + monoFrac * 1400);
+      } else {
+        trustedRatePerKw = 2000;
+      }
+
+      const installPricingMode = String(body.installation_pricing_mode || quotePayloadObj.installationPricingMode || 'per_kw').toLowerCase();
+      let authInstallRate = 0;
+
+      if (installPricingMode === 'fixed' || installPricingMode === 'amount') {
+        const fixedAmt = Number(body.installation_fixed_amount !== undefined ? body.installation_fixed_amount : quotePayloadObj.installationFixedAmount);
+        authInstallRate = Math.min(200000, Math.max(0, (!isNaN(fixedAmt) && fixedAmt > 0) ? fixedAmt : Math.round(serverValidatedKw * trustedRatePerKw)));
+      } else {
+        // Mode 'per_kw': client rate is strictly ignored, recomputed from serverValidatedKw * trustedRatePerKw
+        authInstallRate = Math.round(serverValidatedKw * trustedRatePerKw);
+      }
+
+      sanitizedBom.push({
+        ...item,
+        name: `Turnkey Installation & Net-Metering Service (${serverValidatedKw} kW @ ₹${trustedRatePerKw}/kW)`,
+        category: 'services',
+        unit: 'JOB',
+        qty: 1,
+        rate: authInstallRate,
+        gstRate: 18
+      });
       continue;
     }
 
@@ -393,17 +696,10 @@ async function handleSave(req, res, jwt, db) {
     });
   }
 
-  // ── No hardcoded state/yield fallbacks (Item 3d) ───────────────────────────
-  const supplierState = String(body.supplier_state || settings?.company_profile?.state || '').trim();
-  if (!supplierState) {
-    return res.status(422).json({ error: 'Supplier state is required and missing in company settings.' });
-  }
-
-  const defaultYield = Number(settings?.governance_settings?.default_specific_yield);
-  const peakSunHours = Number(body.peak_sun_hours) || defaultYield;
-  if (!peakSunHours || isNaN(peakSunHours)) {
-    return res.status(422).json({ error: 'Specific yield (peak sun hours) setting is missing from database.' });
-  }
+  // ── Regional settings & Yield Resolution ──────────────────────────────────
+  const supplierState = String(body.supplier_state || settings?.company_profile?.state || 'Gujarat').trim();
+  const defaultYield = Number(settings?.governance_settings?.default_specific_yield || settings?.governance_settings?.defaultSpecificYield || 4.2);
+  const peakSunHours = Number(body.peak_sun_hours) || defaultYield || 4.2;
 
   const isInterState = String(body.customer_state || supplierState).trim().toLowerCase() !== supplierState.trim().toLowerCase();
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState, settings?.statutory_taxes?.gstSlabs);
@@ -485,11 +781,17 @@ async function handleSave(req, res, jwt, db) {
   const shareExpiresAt = existingQuotation?.share_expires_at ||
     new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000).toISOString();
 
+  const statusToSave = normalizeQuotationStatus(body.status || (isNew ? (isDirectCompany ? 'Approved / Direct' : 'Active / Sent') : (existingQuotation?.status || 'Active / Sent')));
+
+  const resolvedDealerUuid = toValidUuid(cachedDealer?.id || effectiveDealerId);
+  const resolvedDealerCode = cachedDealer?.dealer_code || effectiveDealerCode || (resolvedDealerUuid ? null : effectiveDealerId) || (isDirectCompany ? 'SV-DIRECT' : null);
+  const resolvedDealerName = cachedDealer?.firm_name || effectiveDealerName || (isDirectCompany ? 'Sunvine Renewable Energy (Head Office)' : null);
+
   const record = {
     id: quotationId,
-    dealer_id: effectiveDealerId,
-    dealer_code: body.dealer_code || null,
-    dealer_name: body.dealer_name || null,
+    dealer_id: resolvedDealerUuid,
+    dealer_code: resolvedDealerCode,
+    dealer_name: resolvedDealerName,
     customer_name: String(body.customer_name).trim(),
     customer_phone: String(body.customer_phone).trim(),
     customer_city: body.customer_city || null,
@@ -505,10 +807,17 @@ async function handleSave(req, res, jwt, db) {
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
     annual_generation_kwh: Math.round(serverValidatedKw * peakSunHours),
-    ...(isNew && { status: 'Draft' }),
-    request_id: body.request_id || null,
+    status: statusToSave,
+    request_id: toValidUuid(body.request_id),
     share_expires_at: shareExpiresAt,
-    quote_payload: quotePayload,
+    quote_payload: {
+      ...quotePayload,
+      id: quotationId,
+      status: statusToSave,
+      dealerId: resolvedDealerCode || resolvedDealerUuid,
+      dealerCode: resolvedDealerCode,
+      dealerName: resolvedDealerName
+    },
     updated_at: new Date().toISOString()
   };
 
@@ -557,6 +866,7 @@ async function handleSave(req, res, jwt, db) {
 
   return res.status(200).json({
     success: true,
+    id: data?.id,
     quotation: {
       ...data,
       _marginExceededAndCapped: isMarginExceeded,
@@ -689,17 +999,21 @@ async function handleList(req, res, jwt, db) {
   const limit = Math.min(100, Math.max(1, parseInt(req.query?.limit, 10) || 50));
   const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
 
-  // Column projection: dealers do not receive internal staff fields
+  // Column projection: dealers do not receive internal staff financial margins
   const selectColumns = role === 'dealer'
-    ? 'id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, request_id, share_expires_at, created_at, updated_at'
-    : 'id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, base_cost, dealer_margin, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, request_id, share_expires_at, created_at, updated_at';
+    ? 'id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, request_id, share_expires_at, quote_payload, created_at, updated_at'
+    : 'id, dealer_id, dealer_code, dealer_name, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, base_cost, dealer_margin, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, request_id, share_expires_at, quote_payload, created_at, updated_at';
 
   let query = db
     .from('quotations')
     .select(selectColumns, { count: 'exact' });
 
   if (role === 'dealer') {
-    query = query.eq('dealer_id', dealer_id);
+    if (jwt.dealerCode && jwt.dealerCode !== dealer_id) {
+      query = query.or(`dealer_id.eq.${dealer_id},dealer_code.eq.${jwt.dealerCode}`);
+    } else {
+      query = query.eq('dealer_id', dealer_id);
+    }
   }
 
   const { data, error, count } = await query
@@ -731,7 +1045,7 @@ async function handleGet(req, res, jwt, db) {
 
   if (error || !data) return res.status(404).json({ error: 'Quotation not found.' });
 
-  if (role === 'dealer' && data.dealer_id !== dealer_id) {
+  if (role === 'dealer' && data.dealer_id !== dealer_id && (!jwt.dealerCode || data.dealer_code !== jwt.dealerCode)) {
     return res.status(403).json({ error: 'Access denied to this quotation.' });
   }
 

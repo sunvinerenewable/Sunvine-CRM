@@ -48,6 +48,7 @@ INSERT INTO public.system_settings (
     "default_loan_rate": 8.5,
     "upload_max_mb": 2,
     "allow_custom_bom_lines": false,
+    "bom_rate_tolerance_pct": 10,
     "max_custom_bom_value": 0
   }'::jsonb,
   '{
@@ -68,6 +69,11 @@ INSERT INTO public.system_settings (
     "helpdesk": "",
     "website": "https://sunvinerenewable.com",
     "email": "support@sunvinerenewable.com",
+    "bank_name": "",
+    "bank_account_no": "",
+    "bank_ifsc": "",
+    "bank_branch": "",
+    "bank_account_holder": "",
     "bank": {
       "bankName": "",
       "accountNumber": "",

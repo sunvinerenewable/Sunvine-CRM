@@ -26,19 +26,19 @@ export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
 export const PRESET_MAKES = [
   {
     id: 'adani_bifi',
-    name: 'Adani 555W Bi-Fi',
-    fullName: 'Adani 555W Vertex Mono PERC Bifacial',
-    brand: 'Adani Solar',
-    watt: 555,
+    name: 'Adani 550W Bi-Fi',
+    fullName: 'Adani 550W Vertex Mono PERC Bifacial',
+    brand: 'Adani',
+    watt: 550,
     priceKey: 'adaniBiFiPrice',
     badge: 'Tier-1 ALMM',
-    tech: '555W Bi-Fi'
+    tech: '550W Bi-Fi'
   },
   {
     id: 'aps_bifi',
     name: 'APS 550W Bi-Fi',
     fullName: 'APS 550W TOPCon Dual Glass',
-    brand: 'APS Solar',
+    brand: 'APS',
     watt: 550,
     priceKey: 'apsBiFiPrice',
     badge: 'Dual Glass',
@@ -47,8 +47,8 @@ export const PRESET_MAKES = [
   {
     id: 'rayzone',
     name: 'Rayzone 550W',
-    fullName: 'Rayzone 550W Bi-Fi TOPCon High-Efficiency',
-    brand: 'Rayzone Solar',
+    fullName: 'Rayzon 550W Bi-Fi TOPCon High-Efficiency',
+    brand: 'Rayzon',
     watt: 550,
     priceKey: 'rayzonePrice',
     badge: 'High Yield',
@@ -58,7 +58,7 @@ export const PRESET_MAKES = [
     id: 'waaree_540',
     name: 'Waaree 540W Mono',
     fullName: 'Waaree 540W Mono PERC Half-Cut Module',
-    brand: 'Waaree Energies',
+    brand: 'Waaree',
     watt: 540,
     priceKey: 'waaree540Price',
     badge: 'Mono PERC',
@@ -68,7 +68,7 @@ export const PRESET_MAKES = [
     id: 'waaree_585',
     name: 'Waaree 585W TOPCon',
     fullName: 'Waaree 585W TOPCon Bifacial (HyperIon)',
-    brand: 'Waaree Energies',
+    brand: 'Waaree',
     watt: 585,
     priceKey: 'waaree585Price',
     badge: 'Featured',
@@ -78,7 +78,7 @@ export const PRESET_MAKES = [
     id: 'aps_topcon_600',
     name: 'APS TOPCon 600W',
     fullName: 'APS TOPCon 600W Bi-Fi High-Yield',
-    brand: 'APS Solar',
+    brand: 'APS',
     watt: 600,
     priceKey: 'apsTopcon600Price',
     badge: '600W Ultra',
@@ -1382,8 +1382,47 @@ export default function CreateQuotation() {
       ? (panelQuantity || Number(matchedSlab?.noOfModules) || 6)
       : panelQuantity;
 
+    const targetWatt = isMarginBased ? (Number(currentPresetMake?.watt) || panelWatt) : panelWatt;
+    const targetBrand = isMarginBased ? (currentPresetMake?.brand || panelBrand) : panelBrand;
+    const cleanBrand = (b = '') => String(b).toLowerCase().replace(/solar|energies|limited|bi-fi|dual glass|\s+/g, '');
+    const targetBrandClean = cleanBrand(targetBrand);
+
+    const resolvedPanelObj = (modulesList || []).find(m => 
+      (typeof selectedPanelId !== 'undefined' && m.id === selectedPanelId)
+    ) || (modulesList || []).find(m => 
+      Number(m.wattage) === Number(targetWatt) && m.brand?.toLowerCase() === targetBrand?.toLowerCase()
+    ) || (modulesList || []).find(m =>
+      Number(m.wattage) === Number(targetWatt) && (
+        cleanBrand(m.brand) === targetBrandClean ||
+        cleanBrand(m.brand).includes(targetBrandClean) ||
+        targetBrandClean.includes(cleanBrand(m.brand)) ||
+        (currentPresetMake?.name && cleanBrand(currentPresetMake.name).includes(cleanBrand(m.brand)))
+      )
+    ) || (modulesList || []).find(m => Number(m.wattage) === Number(targetWatt))
+      || currentModuleRecord 
+      || (modulesList && modulesList[0]) 
+      || null;
+
+    const targetInvCap = Number(matchedSlab?.inverterCapacityKW || matchedSlab?.inverter_capacity_kw || inverterCapacityKw || kw);
+    const resolvedInverterObj = (typeof selectedInverterId !== 'undefined' ? (invertersList || []).find(i => i.id === selectedInverterId) : null)
+      || (invertersList || []).find(i => 
+        Math.abs(Number(i.capacity_kw || i.capacityKW || 0) - targetInvCap) < 0.1 &&
+        (i.brand?.toLowerCase() === inverterBrand?.toLowerCase() || inverterBrand?.toLowerCase()?.includes(i.brand?.toLowerCase()))
+      )
+      || (invertersList || []).find(i => Math.abs(Number(i.capacity_kw || i.capacityKW || 0) - targetInvCap) < 0.1)
+      || (typeof currentInverterRecord !== 'undefined' ? currentInverterRecord : null)
+      || (invertersList || []).find(i => `${i.brand} ${i.model}` === inverterModel || i.brand?.toLowerCase() === inverterBrand?.toLowerCase())
+      || (invertersList && invertersList[0])
+      || null;
+
     return {
       id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
+      isEdit,
+      is_edit: isEdit,
+      panelId: resolvedPanelObj?.id || null,
+      selectedPanelId: resolvedPanelObj?.id || null,
+      inverterId: resolvedInverterObj?.id || null,
+      selectedInverterId: resolvedInverterObj?.id || null,
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
@@ -1539,15 +1578,18 @@ export default function CreateQuotation() {
     setSaveStatus('Generating quotation...');
     showLoader('Generating Quotation...');
     try {
+      let savedResult = null;
       if (isEdit && updateQuotation) {
-        await updateQuotation(quotePayload);
+        savedResult = await updateQuotation(quotePayload);
       } else if (addQuotation) {
-        await addQuotation(quotePayload);
+        savedResult = await addQuotation(quotePayload);
       }
+
+      const finalQuote = savedResult || quotePayload;
 
       if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
         saveDesignRecord({
-          quotationId: quotePayload.id,
+          quotationId: finalQuote.id || quotePayload.id,
           customerName: custName,
           capacityKw: kw,
           type: '2D_ROOF_CAD',
@@ -1559,12 +1601,12 @@ export default function CreateQuotation() {
 
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Quotation Generated',
-        message: `Quotation #${quotePayload.id} has been generated successfully.`,
+        message: `Quotation #${finalQuote.id || quotePayload.id} has been generated successfully.`,
         type: 'success'
       });
 
-      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
-      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (setPreviewQuotation) setPreviewQuotation(finalQuote);
+      if (setActiveDraftQuote) setActiveDraftQuote(finalQuote);
       if (typeof window !== 'undefined') {
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
         document.documentElement.scrollTop = 0;

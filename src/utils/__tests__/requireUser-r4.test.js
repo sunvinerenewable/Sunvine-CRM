@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'sunvine-test-jwt-secret-min-32-chars-long-key!';
+process.env.NODE_ENV = 'test';
+
 import { requireUser, requireAdmin } from '../../../api/_lib/requireAuth.js';
 import { signJwt } from '../../../api/_lib/jwt.js';
 import { redisSet, redisDel } from '../../../api/_lib/redis.js';

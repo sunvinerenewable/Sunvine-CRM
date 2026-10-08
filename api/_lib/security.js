@@ -77,7 +77,7 @@ export function verifyPassword(password, storedHash) {
 }
 
 /**
- * Validate password requirements: Minimum 6 characters and at least 1 special character.
+ * Validate password requirements: Minimum 8 characters and at least 1 special character.
  * @param {string} password 
  * @returns {{ valid: boolean, error?: string }}
  */
@@ -86,8 +86,8 @@ export function validatePasswordComplexity(password) {
     return { valid: false, error: 'Password is required.' };
   }
   const trimmed = password.trim();
-  if (trimmed.length < 6) {
-    return { valid: false, error: 'Password must be at least 6 characters.' };
+  if (trimmed.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters and contain at least one special character (!@#$%^&* etc.).' };
   }
   const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/\\`~;']/;
   if (!specialCharRegex.test(trimmed)) {

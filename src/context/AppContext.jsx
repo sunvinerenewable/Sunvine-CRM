@@ -913,19 +913,30 @@ export const AppProvider = ({ children }) => {
 
   // Multi-Tab Focus & Periodic Auto-Sync (Instant update when user adds rows in Supabase Table Editor or other tabs)
   useEffect(() => {
-    const syncFreshData = async () => {
+    const syncFreshData = async (includeCatalog = false) => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers, freshModules, freshInverters, freshBom, freshNotifs] = await Promise.allSettled([
+        const fetchTasks = [
           customerFileService.getAllCustomerFiles({ throwOnError: false }),
           quotationService.getAllQuotations(100),
-          documentMasterService.fetchDocumentMaster(),
-          staffService.getAllStaff(),
-          dealerService.getAllDealers(),
-          hardwareService.getAllModules(),
-          hardwareService.getAllInverters(),
-          hardwareService.getAllBomItems(),
           auditLogService.getNotifications()
-        ]);
+        ];
+
+        if (includeCatalog) {
+          fetchTasks.push(
+            documentMasterService.fetchDocumentMaster(),
+            staffService.getAllStaff(),
+            dealerService.getAllDealers(),
+            hardwareService.getAllModules(),
+            hardwareService.getAllInverters(),
+            hardwareService.getAllBomItems()
+          );
+        }
+
+        const results = await Promise.allSettled(fetchTasks);
+        const files = results[0];
+        const quotes = results[1];
+        const freshNotifs = results[2];
+
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
           setCustomerFiles(prev => {
@@ -949,42 +960,49 @@ export const AppProvider = ({ children }) => {
             return prev;
           });
         }
-        if (freshStaff.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
-          setStaffList(freshStaff.value);
-        }
-        if (freshDealers.status === 'fulfilled' && Array.isArray(freshDealers.value) && freshDealers.value.length > 0) {
-          const attributed = ensureDealerAttribution(freshDealers.value);
-          setDealers(attributed);
-          cacheManager.set('dealers_list', attributed);
-        }
         if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
           setNotifications(freshNotifs.value);
         }
-        if (docMaster.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
-          setMasterDocRegistry(docMaster.value.registry);
-          if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
-            setCategoryDocRules(docMaster.value.rules);
+
+        if (includeCatalog && results.length >= 9) {
+          const docMaster = results[3];
+          const freshStaff = results[4];
+          const freshDealers = results[5];
+          const freshModules = results[6];
+          const freshInverters = results[7];
+          const freshBom = results[8];
+
+          if (docMaster?.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
+            setMasterDocRegistry(docMaster.value.registry);
+            if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
+              setCategoryDocRules(docMaster.value.rules);
+            }
           }
-        }
-        if (freshModules.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
-          setModulesList(freshModules.value);
-          cacheManager.set('modules_list', freshModules.value);
-        }
-        if (freshInverters.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
-          const canonicalInverters = freshInverters.value.map(inv => {
-            if (!inv.brand) return inv;
-            const cleanBrand = inv.brand.trim();
-            return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
-          });
-          setInvertersList(canonicalInverters);
-          cacheManager.set('inverters_list', canonicalInverters);
-        }
-        if (freshBom.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
-          setBomCatalog(freshBom.value);
-          cacheManager.set('bom_catalog', freshBom.value);
-        }
-        if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
-          setNotifications(freshNotifs.value);
+          if (freshStaff?.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
+            setStaffList(freshStaff.value);
+          }
+          if (freshDealers?.status === 'fulfilled' && Array.isArray(freshDealers.value) && freshDealers.value.length > 0) {
+            const attributed = ensureDealerAttribution(freshDealers.value);
+            setDealers(attributed);
+            cacheManager.set('dealers_list', attributed);
+          }
+          if (freshModules?.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
+            setModulesList(freshModules.value);
+            cacheManager.set('modules_list', freshModules.value);
+          }
+          if (freshInverters?.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
+            const canonicalInverters = freshInverters.value.map(inv => {
+              if (!inv.brand) return inv;
+              const cleanBrand = inv.brand.trim();
+              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+            });
+            setInvertersList(canonicalInverters);
+            cacheManager.set('inverters_list', canonicalInverters);
+          }
+          if (freshBom?.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
+            setBomCatalog(freshBom.value);
+            cacheManager.set('bom_catalog', freshBom.value);
+          }
         }
       } catch (err) {
         // silent background sync
@@ -992,7 +1010,7 @@ export const AppProvider = ({ children }) => {
     };
 
     let lastSyncTime = 0;
-    const MIN_SYNC_INTERVAL_MS = 10000; // 10 seconds minimum cooldown between focus syncs
+    const MIN_SYNC_INTERVAL_MS = 60000; // 60 seconds minimum cooldown between focus syncs (prevents Redis quota burn)
 
     // Throttled sync to prevent request storms on rapid window/tab focus switches
     const throttledSync = () => {
@@ -1000,7 +1018,7 @@ export const AppProvider = ({ children }) => {
       if (now - lastSyncTime < MIN_SYNC_INTERVAL_MS) return;
       lastSyncTime = now;
       if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
-        syncFreshData();
+        syncFreshData(false);
       }
     };
 
@@ -1011,12 +1029,12 @@ export const AppProvider = ({ children }) => {
       document.addEventListener('visibilitychange', throttledSync);
     }
 
-    // 60-second periodic background polling interval (ITEM-6)
+    // 120-second periodic background polling interval (protects Upstash Redis quota)
     const intervalTimer = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
-        syncFreshData();
+        syncFreshData(false);
       }
-    }, 60000);
+    }, 120000);
 
     // BroadcastChannel for instant intentional cross-tab updates (when user actively edits data)
     let broadcastChannel;
@@ -1024,11 +1042,11 @@ export const AppProvider = ({ children }) => {
       if (typeof BroadcastChannel !== 'undefined') {
         broadcastChannel = new BroadcastChannel('sunvine_db_sync');
         broadcastChannel.onmessage = (msg) => {
-          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL' || msg?.data?.type === 'SYNC_FILES') {
+          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL' || msg?.data?.type === 'SYNC_FILES' || msg?.data?.type === 'SYNC_QUOTATIONS') {
             const now = Date.now();
             if (now - lastSyncTime >= 3000) {
               lastSyncTime = now;
-              syncFreshData();
+              syncFreshData(msg?.data?.type === 'SYNC_ALL');
             }
           }
         };
@@ -1986,26 +2004,63 @@ export const AppProvider = ({ children }) => {
   };
 
   // Quotation Actions
-  const addQuotation = (newQuote) => {
-    const updated = [newQuote, ...quotations];
-    setQuotations(updated);
-    setPreviewQuotation(newQuote);
-    // Sync directly to Supabase DB
-    quotationService.saveQuotation(newQuote);
+  const addQuotation = async (newQuote) => {
+    try {
+      const res = await quotationService.saveQuotation(newQuote);
+      if (!res?.success) {
+        throw new Error(res?.error || 'Failed to save quotation to database.');
+      }
+      const savedRecord = res.data ? normalizeQuotationRow(res.data) : newQuote;
+      setQuotations(prev => {
+        const next = [savedRecord, ...(prev || []).filter(q => q.id !== savedRecord.id && q.id !== newQuote.id)];
+        cacheManager.set('quotations_feed', next);
+        return next;
+      });
+      setPreviewQuotation(savedRecord);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: savedRecord.id });
+          bc.close();
+        }
+      } catch (_) {}
+
+      return savedRecord;
+    } catch (err) {
+      console.error('[AppContext] Failed to save quotation:', err);
+      throw err;
+    }
   };
 
-  const updateQuotation = (updatedQuote) => {
-    setQuotations(prev => {
-      const exists = prev.some(q => q.id === updatedQuote.id);
-      if (exists) {
-        return prev.map(q => q.id === updatedQuote.id ? { ...q, ...updatedQuote } : q);
+  const updateQuotation = async (updatedQuote) => {
+    try {
+      const res = await quotationService.saveQuotation({ ...updatedQuote, isEdit: true });
+      if (!res?.success) {
+        throw new Error(res?.error || 'Failed to update quotation in database.');
       }
-      return [updatedQuote, ...prev];
-    });
-    setPreviewQuotation(updatedQuote);
-    setEditingQuotation(null);
-    // Sync directly to Supabase DB
-    quotationService.saveQuotation(updatedQuote);
+      const savedRecord = res.data ? normalizeQuotationRow(res.data) : updatedQuote;
+      setQuotations(prev => {
+        const next = (prev || []).map(q => q.id === savedRecord.id ? savedRecord : q);
+        cacheManager.set('quotations_feed', next);
+        return next;
+      });
+      setPreviewQuotation(savedRecord);
+      setEditingQuotation(null);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: savedRecord.id });
+          bc.close();
+        }
+      } catch (_) {}
+
+      return savedRecord;
+    } catch (err) {
+      console.error('[AppContext] Failed to update quotation:', err);
+      throw err;
+    }
   };
 
   const startEditingQuotation = (quote) => {
@@ -2025,15 +2080,28 @@ export const AppProvider = ({ children }) => {
     setEditingQuotation(null);
   };
 
-  const updateQuotationStatus = (id, newStatus) => {
-    setQuotations(prev => {
-      const updated = prev.map(q => q.id === id ? { ...q, status: newStatus } : q);
-      const target = updated.find(q => q.id === id);
-      if (target) {
-        quotationService.saveQuotation(target);
+  const updateQuotationStatus = async (id, newStatus) => {
+    try {
+      const res = await quotationService.updateQuotationStatus(id, newStatus);
+      if (!res?.success) {
+        throw new Error(res?.error || 'Status update failed.');
       }
-      return updated;
-    });
+      setQuotations(prev => {
+        const updated = (prev || []).map(q => q.id === id ? { ...q, status: newStatus } : q);
+        cacheManager.set('quotations_feed', updated);
+        return updated;
+      });
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: id, status: newStatus });
+          bc.close();
+        }
+      } catch (_) {}
+    } catch (err) {
+      console.error('[AppContext] Failed to update quotation status:', err);
+      throw err;
+    }
   };
 
   const addDealer = async (newDealer) => {

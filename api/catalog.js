@@ -65,11 +65,11 @@ export async function getSettings(db) {
         website: company.website || '',
         email: company.email || '',
         bank: {
-          bankName: company.bank?.bankName || '',
-          accountNumber: company.bank?.accountNumber || '',
-          ifsc: company.bank?.ifsc || '',
-          branch: company.bank?.branch || '',
-          accountHolder: company.bank?.accountHolder || ''
+          bankName: company.bank?.bankName || company.bank_name || '',
+          accountNumber: company.bank?.accountNumber || company.bank_account_no || '',
+          ifsc: company.bank?.ifsc || company.bank_ifsc || '',
+          branch: company.bank?.branch || company.bank_branch || '',
+          accountHolder: company.bank?.accountHolder || company.bank_account_holder || ''
         },
         terms: company.terms || '',
         validityText: company.validityText || ''
@@ -164,6 +164,20 @@ async function getSolarBanks(db) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST.' });
+  }
+
+  const type = req.query?.type || 'bootstrap';
+
+  // Protected catalog sections require authenticated user (any role: dealer, staff, admin)
+  // Check auth BEFORE getDb so unauthenticated requests get 401 even without DB configured (Issue 5 / ITEM-8)
+  const PROTECTED_CATALOG_TYPES = new Set(['bootstrap', 'settings', 'tier_margins', 'presets']);
+  if (req.method === 'GET' && PROTECTED_CATALOG_TYPES.has(type)) {
+    const user = await requireUser(req, res);
+    if (!user) return;
+  }
+
   let db;
   try {
     db = getDb();
@@ -194,19 +208,6 @@ export default async function handler(req, res) {
     }
 
     return res.status(400).json({ error: 'Invalid action or keys array.' });
-  }
-
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
-  }
-
-  const type = req.query?.type || 'bootstrap';
-
-  // Protected catalog sections require authenticated user (any role: dealer, staff, admin)
-  const PROTECTED_CATALOG_TYPES = new Set(['bootstrap', 'settings', 'tier_margins', 'presets']);
-  if (PROTECTED_CATALOG_TYPES.has(type)) {
-    const user = await requireUser(req, res);
-    if (!user) return;
   }
 
   try {

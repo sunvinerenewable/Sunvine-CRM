@@ -85,11 +85,19 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
           totalAttempts: count
         };
       }
+      if (res.status === 429) {
+        console.warn('[RateLimiter WARNING] Upstash Redis quota exceeded (HTTP 429). Falling back safely to in-memory rate limiter.');
+        return checkRateLimit(identifier, options);
+      }
       if (isProd) {
         throw new Error(`[RateLimiter FATAL] Upstash Redis pipeline failed with status ${res.status} in production.`);
       }
     }
   } catch (err) {
+    if (err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('limit')) {
+      console.warn('[RateLimiter WARNING] Upstash Redis quota issue detected. Falling back safely to in-memory rate limiter.');
+      return checkRateLimit(identifier, options);
+    }
     if (isProd) {
       throw new Error(`[RateLimiter FATAL] Redis rate limiter error in production: ${err.message}`);
     }
