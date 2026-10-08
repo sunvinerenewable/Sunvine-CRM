@@ -135,8 +135,8 @@ export default async function handler(req, res) {
             INSERT INTO dealer_accounts (
               dealer_code, firm_name, contact_person, mobile_number, email,
               password_hash, city, state, discom, tier, max_margin_cap_per_kw,
-              status, gst_number, pan_number, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW(), NOW())
+              status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NOW())
             RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name;
           `;
 
@@ -153,8 +153,6 @@ export default async function handler(req, res) {
             cleanTier,
             cleanCap,
             cleanStatus,
-            gstin || null,
-            pan || null,
             assignedStaffId,
             assignedStaffName,
             JSON.stringify(pricingConfig)
@@ -178,8 +176,6 @@ export default async function handler(req, res) {
               tier: cleanTier,
               max_margin_cap_per_kw: cleanCap,
               status: cleanStatus,
-              gst_number: gstin || null,
-              pan_number: pan || null,
               assigned_staff_id: assignedStaffId,
               assigned_staff_name: assignedStaffName,
               pricing_config: pricingConfig

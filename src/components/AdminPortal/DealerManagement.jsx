@@ -522,8 +522,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim() || editingDealer.address,
-        gstin: newGstin.trim() || editingDealer.gstin || '24AAECB1234F1Z5',
-        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || 'AAECB1234F'),
+        gstin: newGstinState.trim() || editingDealer.gstin || '',
+        pan: newPan.trim() || (newGstinState.trim() ? newGstinState.trim().slice(2, 12) : editingDealer.pan || ''),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
         password: newPassword.trim() || editingDealer.password || '',
         pricingConfig: {
@@ -601,8 +601,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim(),
-        gstin: newGstin.trim() || '24AAECB1234F1Z5',
-        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : 'AAECB1234F'),
+        gstin: newGstinState.trim() || '',
+        pan: newPan.trim() || (newGstinState.trim() ? newGstinState.trim().slice(2, 12) : ''),
         discomLicense: newDiscomCode.trim(),
         totalQuotes: 0,
         totalCapacityKw: 0,
@@ -951,8 +951,39 @@ export default function DealerManagement() {
                   <textarea
                     className="w-full px-3.5 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
                     rows={2}
+                    placeholder="e.g. Shop 12, Sunrise Complex, Near Ring Road, Rajkot, Gujarat - 360005"
                     value={newAddress}
                     onChange={(e) => setNewAddress(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                    <span>GSTIN Number <span className="text-xs text-secondary font-normal">(Optional)</span></span>
+                    <span className="font-label-xs text-label-xs text-secondary">15-Digit GST</span>
+                  </label>
+                  <input
+                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-mono uppercase focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
+                    type="text"
+                    maxLength={15}
+                    placeholder="e.g. 24AAECB1234F1Z5"
+                    value={newGstinState}
+                    onChange={(e) => setNewGstin(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                    <span>PAN Number <span className="text-xs text-secondary font-normal">(Optional)</span></span>
+                    <span className="font-label-xs text-label-xs text-secondary">10-Digit PAN</span>
+                  </label>
+                  <input
+                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-mono uppercase focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
+                    type="text"
+                    maxLength={10}
+                    placeholder="e.g. AAECB1234F"
+                    value={newPan}
+                    onChange={(e) => setNewPan(e.target.value.toUpperCase())}
+                    autoComplete="off"
                   />
                 </div>
               </div>

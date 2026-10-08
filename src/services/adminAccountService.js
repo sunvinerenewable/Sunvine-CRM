@@ -159,7 +159,7 @@ export const adminAccountService = {
     }
   },
 
-  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName, gstin, pan, address }) {
     const finalCategory = category || 'Margin Based';
     const dealerData = {
       dealerCode,
@@ -172,7 +172,17 @@ export const adminAccountService = {
       discom,
       tier,
       category: finalCategory,
-      pricingConfig: { category: finalCategory, assignedStaffId, assignedStaffName },
+      pricingConfig: {
+        category: finalCategory,
+        assignedStaffId,
+        assignedStaffName,
+        ...(gstin ? { gstin: String(gstin).trim().toUpperCase() } : {}),
+        ...(pan ? { pan: String(pan).trim().toUpperCase() } : {}),
+        ...(address ? { address: String(address).trim() } : {})
+      },
+      gstin: gstin ? String(gstin).trim().toUpperCase() : '',
+      pan: pan ? String(pan).trim().toUpperCase() : '',
+      address: address ? String(address).trim() : '',
       maxMarginCapPerKw,
       password,
       status,
@@ -220,7 +230,7 @@ export const adminAccountService = {
   /**
    * Update Dealer profile or credentials
    */
-  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName, gstin, pan, address }) {
     const dealerData = {
       id: id || dealerCode,
       dealerCode: dealerCode || id,
@@ -232,7 +242,18 @@ export const adminAccountService = {
       state,
       discom,
       tier,
-      ...(category ? { category, pricingConfig: { category, assignedStaffId, assignedStaffName } } : {}),
+      category,
+      pricingConfig: {
+        ...(category ? { category } : {}),
+        ...(assignedStaffId ? { assignedStaffId } : {}),
+        ...(assignedStaffName ? { assignedStaffName } : {}),
+        ...(gstin !== undefined ? { gstin: String(gstin).trim().toUpperCase() } : {}),
+        ...(pan !== undefined ? { pan: String(pan).trim().toUpperCase() } : {}),
+        ...(address !== undefined ? { address: String(address).trim() } : {})
+      },
+      ...(gstin !== undefined ? { gstin: String(gstin).trim().toUpperCase() } : {}),
+      ...(pan !== undefined ? { pan: String(pan).trim().toUpperCase() } : {}),
+      ...(address !== undefined ? { address: String(address).trim() } : {}),
       maxMarginCapPerKw,
       password,
       status,

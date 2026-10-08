@@ -270,6 +270,8 @@ export async function handleAdminDealers(req, res) {
             ...(typeof dealer.pricingConfig === 'object' && dealer.pricingConfig !== null ? dealer.pricingConfig : {}),
             category: dealerCategory,
             ...(dealer.address ? { address: dealer.address.trim() } : {}),
+            ...(dealer.gstin ? { gstin: dealer.gstin.trim() } : {}),
+            ...(dealer.pan ? { pan: dealer.pan.trim() } : {}),
             assignedStaffId: staffId,
             assignedStaffName: staffName
           };
@@ -288,12 +290,10 @@ export async function handleAdminDealers(req, res) {
                 tier = COALESCE($9, tier),
                 max_margin_cap_per_kw = COALESCE($10, max_margin_cap_per_kw),
                 status = COALESCE($11, status),
-                gst_number = COALESCE($12, gst_number),
-                pan_number = COALESCE($13, pan_number),
-                assigned_staff_id = $14,
-                assigned_staff_name = $15,
-                pricing_config = $16::jsonb,
-                password_hash = $17,
+                assigned_staff_id = $12,
+                assigned_staff_name = $13,
+                pricing_config = $14::jsonb,
+                password_hash = $15,
                 updated_at = NOW()
               WHERE id::text = $1 OR dealer_code = $1
               RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
@@ -313,8 +313,6 @@ export async function handleAdminDealers(req, res) {
               dealer.tier || null,
               dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null ? Number(dealer.maxMarginCapPerKw) : null,
               dealer.status ? dealer.status.toLowerCase() : null,
-              dealer.gstin || null,
-              dealer.pan || null,
               staffId,
               staffName,
               JSON.stringify(finalPricingConfig),
@@ -335,8 +333,6 @@ export async function handleAdminDealers(req, res) {
             if (dealer.tier) updateObj.tier = dealer.tier;
             if (dealer.maxMarginCapPerKw !== undefined && dealer.maxMarginCapPerKw !== null) updateObj.max_margin_cap_per_kw = Number(dealer.maxMarginCapPerKw);
             if (dealer.status) updateObj.status = dealer.status.toLowerCase();
-            if (dealer.gstin) updateObj.gst_number = dealer.gstin;
-            if (dealer.pan) updateObj.pan_number = dealer.pan;
             updateObj.assigned_staff_id = staffId;
             updateObj.assigned_staff_name = staffName;
             updateObj.pricing_config = finalPricingConfig;
@@ -444,6 +440,8 @@ export async function handleAdminDealers(req, res) {
           ...(typeof pricingConfig === 'object' && pricingConfig !== null ? pricingConfig : {}),
           category: dealerCategory,
           ...(address ? { address: address.trim() } : {}),
+          ...(gstin ? { gstin: gstin.trim() } : {}),
+          ...(pan ? { pan: pan.trim() } : {}),
           assignedStaffId: staffId,
           assignedStaffName: staffName
         };
@@ -454,13 +452,13 @@ export async function handleAdminDealers(req, res) {
             INSERT INTO dealer_accounts (
               dealer_code, firm_name, contact_person, mobile_number, email,
               city, state, discom, tier, max_margin_cap_per_kw,
-              status, gst_number, pan_number, assigned_staff_id, assigned_staff_name,
+              status, assigned_staff_id, assigned_staff_name,
               pricing_config, password_hash, created_at, updated_at
             ) VALUES (
               $1, $2, $3, $4, $5,
               $6, $7, $8, $9, $10,
-              $11, $12, $13, $14, $15,
-              $16::jsonb, $17, NOW(), NOW()
+              $11, $12, $13,
+              $14::jsonb, $15, NOW(), NOW()
             )
             RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email,
                       city, state, discom, tier, max_margin_cap_per_kw, status,
@@ -479,8 +477,6 @@ export async function handleAdminDealers(req, res) {
             cleanTier,
             cleanCap,
             cleanStatus,
-            gstin || null,
-            pan || null,
             staffId,
             staffName,
             JSON.stringify(finalPricingConfig),
@@ -503,8 +499,6 @@ export async function handleAdminDealers(req, res) {
               tier: cleanTier,
               max_margin_cap_per_kw: cleanCap,
               status: cleanStatus,
-              gst_number: gstin || null,
-              pan_number: pan || null,
               assigned_staff_id: staffId,
               assigned_staff_name: staffName,
               pricing_config: finalPricingConfig,
