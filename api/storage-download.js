@@ -82,19 +82,33 @@ export default async function handler(req, res) {
       if (cleanPath.startsWith(`${role}/${ownerId}/`) || cleanPath.startsWith(`dealer/${ownerId}/`)) {
         isOwner = true;
       } else {
-        // Legacy keys (e.g. uploads/<name>): verify dealer ownership via customer_files
         const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
         const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
         if (supabaseUrl && serviceKey) {
           try {
             const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-            const { data: files } = await db.from('customer_files').select('documents').eq('dealer_id', ownerId);
-            if (Array.isArray(files)) {
-              for (const f of files) {
-                const docPaths = extractAllDocPaths(f.documents);
-                if (docPaths.includes(cleanPath)) {
+
+            // Fast check: canonical applications/{fileId}/...
+            if (cleanPath.startsWith('applications/')) {
+              const fileIdCandidate = cleanPath.split('/')[1];
+              if (fileIdCandidate) {
+                const { data: appRow } = await db.from('customer_files').select('dealer_id').eq('id', fileIdCandidate).maybeSingle();
+                if (appRow && String(appRow.dealer_id) === ownerId) {
                   isOwner = true;
-                  break;
+                }
+              }
+            }
+
+            // Legacy keys (e.g. uploads/<name>, customers/<id>/...): verify dealer ownership via customer_files documents
+            if (!isOwner) {
+              const { data: files } = await db.from('customer_files').select('documents').eq('dealer_id', ownerId);
+              if (Array.isArray(files)) {
+                for (const f of files) {
+                  const docPaths = extractAllDocPaths(f.documents);
+                  if (docPaths.includes(cleanPath)) {
+                    isOwner = true;
+                    break;
+                  }
                 }
               }
             }

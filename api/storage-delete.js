@@ -91,6 +91,22 @@ export default async function handler(req, res) {
           continue;
         }
 
+        // Fast check: canonical applications/{fileId}/...
+        if (p.startsWith('applications/')) {
+          const fileIdCandidate = p.split('/')[1];
+          if (fileIdCandidate && SUPABASE_URL && SUPABASE_KEY) {
+            try {
+              const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+              const { data: appRow } = await db.from('customer_files').select('dealer_id').eq('id', fileIdCandidate).maybeSingle();
+              if (appRow && String(appRow.dealer_id) === ownerId) {
+                continue;
+              }
+            } catch (dbErr) {
+              console.warn('[Storage Delete] Application ownership check error:', dbErr.message);
+            }
+          }
+        }
+
         // Legacy paths: verify against customer_files
         if (!queried) {
           if (SUPABASE_URL && SUPABASE_KEY) {

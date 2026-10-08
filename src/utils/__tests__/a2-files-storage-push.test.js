@@ -287,3 +287,118 @@ test('ITEM-7: validateRegisteredDocuments handles empty or valid document struct
   assert.equal(emptyResult.valid, true);
 });
 
+// ── 6. R2 Canonical Storage Structure & Slug Standardization ─────────────────
+
+test('R2 Canonical: documentStorageConfig produces standardized slugs and canonical paths', async () => {
+  const { getDocumentTypeSlug, getCanonicalR2Key } = await import('../documentStorageConfig.js');
+
+  // Single file standard slugs
+  assert.equal(getDocumentTypeSlug('aadhaarCard'), 'aadhar');
+  assert.equal(getDocumentTypeSlug('applicantAadhaar'), 'aadhar');
+  assert.equal(getDocumentTypeSlug('panCard'), 'pan');
+  assert.equal(getDocumentTypeSlug('electricityBill'), 'electricity-bill');
+  assert.equal(getDocumentTypeSlug('lightBill'), 'electricity-bill');
+  assert.equal(getDocumentTypeSlug('bankPassbook'), 'bank-statement');
+  assert.equal(getDocumentTypeSlug('bankDetails'), 'bank-statement');
+  assert.equal(getDocumentTypeSlug('veraBill'), 'property-document');
+  assert.equal(getDocumentTypeSlug('propertyTax'), 'property-document');
+  assert.equal(getDocumentTypeSlug('sitePhotos'), 'site-photo');
+  assert.equal(getDocumentTypeSlug('quotation'), 'quotation');
+
+  // Canonical keys
+  const aadharKey = getCanonicalR2Key({ fileId: 'FIL-2026-0KGG8', docKey: 'aadhaarCard', extension: 'png' });
+  assert.equal(aadharKey.key, 'applications/FIL-2026-0KGG8/aadhar/aadhar.png');
+  assert.equal(aadharKey.folder, 'applications/FIL-2026-0KGG8/aadhar');
+  assert.equal(aadharKey.fileName, 'aadhar.png');
+
+  const billKey = getCanonicalR2Key({ fileId: 'FIL-2026-0KGG8', docKey: 'electricityBill', extension: 'pdf' });
+  assert.equal(billKey.key, 'applications/FIL-2026-0KGG8/electricity-bill/electricity-bill.pdf');
+
+  // Multi-file indexed keys
+  const photo1 = getCanonicalR2Key({ fileId: 'FIL-2026-0KGG8', docKey: 'sitePhotos', extension: 'jpg', index: 1 });
+  assert.equal(photo1.key, 'applications/FIL-2026-0KGG8/site-photo/site-photo-1.jpg');
+
+  const photo2 = getCanonicalR2Key({ fileId: 'FIL-2026-0KGG8', docKey: 'sitePhotos', extension: 'jpg', index: 2 });
+  assert.equal(photo2.key, 'applications/FIL-2026-0KGG8/site-photo/site-photo-2.jpg');
+});
+
+test('R2 Canonical: Storage presign generates applications/{fileId}/{documentType}/{filename}', async () => {
+  const dealerToken = signJwt({ id: 'd270046f-f861-497d-9b38-e7e51e2ca32b', role: 'dealer', dealer_id: 'd270046f-f861-497d-9b38-e7e51e2ca32b' });
+  const req = mockReq({
+    method: 'POST',
+    cookie: `sunvine_auth_token=${dealerToken}`,
+    body: {
+      fileId: 'FIL-2026-0KGG8',
+      docKey: 'electricityBill',
+      fileName: 'latest_bill.pdf',
+      fileType: 'application/pdf',
+      fileSize: 1024 * 200
+    }
+  });
+  const res = mockRes();
+
+  await storagePresignHandler(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body?.path, 'applications/FIL-2026-0KGG8/electricity-bill/electricity-bill.pdf');
+  assert.equal(res._body?.bucket, process.env.R2_BUCKET_NAME || 'sunvine-documents-vault');
+});
+
+test('R2 Canonical: Storage presign supports indexed multi-file attachments', async () => {
+  const dealerToken = signJwt({ id: 'd270046f-f861-497d-9b38-e7e51e2ca32b', role: 'dealer', dealer_id: 'd270046f-f861-497d-9b38-e7e51e2ca32b' });
+  const req = mockReq({
+    method: 'POST',
+    cookie: `sunvine_auth_token=${dealerToken}`,
+    body: {
+      fileId: 'FIL-2026-0KGG8',
+      docKey: 'sitePhotos',
+      fileIndex: 2,
+      fileName: 'roof_angle.jpg',
+      fileType: 'image/jpeg',
+      fileSize: 1024 * 300
+    }
+  });
+  const res = mockRes();
+
+  await storagePresignHandler(req, res);
+  assert.equal(res._status, 200);
+  assert.equal(res._body?.path, 'applications/FIL-2026-0KGG8/site-photo/site-photo-2.jpg');
+});
+
+test('R2 Canonical: Storage presign rejects cross-tenant dealer upload to another dealer application (403)', async () => {
+  const intruderDealerToken = signJwt({ id: 'DLR-OTHER-999', role: 'dealer', dealer_id: 'DLR-OTHER-999' });
+  const req = mockReq({
+    method: 'POST',
+    cookie: `sunvine_auth_token=${intruderDealerToken}`,
+    body: {
+      fileId: 'FIL-2026-0KGG8',
+      docKey: 'electricityBill',
+      fileName: 'tampered.pdf',
+      fileType: 'application/pdf',
+      fileSize: 1024 * 100
+    }
+  });
+  const res = mockRes();
+
+  await storagePresignHandler(req, res);
+  assert.equal(res._status, 403, 'Intruder dealer must be rejected with 403');
+  assert.match(res._body?.error || '', /forbidden/i);
+});
+
+test('R2 Canonical: Storage download allows access to canonical application paths for admin/staff', async () => {
+  const staffToken = signJwt({ id: 'STF-001', role: 'staff' });
+  const req = mockReq({
+    method: 'GET',
+    cookie: `sunvine_auth_token=${staffToken}`,
+    query: {
+      path: 'applications/FIL-2026-0KGG8/aadhar/aadhar.png',
+      filename: 'aadhar.png'
+    }
+  });
+  const res = mockRes();
+
+  await storageDownloadHandler(req, res);
+  // Staff is allowed access (either 200 stream or fallback not 403 Forbidden)
+  assert.notEqual(res._status, 403, 'Staff must not be 403 forbidden for canonical application paths');
+});
+
+

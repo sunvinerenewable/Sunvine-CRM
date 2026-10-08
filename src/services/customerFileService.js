@@ -121,12 +121,11 @@ export const customerFileService = {
         body: JSON.stringify({ action: 'save', file })
       });
 
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success) return json;
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        return json;
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || `HTTP ${res.status}: Failed to save customer file.` };
+      return { success: false, error: json.error || `HTTP ${res.status}: Failed to save customer file.` };
     } catch (apiErr) {
       console.error('[customerFileService] API save error:', apiErr);
       return { success: false, error: apiErr.message || 'Failed to save customer file.' };

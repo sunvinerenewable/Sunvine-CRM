@@ -50,7 +50,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { fileName, customFileName, fileType, fileSize, folder = 'uploads' } = req.body || {};
+    const { fileName, customFileName, fileType, fileSize, folder = 'uploads', fileId, applicationId, docType, docKey, fileIndex } = req.body || {};
 
     if (!fileName) {
       return res.status(400).json({ error: 'File name is required.' });
@@ -87,22 +87,68 @@ export default async function handler(req, res) {
 
     // Derive extension
     const extension = fileExtFromName || MIME_TO_EXT[effectiveType] || 'pdf';
-    const cleanFolder = (folder || 'uploads').replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
-
-    let finalFileName;
-    if (customFileName) {
-      const baseCustomName = customFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
-      finalFileName = `${baseCustomName}.${extension}`;
-    } else {
-      const baseName = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
-      finalFileName = `${baseName}.${extension}`;
-    }
-
-    // SEC-009: Prefix object keys with ${role}/${ownerId}/
     const role = user.role || 'dealer';
     const ownerId = String(user.dealer_id || user.id || 'unknown');
-    const ownerPrefix = `${role}/${ownerId}`;
-    const filePath = `${ownerPrefix}/${cleanFolder}/${finalFileName}`;
+
+    // ── Canonical Application Storage Support ─────────────────────────────────
+    // applications/{fileId}/{documentType}/{filename}
+    const targetFileId = fileId || applicationId || (folder && folder.startsWith('applications/') ? folder.split('/')[1] : null);
+    const targetDocType = docType || docKey || (folder && folder.startsWith('applications/') ? folder.split('/')[2] : null);
+
+    let filePath;
+    let cleanFolder;
+    let finalFileName;
+    let isCanonicalApplication = false;
+
+    if (targetFileId) {
+      const cleanFileId = String(targetFileId).trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+      // Dealer isolation check: if caller is a dealer, verify file ownership if file already exists in DB
+      if (role !== 'admin' && role !== 'staff') {
+        const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+        const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (SUPABASE_URL && SUPABASE_KEY) {
+          try {
+            const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+            const { data: existingFile } = await db.from('customer_files').select('dealer_id').eq('id', cleanFileId).maybeSingle();
+            if (existingFile && existingFile.dealer_id && String(existingFile.dealer_id) !== ownerId) {
+              return res.status(403).json({ error: 'Forbidden: You do not own this customer application.' });
+            }
+          } catch (dbErr) {
+            console.warn('[Storage Presign] Ownership check error:', dbErr.message);
+          }
+        }
+      }
+
+      isCanonicalApplication = true;
+      const { getDocumentTypeSlug } = await import('./_lib/documentStorage.js');
+      const docSlug = getDocumentTypeSlug(targetDocType || 'document');
+      cleanFolder = `applications/${cleanFileId}/${docSlug}`;
+
+      if (customFileName) {
+        const baseCustomName = customFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        finalFileName = `${baseCustomName}.${extension}`;
+      } else if (fileIndex !== undefined && fileIndex !== null && fileIndex !== '') {
+        finalFileName = `${docSlug}-${fileIndex}.${extension}`;
+      } else {
+        finalFileName = `${docSlug}.${extension}`;
+      }
+
+      filePath = `${cleanFolder}/${finalFileName}`;
+    } else {
+      // Legacy / General uploads: scoped by role & owner ID
+      cleanFolder = (folder || 'uploads').replace(/[^a-zA-Z0-9_\-\/]/g, '').replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+      if (customFileName) {
+        const baseCustomName = customFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+        finalFileName = `${baseCustomName}.${extension}`;
+      } else {
+        const baseName = fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+        finalFileName = `${baseName}.${extension}`;
+      }
+
+      const ownerPrefix = `${role}/${ownerId}`;
+      filePath = `${ownerPrefix}/${cleanFolder}/${finalFileName}`;
+    }
 
     // Cloudflare R2 Environment Configuration
     const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
@@ -133,16 +179,15 @@ export default async function handler(req, res) {
         })
       : null;
 
-    // ── Pre-Upload Cleanup: Automatically purge existing sibling files for THIS owner only ──
-    // SEC-009: Scope cleanup strictly to current owner's prefix to prevent deleting other owners' files
-    const baseCleanName = customFileName
-      ? customFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_')
-      : fileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+    // ── Pre-Upload Cleanup: Automatically purge existing sibling files for THIS owner/application only ──
+    const baseCleanName = finalFileName.replace(/\.[^/.]+$/, '');
 
     const keysToPurge = new Set();
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     for (const altExt of allowedExts) {
-      const candidate = `${ownerPrefix}/${cleanFolder}/${baseCleanName}.${altExt}`;
+      const candidate = isCanonicalApplication
+        ? `${cleanFolder}/${baseCleanName}.${altExt}`
+        : `${ownerPrefix}/${cleanFolder}/${baseCleanName}.${altExt}`;
       if (candidate !== filePath) {
         keysToPurge.add(candidate);
       }
@@ -152,8 +197,11 @@ export default async function handler(req, res) {
     const rawOld = oldPath || oldUrl;
     if (rawOld && typeof rawOld === 'string') {
       const cleanOldKey = rawOld.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '');
-      // Only purge old key if it belongs to this owner
-      if (cleanOldKey && cleanOldKey !== filePath && cleanOldKey.startsWith(`${ownerPrefix}/`)) {
+      // Only purge old key if it belongs to this canonical folder or owner
+      const isAllowedOldKey = isCanonicalApplication
+        ? cleanOldKey.startsWith(`${cleanFolder}/`)
+        : cleanOldKey.startsWith(`${ownerPrefix}/`);
+      if (cleanOldKey && cleanOldKey !== filePath && isAllowedOldKey) {
         keysToPurge.add(cleanOldKey);
       }
     }

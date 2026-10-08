@@ -273,16 +273,24 @@ export default async function handler(req, res) {
     const { action, file, fileId, updates } = req.body || {};
 
     if (action === 'save' && file) {
+      // Robust collision-free ID generation if id is omitted or temporary
+      let assignedId = file.id;
+      if (!assignedId || assignedId.trim() === '') {
+        const year = new Date().getFullYear();
+        const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+        assignedId = `FIL-${year}-${randPart}`;
+      }
+
       // Prevent dealer from spoofing or overwriting another dealer's file
-      if (isDealer && file.id) {
-        const { data: existingFile } = await db.from('customer_files').select('dealer_id').eq('id', file.id).single();
+      if (isDealer && assignedId) {
+        const { data: existingFile } = await db.from('customer_files').select('dealer_id').eq('id', assignedId).single();
         if (existingFile && existingFile.dealer_id && existingFile.dealer_id !== dealerId) {
           return res.status(403).json({ error: 'Forbidden: You cannot modify customer files belonging to another dealer.' });
         }
       }
 
       const payload = {
-        id: file.id,
+        id: assignedId,
         customer_name: file.customerName || file.customer_name || 'Customer',
         phone: file.phone || '',
         address: file.address || '',

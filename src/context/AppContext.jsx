@@ -1566,38 +1566,52 @@ export const AppProvider = ({ children }) => {
         staffId: assignedStaffId,
         staffName: assignedStaffName
       };
+    }
 
-      // 2. Dispatch OS-level Web Push notification + Slack notification to Admin & matching Salesman
+    // 2. Persist directly to DB first (Database Single Source of Truth)
+    const saveRes = await customerFileService.saveCustomerFile(fileToSave);
+    if (!saveRes || !saveRes.success) {
+      throw new Error(saveRes?.error || 'Database persistence failed. Customer application could not be saved.');
+    }
+
+    const savedCanonicalFile = saveRes.data || fileToSave;
+
+    // 3. Dispatch Push Notification only after verified DB persistence
+    if (isDealerSourced) {
       pushNotificationService.sendApplicationCreatedPush({
-        fileId: fileToSave.id,
-        customerName: fileToSave.customerName,
-        solarKw: fileToSave.solarSystemKw,
-        sanctionedLoadKw: fileToSave.sanctionedLoadKw,
-        dealerId: fileToSave.dealerId,
-        dealerName: fileToSave.dealerName,
-        assignedStaffId,
-        assignedStaffName,
-        city: fileToSave.city,
-        discom: fileToSave.discom || fileToSave.discomCircle,
-        financeType: fileToSave.financeType || fileToSave.paymentMode,
-        roofType: fileToSave.roofType
+        fileId: savedCanonicalFile.id,
+        customerName: savedCanonicalFile.customerName,
+        solarKw: savedCanonicalFile.solarSystemKw,
+        sanctionedLoadKw: savedCanonicalFile.sanctionedLoadKw,
+        dealerId: savedCanonicalFile.dealerId,
+        dealerName: savedCanonicalFile.dealerName,
+        assignedStaffId: savedCanonicalFile.staffId,
+        assignedStaffName: savedCanonicalFile.staffName,
+        city: savedCanonicalFile.city,
+        discom: savedCanonicalFile.discom || savedCanonicalFile.discomCircle,
+        financeType: savedCanonicalFile.financeType || savedCanonicalFile.paymentMode,
+        roofType: savedCanonicalFile.roofType
       });
     }
 
-    setCustomerFiles(prev => [fileToSave, ...prev]);
-    // Also update staff totalFiles and pipelineKw
-    if (fileToSave.staffId) {
-      setStaffList(prev => prev.map(s => s.id === fileToSave.staffId ? {
+    // 4. Update React state and staff stats with canonical persisted row
+    setCustomerFiles(prev => {
+      const filtered = (prev || []).filter(f => f.id !== savedCanonicalFile.id);
+      const nextList = [savedCanonicalFile, ...filtered];
+      cacheManager.set('customer_files', nextList);
+      return nextList;
+    });
+
+    if (savedCanonicalFile.staffId) {
+      setStaffList(prev => prev.map(s => s.id === savedCanonicalFile.staffId ? {
         ...s,
         totalFiles: (s.totalFiles || 0) + 1,
-        pipelineKw: Number(((s.pipelineKw || 0) + (fileToSave.solarSystemKw || 0)).toFixed(1))
+        pipelineKw: Number(((s.pipelineKw || 0) + (savedCanonicalFile.solarSystemKw || 0)).toFixed(1))
       } : s));
     }
-    try {
-      await customerFileService.saveCustomerFile(fileToSave);
-    } catch (e) {
-      console.warn('[AppContext] Failed to save customer file to DB:', e);
-    }
+
+    broadcastDbEvent('SYNC_FILES');
+    return savedCanonicalFile;
   };
 
   function logActivity(logEntry) {

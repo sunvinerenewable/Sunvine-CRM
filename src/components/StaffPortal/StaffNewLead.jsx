@@ -58,7 +58,9 @@ export default function StaffNewLead() {
       return;
     }
 
-    const newFileId = `FIL-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const year = new Date().getFullYear();
+    const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const newFileId = `FIL-${year}-${randPart}`;
     const newFile = {
       id: newFileId,
       customerName: customerName.trim(),
@@ -107,9 +109,21 @@ export default function StaffNewLead() {
       }
     };
 
-    addCustomerFile(newFile);
-    addToast(`Customer Lead "${newFile.customerName}" created with ${financeType} payment mode!`, 'success');
-    setActiveTab('staff_files');
+    try {
+      showLoader('Creating customer lead...');
+      let savedFile = newFile;
+      if (addCustomerFile) {
+        const res = await addCustomerFile(newFile);
+        if (res) savedFile = res;
+      }
+      addToast(`Customer Lead "${savedFile.customerName}" created with ${financeType} payment mode!`, 'success');
+      setActiveTab('staff_files');
+    } catch (err) {
+      console.error('[StaffNewLead] Create lead error:', err);
+      addToast(err.message || 'Failed to create customer lead', 'error');
+    } finally {
+      hideLoader();
+    }
   };
 
   return (
