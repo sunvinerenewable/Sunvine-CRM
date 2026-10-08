@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { resolveCapacityBom } from '../../data/standardBomData';
+import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
 import { calculateSubsidy } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
