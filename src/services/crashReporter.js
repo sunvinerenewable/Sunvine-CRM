@@ -271,6 +271,7 @@ export async function reportCrash(error, extraContext = {}) {
           role: user.roleBadge,
           url: currentUrl,
           device,
+          geo: locationText,
           stack: trimmedStack,
           timestamp
         }

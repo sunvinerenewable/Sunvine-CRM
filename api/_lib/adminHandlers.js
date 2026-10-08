@@ -1557,45 +1557,109 @@ export async function reportErrorHandler(req, res) {
   const cleanCode = escapeSlackMrkdwn(String(errorCode || 'CLIENT_ERROR').slice(0, 80));
   const cleanMessage = escapeSlackMrkdwn(String(message || 'Unspecified runtime exception').slice(0, 500));
   
-  // Cap context object size to max 512 bytes
+  const rawContext = typeof context === 'object' && context !== null ? context : {};
+  const safeUser = escapeSlackMrkdwn(String(rawContext.user || 'Unknown User').slice(0, 100));
+  const safeRole = escapeSlackMrkdwn(String(rawContext.role || 'Unspecified Role').slice(0, 80));
+  const safeUrl = escapeSlackMrkdwn(String(rawContext.url || '').slice(0, 200));
+  const safeDevice = escapeSlackMrkdwn(String(rawContext.device || 'Web Client').slice(0, 80));
+  const safeGeo = escapeSlackMrkdwn(String(rawContext.geo || '').slice(0, 100));
+  const safeStack = escapeSlackMrkdwn(String(rawContext.stack || '').slice(0, 1500));
+  const safeTimestamp = escapeSlackMrkdwn(String(rawContext.timestamp || new Date().toISOString()).slice(0, 50));
+
+  // Cap fallback context string size to 512 bytes for non-standard context payloads
   let safeContextStr = '{}';
   try {
-    const rawContext = typeof context === 'object' && context !== null ? context : {};
-    const stringified = JSON.stringify(rawContext).slice(0, 512);
-    safeContextStr = stringified;
+    safeContextStr = JSON.stringify(rawContext).slice(0, 512);
   } catch (_) {}
 
   const webhookUrl =
     process.env.SLACK_CRASH_WEBHOOK_URL ||
+    process.env.VITE_SLACK_CRASH_WEBHOOK_URL ||
     process.env.SLACK_FILES_UPDATE ||
     process.env.SLACK_WEBHOOK_URL;
 
   if (webhookUrl) {
     try {
-      const payload = {
-        text: `⚠️ *[Sunvine Client Error]*: ${cleanCode} — ${cleanMessage}`,
-        blocks: [
+      const blocks = [
+        {
+          type: 'header',
+          text: {
+            type: 'plain_text',
+            text: '🚨 Critical Runtime Error Detected',
+            emoji: true
+          }
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Status:* 🔴 *Runtime Exception Triggered*\n*Error Type:* \`${cleanCode}\`\n*Error Message:*\n> *${cleanMessage}*`
+          }
+        },
+        {
+          type: 'divider'
+        },
+        {
+          type: 'section',
+          fields: [
+            {
+              type: 'mrkdwn',
+              text: `👤 *Account & Role:*\n*${safeUser}*\n_${safeRole}_`
+            },
+            {
+              type: 'mrkdwn',
+              text: `🌐 *Client IP & Geo:*\n\`${clientIp}\`\n_${safeGeo || 'Origin Verified'}_`
+            },
+            {
+              type: 'mrkdwn',
+              text: `📍 *Active Route:*\n${safeUrl ? `<${safeUrl}|${safeUrl}>` : '_Unknown Route_'}`
+            },
+            {
+              type: 'mrkdwn',
+              text: `💻 *Device / Platform:*\n*${safeDevice}*`
+            }
+          ]
+        }
+      ];
+
+      if (safeStack) {
+        blocks.push(
           {
-            type: 'header',
-            text: { type: 'plain_text', text: `🚨 Client Diagnostic Alert: ${cleanCode.slice(0, 50)}` }
-          },
-          {
-            type: 'section',
-            fields: [
-              { type: 'mrkdwn', text: `*Code:*\n\`${cleanCode}\`` },
-              { type: 'mrkdwn', text: `*IP:*\n\`${clientIp}\`` },
-              { type: 'mrkdwn', text: `*Timestamp:*\n${new Date().toISOString()}` },
-              { type: 'mrkdwn', text: `*Context:*\n\`${safeContextStr.slice(0, 100)}\`` }
-            ]
+            type: 'divider'
           },
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*Error Message:*\n\`\`\`${cleanMessage}\`\`\``
+              text: `*Stack Trace Diagnostics:*\n\`\`\`\n${safeStack}\n\`\`\``
             }
           }
+        );
+      } else if (safeContextStr && safeContextStr !== '{}') {
+        blocks.push(
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*Diagnostic Context:*\n\`\`\`json\n${safeContextStr.slice(0, 300)}\n\`\`\``
+            }
+          }
+        );
+      }
+
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `🕒 _${safeTimestamp}_ • ⚡ *Sunvine Solar Realtime Error Shield*`
+          }
         ]
+      });
+
+      const payload = {
+        text: `🚨 *[Sunvine Runtime Crash]*: \`${cleanCode}\` — *${cleanMessage}* (Account: ${safeUser})`,
+        blocks
       };
 
       await fetch(webhookUrl, {
