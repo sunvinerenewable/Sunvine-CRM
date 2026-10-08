@@ -130,6 +130,7 @@ export const pricingService = {
           adaniBiFiPrice: Number(row.adani_bifi_price),
           apsBiFiPrice: Number(row.aps_bifi_price),
           rayzonePrice: Number(row.rayzone_price),
+          waaree540Price: Number(row.waaree_540_price) || 0,
           topcon585CapacityKW: Number(row.topcon585_capacity_kw) || (Number(row.capacity_kw) * 1.06),
           waaree585Price: Number(row.waaree_585_price),
           topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),

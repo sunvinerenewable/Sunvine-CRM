@@ -117,10 +117,10 @@ export default async function handler(req, res) {
         const assignedStaffName = assignedStaffId === 'STF-DIRECT' 
           ? 'Direct to Company (HQ Desk)' 
           : (payload.assignedStaffName || 'Sunvine Sales Staff');
-        
-        // Note: 'address', 'gstin', 'pan', 'discomLicense' are safely bundled in pricing_config
+        const dealerCategory = payload.category || payload.pricingConfig?.category || 'Margin Based';
         const pricingConfig = {
           ...(payload.pricingConfig || {}),
+          category: dealerCategory,
           address: address || payload.address || '',
           gstin: gstin || payload.gstin || '',
           pan: pan || payload.pan || '',
@@ -261,14 +261,15 @@ export default async function handler(req, res) {
           params.push(payload.assignedStaffName);
         }
 
-        if (payload.pricingConfig || address || gstin || pan) {
+        if (payload.pricingConfig || payload.category || address || gstin || pan) {
           const mergedConfig = {
             ...(payload.pricingConfig || {}),
+            ...(payload.category ? { category: payload.category } : {}),
             ...(address ? { address } : {}),
             ...(gstin ? { gstin } : {}),
             ...(pan ? { pan } : {})
           };
-          updates.push(`pricing_config = $${idx++}::jsonb`);
+          updates.push(`pricing_config = COALESCE(pricing_config, '{}'::jsonb) || $${idx++}::jsonb`);
           params.push(JSON.stringify(mergedConfig));
         }
 
@@ -307,9 +308,10 @@ export default async function handler(req, res) {
             sbUpdates.assigned_staff_id = payload.assignedStaffId;
             sbUpdates.assigned_staff_name = payload.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (payload.assignedStaffName || 'Sunvine Sales Staff');
           }
-          if (payload.pricingConfig || address || gstin || pan) {
+          if (payload.pricingConfig || payload.category || address || gstin || pan) {
             sbUpdates.pricing_config = {
               ...(payload.pricingConfig || {}),
+              ...(payload.category ? { category: payload.category } : {}),
               ...(address ? { address } : {}),
               ...(gstin ? { gstin } : {}),
               ...(pan ? { pan } : {})

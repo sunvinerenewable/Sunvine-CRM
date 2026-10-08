@@ -263,11 +263,12 @@ export async function handleAdminDealers(req, res) {
             passwordHash = hashBcrypt(String(dealer.password).trim(), 10);
           }
 
-          const cleanMobile = dealer.mobile ? String(dealer.mobile).replace(/\D/g, '').slice(-10) : null;
           const staffId = dealer.assignedStaffId || 'STF-DIRECT';
           const staffName = staffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (dealer.assignedStaffName || 'Sunvine Sales Staff');
+          const dealerCategory = dealer.category || dealer.pricingConfig?.category || existing?.pricing_config?.category || 'Margin Based';
           const finalPricingConfig = {
             ...(typeof dealer.pricingConfig === 'object' && dealer.pricingConfig !== null ? dealer.pricingConfig : {}),
+            category: dealerCategory,
             ...(dealer.address ? { address: dealer.address.trim() } : {}),
             assignedStaffId: staffId,
             assignedStaffName: staffName
@@ -438,8 +439,10 @@ export async function handleAdminDealers(req, res) {
         const staffName = staffId === 'STF-DIRECT'
           ? 'Direct to Company (HQ Desk)'
           : (assignedStaffName || 'Sunvine Sales Staff');
+        const dealerCategory = dealer.category || pricingConfig?.category || 'Margin Based';
         const finalPricingConfig = {
           ...(typeof pricingConfig === 'object' && pricingConfig !== null ? pricingConfig : {}),
+          category: dealerCategory,
           ...(address ? { address: address.trim() } : {}),
           assignedStaffId: staffId,
           assignedStaffName: staffName

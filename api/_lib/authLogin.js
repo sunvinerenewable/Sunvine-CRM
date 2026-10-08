@@ -253,6 +253,7 @@ export default async function handler(req, res) {
         maxMarginCapPerKw: Number(matchedDealer.max_margin_cap_per_kw),
         assignedStaffId: matchedDealer.assigned_staff_id || 'STF-DIRECT',
         assignedStaffName: matchedDealer.assigned_staff_name || (isDirect ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
+        category: matchedDealer.pricing_config?.category || matchedDealer.category || 'Margin Based',
         pricingConfig: matchedDealer.pricing_config || {}
       };
 

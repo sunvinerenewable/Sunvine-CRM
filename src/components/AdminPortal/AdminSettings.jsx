@@ -240,6 +240,7 @@ export default function AdminSettings() {
   const [dealerForm, setDealerForm] = useState({
     id: '',
     dealerCode: '',
+    category: 'Margin Based',
     firmName: '',
     contactPerson: '',
     mobile: '',
@@ -564,6 +565,7 @@ export default function AdminSettings() {
     setDealerForm({
       id: nextCode,
       dealerCode: nextCode,
+      category: 'Margin Based',
       firmName: '',
       contactPerson: '',
       mobile: '',
@@ -587,6 +589,7 @@ export default function AdminSettings() {
     setDealerForm({
       id: dealer.id || dealer.dealer_code,
       dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
+      category: dealer.category || dealer.pricing_config?.category || dealer.pricingConfig?.category || 'Margin Based',
       firmName: dealer.firm_name || dealer.firmName || '',
       contactPerson: dealer.contact_person || dealer.contactPerson || '',
       mobile: dealer.mobile_number || dealer.mobile || '',
@@ -635,6 +638,7 @@ export default function AdminSettings() {
         const res = await adminAccountService.updateDealer({
           id: editingDealer.id,
           dealerCode: dealerForm.dealerCode,
+          category: dealerForm.category || 'Margin Based',
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
@@ -654,6 +658,7 @@ export default function AdminSettings() {
       } else {
         const res = await adminAccountService.createDealer({
           dealerCode: dealerForm.dealerCode,
+          category: dealerForm.category || 'Margin Based',
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
@@ -1432,6 +1437,18 @@ export default function AdminSettings() {
                                     <span>{contact}</span>
                                     <span>•</span>
                                     <span className="font-mono text-emerald-700 font-semibold">{code}</span>
+                                    <span>•</span>
+                                    {/* Category Pill */}
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                                      (dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based')
+                                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                      <span className="material-symbols-outlined text-[11px]">
+                                        {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                                      </span>
+                                      {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                                    </span>
                                     <span>•</span>
                                     <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
                                       (!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
@@ -2286,6 +2303,60 @@ export default function AdminSettings() {
                       <option value="Gold EPC">Gold EPC</option>
                       <option value="Silver Installer">Silver Installer</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* Operating Model / Category */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 flex items-center justify-between">
+                    <span>Dealer Operating Model / Category <span className="text-rose-500">*</span></span>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Selected: <strong className={dealerForm.category === 'Kit Based' ? 'text-purple-700 font-bold' : 'text-emerald-700 font-bold'}>{dealerForm.category || 'Margin Based'}</strong>
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Margin Based' }))}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        (dealerForm.category || 'Margin Based') === 'Margin Based'
+                          ? 'border-emerald-500 bg-emerald-50/70 text-emerald-950 font-semibold shadow-xs ring-1 ring-emerald-400/40'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        (dealerForm.category || 'Margin Based') === 'Margin Based'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">percent</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold leading-tight">Margin Based Partner</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-normal">Custom ₹/kW margin</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Kit Based' }))}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        dealerForm.category === 'Kit Based'
+                          ? 'border-purple-500 bg-purple-50/70 text-purple-950 font-semibold shadow-xs ring-1 ring-purple-400/40'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        dealerForm.category === 'Kit Based'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold leading-tight">Kit Based Partner</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-normal">Fixed kit package</div>
+                      </div>
+                    </button>
                   </div>
                 </div>
 

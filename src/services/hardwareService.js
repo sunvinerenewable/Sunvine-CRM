@@ -308,6 +308,7 @@ export const hardwareService = {
           basePrice: row.base_price || '₹ 54,000',
           isArchived: !!row.is_archived,
           isDefault: !!row.is_default,
+          isNew: !!row.is_new,
           createdAt: row.created_at ? new Date(row.created_at).getTime() : Date.now()
         }));
       }
@@ -341,7 +342,9 @@ export const hardwareService = {
       warranty: inv.warranty || '8 Years Comprehensive',
       base_price: inv.basePrice || inv.base_price || '₹ 54,000',
       is_archived: !!inv.isArchived,
-      is_default: !!inv.isDefault
+      is_default: !!inv.isDefault,
+      is_new: inv.isNew !== undefined ? !!inv.isNew : false,
+      updated_at: new Date().toISOString()
     };
 
     try {

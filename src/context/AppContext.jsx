@@ -591,10 +591,7 @@ export const AppProvider = ({ children }) => {
     }
   ]);
 
-  // Catalog items viewed by dealer (for "NEW" badge management)
-  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
-    return safeJsonParse('sunvine_seen_catalog_items', []);
-  });
+
 
   // Quotations List (Live Supabase Database + SWR Cache)
   const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
@@ -614,6 +611,28 @@ export const AppProvider = ({ children }) => {
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
     return safeJsonParse('sunvine_current_staff', null) || null;
+  });
+
+  // Dynamic user-scoped storage key so Admin acknowledging an item never clears the "NEW" badge for Dealers
+  const getCatalogSeenStorageKey = useCallback(() => {
+    if (role === 'dealer' && currentDealer?.id) {
+      return `sunvine_seen_catalog_dealer_${currentDealer.id}`;
+    }
+    if (role === 'staff' && currentStaff?.id) {
+      return `sunvine_seen_catalog_staff_${currentStaff.id}`;
+    }
+    return `sunvine_seen_catalog_${role || 'admin'}`;
+  }, [role, currentDealer?.id, currentStaff?.id]);
+
+  // Catalog items viewed by dealer (for "NEW" badge management) - Scoped per user/role
+  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
+    const curRole = localStorage.getItem('sunvine_role') || 'dealer';
+    const curDlr = safeJsonParse('sunvine_current_dealer', null);
+    const curStf = safeJsonParse('sunvine_current_staff', null);
+    let key = `sunvine_seen_catalog_${curRole}`;
+    if (curRole === 'dealer' && curDlr?.id) key = `sunvine_seen_catalog_dealer_${curDlr.id}`;
+    if (curRole === 'staff' && curStf?.id) key = `sunvine_seen_catalog_staff_${curStf.id}`;
+    return safeJsonParse(key, []);
   });
 
   // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
@@ -660,13 +679,16 @@ export const AppProvider = ({ children }) => {
       const tierLower = (d.tier || '').toLowerCase();
       const tierKey = tierLower.includes('diamond') ? 'diamond' : tierLower.includes('platinum') ? 'platinum' : tierLower.includes('silver') ? 'silver' : 'gold';
       const dynamicDefaultMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? (d.pricingConfig?.customMarginPerKw ?? 0);
+      const category = d.category || d.pricingConfig?.category || 'Margin Based';
       return {
         ...d,
+        category,
         assignedStaffId,
         assignedStaffName,
         onboardedDate: d.onboardedDate || '2025-06-15',
         pricingConfig: {
           ...(d.pricingConfig || {}),
+          category,
           assignedStaffId,
           assignedStaffName,
           pricingMode: d.pricingConfig?.pricingMode || 'standard',
@@ -791,8 +813,13 @@ export const AppProvider = ({ children }) => {
         setIsHardwareDbConnected(true);
       }
       if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
-        setInvertersList(dbInverters.value);
-        cacheManager.set('inverters_list', dbInverters.value);
+        const canonicalInverters = dbInverters.value.map(inv => {
+          if (!inv.brand) return inv;
+          const cleanBrand = inv.brand.trim();
+          return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+        });
+        setInvertersList(canonicalInverters);
+        cacheManager.set('inverters_list', canonicalInverters);
         setIsHardwareDbConnected(true);
       }
       if (dbPresets.status === 'fulfilled' && dbPresets.value) {
@@ -884,16 +911,19 @@ export const AppProvider = ({ children }) => {
     hydrateAllFromSupabase();
   }, [hydrateAllFromSupabase]);
 
-  // Periodic Auto-Sync & Visibility Change Hydration (60s background interval + instant focus sync)
+  // Multi-Tab Focus & Periodic Auto-Sync (Instant update when user adds rows in Supabase Table Editor or other tabs)
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers, freshNotifs] = await Promise.allSettled([
+        const [files, quotes, docMaster, freshStaff, freshDealers, freshModules, freshInverters, freshBom, freshNotifs] = await Promise.allSettled([
           customerFileService.getAllCustomerFiles({ throwOnError: false }),
           quotationService.getAllQuotations(100),
           documentMasterService.fetchDocumentMaster(),
           staffService.getAllStaff(),
           dealerService.getAllDealers(),
+          hardwareService.getAllModules(),
+          hardwareService.getAllInverters(),
+          hardwareService.getAllBomItems(),
           auditLogService.getNotifications()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
@@ -935,6 +965,26 @@ export const AppProvider = ({ children }) => {
           if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
             setCategoryDocRules(docMaster.value.rules);
           }
+        }
+        if (freshModules.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
+          setModulesList(freshModules.value);
+          cacheManager.set('modules_list', freshModules.value);
+        }
+        if (freshInverters.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
+          const canonicalInverters = freshInverters.value.map(inv => {
+            if (!inv.brand) return inv;
+            const cleanBrand = inv.brand.trim();
+            return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+          });
+          setInvertersList(canonicalInverters);
+          cacheManager.set('inverters_list', canonicalInverters);
+        }
+        if (freshBom.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
+          setBomCatalog(freshBom.value);
+          cacheManager.set('bom_catalog', freshBom.value);
+        }
+        if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
+          setNotifications(freshNotifs.value);
         }
       } catch (err) {
         // silent background sync
@@ -1086,9 +1136,17 @@ export const AppProvider = ({ children }) => {
     safeSetItem('sunvine_current_staff', currentStaff);
   }, [currentStaff]);
 
+  // Switch seen IDs when user or role changes
   useEffect(() => {
-    safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
-  }, [seenCatalogItemIds]);
+    const key = getCatalogSeenStorageKey();
+    const stored = safeJsonParse(key, []);
+    setSeenCatalogItemIds(stored);
+  }, [getCatalogSeenStorageKey]);
+
+  useEffect(() => {
+    const key = getCatalogSeenStorageKey();
+    safeSetItem(key, seenCatalogItemIds);
+  }, [seenCatalogItemIds, getCatalogSeenStorageKey]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -1167,12 +1225,21 @@ export const AppProvider = ({ children }) => {
     await hardwareService.saveBomItem(merged);
   };
 
+  const [deletedBomItemIds, setDeletedBomItemIds] = useState(() => {
+    return safeJsonParse('sunvine_deleted_bom_ids', []);
+  });
+
   const deleteBomItem = async (itemId) => {
     setBomCatalog(prev => prev.filter(i => i.id !== itemId));
     setBomRates(prev => {
       const next = { ...prev };
       delete next[itemId];
       return next;
+    });
+    setDeletedBomItemIds(prev => {
+      const updated = Array.from(new Set([...prev, itemId]));
+      safeSetItem('sunvine_deleted_bom_ids', updated);
+      return updated;
     });
     await hardwareService.deleteBomItem(itemId);
   };
@@ -1183,7 +1250,8 @@ export const AppProvider = ({ children }) => {
   };
 
   const addNewModule = async (newModule) => {
-    const brand = newModule.brand?.trim() || 'Custom';
+    const existingBrandMatch = (modulesList || []).find(m => m.brand?.toLowerCase() === newModule.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newModule.brand?.trim() || 'Custom');
     const model = newModule.model?.trim() || 'Solar Module';
     const id = newModule.id || `mod-${Date.now()}`;
     const moduleEntry = {
@@ -1203,8 +1271,8 @@ export const AppProvider = ({ children }) => {
     addNotification({
       type: 'success',
       icon: 'solar_power',
-      title: 'New Solar Module Added',
-      description: `Admin introduced ${brand} ${model} (${moduleEntry.wattage}W) to dealer catalogs.`,
+      title: `Sunvine Solar: New Solar Module Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${moduleEntry.wattage}W) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1213,7 +1281,8 @@ export const AppProvider = ({ children }) => {
   };
 
   const addNewInverter = async (newInverter) => {
-    const brand = newInverter.brand?.trim() || 'Custom';
+    const existingBrandMatch = (invertersList || []).find(i => i.brand?.toLowerCase() === newInverter.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newInverter.brand?.trim() || 'Custom');
     const model = newInverter.model?.trim() || 'Solar Inverter';
     const id = newInverter.id || `inv-${Date.now()}`;
     const capStr = newInverter.capacity ? (String(newInverter.capacity).toLowerCase().includes('kw') ? newInverter.capacity : `${newInverter.capacity} kW`) : '5.0 kW';
@@ -1235,8 +1304,8 @@ export const AppProvider = ({ children }) => {
     addNotification({
       type: 'success',
       icon: 'bolt',
-      title: 'New Solar Inverter Added',
-      description: `Admin introduced ${brand} ${model} (${inverterEntry.capacity}) to dealer catalogs.`,
+      title: `Sunvine Solar: New Inverter Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${inverterEntry.capacity}) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1248,17 +1317,18 @@ export const AppProvider = ({ children }) => {
     if (!itemId) return;
     setSeenCatalogItemIds(prev => {
       if (prev.includes(itemId)) return prev;
-      return [...prev, itemId];
+      const updated = [...prev, itemId];
+      const key = getCatalogSeenStorageKey();
+      safeSetItem(key, updated);
+      return updated;
     });
   };
 
   const isCatalogItemNew = (item) => {
-    if (!item) return false;
-    const itemId = item.id || `${item.brand}-${item.model}`;
+    if (!item || !item.isNew) return false;
+    const itemId = item.id || `${item.brand}-${item.model || item.wattage || item.capacityKW}`;
     if (seenCatalogItemIds.includes(itemId)) return false;
-    if (item.isNew) return true;
-    if (item.createdAt && (Date.now() - item.createdAt < 7 * 24 * 3600 * 1000)) return true;
-    return false;
+    return true;
   };
 
   const getResolvedBom = (capacityKW) => {
@@ -1967,15 +2037,24 @@ export const AppProvider = ({ children }) => {
   };
 
   const addDealer = async (newDealer) => {
+    const finalCategory = newDealer.category || newDealer.pricingConfig?.category || 'Margin Based';
+    const finalNewDealer = {
+      ...newDealer,
+      category: finalCategory,
+      pricingConfig: {
+        ...(newDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
     try {
-      const res = await dealerService.createDealer(newDealer);
+      const res = await dealerService.createDealer(finalNewDealer);
       if (res?.success) {
         const savedDealer = res.dealer ? {
-          ...newDealer,
-          id: res.dealer.dealer_code || res.dealer.id || newDealer.id,
-          dealerCode: res.dealer.dealer_code || newDealer.dealerCode,
+          ...finalNewDealer,
+          id: res.dealer.dealer_code || res.dealer.id || finalNewDealer.id,
+          dealerCode: res.dealer.dealer_code || finalNewDealer.dealerCode,
           uuid: res.dealer.id
-        } : newDealer;
+        } : finalNewDealer;
         setDealers(prev => [savedDealer, ...prev.filter(d => (d.id !== savedDealer.id && d.dealerCode !== savedDealer.dealerCode))]);
         broadcastDbEvent('SYNC_DEALERS');
         return { success: true, dealer: savedDealer };
@@ -1993,7 +2072,16 @@ export const AppProvider = ({ children }) => {
     if (!updatedDealer) return;
     const cleanId = String(updatedDealer.id || updatedDealer.dealerCode || '').replace(/^#/, '');
     const cleanEmail = (updatedDealer.email && String(updatedDealer.email).trim()) ? String(updatedDealer.email).trim() : null;
-    const finalUpdated = { ...updatedDealer, email: cleanEmail };
+    const finalCategory = updatedDealer.category || updatedDealer.pricingConfig?.category || 'Margin Based';
+    const finalUpdated = {
+      ...updatedDealer,
+      category: finalCategory,
+      email: cleanEmail,
+      pricingConfig: {
+        ...(updatedDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
 
     setDealers(prev => prev.map(d => {
       const dCode = String(d.id || d.dealerCode || '').replace(/^#/, '');
@@ -2633,6 +2721,10 @@ export const AppProvider = ({ children }) => {
   const visibleNotifications = useMemo(() => {
     return notifications
       .filter(n => {
+        // Exclude developer / system update logs per user directive (only real business notifications: item created, price update, etc.)
+        if (n.isRelease || n.id?.startsWith('release-') || n.title?.toLowerCase().includes('system updated') || n.title?.toLowerCase().includes('update log')) {
+          return false;
+        }
         if (dismissedNotifIds.includes(n.id)) return false;
         const aud = n.audience || 'all';
         if (aud === 'all') return true;
@@ -2693,7 +2785,7 @@ export const AppProvider = ({ children }) => {
     const newNotif = {
       id: notif.id || `notif-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      audience: notif.audience || (role === 'admin' ? 'admin' : 'dealer'),
+      audience: notif.audience || 'all',
       type: notif.type || 'info',
       ...notif
     };
@@ -2707,6 +2799,7 @@ export const AppProvider = ({ children }) => {
       const filtered = prev.filter(n => n.id !== newNotif.id);
       return [newNotif, ...filtered];
     });
+    auditLogService.saveNotification(newNotif).catch(() => {});
   };
 
   // Master Document Registry & Dynamic Category Rules Engine
@@ -2992,6 +3085,7 @@ export const AppProvider = ({ children }) => {
     updateBomItem,
     deleteBomItem,
     archiveBomItem,
+    deletedBomItemIds,
     // Dynamic Catalogs & 'NEW' Badge Tracking
     addNewModule,
     addNewInverter,

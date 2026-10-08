@@ -159,10 +159,8 @@ export const adminAccountService = {
     }
   },
 
-  /**
-   * Create new Dealer account
-   */
-  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async createDealer({ dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+    const finalCategory = category || 'Margin Based';
     const dealerData = {
       dealerCode,
       firmName,
@@ -173,6 +171,8 @@ export const adminAccountService = {
       state,
       discom,
       tier,
+      category: finalCategory,
+      pricingConfig: { category: finalCategory, assignedStaffId, assignedStaffName },
       maxMarginCapPerKw,
       password,
       status,
@@ -220,7 +220,7 @@ export const adminAccountService = {
   /**
    * Update Dealer profile or credentials
    */
-  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
+  async updateDealer({ id, dealerCode, firmName, contactPerson, mobile, email, city, state, discom, tier, category, maxMarginCapPerKw, password, status, assignedStaffId, assignedStaffName }) {
     const dealerData = {
       id: id || dealerCode,
       dealerCode: dealerCode || id,
@@ -232,6 +232,7 @@ export const adminAccountService = {
       state,
       discom,
       tier,
+      ...(category ? { category, pricingConfig: { category, assignedStaffId, assignedStaffName } } : {}),
       maxMarginCapPerKw,
       password,
       status,

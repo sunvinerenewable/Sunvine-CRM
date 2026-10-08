@@ -81,6 +81,7 @@ export const dealerService = {
           status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
           rating: Number(d.rating) || 4.9,
           tier: d.tier || 'Gold EPC',
+          category: d.pricing_config?.category || d.category || 'Margin Based',
           maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 0,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
           assignedStaffId: (() => {
@@ -130,6 +131,7 @@ export const dealerService = {
     const assignedStaffName = assignedStaffId === 'STF-DIRECT'
       ? 'Direct to Company (HQ Desk)'
       : (dealer.assignedStaffName || 'Sunvine Sales Staff');
+    const category = dealer.category || 'Margin Based';
 
     const dealerPayload = {
       dealerCode,
@@ -149,8 +151,10 @@ export const dealerService = {
       pan: dealer.pan || '',
       assignedStaffId,
       assignedStaffName,
+      category,
       pricingConfig: {
         ...(dealer.pricingConfig || {}),
+        category,
         assignedStaffId,
         assignedStaffName
       }
@@ -180,6 +184,38 @@ export const dealerService = {
       return { success: false, error: apiErr.message || 'Dealer creation service unavailable.' };
     }
 
+    // 2. Try manage-credentials endpoint as fallback
+    try {
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'create-dealer',
+          payload: {
+            ...dealer,
+            dealerCode,
+            mobile: cleanPhone,
+            category,
+            password: plainPassword,
+            assignedStaffId,
+            assignedStaffName,
+            pricingConfig: dealerPayload.pricingConfig
+          }
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        invalidateCatalogCache([`dealer:rates:${dealerCode}`, 'directory:dealers:min', 'catalog:all']);
+        return { success: true, id: data.dealer?.dealer_code || dealerCode, dealer: data.dealer };
+      }
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+    } catch (fallbackErr) {
+      console.error('[dealerService] Fallback create dealer error:', fallbackErr);
+    }
+
     return { success: false, error: 'Failed to create dealer account.' };
   },
 
@@ -198,14 +234,35 @@ export const dealerService = {
   async updateDealer(dealerCodeOrId, fields) {
     if (!dealerCodeOrId) return { success: false, error: 'Dealer ID required' };
 
+    const cleanPhone = (fields.mobile !== undefined || fields.mobileNumber !== undefined)
+      ? String(fields.mobile || fields.mobileNumber).replace(/\D/g, '').slice(-10)
+      : undefined;
+
+    const finalStaffId = fields.assignedStaffId !== undefined ? fields.assignedStaffId : fields.pricingConfig?.assignedStaffId;
+    const finalStaffName = finalStaffId === 'STF-DIRECT'
+      ? 'Direct to Company (HQ Desk)'
+      : (fields.assignedStaffName !== undefined ? fields.assignedStaffName : fields.pricingConfig?.assignedStaffName);
+    const categoryVal = fields.category !== undefined ? fields.category : fields.pricingConfig?.category;
+
+    const pricingConfig = (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined || fields.category !== undefined)
+      ? {
+          ...(fields.pricingConfig || {}),
+          ...(categoryVal ? { category: categoryVal } : {}),
+          ...(finalStaffId ? { assignedStaffId: finalStaffId } : {}),
+          ...(finalStaffName ? { assignedStaffName: finalStaffName } : {})
+        }
+      : undefined;
+
     const updatePayload = {
       dealerCode: dealerCodeOrId,
-      ...fields
+      id: dealerCodeOrId,
+      ...fields,
+      ...(cleanPhone ? { mobile: cleanPhone, mobile_number: cleanPhone } : {}),
+      ...(fields.category !== undefined ? { category: fields.category } : {}),
+      ...(pricingConfig ? { pricingConfig, pricing_config: pricingConfig } : {}),
+      ...(finalStaffId ? { assignedStaffId: finalStaffId, assigned_staff_id: finalStaffId } : {}),
+      ...(finalStaffName ? { assignedStaffName: finalStaffName, assigned_staff_name: finalStaffName } : {})
     };
-
-    if (fields.mobile !== undefined || fields.mobileNumber !== undefined) {
-      updatePayload.mobile = String(fields.mobile || fields.mobileNumber).replace(/\D/g, '').slice(-10);
-    }
 
     // 1. Try /api/auth/admin-dealers
     try {
@@ -221,7 +278,7 @@ export const dealerService = {
       if (res.ok) {
         const data = await res.json();
         if (data?.success) {
-          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
+          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min', 'catalog:all']);
           return { success: true, data: data.dealer };
         }
       }
@@ -238,14 +295,16 @@ export const dealerService = {
           payload: {
             dealerCode: dealerCodeOrId,
             id: dealerCodeOrId,
-            ...updatePayload
+            ...updatePayload,
+            category: categoryVal,
+            pricingConfig: pricingConfig || fields.pricingConfig
           }
         })
       });
       if (res.ok) {
         const data = await res.json();
         if (data?.success) {
-          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
+          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min', 'catalog:all']);
           return { success: true, data: data.dealer };
         }
       }
