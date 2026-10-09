@@ -82,7 +82,32 @@ export const DEFAULT_GOVERNANCE_SETTINGS = {
   lastBackupTimestamp: 'Today, 01:15 AM'
 };
 
-const AppContext = createContext();
+const defaultContextValue = {
+  dealers: [],
+  staffList: [],
+  quotations: [],
+  customerFiles: [],
+  pricingPresets: [],
+  tierMargins: {},
+  systemSettings: {},
+  governanceSettings: DEFAULT_GOVERNANCE_SETTINGS,
+  modulesList: [],
+  invertersList: [],
+  solarBanks: [],
+  auditLogs: [],
+  designRecords: [],
+  currentUser: null,
+  currentDealer: null,
+  currentStaff: null,
+  isAuthenticated: false,
+  role: 'dealer',
+  activeTab: 'dashboard',
+  setActiveTab: () => {},
+  addNotification: () => {},
+  refreshDatabase: async () => {}
+};
+
+const AppContext = createContext(defaultContextValue);
 
 const TAB_TO_PATH = {
   // Dealer & Common
@@ -597,7 +622,21 @@ export const AppProvider = ({ children }) => {
   const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
 
   // Active quotation loaded in 4-Page Preview
-  const [previewQuotation, setPreviewQuotation] = useState(null);
+  const [previewQuotationState, setPreviewQuotationState] = useState(null);
+  const previewQuotation = previewQuotationState;
+
+  const setPreviewQuotation = useCallback((quoteOrFn) => {
+    setPreviewQuotationState(prev => {
+      const next = typeof quoteOrFn === 'function' ? quoteOrFn(prev) : quoteOrFn;
+      if (typeof window !== 'undefined' && next?.id) {
+        try {
+          sessionStorage.setItem('sunvine_preview_quote_id', next.id);
+          localStorage.setItem('sunvine_preview_quote_id', next.id);
+        } catch (_) {}
+      }
+      return next;
+    });
+  }, []);
 
   // Active quotation loaded for Editing in CreateQuotation
   const [editingQuotation, setEditingQuotation] = useState(null);
@@ -3338,4 +3377,7 @@ export const AppProvider = ({ children }) => {
   );
 };
 
-export const useApp = () => useContext(AppContext);
+export const useApp = () => {
+  const context = useContext(AppContext);
+  return context || defaultContextValue;
+};

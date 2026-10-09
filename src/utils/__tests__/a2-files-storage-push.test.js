@@ -365,12 +365,27 @@ test('R2 Canonical: Storage presign supports indexed multi-file attachments', as
 });
 
 test('R2 Canonical: Storage presign rejects cross-tenant dealer upload to another dealer application (403)', async () => {
+  // Query an actual existing file from the database to test tenant isolation dynamically
+  let targetFileId = 'FIL-2026-081';
+  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const db = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+      const { data: liveRow } = await db.from('customer_files').select('id, dealer_id').not('dealer_id', 'is', null).limit(1).maybeSingle();
+      if (liveRow?.id) {
+        targetFileId = liveRow.id;
+      }
+    } catch (_) {}
+  }
+
   const intruderDealerToken = signJwt({ id: 'DLR-OTHER-999', role: 'dealer', dealer_id: 'DLR-OTHER-999' });
   const req = mockReq({
     method: 'POST',
     cookie: `sunvine_auth_token=${intruderDealerToken}`,
     body: {
-      fileId: 'FIL-2026-0KGG8',
+      fileId: targetFileId,
       docKey: 'electricityBill',
       fileName: 'tampered.pdf',
       fileType: 'application/pdf',

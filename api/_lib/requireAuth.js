@@ -91,11 +91,14 @@ async function fetchAccountStatusFromDb(payload) {
       if (role === 'dealer') {
         const dealerId = id || payload?.dealerCode;
         if (!dealerId) return isTestEnv ? 'active' : 'not_found';
-        const { data, error } = await supabase
-          .from('dealer_accounts')
-          .select('id, status')
-          .or(`id.eq.${dealerId},dealer_code.eq.${dealerId}`)
-          .maybeSingle();
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dealerId);
+        let q = supabase.from('dealer_accounts').select('id, status');
+        if (isUuid) {
+          q = q.or(`id.eq.${dealerId},dealer_code.eq.${dealerId}`);
+        } else {
+          q = q.eq('dealer_code', dealerId);
+        }
+        const { data, error } = await q.maybeSingle();
         if (error) throw error;
         if (data) return data.status || 'active';
         return isTestEnv ? 'active' : 'not_found';

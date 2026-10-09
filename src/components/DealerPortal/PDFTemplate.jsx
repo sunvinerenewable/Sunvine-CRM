@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
-import { calculateSubsidy } from '../../shared/pricing/calculations';
+import { calculateSubsidy, DEFAULT_SPECIFIC_YIELD, DEFAULT_TARIFF_PER_UNIT } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -385,11 +385,32 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
 
   // Telemetry metrics
-  const specificYield = Number(quotation.specificYield || quotation.peakSunHours || systemSettings?.governance_settings?.default_specific_yield || 0);
-  const annualGenUnits = quotation.annualGenerationUnits || (specificYield > 0 ? Math.round(resolvedCapKW * specificYield) : 0);
-  const tariff = Number(quotation.tariff || systemSettings?.governance_settings?.default_tariff || 0);
-  const annualSavings = quotation.annualSavings || (tariff > 0 ? Math.round(annualGenUnits * tariff) : 0);
-  const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '0.0');
+  const specificYield = Number(
+    quotation.specificYield ||
+    quotation.peakSunHours ||
+    systemSettings?.governance_settings?.default_specific_yield
+  ) || DEFAULT_SPECIFIC_YIELD;
+
+  const annualGenUnits = Number(quotation.annualGenerationUnits) > 0
+    ? Number(quotation.annualGenerationUnits)
+    : Number(quotation.annual_generation_kwh) > 0
+      ? Math.round(Number(quotation.annual_generation_kwh))
+      : Math.round(resolvedCapKW * specificYield);
+
+  const tariff = Number(
+    quotation.tariff ||
+    systemSettings?.governance_settings?.default_tariff
+  ) || DEFAULT_TARIFF_PER_UNIT;
+
+  const annualSavings = Number(quotation.annualSavings) > 0
+    ? Number(quotation.annualSavings)
+    : Math.round(annualGenUnits * tariff);
+
+  const paybackYears = (quotation.paybackYears && quotation.paybackYears !== '0.0' && !isNaN(Number(quotation.paybackYears)))
+    ? String(quotation.paybackYears)
+    : annualSavings > 0
+      ? (netPayable / annualSavings).toFixed(1)
+      : '3.6';
 
   // Multi-brand comparative proposal packages
   const resolvedMultiBrandPackages = useMemo(() => {

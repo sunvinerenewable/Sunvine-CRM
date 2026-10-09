@@ -1566,11 +1566,14 @@ export async function reportErrorHandler(req, res) {
     safeContextStr = JSON.stringify(rawContext).slice(0, 512);
   } catch (_) {}
 
-  const webhookUrl =
+  const isTestRunner = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST || process.env.NODE_TEST_CONTEXT);
+
+  const webhookUrl = !isTestRunner && (
     process.env.SLACK_CRASH_WEBHOOK_URL ||
     process.env.VITE_SLACK_CRASH_WEBHOOK_URL ||
     process.env.SLACK_FILES_UPDATE ||
-    process.env.SLACK_WEBHOOK_URL;
+    process.env.SLACK_WEBHOOK_URL
+  );
 
   if (webhookUrl) {
     try {

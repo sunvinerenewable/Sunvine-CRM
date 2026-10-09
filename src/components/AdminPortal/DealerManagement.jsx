@@ -4,7 +4,23 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, pricingPresets, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList, quotations, customerFiles } = useApp();
+  const {
+    dealers = [],
+    addDealer = () => {},
+    updateDealer = () => {},
+    deleteDealer = () => {},
+    toggleDealerStatus = () => {},
+    updateDealerPassword = () => {},
+    updateDealerPricing = () => {},
+    pricingPresets = [],
+    tierMargins = {},
+    updateTierMargins = () => {},
+    addNotification = () => {},
+    setActiveTab = () => {},
+    staffList = [],
+    quotations = [],
+    customerFiles = []
+  } = useApp() || {};
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');

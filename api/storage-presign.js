@@ -89,6 +89,7 @@ export default async function handler(req, res) {
     const extension = fileExtFromName || MIME_TO_EXT[effectiveType] || 'pdf';
     const role = user.role || 'dealer';
     const ownerId = String(user.dealer_id || user.id || 'unknown');
+    const ownerPrefix = `${role}/${ownerId}`;
 
     // ── Canonical Application Storage Support ─────────────────────────────────
     // applications/{fileId}/{documentType}/{filename}
@@ -146,7 +147,6 @@ export default async function handler(req, res) {
         finalFileName = `${baseName}.${extension}`;
       }
 
-      const ownerPrefix = `${role}/${ownerId}`;
       filePath = `${ownerPrefix}/${cleanFolder}/${finalFileName}`;
     }
 

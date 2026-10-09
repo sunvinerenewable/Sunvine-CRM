@@ -507,14 +507,22 @@ async function handleSave(req, res, jwt, db) {
   // ── Load dealer margin cap strictly from DB (HC-03 / HC-04: Database-First) ──
   let maxMarginCapPerKw = null;
   let cachedDealer = null;
+  const isDirectCompany = body.is_direct_company_quote === true || effectiveDealerId === 'SV-DIRECT' || effectiveDealerCode === 'SV-DIRECT';
   const effectiveDealerIdentifier = effectiveDealerId || effectiveDealerCode;
-  if (effectiveDealerIdentifier) {
+
+  if (effectiveDealerIdentifier && effectiveDealerIdentifier !== 'SV-DIRECT' && !isDirectCompany) {
     const { data: dData } = await cacheAside(`dealer:rates:${effectiveDealerIdentifier}`, 43200, async () => {
-      const { data: dealerData } = await db
+      let q = db
         .from('dealer_accounts')
-        .select('id, dealer_code, firm_name, max_margin_cap_per_kw, tier')
-        .or(`id.eq.${effectiveDealerIdentifier},dealer_code.eq.${effectiveDealerIdentifier}`)
-        .maybeSingle();
+        .select('id, dealer_code, firm_name, max_margin_cap_per_kw, tier');
+
+      if (toValidUuid(effectiveDealerIdentifier)) {
+        q = q.or(`id.eq.${effectiveDealerIdentifier},dealer_code.eq.${effectiveDealerIdentifier}`);
+      } else {
+        q = q.eq('dealer_code', effectiveDealerIdentifier);
+      }
+
+      const { data: dealerData } = await q.maybeSingle();
       return dealerData || null;
     });
     cachedDealer = dData;
@@ -706,7 +714,6 @@ async function handleSave(req, res, jwt, db) {
 
   // Margin validation and capping uses server-validated kW (Item 3b)
   const clientMargin = Number(body.dealer_margin_inr) || 0;
-  const isDirectCompany = body.is_direct_company_quote === true;
   const { effectiveMargin, isMarginExceeded } = validateDealerMargin(
     isDirectCompany ? 0 : clientMargin,
     serverValidatedKw,
@@ -783,31 +790,49 @@ async function handleSave(req, res, jwt, db) {
 
   const statusToSave = normalizeQuotationStatus(body.status || (isNew ? (isDirectCompany ? 'Approved / Direct' : 'Active / Sent') : (existingQuotation?.status || 'Active / Sent')));
 
-  const resolvedDealerUuid = toValidUuid(cachedDealer?.id || effectiveDealerId);
-  const resolvedDealerCode = cachedDealer?.dealer_code || effectiveDealerCode || (resolvedDealerUuid ? null : effectiveDealerId) || (isDirectCompany ? 'SV-DIRECT' : null);
+  const rawDealerUuid = cachedDealer?.id || (toValidUuid(effectiveDealerId) ? effectiveDealerId : null);
+  const resolvedDealerUuid = toValidUuid(rawDealerUuid);
+
+  let rawDealerCode = cachedDealer?.dealer_code || effectiveDealerCode;
+  if (!rawDealerCode && !resolvedDealerUuid) {
+    rawDealerCode = (effectiveDealerId && !toValidUuid(effectiveDealerId)) ? effectiveDealerId : null;
+  }
+  if (!rawDealerCode && isDirectCompany) {
+    rawDealerCode = 'SV-DIRECT';
+  }
+
+  // Ensure resolvedDealerCode is a string, clamped to max 50 chars, and never a UUID
+  let resolvedDealerCode = null;
+  if (rawDealerCode && typeof rawDealerCode === 'string') {
+    const trimmed = rawDealerCode.trim();
+    if (!UUID_REGEX.test(trimmed)) {
+      resolvedDealerCode = trimmed.slice(0, 50);
+    }
+  }
+
   const resolvedDealerName = cachedDealer?.firm_name || effectiveDealerName || (isDirectCompany ? 'Sunvine Renewable Energy (Head Office)' : null);
 
   const record = {
     id: quotationId,
     dealer_id: resolvedDealerUuid,
     dealer_code: resolvedDealerCode,
-    dealer_name: resolvedDealerName,
-    customer_name: String(body.customer_name).trim(),
-    customer_phone: String(body.customer_phone).trim(),
-    customer_city: body.customer_city || null,
-    customer_state: body.customer_state || supplierState,
+    dealer_name: resolvedDealerName ? String(resolvedDealerName).trim().slice(0, 255) : null,
+    customer_name: String(body.customer_name).trim().slice(0, 255),
+    customer_phone: String(body.customer_phone).trim().slice(0, 20),
+    customer_city: body.customer_city ? String(body.customer_city).trim().slice(0, 255) : null,
+    customer_state: body.customer_state ? String(body.customer_state).trim().slice(0, 255) : supplierState,
     system_capacity_kw: serverValidatedKw,
-    panel_type: body.panel_type || null,
-    inverter_type: body.inverter_type || null,
-    structure_type: body.structure_type || null,
+    panel_type: body.panel_type ? String(body.panel_type).trim().slice(0, 255) : null,
+    inverter_type: body.inverter_type ? String(body.inverter_type).trim().slice(0, 255) : null,
+    structure_type: body.structure_type ? String(body.structure_type).trim().slice(0, 255) : null,
     // Server-computed financial fields (client values IGNORED)
     base_cost: bomTotals.grossTurnkeyCost,
     dealer_margin: effectiveMargin,
     total_amount: totalAmount,
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
-    annual_generation_kwh: Math.round(serverValidatedKw * peakSunHours),
-    status: statusToSave,
+    annual_generation_kwh: Math.round(serverValidatedKw * (peakSunHours > 100 ? peakSunHours : (peakSunHours > 0 ? Math.round(peakSunHours * 365) : 1440))),
+    status: String(statusToSave).trim().slice(0, 50),
     request_id: toValidUuid(body.request_id),
     share_expires_at: shareExpiresAt,
     quote_payload: {
@@ -842,11 +867,11 @@ async function handleSave(req, res, jwt, db) {
   // ── SEC-019 & BUG-01: Audit log entry in audit_logs table ───────────────────
   try {
     const { error: auditErr } = await db.from('audit_logs').insert([{
-      actor_id: userId || effectiveDealerId || null,
-      actor_role: role || 'unknown',
+      actor_id: String(userId || resolvedDealerUuid || resolvedDealerCode || 'system').slice(0, 100),
+      actor_role: String(role || 'unknown').slice(0, 100),
       action: isNew ? 'quotation_created' : 'quotation_updated',
       entity_type: 'quotation',
-      entity_id: quotationId,
+      entity_id: String(quotationId).slice(0, 100),
       details: {
         kw,
         totalAmount,
@@ -1009,10 +1034,14 @@ async function handleList(req, res, jwt, db) {
     .select(selectColumns, { count: 'exact' });
 
   if (role === 'dealer') {
-    if (jwt.dealerCode && jwt.dealerCode !== dealer_id) {
-      query = query.or(`dealer_id.eq.${dealer_id},dealer_code.eq.${jwt.dealerCode}`);
-    } else {
+    const isDealerUuid = toValidUuid(dealer_id);
+    const code = jwt.dealerCode || (isDealerUuid ? null : dealer_id);
+    if (isDealerUuid && code && code !== dealer_id) {
+      query = query.or(`dealer_id.eq.${dealer_id},dealer_code.eq.${code}`);
+    } else if (isDealerUuid) {
       query = query.eq('dealer_id', dealer_id);
+    } else if (code) {
+      query = query.eq('dealer_code', code);
     }
   }
 
@@ -1045,8 +1074,14 @@ async function handleGet(req, res, jwt, db) {
 
   if (error || !data) return res.status(404).json({ error: 'Quotation not found.' });
 
-  if (role === 'dealer' && data.dealer_id !== dealer_id && (!jwt.dealerCode || data.dealer_code !== jwt.dealerCode)) {
-    return res.status(403).json({ error: 'Access denied to this quotation.' });
+  if (role === 'dealer') {
+    const isDealerUuid = toValidUuid(dealer_id);
+    const code = jwt.dealerCode || (isDealerUuid ? null : dealer_id);
+    const matchId = isDealerUuid && data.dealer_id === dealer_id;
+    const matchCode = code && data.dealer_code === code;
+    if (!matchId && !matchCode) {
+      return res.status(403).json({ error: 'Access denied to this quotation.' });
+    }
   }
 
   return res.status(200).json({ success: true, quotation: data });
@@ -1060,14 +1095,20 @@ async function handleDelete(req, res, jwt, db) {
   // Get share token and verify ownership
   const { data: existing, error: findErr } = await db
     .from('quotations')
-    .select('id, dealer_id, share_token')
+    .select('id, dealer_id, dealer_code, share_token')
     .eq('id', id)
     .maybeSingle();
 
   if (findErr || !existing) return res.status(404).json({ error: 'Quotation not found.' });
 
-  if (role === 'dealer' && existing.dealer_id !== dealer_id) {
-    return res.status(403).json({ error: 'Access denied: You cannot delete another dealer\'s quotation.' });
+  if (role === 'dealer') {
+    const isDealerUuid = toValidUuid(dealer_id);
+    const code = jwt.dealerCode || (isDealerUuid ? null : dealer_id);
+    const matchId = isDealerUuid && existing.dealer_id === dealer_id;
+    const matchCode = code && existing.dealer_code === code;
+    if (!matchId && !matchCode) {
+      return res.status(403).json({ error: 'Access denied: You cannot delete another dealer\'s quotation.' });
+    }
   }
 
   if (existing.share_token) {
@@ -1076,7 +1117,13 @@ async function handleDelete(req, res, jwt, db) {
 
   let query = db.from('quotations').delete().eq('id', id);
   if (role === 'dealer') {
-    query = query.eq('dealer_id', dealer_id);
+    const isDealerUuid = toValidUuid(dealer_id);
+    const code = jwt.dealerCode || (isDealerUuid ? null : dealer_id);
+    if (isDealerUuid) {
+      query = query.eq('dealer_id', dealer_id);
+    } else if (code) {
+      query = query.eq('dealer_code', code);
+    }
   }
 
   const { error } = await query;

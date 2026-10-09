@@ -51,65 +51,121 @@ export default function QuotationPreview({
   const isPinchingRef = useRef(false);
   const pinchStateRef = useRef({ startDist: 0, startZoom: 1, docX: 0, docY: 0, lastMidX: 0, lastMidY: 0 });
 
-  // Asynchronously hydrate quotation from Supabase only in portal view without props
+  // Resolve preview quotation ID from URL query or session storage fallback
+  const getUrlOrStoredQuoteId = () => {
+    if (typeof window === 'undefined') return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    return (
+      urlParams.get('id') ||
+      urlParams.get('quoteId') ||
+      urlParams.get('quotationId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id') ||
+      null
+    );
+  };
+
+  // Asynchronously hydrate quotation from Supabase / database on refresh or direct load
   useEffect(() => {
-    if (propQuotation || isLoadingProp !== undefined) return;
-    if (isPublicView && publicQuoteId && !remoteFetchedQuote) {
-      const cleanId = String(publicQuoteId).trim().toLowerCase();
-      const foundInLocal = (quotations || []).some(
-        q => String(q.id || '').trim().toLowerCase() === cleanId ||
-             String(q.quoteId || '').trim().toLowerCase() === cleanId
-      );
+    if (propQuotation || isLoadingProp) return;
 
-      if (!foundInLocal) {
-        let isMounted = true;
-        setIsLoadingRemote(true);
-        quotationService.getQuotationById(publicQuoteId).then(quote => {
-          if (isMounted && quote) {
-            setRemoteFetchedQuote(quote);
-          }
-        }).catch(err => {
-          console.warn('Failed to fetch remote quote:', err);
-        }).finally(() => {
-          if (isMounted) setIsLoadingRemote(false);
-        });
-        return () => { isMounted = false; };
+    const targetQuoteId = isPublicView ? publicQuoteId : getUrlOrStoredQuoteId();
+    if (!targetQuoteId) {
+      // If portal mode and activeQuotation is still null and quotations list is loaded, fallback to newest quotation
+      if (!isPublicView && !remoteFetchedQuote && !previewQuotation && (quotations || []).length > 0) {
+        setRemoteFetchedQuote(quotations[0]);
       }
+      return;
     }
-  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, propQuotation, isLoadingProp]);
 
-  // Resolve active quotation: priority to prop, remote fetched, publicQuoteId, then state
+    const cleanId = String(targetQuoteId).trim().toLowerCase();
+    const foundInLocal = (quotations || []).find(
+      q => String(q.id || '').trim().toLowerCase() === cleanId ||
+           String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+           String(q.quotationNo || '').trim().toLowerCase() === cleanId
+    );
+
+    if (foundInLocal) {
+      if (!remoteFetchedQuote || remoteFetchedQuote.id !== foundInLocal.id) {
+        setRemoteFetchedQuote(foundInLocal);
+      }
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingRemote(true);
+    quotationService.getQuotationById(targetQuoteId).then(quote => {
+      if (isMounted && quote) {
+        setRemoteFetchedQuote(quote);
+      }
+    }).catch(err => {
+      console.warn('Failed to fetch remote quote:', err);
+    }).finally(() => {
+      if (isMounted) setIsLoadingRemote(false);
+    });
+
+    return () => { isMounted = false; };
+  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, previewQuotation, propQuotation, isLoadingProp]);
+
+  // Resolve active quotation: priority to prop, remote fetched, previewQuotation, or local cache
   const activeQuotation = useMemo(() => {
     if (propQuotation) return propQuotation;
-    if (isPublicView) {
-      if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (previewQuotation) return previewQuotation;
 
-      if (publicQuoteId) {
-        const cleanId = String(publicQuoteId).trim().toLowerCase();
-        // 1. Search in current state / localStorage quotations
-        const foundInState = quotations?.find(
-          q => String(q.id || '').trim().toLowerCase() === cleanId ||
-               String(q.quoteId || '').trim().toLowerCase() === cleanId ||
-               String(q.quotationNo || '').trim().toLowerCase() === cleanId
-        );
-        if (foundInState) return foundInState;
+    // Check query param or stored quote ID
+    const targetQuoteId = isPublicView ? publicQuoteId : (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('id') ||
+      new URLSearchParams(window.location.search).get('quoteId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id')
+    ) : null);
 
-        // 2. Fallback to URL encoded data payload if provided
-        if (typeof window !== 'undefined') {
-          try {
-            const dataParam = new URLSearchParams(window.location.search).get('data');
-            if (dataParam) {
-              const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
-              if (decoded) return decoded;
-            }
-          } catch (_) {}
-        }
-        return null; // Explicit ID provided, waiting or not found
-      }
-      return previewQuotation || null;
+    if (targetQuoteId) {
+      const cleanId = String(targetQuoteId).trim().toLowerCase();
+      const foundInState = quotations?.find(
+        q => String(q.id || '').trim().toLowerCase() === cleanId ||
+             String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+             String(q.quotationNo || '').trim().toLowerCase() === cleanId
+      );
+      if (foundInState) return foundInState;
     }
-    return previewQuotation;
-  }, [propQuotation, isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
+
+    // Public view URL encoded data fallback
+    if (isPublicView && typeof window !== 'undefined') {
+      try {
+        const dataParam = new URLSearchParams(window.location.search).get('data');
+        if (dataParam) {
+          const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
+          if (decoded) return decoded;
+        }
+      } catch (_) {}
+    }
+
+    // Portal view fallback: if quotations are available, show the most recent quotation
+    if (!isPublicView && (quotations || []).length > 0) {
+      return quotations[0];
+    }
+
+    return null;
+  }, [propQuotation, remoteFetchedQuote, previewQuotation, isPublicView, publicQuoteId, quotations]);
+
+  // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeQuotation?.id) return;
+    try {
+      sessionStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      localStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      if (!isPublicView && window.location.pathname.includes('preview-quotation')) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('id') !== activeQuotation.id) {
+          params.set('id', activeQuotation.id);
+          const newUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ ...window.history.state, id: activeQuotation.id }, '', newUrl);
+        }
+      }
+    } catch (_) {}
+  }, [activeQuotation?.id, isPublicView]);
 
   // Initialize phone when quotation changes
   useEffect(() => {
@@ -497,6 +553,7 @@ export default function QuotationPreview({
   };
 
   if (isLoadingRemote || isLoadingProp) {
+    const displayId = (isPublicView ? publicQuoteId : getUrlOrStoredQuoteId()) || '';
     return (
       <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-high">
         <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
@@ -504,7 +561,7 @@ export default function QuotationPreview({
         </div>
         <h3 className="text-base font-bold text-on-surface mb-1">Loading Solar Proposal...</h3>
         <p className="text-xs text-secondary">
-          Retrieving verified proposal <span className="font-mono font-semibold text-on-surface">{publicQuoteId || ''}</span>
+          Retrieving verified proposal {displayId ? <span className="font-mono font-semibold text-on-surface">{displayId}</span> : 'from database...'}
         </p>
       </div>
     );
