@@ -22,15 +22,39 @@ export function normalizeQuotationRow(row) {
   const customerPhone = row.customer_phone || payload.customerPhone || row.customerPhone || '';
   const city = row.customer_city || payload.city || payload.customerCity || row.city || 'Gujarat';
   const state = row.customer_state || payload.state || payload.customerState || row.state || 'Gujarat';
-  const capacityKW = Number(row.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? row.capacity ?? 0);
-  const totalAmount = Number(row.total_amount ?? payload.grandTotalCustomer ?? payload.totalAmount ?? row.grandTotalCustomer ?? 0);
-  const dealerMargin = Number(row.dealer_margin ?? payload.dealerTotalMargin ?? payload.dealerMargin ?? 0);
+  const capacityKW = Number(row.system_capacity_kw ?? row.systemCapacityKW ?? row.capacityKW ?? payload.systemCapacityKW ?? payload.capacityKW ?? row.capacity ?? payload.capacity ?? 0);
+  const totalAmount = Number(row.total_amount ?? row.totalAmount ?? row.grandTotalCustomer ?? payload.grandTotalCustomer ?? payload.totalAmount ?? 0);
+  const dealerMargin = Number(row.dealer_margin ?? row.dealerMargin ?? payload.dealerTotalMargin ?? payload.dealerMargin ?? 0);
   const dealerId = row.dealer_id || payload.dealerId || row.dealerId || payload.dealerCode || row.dealer_code || 'SV-DIRECT';
   const dealerCode = row.dealer_code || payload.dealerCode || row.dealerCode || (dealerId === 'SV-DIRECT' ? 'SV-DIRECT' : dealerId);
   const dealerName = row.dealer_name || payload.dealerName || row.dealerName || (dealerCode === 'SV-DIRECT' ? 'Sunvine Renewable Energy (Head Office)' : 'Solar Partner');
   const status = row.status || payload.status || 'Active / Sent';
   const rawDate = row.created_at || payload.date || payload.createdAt || row.date;
   const displayDate = payload.date || (rawDate ? new Date(rawDate).toLocaleDateString('en-IN') : 'Today');
+
+  const rawSubsidy = Number(row.subsidy_amount ?? row.subsidyAmount ?? payload.subsidyAmount ?? 0);
+  const subsidyAmount = isNaN(rawSubsidy) ? 0 : rawSubsidy;
+  const rawNet = Number(row.net_payable ?? row.netPayable ?? payload.netPayable ?? Math.max(0, totalAmount - subsidyAmount));
+  const netPayable = isNaN(rawNet) ? Math.max(0, totalAmount - subsidyAmount) : rawNet;
+
+  const rawYield = Number(payload.specificYield ?? row.specific_yield ?? payload.peakSunHours ?? 4.2);
+  const annualYieldMultiplier = rawYield > 100 ? rawYield : (rawYield > 0 ? rawYield * 365 : 1440);
+  const tariff = Number(payload.tariff ?? row.tariff ?? 6.5);
+
+  const rawGenUnits = Number(payload.annualGenerationUnits ?? row.annual_generation_kwh ?? payload.annual_generation_kwh ?? 0);
+  const annualGenerationUnits = rawGenUnits > 0 ? rawGenUnits : Math.round(capacityKW * annualYieldMultiplier);
+  const monthlyGenerationUnits = Number(payload.monthlyGenerationUnits ?? Math.round(annualGenerationUnits / 12));
+
+  const rawSavings = Number(payload.annualSavings ?? 0);
+  const annualSavings = rawSavings > 0 ? rawSavings : Math.round(annualGenerationUnits * tariff);
+  const monthlySavings = Number(payload.monthlySavings ?? Math.round(annualSavings / 12));
+
+  const rawPayback = payload.paybackYears ?? row.payback_years ?? null;
+  const paybackYears = (rawPayback && rawPayback !== '0.0' && rawPayback !== '0' && !isNaN(Number(rawPayback)))
+    ? String(rawPayback)
+    : annualSavings > 0
+      ? (netPayable / annualSavings).toFixed(1)
+      : '3.6';
 
   return {
     ...payload,
@@ -49,6 +73,18 @@ export function normalizeQuotationRow(row) {
     totalAmount,
     grandTotalCustomer: totalAmount,
     total_amount: totalAmount,
+    subsidyAmount,
+    subsidy_amount: subsidyAmount,
+    netPayable,
+    net_payable: netPayable,
+    annual_generation_kwh: annualGenerationUnits,
+    annualGenerationUnits,
+    monthlyGenerationUnits,
+    annualSavings,
+    monthlySavings,
+    paybackYears,
+    tariff,
+    specificYield: rawYield,
     dealerMargin,
     dealer_margin: dealerMargin,
     dealerId,
@@ -57,10 +93,17 @@ export function normalizeQuotationRow(row) {
     dealerName,
     dealer_name: dealerName,
     status,
+    shareToken: row.share_token || payload.shareToken || payload.share_token || row.shareToken || null,
+    share_token: row.share_token || payload.shareToken || payload.share_token || row.shareToken || null,
+    shareExpiresAt: row.share_expires_at || payload.shareExpiresAt || payload.share_expires_at || row.shareExpiresAt || null,
     date: displayDate,
     displayDate,
     created_at: row.created_at || rawDate,
-    createdAt: row.created_at || rawDate
+    createdAt: row.created_at || rawDate,
+    companyProfile: row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile || null,
+    company_profile: row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile || null,
+    bomItems: row.bomItems || payload.bomItems || [],
+    bomTotals: row.bomTotals || payload.bomTotals || {}
   };
 }
 
@@ -84,6 +127,50 @@ export const quotationService = {
       console.error('[quotationService] API fetch error:', err?.message || err);
       return [];
     }
+  },
+
+  /**
+   * Synchronously retrieve quotation from localStorage cache.
+   * Scans primary quotations ledger, active draft, preview quote, and recent quote keys.
+   * Returns normalized quotation row or null.
+   */
+  getLocalQuotationById(id) {
+    if (typeof window === 'undefined' || !id) return null;
+    try {
+      const cleanId = String(id).trim().toLowerCase();
+      // 1. Primary quotations array ledger
+      const local = localStorage.getItem('sunvine_quotations');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed)) {
+          const found = parsed.find(q =>
+            String(q.id || '').trim().toLowerCase() === cleanId ||
+            String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+            String(q.quotationNo || '').trim().toLowerCase() === cleanId ||
+            String(q.shareToken || '').trim().toLowerCase() === cleanId ||
+            String(q.share_token || '').trim().toLowerCase() === cleanId
+          );
+          if (found) return normalizeQuotationRow(found);
+        }
+      }
+      // 2. Draft / preview / single quotation cache keys
+      for (const key of ['sunvine_active_draft_quote', 'sunvine_preview_quotation', 'sunvine_last_quote']) {
+        const item = localStorage.getItem(key);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed && typeof parsed === 'object' && (
+            String(parsed.id || '').trim().toLowerCase() === cleanId ||
+            String(parsed.quoteId || '').trim().toLowerCase() === cleanId ||
+            String(parsed.quotationNo || '').trim().toLowerCase() === cleanId ||
+            String(parsed.shareToken || '').trim().toLowerCase() === cleanId ||
+            String(parsed.share_token || '').trim().toLowerCase() === cleanId
+          )) {
+            return normalizeQuotationRow(parsed);
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
   },
 
   /**
@@ -119,7 +206,7 @@ export const quotationService = {
       const res = await fetch(`/api/quotations?action=public&token=${encodeURIComponent(shareToken)}`);
       if (res.ok) {
         const json = await res.json().catch(() => null);
-        if (json?.success && json.quotation) return json.quotation;
+        if (json?.success && json.quotation) return normalizeQuotationRow(json.quotation);
       }
     } catch (_) {}
     return null;
@@ -165,6 +252,8 @@ export const quotationService = {
       loan_bank: quote.loanBank,
       loan_tenure_years: Number(quote.loanTenureYears) || 5,
       is_direct_company_quote: quote.isDirectCompanyQuote === true || quote.dealerId === 'SV-DIRECT' || quote.dealer_id === 'SV-DIRECT',
+      share_token: quote.shareToken || quote.share_token,
+      share_expires_at: quote.shareExpiresAt || quote.share_expires_at,
       bom_items: quote.bomItems || [],
       quote_payload: quote
     };
@@ -180,7 +269,7 @@ export const quotationService = {
       if (res.ok) {
         const json = await res.json().catch(() => null);
         if (json?.success && json.quotation) {
-          const saved = json.quotation;
+          const saved = normalizeQuotationRow(json.quotation);
           return { success: true, data: saved, isCapped: json._marginExceededAndCapped };
         }
       }
@@ -245,3 +334,8 @@ export const quotationService = {
     }
   }
 };
+
+export function getLocalQuotationById(id) {
+  return quotationService.getLocalQuotationById(id);
+}
+

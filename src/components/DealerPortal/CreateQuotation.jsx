@@ -17,7 +17,8 @@ import {
   calcEMI as calcSharedEMI,
   DEFAULT_SPECIFIC_YIELD,
   DEFAULT_TARIFF_PER_UNIT,
-  DEFAULT_SOLAR_LOAN_RATE_PA
+  DEFAULT_SOLAR_LOAN_RATE_PA,
+  DEFAULT_SUBSIDY_CAP
 } from '../../shared/pricing/calculations';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/gujaratDatabase';
 
@@ -1152,13 +1153,14 @@ export default function CreateQuotation() {
   const isMarginExceeded = isDirectCompanyQuote ? false : (maxMarginCapPerKw > 0 && currentMarginPerKw > maxMarginCapPerKw);
 
   // PM Surya Ghar Central DBT Subsidy Formula (Canonical Shared Engine)
-  const subsidyCap = pricingPresets?.subsidyCap ?? systemSettings?.statutory_taxes?.subsidy?.cap ?? 0;
+  const subsidyCap = Number(pricingPresets?.subsidyCap) || Number(systemSettings?.statutory_taxes?.subsidy?.cap) || DEFAULT_SUBSIDY_CAP;
   const subsidy = calcSharedSubsidy(kw, projectType, subsidyCap);
   const finalPayable = Math.max(0, totalCost - subsidy);
   const specificYield = Number(systemSettings?.governance_settings?.default_specific_yield) || DEFAULT_SPECIFIC_YIELD;
+  const annualYieldMultiplier = specificYield > 100 ? specificYield : (specificYield > 0 ? specificYield * 365 : DEFAULT_SPECIFIC_YIELD);
   const tariff = Number(systemSettings?.governance_settings?.default_tariff) || DEFAULT_TARIFF_PER_UNIT;
   const loanRate = Number(systemSettings?.governance_settings?.default_loan_rate) || DEFAULT_SOLAR_LOAN_RATE_PA;
-  const annualGenerationUnits = Math.round(kw * specificYield);
+  const annualGenerationUnits = Math.round(kw * annualYieldMultiplier);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
   const annualSavings = Math.round(annualGenerationUnits * tariff);
   const monthlySavings = Math.round(annualSavings / 12);
@@ -1421,8 +1423,14 @@ export default function CreateQuotation() {
       || (invertersList && invertersList[0])
       || null;
 
+    const resolvedShareToken = isEdit
+      ? (editingQuotation?.shareToken || editingQuotation?.share_token || null)
+      : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '') : null);
+
     return {
       id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
+      shareToken: resolvedShareToken,
+      share_token: resolvedShareToken,
       isEdit,
       is_edit: isEdit,
       panelId: resolvedPanelObj?.id || null,

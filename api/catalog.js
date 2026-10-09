@@ -2,6 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
 import { requireUser } from './_lib/requireAuth.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
+import {
+  DEFAULT_SUBSIDY_SLAB_1_RATE,
+  DEFAULT_SUBSIDY_SLAB_2_RATE,
+  DEFAULT_SUBSIDY_CAP
+} from '../src/shared/pricing/calculations.js';
 
 function parseCookies(cookieHeader = '') {
   const out = {};
@@ -32,6 +37,7 @@ export async function getSettings(db) {
     const governance = row?.governance_settings || {};
     const statutory = row?.statutory_taxes || {};
     const company = row?.company_profile || {};
+    const bankDetails = row?.bank_details || {};
 
     return {
       governance_settings: {
@@ -48,9 +54,9 @@ export async function getSettings(db) {
       },
       statutory_taxes: {
         subsidy: {
-          slab1Rate: statutory.subsidy?.slab1Rate !== undefined && statutory.subsidy?.slab1Rate !== null ? Number(statutory.subsidy.slab1Rate) : null,
-          slab2Rate: statutory.subsidy?.slab2Rate !== undefined && statutory.subsidy?.slab2Rate !== null ? Number(statutory.subsidy.slab2Rate) : null,
-          cap: statutory.subsidy?.cap !== undefined && statutory.subsidy?.cap !== null ? Number(statutory.subsidy.cap) : null,
+          slab1Rate: (statutory.subsidy?.slab1Rate !== undefined && statutory.subsidy?.slab1Rate !== null && Number(statutory.subsidy.slab1Rate) > 0) ? Number(statutory.subsidy.slab1Rate) : DEFAULT_SUBSIDY_SLAB_1_RATE,
+          slab2Rate: (statutory.subsidy?.slab2Rate !== undefined && statutory.subsidy?.slab2Rate !== null && Number(statutory.subsidy.slab2Rate) > 0) ? Number(statutory.subsidy.slab2Rate) : DEFAULT_SUBSIDY_SLAB_2_RATE,
+          cap: (statutory.subsidy?.cap !== undefined && statutory.subsidy?.cap !== null && Number(statutory.subsidy.cap) > 0) ? Number(statutory.subsidy.cap) : DEFAULT_SUBSIDY_CAP,
           breakpointKw: statutory.subsidy?.breakpointKw !== undefined ? Number(statutory.subsidy.breakpointKw) : 3
         },
         gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
@@ -65,11 +71,11 @@ export async function getSettings(db) {
         website: company.website || '',
         email: company.email || '',
         bank: {
-          bankName: company.bank?.bankName || company.bank_name || '',
-          accountNumber: company.bank?.accountNumber || company.bank_account_no || '',
-          ifsc: company.bank?.ifsc || company.bank_ifsc || '',
-          branch: company.bank?.branch || company.bank_branch || '',
-          accountHolder: company.bank?.accountHolder || company.bank_account_holder || ''
+          bankName: company.bank?.bankName || company.bank_name || bankDetails.bankName || bankDetails.bank_name || '',
+          accountNumber: company.bank?.accountNumber || company.bank_account_no || bankDetails.accountNumber || bankDetails.account_number || '',
+          ifsc: company.bank?.ifsc || company.bank_ifsc || bankDetails.ifsc || bankDetails.ifsc_code || '',
+          branch: company.bank?.branch || company.bank_branch || bankDetails.branch || '',
+          accountHolder: company.bank?.accountHolder || company.bank_account_holder || bankDetails.accountHolder || bankDetails.account_holder || ''
         },
         terms: company.terms || '',
         validityText: company.validityText || ''

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { randomBytes } from 'crypto';
 import { requireUser } from './_lib/requireAuth.js';
 import { getClientIp, checkDistributedRateLimit, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
@@ -266,7 +267,7 @@ async function generateQuotationId(db, prefix = 'SV') {
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
-async function handleSave(req, res, jwt, db) {
+export async function handleSave(req, res, jwt, db) {
   const { role, dealer_id, id: userId } = jwt;
   const body = req.body || {};
 
@@ -738,8 +739,56 @@ async function handleSave(req, res, jwt, db) {
     subsidyAmount
   });
 
-  // ── Build frozen quote_payload ─────────────────────────────────────────────
+  // ── Extract client UI / presentation metadata (F-01: Downstream Field Preservation) ──
+  const clientPayload = (typeof body.quote_payload === 'object' && body.quote_payload !== null) ? body.quote_payload : {};
+  
+  // ── Authoritative Server-side Energy & Savings Recompute (Anti-Tampering) ────
+  const defaultTariff = Number(settings?.governance_settings?.default_tariff || 6.5);
+  const resolvedTariff = (Number(body.tariff ?? clientPayload.tariff) > 0) ? Number(body.tariff ?? clientPayload.tariff) : defaultTariff;
+  const serverAnnualGenUnits = Math.round(serverValidatedKw * (peakSunHours > 100 ? peakSunHours : (peakSunHours > 0 ? Math.round(peakSunHours * 365) : 1440)));
+  const serverMonthlyGenUnits = Math.round(serverAnnualGenUnits / 12);
+  const serverAnnualSavings = Math.round(serverAnnualGenUnits * resolvedTariff);
+  const serverMonthlySavings = Math.round(serverAnnualSavings / 12);
+  const serverPaybackYears = serverAnnualSavings > 0 ? (netPayable / serverAnnualSavings).toFixed(1) : '3.6';
+
+  // ── Build frozen quote_payload (Preserves UI metadata; forces authoritative server money & telemetry) ──
   const quotePayload = {
+    // Authoritative server-computed energy & financial telemetry (cannot be client-spoofed)
+    annualGenerationUnits: serverAnnualGenUnits,
+    monthlyGenerationUnits: serverMonthlyGenUnits,
+    annualSavings: serverAnnualSavings,
+    monthlySavings: serverMonthlySavings,
+    paybackYears: serverPaybackYears,
+    tariff: resolvedTariff,
+    specificYield: peakSunHours,
+    roofConfig: clientPayload.roofConfig || body.roof_config || null,
+    coverImage: clientPayload.coverImage || clientPayload.customCoverUrl || body.custom_cover_url || null,
+    customCoverUrl: clientPayload.customCoverUrl || clientPayload.coverImage || body.custom_cover_url || null,
+    estimatedMonthlyEmi: clientPayload.estimatedMonthlyEmi || body.estimated_monthly_emi || null,
+    paymentMode: body.payment_mode || clientPayload.paymentMode || body.finance_type || 'CASH',
+    quoteChannel: clientPayload.quoteChannel || (isDirectCompany ? 'direct' : 'dealer'),
+    creatorRole: clientPayload.creatorRole || role,
+    creatorStaffId: clientPayload.creatorStaffId || null,
+    creatorStaffName: clientPayload.creatorStaffName || null,
+    pricingMode: clientPayload.pricingMode || null,
+    pricingCategory: clientPayload.pricingCategory || null,
+    transportPreset: clientPayload.transportPreset || body.transport_preset || null,
+    transportCharge: Number(clientPayload.transportCharge ?? body.transport_charge ?? 1000),
+    installationPricingMode: clientPayload.installationPricingMode || body.installation_pricing_mode || 'per_kw',
+    installationFixedAmount: Number(clientPayload.installationFixedAmount ?? body.installation_fixed_amount ?? 0),
+    installationRatePerKw: Number(clientPayload.installationRatePerKw ?? body.installation_rate_per_kw ?? 2000),
+    moduleCount: Number(body.module_count ?? clientPayload.moduleCount ?? panelQty),
+    panelWatt: Number(body.panel_watt ?? clientPayload.panelWatt ?? dbPanelWatt),
+    moduleEstimatedCost: Number(clientPayload.moduleEstimatedCost ?? 0),
+    inverterEstimatedCost: Number(clientPayload.inverterEstimatedCost ?? 0),
+    structureEstimatedCost: Number(clientPayload.structureEstimatedCost ?? 0),
+    bosEstimatedCost: Number(clientPayload.bosEstimatedCost ?? 0),
+    selectedModuleMake: clientPayload.selectedModuleMake || null,
+    selectedInverterMake: clientPayload.selectedInverterMake || null,
+    multiBrandComparison: Boolean(clientPayload.multiBrandComparison),
+    multiBrandPackages: Array.isArray(clientPayload.multiBrandPackages) ? clientPayload.multiBrandPackages : null,
+
+    // Authoritative server-calculated BOM and Financial totals (cannot be spoofed)
     bomItems: bomTotals.calculatedItems,
     bomTotals: {
       subtotal0Base: bomTotals.subtotal0Base,
@@ -760,6 +809,12 @@ async function handleSave(req, res, jwt, db) {
     inverterId: body.inverter_id,
     panelRatePerWp,
     inverterUnitPrice,
+    baseCost: bomTotals.grossTurnkeyCost,
+    totalAmount,
+    grandTotalCustomer: totalAmount,
+    subsidyAmount,
+    netPayable,
+    dealerMargin: effectiveMargin,
     dealerMarginPerKw: kw > 0 ? Math.round(effectiveMargin / kw) : 0,
     marginExceededAndCapped: isMarginExceeded,
     discountAmount: clampedDiscount,
@@ -771,7 +826,7 @@ async function handleSave(req, res, jwt, db) {
     isInterState,
     companyProfile: settings?.company_profile || null,
     computedAt: new Date().toISOString(),
-    serverVersion: '2.1'
+    serverVersion: '2.2'
   };
 
   // ── Generate or reuse quotation ID ─────────────────────────────────────────
@@ -787,6 +842,9 @@ async function handleSave(req, res, jwt, db) {
 
   const shareExpiresAt = existingQuotation?.share_expires_at ||
     new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // Generate or preserve unguessable public share token (18 bytes hex = 36 hex chars)
+  const shareToken = existingQuotation?.share_token || body.share_token || body.quote_payload?.shareToken || body.quote_payload?.share_token || randomBytes(18).toString('hex');
 
   const statusToSave = normalizeQuotationStatus(body.status || (isNew ? (isDirectCompany ? 'Approved / Direct' : 'Active / Sent') : (existingQuotation?.status || 'Active / Sent')));
 
@@ -834,11 +892,14 @@ async function handleSave(req, res, jwt, db) {
     annual_generation_kwh: Math.round(serverValidatedKw * (peakSunHours > 100 ? peakSunHours : (peakSunHours > 0 ? Math.round(peakSunHours * 365) : 1440))),
     status: String(statusToSave).trim().slice(0, 50),
     request_id: toValidUuid(body.request_id),
+    share_token: shareToken,
     share_expires_at: shareExpiresAt,
     quote_payload: {
       ...quotePayload,
       id: quotationId,
       status: statusToSave,
+      shareToken: shareToken,
+      share_token: shareToken,
       dealerId: resolvedDealerCode || resolvedDealerUuid,
       dealerCode: resolvedDealerCode,
       dealerName: resolvedDealerName
@@ -894,13 +955,15 @@ async function handleSave(req, res, jwt, db) {
     id: data?.id,
     quotation: {
       ...data,
+      share_token: data?.share_token || shareToken,
+      shareToken: data?.share_token || shareToken,
       _marginExceededAndCapped: isMarginExceeded,
       _clampedDiscount: clampedDiscount
     }
   });
 }
 
-async function handleStatus(req, res, jwt, db) {
+export async function handleStatus(req, res, jwt, db) {
   const { role, dealer_id } = jwt;
   const { id, newStatus } = req.body || {};
 
@@ -960,7 +1023,7 @@ async function handleStatus(req, res, jwt, db) {
 }
 
 // ── T5.5: Public view with share token expiry check ─────────────────────────
-async function handlePublicView(req, res, db) {
+export async function handlePublicView(req, res, db) {
   const { token } = req.query || {};
   if (!token) return res.status(400).json({ error: 'share_token is required.' });
 
@@ -972,10 +1035,10 @@ async function handlePublicView(req, res, db) {
   }
 
   // Cache-Aside with 7-day sliding safety TTL
-  const { data, fromCache } = await cacheAside(`quote:public:${token}`, 604800, async () => {
+  const { data, fromCache } = await cacheAside(`quote:public:v2:${token}`, 604800, async () => {
     const { data: quoteData } = await db
       .from('quotations')
-      .select('id, customer_name, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, quote_payload, share_expires_at, created_at')
+      .select('id, customer_name, customer_phone, customer_city, customer_state, system_capacity_kw, panel_type, inverter_type, structure_type, total_amount, subsidy_amount, net_payable, annual_generation_kwh, status, share_token, quote_payload, share_expires_at, created_at')
       .eq('share_token', token)
       .neq('status', 'Archived')
       .maybeSingle();
@@ -984,22 +1047,80 @@ async function handlePublicView(req, res, db) {
 
     const isExpired = quoteData.share_expires_at && new Date(quoteData.share_expires_at).getTime() < Date.now();
 
+    const payload = (typeof quoteData.quote_payload === 'string')
+      ? JSON.parse(quoteData.quote_payload)
+      : (quoteData.quote_payload || {});
+
+    // Resolve company profile from payload or active database settings
+    let companyProfile = payload.companyProfile || payload.company_profile;
+    const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
+    const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
+    const hasBank = Boolean(bankAcc && String(bankAcc).trim());
+
+    if (!hasGstin || !hasBank) {
+      const settings = await getSettings(db);
+      if (settings?.company_profile) {
+        companyProfile = {
+          ...settings.company_profile,
+          ...(companyProfile || {}),
+          bank: {
+            ...(settings.company_profile?.bank || {}),
+            ...(companyProfile?.bank || companyProfile?.bankDetails || {})
+          }
+        };
+      }
+    }
+
     return {
       id: quoteData.id,
-      customerName: quoteData.customer_name,
-      systemCapacityKw: quoteData.system_capacity_kw,
-      panelType: quoteData.panel_type,
-      inverterType: quoteData.inverter_type,
-      structureType: quoteData.structure_type,
-      totalAmount: quoteData.total_amount,
-      subsidyAmount: quoteData.subsidy_amount,
-      netPayable: quoteData.net_payable,
-      annualGenerationKwh: quoteData.annual_generation_kwh,
+      shareToken: quoteData.share_token || token,
+      share_token: quoteData.share_token || token,
+      customerName: quoteData.customer_name || payload.customerName || 'Valued Customer',
+      customerPhone: quoteData.customer_phone || payload.customerPhone || '',
+      city: quoteData.customer_city || payload.city || payload.customerCity || 'Rajkot',
+      state: quoteData.customer_state || payload.state || payload.customerState || 'Gujarat',
+      location: payload.location || (quoteData.customer_city ? `${quoteData.customer_city}, ${quoteData.customer_state || 'Gujarat'}` : 'Gujarat, India'),
+      systemCapacityKw: Number(quoteData.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? 0),
+      systemCapacityKW: Number(quoteData.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? 0),
+      capacityKW: Number(quoteData.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? 0),
+      capacity: Number(quoteData.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? 0),
+      panelType: quoteData.panel_type || payload.panelType || payload.solarModule || '',
+      solarModule: payload.solarModule || quoteData.panel_type || '',
+      moduleWattage: Number(payload.moduleWattage || payload.panelWatt) || 585,
+      moduleCount: Number(payload.moduleCount || payload.panelQuantity) || 0,
+      pvModuleSize: payload.pvModuleSize || '2278 × 1134 × 30 mm',
+      inverterType: quoteData.inverter_type || payload.inverterType || '',
+      inverterCapacity: payload.inverterCapacity || `${Number(quoteData.system_capacity_kw ?? payload.systemCapacityKW ?? 0)} kW`,
+      inverterCount: payload.inverterCount || '1 NOS',
+      structureType: quoteData.structure_type || payload.structureType || '',
+      totalAmount: Number(quoteData.total_amount ?? payload.totalAmount ?? payload.grandTotalCustomer ?? 0),
+      grandTotalCustomer: Number(quoteData.total_amount ?? payload.totalAmount ?? payload.grandTotalCustomer ?? 0),
+      subsidyAmount: Number(quoteData.subsidy_amount ?? payload.subsidyAmount ?? 0),
+      netPayable: Number(quoteData.net_payable ?? payload.netPayable ?? 0),
+      annualGenerationKwh: Number(quoteData.annual_generation_kwh ?? payload.annualGenerationKwh ?? payload.annualGeneration ?? 0),
+      annual_generation_kwh: Number(quoteData.annual_generation_kwh ?? payload.annualGenerationKwh ?? payload.annualGeneration ?? 0),
+      annualGenerationUnits: Number(payload.annualGenerationUnits || quoteData.annual_generation_kwh || (Number(quoteData.system_capacity_kw || 0) * 1440)),
+      annualSavings: Number(payload.annualSavings || Math.round((Number(payload.annualGenerationUnits || quoteData.annual_generation_kwh || (Number(quoteData.system_capacity_kw || 0) * 1440))) * Number(payload.tariff || 6.5))),
+      paybackYears: String(payload.paybackYears || (Number(payload.annualSavings) > 0 ? (Number(quoteData.net_payable) / Number(payload.annualSavings)).toFixed(1) : '3.6')),
+      tariff: Number(payload.tariff || 6.5),
+      specificYield: Number(payload.specificYield || 4.2),
       status: quoteData.status,
       shareExpiresAt: quoteData.share_expires_at,
       isExpired,
-      bomItems: quoteData.quote_payload?.bomItems || [],
-      bomTotals: quoteData.quote_payload?.bomTotals || {},
+      bomItems: payload.bomItems || [],
+      bomTotals: payload.bomTotals || {},
+      companyProfile: companyProfile || null,
+      projectType: payload.projectType || 'Residential',
+      multiBrandComparison: Boolean(payload.multiBrandComparison),
+      multiBrandPackages: payload.multiBrandPackages || null,
+      selectedModuleMake: payload.selectedModuleMake || '',
+      selectedInverterMake: payload.selectedInverterMake || '',
+      dealerName: payload.dealerName || 'Sunvine Renewable Energy',
+      dealerCode: payload.dealerCode || 'SV-DIRECT',
+      isDirectCompanyQuote: payload.isDirectCompanyQuote ?? true,
+      customCoverUrl: payload.customCoverUrl || null,
+      coverImage: payload.coverImage || null,
+      date: payload.date || (quoteData.created_at ? new Date(quoteData.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
       createdAt: quoteData.created_at
     };
   });
@@ -1019,7 +1140,7 @@ async function handlePublicView(req, res, db) {
 }
 
 // ── T5.5: List with pagination & role column scoping ─────────────────────────
-async function handleList(req, res, jwt, db) {
+export async function handleList(req, res, jwt, db) {
   const { role, dealer_id } = jwt;
   const limit = Math.min(100, Math.max(1, parseInt(req.query?.limit, 10) || 50));
   const offset = Math.max(0, parseInt(req.query?.offset, 10) || 0);
@@ -1057,7 +1178,7 @@ async function handleList(req, res, jwt, db) {
   return res.status(200).json({ success: true, quotations: data || [], total: count, limit, offset });
 }
 
-async function handleGet(req, res, jwt, db) {
+export async function handleGet(req, res, jwt, db) {
   const { role, dealer_id } = jwt;
   const id = req.query?.id;
   if (!id) return res.status(400).json({ error: 'id parameter is required.' });
@@ -1087,7 +1208,7 @@ async function handleGet(req, res, jwt, db) {
   return res.status(200).json({ success: true, quotation: data });
 }
 
-async function handleDelete(req, res, jwt, db) {
+export async function handleDelete(req, res, jwt, db) {
   const { role, dealer_id } = jwt;
   const id = req.query?.id || req.body?.id;
   if (!id) return res.status(400).json({ error: 'id parameter is required.' });

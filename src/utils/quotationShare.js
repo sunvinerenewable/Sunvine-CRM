@@ -45,14 +45,41 @@ export function encodeQuotationPayload(quote) {
 export function getPublicProposalUrl(quoteOrId) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvinerenewable.com';
   if (typeof quoteOrId === 'object' && quoteOrId !== null) {
-    const id = quoteOrId.id || '';
+    const id = quoteOrId.id || quoteOrId.quoteId || quoteOrId.quotationNo || '';
     const shareToken = quoteOrId.shareToken || quoteOrId.share_token;
     if (shareToken) {
       return `${origin}/?view=quote&token=${encodeURIComponent(shareToken)}`;
     }
+    // Check local cache for token if quotation has an ID
+    if (id && typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(id);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
+    }
     return `${origin}/?view=quote&id=${encodeURIComponent(id)}`;
   }
-  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || '')}`;
+  if (typeof quoteOrId === 'string' && quoteOrId) {
+    // If quoteOrId is already a public token
+    if (quoteOrId.startsWith('tok_') || quoteOrId.startsWith('pub_') || /^[0-9a-f]{32,64}$/i.test(quoteOrId)) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(quoteOrId)}`;
+    }
+    // Check local cache for token by quote ID
+    if (typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(quoteOrId);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
+    }
+    return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId)}`;
+  }
+  return `${origin}/?view=quote`;
 }
 
 // Generate the official proposal WhatsApp message

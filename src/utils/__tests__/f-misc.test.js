@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 
 import { resolveCompanyProfile, SUNVINE_OFFICIAL_PROFILE } from '../../data/defaultPresets.js';
 import { encodeQuotationPayload, getPublicProposalUrl } from '../quotationShare.js';
+import { calculateSubsidy, DEFAULT_SUBSIDY_CAP } from '../../shared/pricing/calculations.js';
 
 test('Company Profile Resolution: merges dynamic system_settings properly', () => {
   const customSettings = {
@@ -63,4 +64,55 @@ test('SEC-EX-001: Quotation share payload does not expose dealerMarginPerKW or c
 
   const shareUrl = getPublicProposalUrl(sensitiveQuote);
   assert.ok(shareUrl.includes('token=safe-random-share-token-123'), 'Must prefer unguessable share token in URL');
+});
+
+test('Issue 5: Public token URLs and token extraction logic', () => {
+  const quoteWithToken = {
+    id: 'SV-2026-Q100',
+    shareToken: 'token_abc123xyz'
+  };
+  const url = getPublicProposalUrl(quoteWithToken);
+  assert.ok(url.includes('?view=quote&token=token_abc123xyz'), 'Generated URL must include token param');
+
+  const searchParams = new URLSearchParams('?view=quote&token=token_abc123xyz');
+  const token = searchParams.get('token') || searchParams.get('shareToken');
+  assert.equal(token, 'token_abc123xyz', 'Token must be extractable from query params');
+});
+
+test('Issue 6: Company billing completeness detects GSTIN and Bank account', () => {
+  const completeProfile = {
+    name: 'Sunvine Renewable Energy',
+    gstin: '24AAAAA0000A1Z5',
+    bank: {
+      accountNumber: '999900012345',
+      ifsc: 'SBIN0001234'
+    }
+  };
+  const hasGstin = Boolean(completeProfile?.gstin && String(completeProfile.gstin).trim());
+  const bankAcc = completeProfile?.bank?.accountNumber || completeProfile?.bank?.account_number || completeProfile?.bankDetails?.accountNumber || completeProfile?.bankDetails?.account_number;
+  const hasBank = Boolean(bankAcc && String(bankAcc).trim());
+  assert.equal(hasGstin && hasBank, true, 'Billing profile with GSTIN and bank must be complete');
+
+  const incompleteProfile = {
+    name: 'Sunvine Renewable Energy',
+    gstin: '',
+    bank: {}
+  };
+  const hasGstinBad = Boolean(incompleteProfile?.gstin && String(incompleteProfile.gstin).trim());
+  const bankAccBad = incompleteProfile?.bank?.accountNumber || incompleteProfile?.bank?.account_number;
+  const hasBankBad = Boolean(bankAccBad && String(bankAccBad).trim());
+  assert.equal(hasGstinBad && hasBankBad, false, 'Billing profile without GSTIN or bank must be incomplete');
+});
+
+test('Issue 7: Frontend subsidy cap fallback does not default to zero', () => {
+  // Test fallback chain: pricingPresets -> systemSettings -> DEFAULT_SUBSIDY_CAP
+  const presetsEmpty = { subsidyCap: 0 };
+  const systemSettingsEmpty = { statutory_taxes: { subsidy: { cap: 0 } } };
+
+  const resolvedCap = Number(presetsEmpty?.subsidyCap) || Number(systemSettingsEmpty?.statutory_taxes?.subsidy?.cap) || DEFAULT_SUBSIDY_CAP;
+  assert.equal(resolvedCap, 78000, 'Must fallback to 78000 when configured caps are 0 or omitted');
+
+  const kw = 5;
+  const subsidy = calculateSubsidy(kw, 'Residential', resolvedCap);
+  assert.equal(subsidy, 78000, '5 kW system must receive ₹78,000 subsidy, not 0');
 });

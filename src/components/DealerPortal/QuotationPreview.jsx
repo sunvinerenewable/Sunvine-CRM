@@ -14,6 +14,7 @@ import { useToast } from '../Shared/Toast';
 export default function QuotationPreview({
   isPublicView = false,
   publicQuoteId = null,
+  shareToken = null,
   quotation: propQuotation = null,
   isLoadingProp = false
 }) {
@@ -68,6 +69,27 @@ export default function QuotationPreview({
   // Asynchronously hydrate quotation from Supabase / database on refresh or direct load
   useEffect(() => {
     if (propQuotation || isLoadingProp) return;
+
+    // Handle token-based public links directly
+    const token = isPublicView ? (shareToken || (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('token') ||
+      new URLSearchParams(window.location.search).get('shareToken')
+    ) : null)) : null;
+
+    if (token) {
+      let isMounted = true;
+      setIsLoadingRemote(true);
+      quotationService.getPublicProposal(token).then(quote => {
+        if (isMounted && quote) {
+          setRemoteFetchedQuote(quote);
+        }
+      }).catch(err => {
+        console.warn('Failed to fetch remote public quote:', err);
+      }).finally(() => {
+        if (isMounted) setIsLoadingRemote(false);
+      });
+      return () => { isMounted = false; };
+    }
 
     const targetQuoteId = isPublicView ? publicQuoteId : getUrlOrStoredQuoteId();
     if (!targetQuoteId) {
@@ -149,6 +171,15 @@ export default function QuotationPreview({
 
     return null;
   }, [propQuotation, remoteFetchedQuote, previewQuotation, isPublicView, publicQuoteId, quotations]);
+
+  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+  const quotationWithProfile = useMemo(() => {
+    if (!activeQuotation) return null;
+    return {
+      ...activeQuotation,
+      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
+    };
+  }, [activeQuotation, companyProfile]);
 
   // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
   useEffect(() => {
@@ -519,9 +550,16 @@ export default function QuotationPreview({
     }
   };
 
-  const handleCopyMessage = () => {
+  const handleCopyMessage = async () => {
     if (!activeQuotation) return;
-    const msg = buildProposalWhatsAppMessage(activeQuotation);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const msg = buildProposalWhatsAppMessage(quoteToShare);
     navigator.clipboard.writeText(msg);
     setCopiedFeedback(true);
     setTimeout(() => setCopiedFeedback(false), 2000);
@@ -529,8 +567,14 @@ export default function QuotationPreview({
 
   const handleCopyOnlineLink = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLinkFeedback(true);
@@ -545,15 +589,21 @@ export default function QuotationPreview({
     } catch (e) {}
   };
 
-  const handleOpenOnlineView = () => {
+  const handleOpenOnlineView = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     window.open(url, '_blank');
   };
 
   if (isLoadingRemote || isLoadingProp) {
-    const displayId = (isPublicView ? publicQuoteId : getUrlOrStoredQuoteId()) || '';
+    const displayId = (isPublicView ? (publicQuoteId || shareToken) : getUrlOrStoredQuoteId()) || '';
     return (
       <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-high">
         <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
@@ -566,15 +616,6 @@ export default function QuotationPreview({
       </div>
     );
   }
-
-  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
-  const quotationWithProfile = useMemo(() => {
-    if (!activeQuotation) return null;
-    return {
-      ...activeQuotation,
-      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
-    };
-  }, [activeQuotation, companyProfile]);
 
   if (!activeQuotation) {
     if (isPublicView) {
@@ -589,7 +630,7 @@ export default function QuotationPreview({
           </div>
           <h3 className="text-xl font-bold text-on-surface mb-2">Proposal Not Found or Expired</h3>
           <p className="text-sm text-secondary mb-6 max-w-md mx-auto leading-relaxed">
-            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || 'N/A'}</span>. The proposal link may have expired or is unavailable.
+            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || shareToken || 'N/A'}</span>. The proposal link may have expired or is unavailable.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <a
@@ -888,7 +929,7 @@ export default function QuotationPreview({
                   </div>
                 </div>
                 <div className="text-[11px] font-mono text-blue-800 bg-white/90 p-2 rounded-lg border border-blue-200 truncate select-all">
-                  {getPublicProposalUrl(activeQuotation.id)}
+                  {getPublicProposalUrl(activeQuotation)}
                 </div>
               </div>
 

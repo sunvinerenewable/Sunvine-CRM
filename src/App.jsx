@@ -10,14 +10,30 @@ function isPublicProposalRoute() {
   if (typeof window === 'undefined') return false;
   const search = window.location.search || '';
   const searchParams = new URLSearchParams(search);
-  if (searchParams.get('view') === 'quote' || searchParams.has('quoteId')) {
+  if (
+    searchParams.get('view') === 'quote' ||
+    searchParams.has('quoteId') ||
+    searchParams.has('token') ||
+    searchParams.has('shareToken')
+  ) {
     return true;
   }
   const hash = window.location.hash || '';
-  if (hash.startsWith('#/quote/') || hash.startsWith('#/view-quote/')) {
+  if (hash.startsWith('#/quote/') || hash.startsWith('#/view-quote/') || /[?&](?:token|shareToken)=/.test(hash)) {
     return true;
   }
   return false;
+}
+
+function getPublicProposalToken() {
+  if (typeof window === 'undefined') return null;
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const tokenFromParam = searchParams.get('token') || searchParams.get('shareToken');
+  if (tokenFromParam) return tokenFromParam;
+  const hash = window.location.hash || '';
+  const match = hash.match(/[?&](?:token|shareToken)=([^&#]+)/);
+  if (match) return decodeURIComponent(match[1]);
+  return null;
 }
 
 function getPublicProposalId() {
@@ -39,6 +55,7 @@ const PublicQuotationView = lazy(() => import('./components/PublicQuotationView'
 export default function App() {
   const isPublic = isPublicProposalRoute();
   const publicQuoteId = isPublic ? getPublicProposalId() : null;
+  const shareToken = isPublic ? getPublicProposalToken() : null;
 
   return (
     <ErrorBoundary>
@@ -46,7 +63,7 @@ export default function App() {
         <ToastProvider>
           {isPublic ? (
             <Suspense fallback={null}>
-              <PublicQuotationView publicQuoteId={publicQuoteId} />
+              <PublicQuotationView publicQuoteId={publicQuoteId} shareToken={shareToken} />
             </Suspense>
           ) : (
             <Suspense fallback={<PortalSkeleton />}>

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
 import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
 import { calculateSubsidy, DEFAULT_SPECIFIC_YIELD, DEFAULT_TARIFF_PER_UNIT } from '../../shared/pricing/calculations';
 
@@ -102,12 +103,7 @@ function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake =
 }
 
 export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport = false }) {
-  if (!quotation) return null;
-
-  let appContext = {};
-  try {
-    appContext = useApp() || {};
-  } catch (_) {}
+  const appContext = useApp() || {};
   const systemSettings = quotation?.systemSettings || appContext?.systemSettings || null;
 
   const {
@@ -139,35 +135,19 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     coverImage,
     customCoverUrl,
     bomItems,
-    companyProfile = quotation.companyProfile || quotation.company_profile || {}
-  } = quotation;
+    companyProfile: initialCompanyProfile = null
+  } = quotation || {};
 
-  // Verify company billing completeness (GSTIN and Bank Account must be non-empty)
-  const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
-  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
-  const hasBank = Boolean(bankAcc && String(bankAcc).trim());
-  const isBillingProfileComplete = hasGstin && hasBank;
-
-  if (!isBillingProfileComplete) {
-    return (
-      <div data-testid="pdf-blocking-message" className="pdf-document w-full max-w-2xl mx-auto my-12 p-8 bg-red-950/20 border-2 border-red-500/50 rounded-2xl text-center flex flex-col items-center gap-4 text-white">
-        <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
-          <span className="material-symbols-outlined text-4xl">error_outline</span>
-        </div>
-        <h2 className="text-xl font-bold text-red-200">Quotation PDF Generation Blocked</h2>
-        <p className="text-sm text-red-300/90 max-w-md">
-          Company GSTIN and Bank Account details are required before generating, previewing, or exporting official quotation documents.
-        </p>
-        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs font-mono text-red-300 text-left w-full max-w-xs">
-          <div>GSTIN: {hasGstin ? 'Configured' : 'MISSING (Empty)'}</div>
-          <div>Bank Account: {hasBank ? 'Configured' : 'MISSING (Empty)'}</div>
-        </div>
-        <p className="text-xs text-gray-400">
-          Please navigate to Admin Settings &gt; Company Profile to configure the official billing profile.
-        </p>
-      </div>
-    );
-  }
+  const fallbackProfile = appContext?.systemSettings?.companyProfile || appContext?.systemSettings?.company_profile || appContext?.officialProfile || {};
+  const rawCompanyProfile = initialCompanyProfile || quotation?.companyProfile || quotation?.company_profile || {};
+  const companyProfile = {
+    ...fallbackProfile,
+    ...rawCompanyProfile,
+    bank: {
+      ...(fallbackProfile?.bank || fallbackProfile?.bankDetails || {}),
+      ...(rawCompanyProfile?.bank || rawCompanyProfile?.bankDetails || {})
+    }
+  };
 
   // Resolve numerical capacity and dimensions
   const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(2));
@@ -391,11 +371,13 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     systemSettings?.governance_settings?.default_specific_yield
   ) || DEFAULT_SPECIFIC_YIELD;
 
+  const annualYieldMultiplier = specificYield > 100 ? specificYield : (specificYield > 0 ? specificYield * 365 : 1440);
+
   const annualGenUnits = Number(quotation.annualGenerationUnits) > 0
     ? Number(quotation.annualGenerationUnits)
     : Number(quotation.annual_generation_kwh) > 0
       ? Math.round(Number(quotation.annual_generation_kwh))
-      : Math.round(resolvedCapKW * specificYield);
+      : Math.round(resolvedCapKW * annualYieldMultiplier);
 
   const tariff = Number(
     quotation.tariff ||
@@ -406,7 +388,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     ? Number(quotation.annualSavings)
     : Math.round(annualGenUnits * tariff);
 
-  const paybackYears = (quotation.paybackYears && quotation.paybackYears !== '0.0' && !isNaN(Number(quotation.paybackYears)))
+  const paybackYears = (quotation.paybackYears && quotation.paybackYears !== '0.0' && quotation.paybackYears !== '0' && !isNaN(Number(quotation.paybackYears)))
     ? String(quotation.paybackYears)
     : annualSavings > 0
       ? (netPayable / annualSavings).toFixed(1)
@@ -441,6 +423,35 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
       };
     });
   }, [multiBrandComparison, multiBrandPackages, resolvedCapKW, customerRatePerKW, subsidyAmount]);
+
+  if (!quotation) return null;
+
+  // Verify company billing completeness (GSTIN and Bank Account must be non-empty)
+  const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
+  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
+  const hasBank = Boolean(bankAcc && String(bankAcc).trim());
+  const isBillingProfileComplete = hasGstin && hasBank;
+
+  if (!isBillingProfileComplete) {
+    return (
+      <div data-testid="pdf-blocking-message" className="pdf-document w-full max-w-2xl mx-auto my-12 p-8 bg-red-950/20 border-2 border-red-500/50 rounded-2xl text-center flex flex-col items-center gap-4 text-white">
+        <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
+          <span className="material-symbols-outlined text-4xl">error_outline</span>
+        </div>
+        <h2 className="text-xl font-bold text-red-200">Quotation PDF Generation Blocked</h2>
+        <p className="text-sm text-red-300/90 max-w-md">
+          Company GSTIN and Bank Account details are required before generating, previewing, or exporting official quotation documents.
+        </p>
+        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs font-mono text-red-300 text-left w-full max-w-xs">
+          <div>GSTIN: {hasGstin ? 'Configured' : 'MISSING (Empty)'}</div>
+          <div>Bank Account: {hasBank ? 'Configured' : 'MISSING (Empty)'}</div>
+        </div>
+        <p className="text-xs text-gray-400">
+          Please navigate to Admin Settings &gt; Company Profile to configure the official billing profile.
+        </p>
+      </div>
+    );
+  }
 
   const resolvedCoverSrc = customCoverUrl || coverImage || '/sunvine_quotation_cover.png';
 
