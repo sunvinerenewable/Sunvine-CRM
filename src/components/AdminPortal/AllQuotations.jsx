@@ -889,6 +889,7 @@ export default function AllQuotations() {
                   const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                   const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
                   const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
+                  const isFlagged = marginPerKw > 6000 || Boolean(q.isFlagged);
                   const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                   const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
