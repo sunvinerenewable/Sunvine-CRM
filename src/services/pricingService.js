@@ -415,12 +415,26 @@ export const pricingService = {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
 
     try {
-      const targetIdentifier = dealerCode || dealerId;
+      let actualData = pricingData;
+      let targetIdentifier = dealerCode || dealerId;
+
+      // Handle 2-argument signature: saveDealerPricing(dealerId, pricingConfig)
+      if (typeof dealerCode === 'object' && dealerCode !== null && !pricingData) {
+        actualData = dealerCode;
+        targetIdentifier = dealerId;
+      }
+
+      if (!actualData) {
+        return { success: false, error: 'Pricing data required' };
+      }
+
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(targetIdentifier || ''));
+      
+      // Update dealer_accounts table
       let query = supabase
         .from('dealer_accounts')
         .update({
-          pricing_config: pricingData,
+          pricing_config: actualData,
           updated_at: new Date().toISOString()
         });
 
@@ -432,11 +446,27 @@ export const pricingService = {
 
       const { error } = await query;
 
+      // Also sync to dealers table if exists
+      try {
+        let dQuery = supabase
+          .from('dealers')
+          .update({
+            pricing_config: actualData,
+            updated_at: new Date().toISOString()
+          });
+        if (isUuid) {
+          dQuery = dQuery.eq('id', targetIdentifier);
+        } else {
+          dQuery = dQuery.eq('dealer_code', targetIdentifier);
+        }
+        await dQuery;
+      } catch (_) {}
+
       if (error) {
         console.warn('Supabase save dealer pricing notice:', error.message);
         return { success: false, error: error.message };
       }
-      return { success: true, data: pricingData };
+      return { success: true, data: actualData };
     } catch (err) {
       return { success: false, error: err.message };
     }

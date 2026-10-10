@@ -2467,6 +2467,7 @@ const safeSetItem = (key, value) => {
         const currentCfg = d.pricingConfig || {};
         const currentProductRates = { ...(currentCfg.customProductRates || {}) };
         const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const currentSystemRates = { ...(currentCfg.customSystemRates || {}) };
         const productDetails = { ...(currentCfg.productDetails || {}) };
 
         // Clean up legacy duplicate name key if it was previously set
@@ -2480,6 +2481,17 @@ const safeSetItem = (key, value) => {
           currentBomRates[productId] = numRate;
         }
 
+        if (productMeta.category === 'system_preset' || productMeta.category === 'system') {
+          if (productMeta.capacityKW) {
+            const capKey = String(Number(productMeta.capacityKW));
+            currentSystemRates[capKey] = numRate;
+            if (productMeta.makeKey || productMeta.makeId) {
+              const mKey = productMeta.makeKey || productMeta.makeId;
+              currentSystemRates[`${capKey}_${mKey}`] = numRate;
+            }
+          }
+        }
+
         productDetails[productId] = {
           id: productId,
           name: productMeta.name || productId,
@@ -2487,6 +2499,8 @@ const safeSetItem = (key, value) => {
           benchmarkPrice: productMeta.benchmarkPrice || 0,
           customPrice: numRate,
           unit: productMeta.unit || '₹',
+          capacityKW: productMeta.capacityKW,
+          makeKey: productMeta.makeKey || productMeta.makeId,
           updatedAt: new Date().toISOString()
         };
 
@@ -2495,6 +2509,7 @@ const safeSetItem = (key, value) => {
           pricingMode: 'custom',
           customProductRates: currentProductRates,
           customBomRates: currentBomRates,
+          customSystemRates: currentSystemRates,
           productDetails
         };
 
@@ -2535,20 +2550,30 @@ const safeSetItem = (key, value) => {
         const currentCfg = d.pricingConfig || {};
         const currentProductRates = { ...(currentCfg.customProductRates || {}) };
         const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const currentSystemRates = { ...(currentCfg.customSystemRates || {}) };
         const productDetails = { ...(currentCfg.productDetails || {}) };
 
-        const removedName = productDetails[productId]?.name;
+        const removedItem = productDetails[productId];
+        const removedName = removedItem?.name;
         delete currentProductRates[productId];
         if (removedName) {
           delete currentProductRates[removedName];
         }
         delete currentBomRates[productId];
+        if (removedItem?.capacityKW) {
+          const capKey = String(Number(removedItem.capacityKW));
+          delete currentSystemRates[capKey];
+          if (removedItem.makeKey || removedItem.makeId) {
+            delete currentSystemRates[`${capKey}_${removedItem.makeKey || removedItem.makeId}`];
+          }
+        }
         delete productDetails[productId];
 
         updatedConfig = {
           ...currentCfg,
           customProductRates: currentProductRates,
           customBomRates: currentBomRates,
+          customSystemRates: currentSystemRates,
           productDetails
         };
         return {

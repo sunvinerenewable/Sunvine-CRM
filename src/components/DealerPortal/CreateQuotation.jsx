@@ -462,6 +462,31 @@ export default function CreateQuotation() {
   // Preset Turnkey Base Price from the database matrix for current kW & make
   const activePresetBasePrice = useMemo(() => {
     if (!matchedSlab || !currentPresetMake) return 0;
+
+    // Check dealer-specific custom system / package rate first!
+    const customSysRates = effectiveDealer?.pricingConfig?.customSystemRates || {};
+    const customProdRates = effectiveDealer?.pricingConfig?.customProductRates || {};
+    const dealerKwKey = String(Number(selectedPresetKw));
+    const makeKey = currentPresetMake.priceKey || currentPresetMake.id || '';
+
+    // Check brand-specific system price first (e.g. "2.2_adaniBiFiPrice" or "2.2_mod-adani-555")
+    const brandSysPrice = customSysRates[`${dealerKwKey}_${makeKey}`] ??
+                          customSysRates[`${dealerKwKey}_${currentPresetMake.id}`] ??
+                          customSysRates[`${dealerKwKey}_${currentPresetMake.priceKey}`] ??
+                          customProdRates[`sys-pkg-${dealerKwKey}-${currentPresetMake.id}`] ??
+                          customProdRates[`sys-pkg-${dealerKwKey}-${currentPresetMake.priceKey}`];
+    if (brandSysPrice !== undefined && brandSysPrice !== null && Number(brandSysPrice) > 0) {
+      return Number(brandSysPrice);
+    }
+
+    // Check flat capacity system price (e.g. "2.2" or "sys-pkg-2.2")
+    const flatSysPrice = customSysRates[dealerKwKey] ??
+                         customProdRates[`sys-pkg-${dealerKwKey}`] ??
+                         customProdRates[`sys-pkg-${dealerKwKey}kw`];
+    if (flatSysPrice !== undefined && flatSysPrice !== null && Number(flatSysPrice) > 0) {
+      return Number(flatSysPrice);
+    }
+
     // Check dynamic panelPrices object first
     if (matchedSlab.panelPrices && typeof matchedSlab.panelPrices === 'object') {
       const dynPrice = matchedSlab.panelPrices[currentPresetMake.id] ?? 
@@ -478,7 +503,7 @@ export default function CreateQuotation() {
     const snakeVal = matchedSlab[snakeKey];
     if (snakeVal !== undefined && snakeVal !== null) return Number(snakeVal) || 0;
     return 0;
-  }, [matchedSlab, currentPresetMake]);
+  }, [matchedSlab, currentPresetMake, selectedPresetKw, effectiveDealer]);
 
   // User-edited price entry override (null = use activePresetBasePrice)
   const [customPresetBasePrice, setCustomPresetBasePrice] = useState(() => {
@@ -992,9 +1017,11 @@ export default function CreateQuotation() {
   useEffect(() => {
     if (editingQuotation && initialSource?.bomItems) return; // Keep existing quotation items if editing
 
-    const activeCustomRates = (bomPricingMode === 'custom' && effectiveDealer?.pricingConfig?.customBomRates)
-      ? effectiveDealer.pricingConfig.customBomRates
-      : bomRates;
+    const activeCustomRates = {
+      ...(bomRates || {}),
+      ...(effectiveDealer?.pricingConfig?.customBomRates || {}),
+      ...(effectiveDealer?.pricingConfig?.customProductRates || {})
+    };
 
     setBomItems(() => {
       return generateFieldBOM({

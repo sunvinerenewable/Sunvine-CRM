@@ -215,7 +215,9 @@ export default function PricingMaster() {
         name: dealerOverrideModal.product.name,
         category: dealerOverrideModal.product.category,
         benchmarkPrice: dealerOverrideModal.product.benchmarkPrice,
-        unit: dealerOverrideModal.product.unit
+        unit: dealerOverrideModal.product.unit,
+        capacityKW: dealerOverrideModal.product.capacityKW,
+        makeKey: dealerOverrideModal.product.makeKey
       });
     }
 
