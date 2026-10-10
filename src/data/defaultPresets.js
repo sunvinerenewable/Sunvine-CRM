@@ -117,7 +117,7 @@ export const DEFAULT_PRICING_MASTER = {
 
   // Statutory Fees & Taxes
   taxes: {
-    gstPercent: 13.8, // Composite solar GST
+    gstPercent: 18, // Standard statutory GST (18% for Solar EPC works contract)
     gedaRegistrationCharge: 'Including',
     discomMeterCharge: 'Extra as actual',
     testingCharge: 'Customer Scope'

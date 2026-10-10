@@ -1208,9 +1208,19 @@ export default function CreateQuotation() {
   const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR + extraTransportChargeINR - discountAmount);
   const totalCost = grossTurnkeyBeforeSubsidy;
 
-  // Transparent GST Invoice Breakdown:
-  const baseBeforeGst = bomTotals.totalTaxableBase;
-  const gstAmount = bomTotals.totalGstAmount;
+  // Dynamic Statutory GST Rate (defaults to 18% standard for solar EPC works contract)
+  const effectiveGstPercent = Number(pricingPresets?.taxes?.gstPercent ?? pricingPresets?.gstPercent ?? 18);
+
+  // Exact Statutory GST Breakdown:
+  // Total Project Cost = Taxable Base + GST
+  // Taxable Base = Total / (1 + GST% / 100)
+  // GST Amount = Total - Taxable Base
+  const isInterState = String(custLocation || '').toLowerCase().includes('interstate') || Boolean(initialSource?.isInterState);
+  const baseBeforeGst = Math.round(grossTurnkeyBeforeSubsidy / (1 + (effectiveGstPercent / 100)));
+  const gstAmount = Math.max(0, grossTurnkeyBeforeSubsidy - baseBeforeGst);
+  const cgstAmount = isInterState ? 0 : Math.round(gstAmount / 2);
+  const sgstAmount = isInterState ? 0 : (gstAmount - cgstAmount);
+  const igstAmount = isInterState ? gstAmount : 0;
 
   // Equipment & Service Component Breakdown from BOM:
   const moduleEstimatedCost = bomItems.find(i => i.id === 'solar_panel')?.baseAmount ?? bomItems.find(i => i.id === 'solar_panel')?.total ?? Math.round(panelWatt * panelQuantity * ratePerWp);
@@ -1527,8 +1537,12 @@ export default function CreateQuotation() {
       structureEstimatedCost,
       bosEstimatedCost,
       baseBeforeGst,
-      gstPercentage: 13.8,
+      gstPercentage: effectiveGstPercent,
       gstAmount,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
+      isInterState,
       isGstInclusive: true,
       annualGenerationUnits,
       monthlyGenerationUnits,
@@ -3745,11 +3759,11 @@ export default function CreateQuotation() {
                   </span>
                 </div>
 
-                {/* 6. Statutory Composite GST 13.8% */}
+                {/* 6. Statutory GST */}
                 <div className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-emerald-100/60 border border-emerald-200">
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-1">
-                      <span className="text-emerald-950 font-bold">Statutory Composite GST (13.8%)</span>
+                      <span className="text-emerald-950 font-bold">Statutory GST ({effectiveGstPercent}%)</span>
                       <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded font-bold">Included</span>
                     </div>
                     <span className="text-[10px] text-emerald-800">
