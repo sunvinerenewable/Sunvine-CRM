@@ -10,63 +10,146 @@ import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 export default function BusinessPerformance() {
   const { staffList, customerFiles, quotations, dealers, role, currentStaff, currentDealer } = useApp();
 
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'staff', 'dealers', 'finance', 'funnel'
+  const isDealerRole = role === 'dealer';
+  const isStaffRole = role === 'staff';
+  const isAdminRole = role === 'admin';
+
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'projects', 'quotes', 'staff', 'dealers', 'finance', 'funnel'
   const [staffSearch, setStaffSearch] = useState('');
   const [dealerSearch, setDealerSearch] = useState('');
+  const [projectSearch, setProjectSearch] = useState('');
+  const [quoteSearch, setQuoteSearch] = useState('');
   const [selectedStaffDetail, setSelectedStaffDetail] = useState(null);
   const [selectedDealerDetail, setSelectedDealerDetail] = useState(null);
   const [selectedFileForModal, setSelectedFileForModal] = useState(null);
 
-  // Role-Based Data Isolation (Mandate: Staff can only see assigned data; Admin sees all)
-  const isStaffRole = role === 'staff';
+  // ── Role-Based Strict Data Isolation ───────────────────────────────────────────
+  // Dealer identity tokens
+  const currentDealerId = String(currentDealer?.id || currentDealer?.dealerId || currentDealer?.dealerCode || '').toLowerCase().trim();
+  const currentDealerFirm = String(currentDealer?.firmName || currentDealer?.businessName || currentDealer?.name || '').toLowerCase().trim();
+  const currentDealerContact = String(currentDealer?.contactPerson || currentDealer?.contact_person || '').toLowerCase().trim();
 
+  // 1. Isolated Dealers List
   const isolatedDealers = useMemo(() => {
-    if (!isStaffRole) return dealers || [];
-    const sid = currentStaff?.id;
-    const sname = currentStaff?.name;
-    return (dealers || []).filter(d => 
-      (d.assignedStaffId && d.assignedStaffId === sid) ||
-      (d.assignedStaffName && d.assignedStaffName === sname)
-    );
-  }, [dealers, isStaffRole, currentStaff]);
+    if (isDealerRole) {
+      return currentDealer ? [currentDealer] : [];
+    }
+    if (isStaffRole) {
+      const sid = currentStaff?.id;
+      const sname = currentStaff?.name;
+      return (dealers || []).filter(d => 
+        (d.assignedStaffId && d.assignedStaffId === sid) ||
+        (d.assignedStaffName && d.assignedStaffName === sname)
+      );
+    }
+    return dealers || [];
+  }, [dealers, isDealerRole, isStaffRole, currentDealer, currentStaff]);
 
   const isolatedDealerIds = useMemo(() => {
-    return new Set(isolatedDealers.map(d => d.id || d.dealerId));
+    return new Set(isolatedDealers.map(d => String(d.id || d.dealerId || d.dealerCode || '').toLowerCase().trim()).filter(Boolean));
   }, [isolatedDealers]);
 
+  // 2. Isolated Files List
   const isolatedFiles = useMemo(() => {
-    if (!isStaffRole) return customerFiles || [];
-    const sid = currentStaff?.id;
-    const sname = currentStaff?.name;
-    return (customerFiles || []).filter(f =>
-      f.staffId === sid ||
-      f.staffName === sname ||
-      (f.dealerId && isolatedDealerIds.has(f.dealerId))
-    );
-  }, [customerFiles, isStaffRole, currentStaff, isolatedDealerIds]);
+    if (isDealerRole) {
+      const rawMatches = (customerFiles || []).filter(f => {
+        const fDId = String(f.dealerId || f.dealer_id || '').toLowerCase().trim();
+        const fDFirm = String(f.dealerName || f.dealer_name || '').toLowerCase().trim();
+        if (currentDealerId && (fDId === currentDealerId || currentDealerId.includes(fDId) || fDId.includes(currentDealerId))) return true;
+        if (currentDealerFirm && fDFirm && (fDFirm === currentDealerFirm || fDFirm.includes(currentDealerFirm) || currentDealerFirm.includes(fDFirm))) return true;
+        if (currentDealerContact && fDFirm && (fDFirm === currentDealerContact || fDFirm.includes(currentDealerContact))) return true;
+        return false;
+      });
 
+      // Also synthesize won/booked quotations from this dealer that don't have explicit files yet
+      const wonQuotes = (quotations || []).filter(q => {
+        const isWon = (q.status || '').toLowerCase().includes('won') || (q.status || '').toLowerCase().includes('approved');
+        const qDId = String(q.dealerId || q.dealer_id || q.dealer_code || '').toLowerCase().trim();
+        const qDFirm = String(q.dealerName || q.dealer_name || '').toLowerCase().trim();
+        const isMatch = (currentDealerId && qDId === currentDealerId) || (currentDealerFirm && qDFirm && (qDFirm === currentDealerFirm || qDFirm.includes(currentDealerFirm)));
+        const alreadyHasFile = rawMatches.some(f => f.quotationId === q.id);
+        return isWon && isMatch && !alreadyHasFile;
+      });
+
+      const synthesized = wonQuotes.map(q => ({
+        id: `FIL-${q.id || Date.now()}`,
+        quotationId: q.id,
+        customerName: q.customerName || 'Solar Consumer',
+        phone: q.customerPhone || q.phone || 'N/A',
+        address: q.customerAddress || q.address || 'Gujarat',
+        city: q.city || 'Rajkot',
+        discom: q.discom || 'PGVCL',
+        consumerNo: q.consumerNo || 'PENDING',
+        solarSystemKw: Number(q.systemCapacityKW || 5),
+        dealerId: currentDealer?.id || 'DLR',
+        dealerName: currentDealer?.firmName || 'My Firm',
+        currentStage: (q.status || '').toLowerCase().includes('won') ? 'DISCOM_APPLICATION' : 'QUOTATION_ACCEPTED',
+        stage: (q.status || '').toLowerCase().includes('won') ? 'DISCOM_APPLICATION' : 'QUOTATION_ACCEPTED',
+        status: q.status || 'Active',
+        financeType: q.financeType || 'CASH',
+        amount: q.totalAmount || q.grandTotalCustomer || 0
+      }));
+
+      return [...rawMatches, ...synthesized];
+    }
+
+    if (isStaffRole) {
+      const sid = currentStaff?.id;
+      const sname = currentStaff?.name;
+      return (customerFiles || []).filter(f =>
+        f.staffId === sid ||
+        f.staffName === sname ||
+        (f.dealerId && isolatedDealerIds.has(String(f.dealerId).toLowerCase()))
+      );
+    }
+
+    return customerFiles || [];
+  }, [customerFiles, quotations, isDealerRole, isStaffRole, currentDealerId, currentDealerFirm, currentDealerContact, currentDealer, currentStaff, isolatedDealerIds]);
+
+  // 3. Isolated Quotations List
   const isolatedQuotations = useMemo(() => {
-    if (!isStaffRole) return quotations || [];
-    const sid = currentStaff?.id;
-    const sname = currentStaff?.name;
-    return (quotations || []).filter(q =>
-      q.staffId === sid ||
-      q.staffName === sname ||
-      (q.dealerId && isolatedDealerIds.has(q.dealerId))
-    );
-  }, [quotations, isStaffRole, currentStaff, isolatedDealerIds]);
+    if (isDealerRole) {
+      return (quotations || []).filter(q => {
+        const qDId = String(q.dealer_id || q.dealerId || q.dealer_code || '').toLowerCase().trim();
+        const qDFirm = String(q.dealer_name || q.dealerName || q.dealerFirm || '').toLowerCase().trim();
+        if (currentDealerId && (qDId === currentDealerId || currentDealerId.includes(qDId) || qDId.includes(currentDealerId))) return true;
+        if (currentDealerFirm && qDFirm && (qDFirm === currentDealerFirm || qDFirm.includes(currentDealerFirm) || currentDealerFirm.includes(qDFirm))) return true;
+        if (currentDealerContact && qDFirm && (qDFirm === currentDealerContact || qDFirm.includes(currentDealerContact))) return true;
+        return false;
+      });
+    }
 
+    if (isStaffRole) {
+      const sid = currentStaff?.id;
+      const sname = currentStaff?.name;
+      return (quotations || []).filter(q =>
+        q.staffId === sid ||
+        q.staffName === sname ||
+        (q.dealerId && isolatedDealerIds.has(String(q.dealerId).toLowerCase()))
+      );
+    }
+
+    return quotations || [];
+  }, [quotations, isDealerRole, isStaffRole, currentDealerId, currentDealerFirm, currentDealerContact, currentStaff, isolatedDealerIds]);
+
+  // 4. Isolated Staff List (Dealers MUST NEVER see sales staff)
   const isolatedStaffList = useMemo(() => {
-    if (!isStaffRole) return staffList || [];
-    const match = (staffList || []).filter(s => s.id === currentStaff?.id || s.name === currentStaff?.name);
-    return match.length > 0 ? match : (currentStaff ? [currentStaff] : []);
-  }, [staffList, isStaffRole, currentStaff]);
+    if (isDealerRole) {
+      return [];
+    }
+    if (isStaffRole) {
+      const match = (staffList || []).filter(s => s.id === currentStaff?.id || s.name === currentStaff?.name);
+      return match.length > 0 ? match : (currentStaff ? [currentStaff] : []);
+    }
+    return staffList || [];
+  }, [staffList, isDealerRole, isStaffRole, currentStaff]);
 
   // Calculate dynamic metrics strictly using isolated data
   const staffMetrics = useMemo(() => {
+    if (isDealerRole) return [];
     const res = calculateStaffPerformance(isolatedStaffList, isolatedFiles, isolatedQuotations, isolatedDealers);
     return Array.isArray(res) ? res : [];
-  }, [isolatedStaffList, isolatedFiles, isolatedQuotations, isolatedDealers]);
+  }, [isolatedStaffList, isolatedFiles, isolatedQuotations, isolatedDealers, isDealerRole]);
 
   const dealerMetrics = useMemo(() => {
     const res = calculateDealerPerformance(isolatedDealers, isolatedFiles, isolatedQuotations);
@@ -91,7 +174,7 @@ export default function BusinessPerformance() {
 
   const filteredDealers = useMemo(() => {
     const list = Array.isArray(dealerMetrics) ? dealerMetrics : [];
-    if (!dealerSearch.trim()) return list.slice(0, 50); // limit for performant render
+    if (!dealerSearch.trim()) return list.slice(0, 50);
     const term = dealerSearch.toLowerCase();
     return list.filter(d =>
       (d.firmName || '').toLowerCase().includes(term) ||
@@ -100,13 +183,74 @@ export default function BusinessPerformance() {
     ).slice(0, 50);
   }, [dealerMetrics, dealerSearch]);
 
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch.trim()) return isolatedFiles;
+    const term = projectSearch.toLowerCase();
+    return isolatedFiles.filter(f =>
+      (f.customerName || '').toLowerCase().includes(term) ||
+      (f.city || '').toLowerCase().includes(term) ||
+      String(f.phone || '').includes(term) ||
+      String(f.consumerNo || '').toLowerCase().includes(term) ||
+      String(f.id || '').toLowerCase().includes(term)
+    );
+  }, [isolatedFiles, projectSearch]);
+
+  const filteredQuotes = useMemo(() => {
+    if (!quoteSearch.trim()) return isolatedQuotations;
+    const term = quoteSearch.toLowerCase();
+    return isolatedQuotations.filter(q =>
+      (q.customerName || '').toLowerCase().includes(term) ||
+      (q.city || '').toLowerCase().includes(term) ||
+      String(q.id || '').toLowerCase().includes(term) ||
+      String(q.status || '').toLowerCase().includes(term)
+    );
+  }, [isolatedQuotations, quoteSearch]);
+
+  // Dynamic Navigation Tabs depending on role
+  const navTabs = useMemo(() => {
+    if (isDealerRole) {
+      return [
+        { id: 'overview', label: 'My Overview', icon: 'monitoring' },
+        { id: 'projects', label: `My Customer Files (${isolatedFiles.length})`, icon: 'folder_shared' },
+        { id: 'quotes', label: `My Quotations (${isolatedQuotations.length})`, icon: 'request_quote' },
+        { id: 'finance', label: 'Cash vs Loan Ratio', icon: 'account_balance' },
+        { id: 'funnel', label: 'Conversion Funnel', icon: 'filter_alt' }
+      ];
+    }
+    if (isStaffRole) {
+      return [
+        { id: 'overview', label: 'My Overview', icon: 'monitoring' },
+        { id: 'staff', label: 'My Attribution', icon: 'badge' },
+        { id: 'dealers', label: `My Assigned Dealers (${isolatedDealers.length})`, icon: 'storefront' },
+        { id: 'finance', label: 'Cash vs Loan', icon: 'account_balance' },
+        { id: 'funnel', label: 'Conversion Funnel', icon: 'filter_alt' }
+      ];
+    }
+    // Admin Master View
+    return [
+      { id: 'overview', label: 'Executive Overview', icon: 'monitoring' },
+      { id: 'staff', label: `Sales Staff (${staffMetrics.length})`, icon: 'badge' },
+      { id: 'dealers', label: `Dealer Partners (${dealerMetrics.length})`, icon: 'storefront' },
+      { id: 'finance', label: 'Cash vs Loan', icon: 'account_balance' },
+      { id: 'funnel', label: 'Conversion Funnel', icon: 'filter_alt' }
+    ];
+  }, [isDealerRole, isStaffRole, isolatedFiles.length, isolatedQuotations.length, isolatedDealers.length, staffMetrics.length, dealerMetrics.length]);
+
   return (
     <div className="flex flex-col w-full gap-6 max-w-7xl mx-auto text-on-surface">
       {/* 1. Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-surface-container-lowest rounded-2xl border border-surface-container-high shadow-xs">
         <div>
           <div className="flex items-center gap-2 text-xs font-mono font-semibold text-secondary uppercase tracking-wider flex-wrap">
-            {isStaffRole ? (
+            {isDealerRole ? (
+              <>
+                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-800 font-bold border border-amber-500/20">
+                  Dealer Partner Isolation Active
+                </span>
+                <span>&bull;</span>
+                <span className="text-primary font-bold">{currentDealer?.firmName || currentDealer?.name || 'Authorized Dealer'} ({currentDealer?.id || 'DLR'})</span>
+              </>
+            ) : isStaffRole ? (
               <>
                 <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-700 font-bold border border-emerald-500/20">
                   Staff Role Isolation Active
@@ -123,24 +267,24 @@ export default function BusinessPerformance() {
             )}
           </div>
           <h1 className="font-heading text-2xl sm:text-3xl font-bold tracking-tight text-on-surface mt-1">
-            {isStaffRole ? 'My Performance & Portfolio Analytics' : 'Performance & Attribution Intelligence'}
+            {isDealerRole
+              ? 'My Dealer Performance & Portfolio Analytics'
+              : isStaffRole
+              ? 'My Sales Performance & Attribution Analytics'
+              : 'Performance & Attribution Intelligence'}
           </h1>
           <p className="text-xs sm:text-sm text-secondary mt-1">
-            {isStaffRole
+            {isDealerRole
+              ? `Personal business analytics tracking your proposals (${isolatedQuotations.length}), customer files (${isolatedFiles.length}), installed capacity, and individual conversion rate.`
+              : isStaffRole
               ? `Personal performance dashboard displaying exclusively your assigned dealers (${isolatedDealers.length}), customer files (${isolatedFiles.length}), and individual conversion metrics.`
-              : 'Measurable, verifiable metrics tracking sales staff output, dealer network conversions, and cash vs loan business distribution.'}
+              : 'Centralized executive metrics tracking sales staff output, dealer network conversions, and cash vs loan business distribution.'}
           </p>
         </div>
 
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl overflow-x-auto">
-          {[
-            { id: 'overview', label: 'Overview', icon: 'monitoring' },
-            { id: 'staff', label: isStaffRole ? 'My Attribution' : 'Sales Staff', icon: 'badge' },
-            { id: 'dealers', label: isStaffRole ? `My Dealers (${isolatedDealers.length})` : 'Dealer Partners', icon: 'storefront' },
-            { id: 'finance', label: 'Cash vs Loan', icon: 'account_balance' },
-            { id: 'funnel', label: 'Conversion Funnel', icon: 'filter_alt' }
-          ].map(tab => (
+          {navTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -162,7 +306,7 @@ export default function BusinessPerformance() {
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Total Quotations</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
-            {overallMetrics?.totalQuotations ?? 0}
+            {overallMetrics?.totalQuotations ?? isolatedQuotations.length}
           </span>
           <span className="text-[10px] text-secondary font-mono">
             {(Number(overallMetrics?.totalQuotesCapacityKw) || 0).toFixed(1)} kW Proposed
@@ -172,7 +316,7 @@ export default function BusinessPerformance() {
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs">
           <span className="text-[11px] font-medium text-secondary block">Total Files</span>
           <span className="font-mono text-xl sm:text-2xl font-bold text-on-surface mt-1 block">
-            {overallMetrics?.totalFiles ?? (isolatedFiles?.length || 0)}
+            {overallMetrics?.totalFiles ?? isolatedFiles.length}
           </span>
           <span className="text-[10px] text-secondary font-mono">
             {(Number(overallMetrics?.totalFilesCapacityKw) || 0).toFixed(1)} kW Onboarded
@@ -185,7 +329,7 @@ export default function BusinessPerformance() {
             {overallMetrics?.overallConversionRate ?? 0}%
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics?.totalFiles ?? (isolatedFiles?.length || 0)} Customer Files
+            {overallMetrics?.totalFiles ?? isolatedFiles.length} Customer Files
           </span>
         </div>
 
@@ -215,7 +359,7 @@ export default function BusinessPerformance() {
             {overallMetrics?.cashPercentage ?? 0}% / {overallMetrics?.loanPercentage ?? 0}%
           </span>
           <span className="text-[10px] text-secondary font-mono">
-            {overallMetrics?.cashFilesCount ?? 0} Cash &bull; {overallMetrics?.loanFilesCount ?? 0} Bank Loans
+            {overallMetrics?.cashFilesCount ?? 0} Cash &bull; {overallMetrics?.loanFilesCount ?? 0} Loans
           </span>
         </div>
       </div>
@@ -223,124 +367,407 @@ export default function BusinessPerformance() {
       {/* 3. Tab: Overview */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Quick Staff Summary Grid */}
-          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">badge</span>
-                <h3 className="font-heading font-bold text-base text-on-surface">
-                  {isStaffRole ? 'My Sales & Attribution Summary' : 'Sales Staff Performance Leaderboard'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('staff')}
-                className="text-xs font-bold text-primary hover:underline cursor-pointer"
-              >
-                {isStaffRole ? 'View My Details →' : 'View Full Team →'}
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-surface-container-high text-secondary">
-                    <th className="py-2.5 px-3 font-semibold">Staff Member</th>
-                    <th className="py-2.5 px-3 font-semibold">Zone / Region</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Dealers</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Direct Files</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Dealer Files</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Total kW</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Conversion</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-container-high/60">
-                  {staffMetrics.slice(0, 4).map(s => (
-                    <tr
-                      key={s.id}
-                      onClick={() => setSelectedStaffDetail(s)}
-                      className="hover:bg-surface-container-low/40 cursor-pointer transition-colors"
+          {/* DEALER VIEW: Exclusively shows Dealer's Active Customer Projects & Quotations */}
+          {isDealerRole ? (
+            <>
+              {/* Dealer's Customer Files Pipeline */}
+              <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[20px]">folder_shared</span>
+                    <h3 className="font-heading font-bold text-base text-on-surface">
+                      My Customer Project Pipeline ({isolatedFiles.length})
+                    </h3>
+                  </div>
+                  {isolatedFiles.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('projects')}
+                      className="text-xs font-bold text-primary hover:underline cursor-pointer"
                     >
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-on-surface">{s.name}</div>
-                        <div className="text-[11px] text-secondary font-mono">{s.id}</div>
-                      </td>
-                      <td className="py-3 px-3 text-secondary">{s.zone}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold">{s.dealersCount}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-primary">{s.directFilesCount}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold">{s.dealerFilesCount}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold">{(Number(s?.pipelineKw) || 0).toFixed(1)} kW</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-primary">{s.conversionRate}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      View All {isolatedFiles.length} Projects →
+                    </button>
+                  )}
+                </div>
+
+                {isolatedFiles.length === 0 ? (
+                  <div className="p-8 text-center bg-surface-container-low/30 rounded-xl">
+                    <span className="material-symbols-outlined text-4xl text-secondary">folder_open</span>
+                    <p className="text-xs text-secondary mt-1">No customer project files onboarded yet.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-surface-container-high text-secondary">
+                          <th className="py-2.5 px-3 font-semibold">Customer / File ID</th>
+                          <th className="py-2.5 px-3 font-semibold">Location</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Capacity</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Stage</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Finance</th>
+                          <th className="py-2.5 px-3 font-semibold text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-container-high/60">
+                        {isolatedFiles.slice(0, 5).map(f => (
+                          <tr key={f.id} className="hover:bg-surface-container-low/40 transition-colors">
+                            <td className="py-3 px-3">
+                              <div className="font-bold text-on-surface">{f.customerName || 'Solar Consumer'}</div>
+                              <div className="text-[11px] text-secondary font-mono">{f.id} &bull; {f.phone || 'N/A'}</div>
+                            </td>
+                            <td className="py-3 px-3 text-secondary">{f.city || 'Gujarat'} &bull; {f.discom || 'PGVCL'}</td>
+                            <td className="py-3 px-3 text-center font-mono font-bold">{f.solarSystemKw || 5} kW</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                {(f.currentStage || f.stage || 'IN_PROGRESS').replace(/_/g, ' ')}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center font-mono text-[11px]">
+                              {(f.financeType || 'CASH').toUpperCase()}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFileForModal(f)}
+                                className="px-2.5 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container-high text-primary font-bold text-[11px] transition-colors cursor-pointer"
+                              >
+                                View File
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Dealer's Recent Quotations */}
+              <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[20px]">request_quote</span>
+                    <h3 className="font-heading font-bold text-base text-on-surface">
+                      My Recent Proposals &amp; Quotations ({isolatedQuotations.length})
+                    </h3>
+                  </div>
+                  {isolatedQuotations.length > 5 && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('quotes')}
+                      className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                    >
+                      View All {isolatedQuotations.length} Proposals →
+                    </button>
+                  )}
+                </div>
+
+                {isolatedQuotations.length === 0 ? (
+                  <div className="p-8 text-center bg-surface-container-low/30 rounded-xl">
+                    <span className="material-symbols-outlined text-4xl text-secondary">request_quote</span>
+                    <p className="text-xs text-secondary mt-1">No customer quotations created yet.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-surface-container-high text-secondary">
+                          <th className="py-2.5 px-3 font-semibold">Quote ID / Customer</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Capacity</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Total Amount</th>
+                          <th className="py-2.5 px-3 font-semibold text-center">Subsidy DBT</th>
+                          <th className="py-2.5 px-3 font-semibold text-right">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-surface-container-high/60">
+                        {isolatedQuotations.slice(0, 5).map(q => {
+                          const amt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                          const sub = Number(q.subsidy_amount || q.subsidyAmount || (q.systemCapacityKW <= 2 ? 60000 : 78000));
+                          return (
+                            <tr key={q.id} className="hover:bg-surface-container-low/40 transition-colors">
+                              <td className="py-3 px-3">
+                                <div className="font-bold text-on-surface">{q.customerName || 'Solar Consumer'}</div>
+                                <div className="text-[11px] text-secondary font-mono">{q.id || 'QUOTE'} &bull; {q.city || 'Gujarat'}</div>
+                              </td>
+                              <td className="py-3 px-3 text-center font-mono font-bold">{q.systemCapacityKW || q.capacity || 5} kW</td>
+                              <td className="py-3 px-3 text-center font-mono font-bold text-[#0F1B2E]">₹ {amt.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-3 text-center font-mono text-emerald-700">₹ {sub.toLocaleString('en-IN')}</td>
+                              <td className="py-3 px-3 text-right">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary">
+                                  {q.status || 'Active / Sent'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* STAFF & ADMIN VIEW: Staff Leaderboard & Dealers Matrix */
+            <>
+              {/* Staff Summary Grid */}
+              <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[20px]">badge</span>
+                    <h3 className="font-heading font-bold text-base text-on-surface">
+                      {isStaffRole ? 'My Sales & Attribution Summary' : 'Sales Staff Performance Leaderboard'}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('staff')}
+                    className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                  >
+                    {isStaffRole ? 'View My Details →' : 'View Full Team →'}
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-surface-container-high text-secondary">
+                        <th className="py-2.5 px-3 font-semibold">Staff Member</th>
+                        <th className="py-2.5 px-3 font-semibold">Zone / Region</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Dealers</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Direct Files</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Dealer Files</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Total kW</th>
+                        <th className="py-2.5 px-3 font-semibold text-right">Conversion</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-high/60">
+                      {staffMetrics.slice(0, 4).map(s => (
+                        <tr
+                          key={s.id}
+                          onClick={() => setSelectedStaffDetail(s)}
+                          className="hover:bg-surface-container-low/40 cursor-pointer transition-colors"
+                        >
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-on-surface">{s.name}</div>
+                            <div className="text-[11px] text-secondary font-mono">{s.id}</div>
+                          </td>
+                          <td className="py-3 px-3 text-secondary">{s.zone}</td>
+                          <td className="py-3 px-3 text-center font-mono font-bold">{s.dealersCount}</td>
+                          <td className="py-3 px-3 text-center font-mono font-bold text-primary">{s.directFilesCount}</td>
+                          <td className="py-3 px-3 text-center font-mono font-bold">{s.dealerFilesCount}</td>
+                          <td className="py-3 px-3 text-center font-mono font-bold">{(Number(s?.pipelineKw) || 0).toFixed(1)} kW</td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-primary">{s.conversionRate}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Dealer Summary Grid */}
+              <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[20px]">storefront</span>
+                    <h3 className="font-heading font-bold text-base text-on-surface">
+                      {isStaffRole ? `My Assigned Gujarat Dealer Partners (${isolatedDealers.length})` : 'Top Active Gujarat Dealer Partners'}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('dealers')}
+                    className="text-xs font-bold text-primary hover:underline cursor-pointer"
+                  >
+                    {isStaffRole ? `View All My ${isolatedDealers.length} Dealers →` : `View All ${dealers.length} Dealers →`}
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-surface-container-high text-secondary">
+                        <th className="py-2.5 px-3 font-semibold">Dealer Firm</th>
+                        <th className="py-2.5 px-3 font-semibold">City / District</th>
+                        <th className="py-2.5 px-3 font-semibold">Assigned Staff</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Quotes</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Files</th>
+                        <th className="py-2.5 px-3 font-semibold text-center">Cash/Loan</th>
+                        <th className="py-2.5 px-3 font-semibold text-right">Conversion</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-high/60">
+                      {dealerMetrics.slice(0, 5).map(d => (
+                        <tr
+                          key={d.id}
+                          onClick={() => setSelectedDealerDetail(d)}
+                          className="hover:bg-surface-container-low/40 cursor-pointer transition-colors"
+                        >
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-on-surface">{d.firmName}</div>
+                            <div className="text-[11px] text-secondary font-mono">{d.id} &bull; {d.tier}</div>
+                          </td>
+                          <td className="py-3 px-3 text-secondary">{d.city}</td>
+                          <td className="py-3 px-3">
+                            <div className="font-medium text-on-surface">{d.assignedStaffName || 'Assigned'}</div>
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono font-bold">{d.quotationsCount}</td>
+                          <td className="py-3 px-3 text-center font-mono font-bold text-primary">{d.customerFilesCount}</td>
+                          <td className="py-3 px-3 text-center font-mono text-secondary">
+                            {d.cashCount}C / {d.loanCount}L
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-primary">{d.conversionRate}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 4. Tab: Dealer Projects Table (Only for Dealer Role) */}
+      {isDealerRole && activeTab === 'projects' && (
+        <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[22px]">folder_shared</span>
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
+                My Customer Project Files Directory ({filteredProjects.length})
+              </h3>
+            </div>
+            <div className="w-full sm:w-72">
+              <input
+                type="text"
+                value={projectSearch}
+                onChange={(e) => setProjectSearch(e.target.value)}
+                placeholder="Search by customer name, phone, city..."
+                className="w-full text-xs p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary"
+              />
             </div>
           </div>
 
-          {/* Quick Dealer Summary Grid */}
-          <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-[20px]">storefront</span>
-                <h3 className="font-heading font-bold text-base text-on-surface">
-                  {isStaffRole ? `My Assigned Gujarat Dealer Partners (${isolatedDealers.length})` : 'Top Active Gujarat Dealer Partners'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('dealers')}
-                className="text-xs font-bold text-primary hover:underline cursor-pointer"
-              >
-                {isStaffRole ? `View All My ${isolatedDealers.length} Dealers →` : `View All ${dealers.length} Dealers →`}
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-surface-container-high text-secondary">
-                    <th className="py-2.5 px-3 font-semibold">Dealer Firm</th>
-                    <th className="py-2.5 px-3 font-semibold">City / District</th>
-                    <th className="py-2.5 px-3 font-semibold">Assigned Staff</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Quotes</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Files</th>
-                    <th className="py-2.5 px-3 font-semibold text-center">Cash/Loan</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">Conversion</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-surface-container-high text-secondary">
+                  <th className="py-3 px-3 font-semibold">File ID / Date</th>
+                  <th className="py-3 px-3 font-semibold">Customer Details</th>
+                  <th className="py-3 px-3 font-semibold">DISCOM &amp; Consumer</th>
+                  <th className="py-3 px-3 font-semibold text-center">Capacity</th>
+                  <th className="py-3 px-3 font-semibold text-center">Stage</th>
+                  <th className="py-3 px-3 font-semibold text-center">Finance</th>
+                  <th className="py-3 px-3 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container-high/60">
+                {filteredProjects.map(f => (
+                  <tr key={f.id} className="hover:bg-surface-container-low/40 transition-colors">
+                    <td className="py-3.5 px-3">
+                      <div className="font-mono font-bold text-on-surface">{f.id}</div>
+                      <div className="text-[10px] text-secondary font-mono">{f.createdAt ? String(f.createdAt).slice(0, 10) : 'Active'}</div>
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div className="font-bold text-on-surface">{f.customerName || 'Solar Consumer'}</div>
+                      <div className="text-[11px] text-secondary">{f.phone || 'N/A'} &bull; {f.city || 'Gujarat'}</div>
+                    </td>
+                    <td className="py-3.5 px-3">
+                      <div className="font-semibold text-on-surface">{f.discom || 'PGVCL'}</div>
+                      <div className="text-[10px] text-secondary font-mono">{f.consumerNo || 'PENDING'}</div>
+                    </td>
+                    <td className="py-3.5 px-3 text-center font-mono font-bold">{f.solarSystemKw || 5} kW</td>
+                    <td className="py-3.5 px-3 text-center">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {(f.currentStage || f.stage || 'DISCOM_APPLICATION').replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-3 text-center font-mono text-[11px]">
+                      {(f.financeType || 'CASH').toUpperCase()}
+                    </td>
+                    <td className="py-3.5 px-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFileForModal(f)}
+                        className="px-2.5 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container-high text-primary font-bold text-[11px] transition-colors cursor-pointer"
+                      >
+                        Inspect &amp; Docs
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-surface-container-high/60">
-                  {dealerMetrics.slice(0, 5).map(d => (
-                    <tr
-                      key={d.id}
-                      onClick={() => setSelectedDealerDetail(d)}
-                      className="hover:bg-surface-container-low/40 cursor-pointer transition-colors"
-                    >
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-on-surface">{d.firmName}</div>
-                        <div className="text-[11px] text-secondary font-mono">{d.id} &bull; {d.tier}</div>
-                      </td>
-                      <td className="py-3 px-3 text-secondary">{d.city}</td>
-                      <td className="py-3 px-3">
-                        <div className="font-medium text-on-surface">{d.assignedStaffName || 'Assigned'}</div>
-                      </td>
-                      <td className="py-3 px-3 text-center font-mono font-bold">{d.quotationsCount}</td>
-                      <td className="py-3 px-3 text-center font-mono font-bold text-primary">{d.customerFilesCount}</td>
-                      <td className="py-3 px-3 text-center font-mono text-secondary">
-                        {d.cashCount}C / {d.loanCount}L
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-primary">{d.conversionRate}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* 4. Tab: Staff Performance Table */}
-      {activeTab === 'staff' && (
+      {/* 5. Tab: Dealer Quotations Table (Only for Dealer Role) */}
+      {isDealerRole && activeTab === 'quotes' && (
+        <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[22px]">request_quote</span>
+              <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
+                My Quotations &amp; Proposals Directory ({filteredQuotes.length})
+              </h3>
+            </div>
+            <div className="w-full sm:w-72">
+              <input
+                type="text"
+                value={quoteSearch}
+                onChange={(e) => setQuoteSearch(e.target.value)}
+                placeholder="Search by customer, city, status..."
+                className="w-full text-xs p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-surface-container-high text-secondary">
+                  <th className="py-3 px-3 font-semibold">Quote Ref / Customer</th>
+                  <th className="py-3 px-3 font-semibold">City / DISCOM</th>
+                  <th className="py-3 px-3 font-semibold text-center">Capacity</th>
+                  <th className="py-3 px-3 font-semibold text-center">Grand Total</th>
+                  <th className="py-3 px-3 font-semibold text-center">Subsidy DBT</th>
+                  <th className="py-3 px-3 font-semibold text-center">Net Payable</th>
+                  <th className="py-3 px-3 font-semibold text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-container-high/60">
+                {filteredQuotes.map(q => {
+                  const amt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+                  const sub = Number(q.subsidy_amount || q.subsidyAmount || (q.systemCapacityKW <= 2 ? 60000 : 78000));
+                  const net = Math.max(0, amt - sub);
+                  return (
+                    <tr key={q.id} className="hover:bg-surface-container-low/40 transition-colors">
+                      <td className="py-3.5 px-3">
+                        <div className="font-bold text-on-surface">{q.customerName || 'Solar Consumer'}</div>
+                        <div className="text-[11px] text-secondary font-mono">{q.id || 'QUOTE'}</div>
+                      </td>
+                      <td className="py-3.5 px-3 text-secondary">{q.city || 'Gujarat'} &bull; {q.discom || 'PGVCL'}</td>
+                      <td className="py-3.5 px-3 text-center font-mono font-bold">{q.systemCapacityKW || q.capacity || 5} kW</td>
+                      <td className="py-3.5 px-3 text-center font-mono font-bold text-[#0F1B2E]">₹ {amt.toLocaleString('en-IN')}</td>
+                      <td className="py-3.5 px-3 text-center font-mono text-emerald-700">₹ {sub.toLocaleString('en-IN')}</td>
+                      <td className="py-3.5 px-3 text-center font-mono font-black text-primary">₹ {net.toLocaleString('en-IN')}</td>
+                      <td className="py-3.5 px-3 text-right">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary">
+                          {q.status || 'Active / Sent'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Tab: Staff Performance Table (Only for Staff & Admin) */}
+      {!isDealerRole && activeTab === 'staff' && (
         <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -349,15 +776,17 @@ export default function BusinessPerformance() {
                 {isStaffRole ? 'My Productivity & Attribution Record' : 'Sales Staff Productivity & Attribution Matrix'}
               </h3>
             </div>
-            <div className="w-full sm:w-72">
-              <input
-                type="text"
-                value={staffSearch}
-                onChange={(e) => setStaffSearch(e.target.value)}
-                placeholder="Search staff by name, zone, role..."
-                className="w-full text-xs p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary"
-              />
-            </div>
+            {!isStaffRole && (
+              <div className="w-full sm:w-72">
+                <input
+                  type="text"
+                  value={staffSearch}
+                  onChange={(e) => setStaffSearch(e.target.value)}
+                  placeholder="Search staff by name, zone, role..."
+                  className="w-full text-xs p-2.5 rounded-xl bg-surface-container-low border border-surface-container-high focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
           </div>
 
           <div className="overflow-x-auto">
@@ -412,8 +841,8 @@ export default function BusinessPerformance() {
         </div>
       )}
 
-      {/* 5. Tab: Dealer Performance Table */}
-      {activeTab === 'dealers' && (
+      {/* 7. Tab: Dealer Performance Table (Only for Staff & Admin) */}
+      {!isDealerRole && activeTab === 'dealers' && (
         <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -505,7 +934,7 @@ export default function BusinessPerformance() {
         </div>
       )}
 
-      {/* 6. Tab: Cash vs Loan Analytics */}
+      {/* 8. Tab: Cash vs Loan Analytics */}
       {activeTab === 'finance' && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -573,20 +1002,22 @@ export default function BusinessPerformance() {
         </div>
       )}
 
-      {/* 7. Tab: Conversion Funnel */}
+      {/* 9. Tab: Conversion Funnel */}
       {activeTab === 'funnel' && (
         <div className="p-5 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-6">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[22px]">filter_alt</span>
             <h3 className="font-heading font-bold text-base sm:text-lg text-on-surface">
-              End-to-End Quotation to Subsidy Disbursal Funnel
+              {isDealerRole
+                ? 'My End-to-End Quotation to Subsidy Disbursal Funnel'
+                : 'End-to-End Quotation to Subsidy Disbursal Funnel'}
             </h3>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
             {[
-              { step: '1. Quotations', count: overallMetrics?.funnelStages?.quotations ?? 0, sub: 'Generated by Dealers & Staff' },
-              { step: '2. Accepted Files', count: overallMetrics?.funnelStages?.filesAccepted ?? 0, sub: 'Customer Onboarded' },
+              { step: '1. Quotations', count: overallMetrics?.funnelStages?.quotations ?? isolatedQuotations.length, sub: isDealerRole ? 'Issued by Your Firm' : 'Generated by Dealers & Staff' },
+              { step: '2. Accepted Files', count: overallMetrics?.funnelStages?.filesAccepted ?? isolatedFiles.length, sub: 'Customer Onboarded' },
               { step: '3. DISCOM Registered', count: overallMetrics?.funnelStages?.discomRegistered ?? 0, sub: 'Net-Meter Submitted' },
               { step: '4. Plant Commissioned', count: overallMetrics?.funnelStages?.installed ?? 0, sub: 'Hardware Setup Done' },
               { step: '5. Subsidy Disbursed', count: overallMetrics?.funnelStages?.subsidized ?? 0, sub: 'PM Surya Ghar DBT Released' }
