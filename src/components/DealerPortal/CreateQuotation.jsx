@@ -12,8 +12,14 @@ import {
   calculateFieldBOMTotals,
   FIELD_BOM_MASTER_CATALOG
 } from '../../data/standardBomData';
-import { calculateSubsidy as calcSharedSubsidy, calcEMI as calcSharedEMI } from '../../shared/pricing/calculations';
-
+import {
+  calculateSubsidy as calcSharedSubsidy,
+  calcEMI as calcSharedEMI,
+  isPanelWattageCompatible,
+  getPanelQuantityForCapacity,
+  normalizeBrand
+} from '../../shared/pricing/calculations';
+import { PDF_BOS_PRICE_MATRIX } from '../../data/gujaratDatabase';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
@@ -22,6 +28,69 @@ const formatINR = (val) => {
 
 export const STANDARD_WATTS = [540, 550, 585, 600, 610, 615];
 export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
+
+export const PRESET_MAKES = [
+  {
+    id: 'adani_bifi',
+    name: 'Adani 555W Bi-Fi',
+    fullName: 'Adani 555W Vertex Mono PERC Bifacial',
+    brand: 'Adani',
+    watt: 555,
+    priceKey: 'adaniBiFiPrice',
+    badge: 'Tier-1 ALMM',
+    tech: '555W Bi-Fi'
+  },
+  {
+    id: 'aps_bifi',
+    name: 'APS 550W Bi-Fi',
+    fullName: 'APS 550W TOPCon Dual Glass',
+    brand: 'APS',
+    watt: 550,
+    priceKey: 'apsBiFiPrice',
+    badge: 'Dual Glass',
+    tech: '550W Bi-Fi'
+  },
+  {
+    id: 'rayzone',
+    name: 'Rayzon 550W',
+    fullName: 'Rayzon 550W Mono PERC Bifacial',
+    brand: 'Rayzon',
+    watt: 550,
+    priceKey: 'rayzonePrice',
+    badge: 'High Yield',
+    tech: '550W Bi-Fi'
+  },
+  {
+    id: 'waaree_540',
+    name: 'Waaree 540W Mono',
+    fullName: 'Waaree 540W Mono PERC Half-Cut Module',
+    brand: 'Waaree',
+    watt: 540,
+    priceKey: 'waaree540Price',
+    badge: 'Mono PERC',
+    tech: '540W Mono PERC'
+  },
+  {
+    id: 'waaree_585',
+    name: 'Waaree 585W TOPCon',
+    fullName: 'Waaree 585W TOPCon Bifacial (HyperIon)',
+    brand: 'Waaree',
+    watt: 585,
+    priceKey: 'waaree585Price',
+    badge: 'Featured',
+    tech: '585W TOPCon'
+  },
+  {
+    id: 'aps_topcon_600',
+    name: 'APS TOPCon 600W',
+    fullName: 'APS TOPCon 600W Bi-Fi High-Yield',
+    brand: 'APS',
+    watt: 600,
+    priceKey: 'apsTopcon600Price',
+    badge: '600W Ultra',
+    tech: '600W Bi-Fi'
+  }
+];
 
 export const BOM_MOBILE_CATEGORIES = [
   { id: 'all', label: 'All Items' },
@@ -69,7 +138,10 @@ export default function CreateQuotation() {
     getAccessibleDealers,
     updateDealerPricing,
     bomCatalog,
-    bomRates
+    bomRates,
+    deletedBomItemIds,
+    seenCatalogItemIds,
+    pdfBosMatrix
   } = useApp();
 
   const { addToast } = useToast();
@@ -103,6 +175,13 @@ export default function CreateQuotation() {
   const effectiveDealer = isDirectCompanyQuote
     ? null
     : ((isAdmin || isStaff) ? (accessibleDealers?.find(d => d.id === assignedDealerId) || currentDealer) : currentDealer);
+
+  // Dealer category resolution: Margin Based vs Kit Based
+  // Admin & Staff ALWAYS get the full original customization interface (Brand, Watt, Rate/Wp, Inverter, BOM list).
+  // The simplified turnkey flow (kW-first, smart panel dropdown, hidden inverter/BOM) applies strictly to Dealers in the Dealer Portal.
+  const isDealerUser = !isAdmin && !isStaff;
+  const effectiveDealerCategory = effectiveDealer?.category || effectiveDealer?.pricingConfig?.category || 'Margin Based';
+  const isMarginBased = isDealerUser && (effectiveDealerCategory === 'Margin Based');
 
   // Pricing mode: 'standard' (Company Base Price) vs 'custom' (Dealer Negotiated Price)
   const [bomPricingMode, setBomPricingMode] = useState(() => {
@@ -140,7 +219,20 @@ export default function CreateQuotation() {
   }, [modulesList]);
 
   const availablePanelBrands = useMemo(() => {
-    return Array.from(new Set(activeModules.map(m => m.brand))).filter(Boolean);
+    const brandMap = new Map();
+    (activeModules || []).forEach(m => {
+      if (!m.brand) return;
+      const lower = m.brand.trim().toLowerCase();
+      if (!brandMap.has(lower)) {
+        brandMap.set(lower, m.brand.trim());
+      } else {
+        const current = brandMap.get(lower);
+        if (current === current.toLowerCase() && m.brand !== m.brand.toLowerCase()) {
+          brandMap.set(lower, m.brand.trim());
+        }
+      }
+    });
+    return Array.from(brandMap.values());
   }, [activeModules]);
 
   const activeInverters = useMemo(() => {
@@ -148,7 +240,21 @@ export default function CreateQuotation() {
   }, [invertersList]);
 
   const availableInverterBrands = useMemo(() => {
-    return Array.from(new Set(activeInverters.map(i => i.brand))).filter(Boolean);
+    const brandMap = new Map();
+    (activeInverters || []).forEach(i => {
+      if (!i.brand) return;
+      const lower = i.brand.trim().toLowerCase();
+      if (!brandMap.has(lower)) {
+        brandMap.set(lower, i.brand.trim());
+      } else {
+        const current = brandMap.get(lower);
+        // Prefer Title/Proper case like "Deye" over "deye"
+        if (current === current.toLowerCase() && i.brand !== i.brand.toLowerCase()) {
+          brandMap.set(lower, i.brand.trim());
+        }
+      }
+    });
+    return Array.from(brandMap.values());
   }, [activeInverters]);
 
   // Helper to extract numeric price from string/number
@@ -205,6 +311,279 @@ export default function CreateQuotation() {
   };
 
   // Step 1.2 Dynamic Hardware: Brand -> Wattage (Wp) -> Panel Quantity -> Auto kW
+  // Available BOS Presets Matrix (Live database synced from Supabase bos_pricing_matrix)
+  const activeBosMatrix = useMemo(() => {
+    return Array.isArray(pdfBosMatrix) && pdfBosMatrix.length > 0 ? pdfBosMatrix : PDF_BOS_PRICE_MATRIX;
+  }, [pdfBosMatrix]);
+
+  // 1. All available panel makes: Strictly single source of truth from database activeModules,
+  // deduplicated by normalized brand and wattage so each panel model appears EXACTLY ONCE.
+  const allAvailablePresetMakes = useMemo(() => {
+    // If activeModules is loaded from database, use it as the single authoritative source
+    if (Array.isArray(activeModules) && activeModules.length > 0) {
+      const makes = [];
+      activeModules.forEach((m) => {
+        const watt = Number(m.wattage);
+        if (!watt || m.isArchived) return;
+        const brand = m.brand?.trim() || 'Custom';
+
+        // Prevent duplicate panels for the same brand and wattage
+        const alreadyExists = makes.some((p) => {
+          return p.id === m.id || (normalizeBrand(p.brand) === normalizeBrand(brand) && p.watt === watt);
+        });
+        if (alreadyExists) return;
+
+        // Resolve standard matrix priceKey in bos_pricing_matrix
+        let priceKey = null;
+        const normB = normalizeBrand(brand);
+        if (normB.includes('aps') && watt === 600) priceKey = 'apsTopcon600Price';
+        else if (normB.includes('waaree') && watt === 585) priceKey = 'waaree585Price';
+        else if (normB.includes('waaree') && watt === 540) priceKey = 'waaree540Price';
+        else if (normB.includes('rayzon') && watt === 550) priceKey = 'rayzonePrice';
+        else if (normB.includes('aps') && watt === 550) priceKey = 'apsBiFiPrice';
+        else if (normB.includes('adani') && (watt === 550 || watt === 555)) priceKey = 'adaniBiFiPrice';
+
+        makes.push({
+          id: m.id || `mod_${brand.toLowerCase().replace(/\s+/g, '_')}_${watt}`,
+          name: `${brand} ${watt}W`,
+          fullName: m.model || `${brand} ${watt}W (${m.cellTech || 'Solar Module'})`,
+          brand: brand,
+          watt: watt,
+          priceKey: priceKey || 'apsBiFiPrice',
+          badge: m.cellTech ? m.cellTech.split(' ')[0] : 'ALMM',
+          tech: `${watt}W ${m.cellTech || 'Solar Module'}`
+        });
+      });
+      return makes;
+    }
+
+    // Fallback only if database modules not yet loaded
+    return PRESET_MAKES;
+  }, [activeModules]);
+
+  // 2. kW Options: STRICTLY derived from the pricing preset matrix slabs created by Admin in activeBosMatrix
+  const availableKwOptions = useMemo(() => {
+    const kwMap = new Map();
+
+    (activeBosMatrix || []).forEach((slab) => {
+      // Standard nominal capacity strictly from admin database preset slab
+      const standardKw = Number(slab.capacityKW || slab.capacity_kw);
+      const modules = Number(slab.noOfModules || slab.no_of_modules) || 4;
+      if (standardKw && !kwMap.has(standardKw)) {
+        kwMap.set(standardKw, {
+          kw: standardKw,
+          panelsCount: modules,
+          label: `${standardKw} kW System — ${modules} Panels`
+        });
+      }
+    });
+
+    // Return sorted ascending
+    return Array.from(kwMap.values()).sort((a, b) => a.kw - b.kw);
+  }, [activeBosMatrix]);
+
+  // Selected kW for margin-based presets flow (defaults to 3.3 kW or initialSource)
+  const [selectedPresetKw, setSelectedPresetKw] = useState(() => {
+    if (initialSource?.systemCapacityKW || initialSource?.capacityKW) {
+      return Number(initialSource.systemCapacityKW || initialSource.capacityKW);
+    }
+    return 3.3;
+  });
+
+  // All preset makes created/configured in the database matrix that are mathematically compatible with selectedPresetKw
+  const compatiblePresetMakes = useMemo(() => {
+    if (!selectedPresetKw || Number(selectedPresetKw) <= 0) return allAvailablePresetMakes;
+    return allAvailablePresetMakes.filter((m) =>
+      isPanelWattageCompatible(selectedPresetKw, m.watt)
+    );
+  }, [allAvailablePresetMakes, selectedPresetKw]);
+
+  // Selected Make Brand ID for margin-based presets flow
+  const [selectedPresetMakeId, setSelectedPresetMakeId] = useState(() => {
+    if (initialSource?.selectedModuleMake) {
+      const found = PRESET_MAKES.find(
+        (m) =>
+          m.name.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase()) ||
+          m.brand.toLowerCase().includes(initialSource.selectedModuleMake.toLowerCase())
+      );
+      if (found) return found.id;
+    }
+    return 'mod-aps-550';
+  });
+
+  // Keep selectedPresetMakeId synchronized with available makes; clear/reset any incompatible panel immediately
+  useEffect(() => {
+    if (isMarginBased) {
+      if (compatiblePresetMakes.length > 0) {
+        const isCurrentValid = compatiblePresetMakes.some((m) => m.id === selectedPresetMakeId);
+        if (!isCurrentValid) {
+          const matchedByBrandWatt = compatiblePresetMakes.find((m) => {
+            const cur = PRESET_MAKES.find((p) => p.id === selectedPresetMakeId);
+            return cur && normalizeBrand(cur.brand) === normalizeBrand(m.brand) && cur.watt === m.watt;
+          });
+          const nextMake = matchedByBrandWatt || compatiblePresetMakes[0];
+          setSelectedPresetMakeId(nextMake.id);
+          setPanelBrand(nextMake.brand);
+          setPanelWatt(nextMake.watt);
+          const reqQty = getPanelQuantityForCapacity(selectedPresetKw, nextMake.watt);
+          if (reqQty > 0) setPanelQuantity(reqQty);
+        }
+      } else {
+        setSelectedPresetMakeId('');
+        setPanelBrand('');
+        setPanelWatt(0);
+      }
+    }
+  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId, selectedPresetKw]);
+
+  // Active Make object
+  const currentPresetMake = useMemo(() => {
+    return compatiblePresetMakes.find((m) => m.id === selectedPresetMakeId) || compatiblePresetMakes[0] || null;
+  }, [compatiblePresetMakes, selectedPresetMakeId]);
+
+  // Active slab strictly matching selected kW from the admin matrix
+  const matchedSlab = useMemo(() => {
+    const matchByKw = (activeBosMatrix || []).find(
+      (r) => Math.abs(Number(r.capacityKW || r.capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    return matchByKw || activeBosMatrix?.[0] || {
+      capacityKW: 3.3,
+      noOfModules: 6,
+      inverterCapacityKW: 3.6,
+      adaniBiFiPrice: 160173,
+      apsBiFiPrice: 148500,
+      rayzonePrice: 148500,
+      waaree540Price: 155844,
+      waaree585Price: 173043,
+      apsTopcon600Price: 164520
+    };
+  }, [activeBosMatrix, selectedPresetKw]);
+
+  // Preset Turnkey Base Price from the database matrix for current kW & make
+  const activePresetBasePrice = useMemo(() => {
+    if (!matchedSlab || !currentPresetMake) return 0;
+    // Check dynamic panelPrices object first
+    if (matchedSlab.panelPrices && typeof matchedSlab.panelPrices === 'object') {
+      const dynPrice = matchedSlab.panelPrices[currentPresetMake.id] ?? 
+                       matchedSlab.panelPrices[currentPresetMake.priceKey] ?? 
+                       matchedSlab.panelPrices[currentPresetMake.brand];
+      if (dynPrice !== undefined && dynPrice !== null && Number(dynPrice) > 0) {
+        return Number(dynPrice);
+      }
+    }
+    const camelVal = matchedSlab[currentPresetMake.priceKey];
+    if (camelVal !== undefined && camelVal !== null) return Number(camelVal) || 0;
+    // Snake_case DB fallback
+    const snakeKey = currentPresetMake.priceKey.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    const snakeVal = matchedSlab[snakeKey];
+    if (snakeVal !== undefined && snakeVal !== null) return Number(snakeVal) || 0;
+    return 0;
+  }, [matchedSlab, currentPresetMake]);
+
+  // User-edited price entry override (null = use activePresetBasePrice)
+  const [customPresetBasePrice, setCustomPresetBasePrice] = useState(() => {
+    if (initialSource?.baseCost && (initialSource?.pricingCategory === 'Margin Based' || initialSource?.pricingMode === 'margin_based')) {
+      return Number(initialSource.baseCost);
+    }
+    return null;
+  });
+
+  // Effective turnkey base price for calculation
+  const effectiveMarginBasePrice = (customPresetBasePrice !== null && customPresetBasePrice !== undefined)
+    ? Number(customPresetBasePrice)
+    : activePresetBasePrice;
+
+  // Custom Dropdown UI States & Refs (Max 6 rows visible, vertical scrollbar on overflow)
+  const [kwDropdownOpen, setKwDropdownOpen] = useState(false);
+  const [makeDropdownOpen, setMakeDropdownOpen] = useState(false);
+  const kwDropdownRef = useRef(null);
+  const makeDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (kwDropdownRef.current && !kwDropdownRef.current.contains(event.target)) {
+        setKwDropdownOpen(false);
+      }
+      if (makeDropdownRef.current && !makeDropdownRef.current.contains(event.target)) {
+        setMakeDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setKwDropdownOpen(false);
+        setMakeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Handlers for Margin-Based kW and Make selection
+  const handleSelectPresetKw = (kwVal) => {
+    const numKw = Number(kwVal);
+    setSelectedPresetKw(numKw);
+    setKwDropdownOpen(false);
+
+    // Filter available makes for this newly selected capacity
+    const nextCompatibleMakes = allAvailablePresetMakes.filter((m) =>
+      isPanelWattageCompatible(numKw, m.watt)
+    );
+
+    const isCurrentStillValid = nextCompatibleMakes.some((m) => m.id === selectedPresetMakeId);
+    if (!isCurrentStillValid) {
+      if (nextCompatibleMakes.length > 0) {
+        const nextMake = nextCompatibleMakes[0];
+        setSelectedPresetMakeId(nextMake.id);
+        setPanelBrand(nextMake.brand);
+        setPanelWatt(nextMake.watt);
+        const reqQty = getPanelQuantityForCapacity(numKw, nextMake.watt);
+        if (reqQty > 0) {
+          setPanelQuantity(reqQty);
+        }
+      } else {
+        setSelectedPresetMakeId('');
+        setPanelBrand('');
+        setPanelWatt(0);
+      }
+    } else {
+      const curMake = nextCompatibleMakes.find((m) => m.id === selectedPresetMakeId);
+      if (curMake) {
+        const reqQty = getPanelQuantityForCapacity(numKw, curMake.watt);
+        if (reqQty > 0) {
+          setPanelQuantity(reqQty);
+        }
+      }
+    }
+
+    const targetSlab = (activeBosMatrix || []).find((r) => {
+      const slabKw = Number(r.capacityKW || r.capacity_kw);
+      return Math.abs(slabKw - numKw) < 0.05;
+    });
+    if (targetSlab) {
+      const invCap = parseFloat(targetSlab.inverterCapacityKW || targetSlab.inverter_capacity_kw) || numKw;
+      setInverterCapacityKw(invCap);
+    }
+    setCustomPresetBasePrice(null);
+  };
+
+  const handleSelectPresetMake = (makeId) => {
+    setSelectedPresetMakeId(makeId);
+    setMakeDropdownOpen(false);
+    const targetMake = allAvailablePresetMakes.find((m) => m.id === makeId);
+    if (targetMake) {
+      setPanelBrand(targetMake.brand);
+      setPanelWatt(targetMake.watt);
+      const reqQty = getPanelQuantityForCapacity(selectedPresetKw, targetMake.watt);
+      const modules = reqQty > 0 ? reqQty : (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity);
+      setPanelQuantity(modules);
+    }
+    setCustomPresetBasePrice(null);
+  };
+
   const [panelBrand, setPanelBrand] = useState(() => {
     if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
     if (initialSource?.solarModule) {
@@ -226,10 +605,34 @@ export default function CreateQuotation() {
     return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
   });
 
-  // Auto-calculated System Capacity (kW) = (Wattage * Quantity) / 1000
-  const kw = Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
-  const moduleCount = panelQuantity;
+  // Auto-calculated System Capacity (kW)
+  // Accurately aligned with Admin preset slab capacity
+  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
+  const kw = isMarginBased
+    ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || parseFloat(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(3)))
+    : parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3));
+  const moduleCount = actualModuleCount;
   const rooftopAreaSqFt = Math.round(kw * 64);
+
+  // Synchronize Margin-Based state with component hardware state
+  useEffect(() => {
+    if (isMarginBased && matchedSlab) {
+      const targetModules = Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4;
+      if (panelQuantity !== targetModules) {
+        setPanelQuantity(targetModules);
+      }
+      if (panelWatt !== currentPresetMake.watt) {
+        setPanelWatt(currentPresetMake.watt);
+      }
+      if (panelBrand !== currentPresetMake.brand) {
+        setPanelBrand(currentPresetMake.brand);
+      }
+      const invCap = parseFloat(matchedSlab.inverterCapacityKW || matchedSlab.inverter_capacity_kw) || Number(selectedPresetKw);
+      if (inverterCapacityKw !== invCap) {
+        setInverterCapacityKw(invCap);
+      }
+    }
+  }, [isMarginBased, matchedSlab, currentPresetMake, selectedPresetKw]);
 
   // Modules available for the currently selected brand
   const brandModules = useMemo(() => {
@@ -244,6 +647,26 @@ export default function CreateQuotation() {
   const currentModuleRecord = useMemo(() => {
     return brandModules.find(m => Number(m.wattage) === Number(panelWatt)) || brandModules[0] || activeModules[0] || null;
   }, [brandModules, panelWatt, activeModules]);
+
+  // Tracking "NEW" tags for Panels, Wattages, and Inverters (cleared once selected)
+  const isBrandNew = (bName) => {
+    if (!bName) return false;
+    if (seenCatalogItemIds?.includes(`brand_${bName}`)) return false;
+    return (activeModules || []).some(m => (m.brand?.toLowerCase() === bName?.toLowerCase()) && isCatalogItemNew(m));
+  };
+
+  const isWattNew = (bName, w) => {
+    if (!bName || !w) return false;
+    if (seenCatalogItemIds?.includes(`watt_${bName}_${w}`)) return false;
+    const mRecord = (activeModules || []).find(m => (m.brand?.toLowerCase() === bName?.toLowerCase()) && Number(m.wattage) === Number(w));
+    return mRecord ? isCatalogItemNew(mRecord) : false;
+  };
+
+  const isInvBrandNew = (bName) => {
+    if (!bName) return false;
+    if (seenCatalogItemIds?.includes(`inv_${bName}`)) return false;
+    return (activeInverters || []).some(i => (i.brand?.toLowerCase() === bName?.toLowerCase()) && isCatalogItemNew(i));
+  };
 
   // Dedicated Inverter Controls (Brand, Capacity kW, Quantity, Unit Rate) - Issue SR-61
   const [inverterBrand, setInverterBrand] = useState(() => {
@@ -268,12 +691,14 @@ export default function CreateQuotation() {
     if (brandInverters.length > 0) {
       return brandInverters.map(inv => {
         const numPrice = parseNumericPrice(inv.basePrice, 15500);
+        const isNew = isCatalogItemNew(inv);
         return {
           kw: Number(inv.capacityKW) || 3.3,
-          label: `${inv.capacityKW} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}`,
+          label: `${inv.capacityKW} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}${isNew ? ' 🟢 NEW' : ''}`,
           phase: inv.phase || 'Single Phase',
           price: numPrice,
-          inverter: inv
+          inverter: inv,
+          isNew
         };
       });
     }
@@ -286,7 +711,7 @@ export default function CreateQuotation() {
       { kw: 8.0, label: '8.0 kW (Three Phase) — ₹48,000', phase: 'Three Phase', price: 48000 },
       { kw: 10.0, label: '10.0 kW (Three Phase) — ₹54,000', phase: 'Three Phase', price: 54000 }
     ];
-  }, [brandInverters]);
+  }, [brandInverters, seenCatalogItemIds]);
 
   const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
     if (initialSource?.inverterCapacity) {
@@ -457,6 +882,14 @@ export default function CreateQuotation() {
   const effectiveTransportCharge = transportPreset === 'dealer_scope' ? 0 :
     (transportPreset === 'rajkot_local' ? 1000 : Math.max(0, Number(customTransportCharge) || 0));
 
+  // 2b. Extra Outstation Transport / Freight Charge Toggle (Manual input for dealer quote & PDF)
+  const [enableExtraTransport, setEnableExtraTransport] = useState(() => {
+    return Boolean(initialSource?.enableExtraTransport || initialSource?.hasExtraTransport || (initialSource?.extraTransportAmount && Number(initialSource.extraTransportAmount) > 0));
+  });
+  const [extraTransportAmount, setExtraTransportAmount] = useState(() => {
+    return Number(initialSource?.extraTransportAmount) || (initialSource?.hasExtraTransport ? Number(initialSource?.transportCharge) : 0);
+  });
+
   // 3. Adaptive Installation & Liaisoning Rate Engine
   // Residential / Standard HDGI -> ₹2,000/kW | Industrial Monorail -> ₹1,400/kW | Hybrid -> Weighted
   const defaultInstallationRatePerKw = useMemo(() => {
@@ -582,10 +1015,17 @@ export default function CreateQuotation() {
         installationFixedAmount: Number(installationFixedAmount) || 0,
         installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
         customBomRates: activeCustomRates,
-        customCatalog: bomCatalog
+        customCatalog: bomCatalog,
+        deletedBomItemIds: deletedBomItemIds || []
       });
     });
-  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterBrand, inverterCapacityKw, inverterQuantity, inverterUnitPrice, structureType, hybridMonorailPercent, effectiveTransportCharge, installationPricingMode, installationFixedAmount, installationRatePerKw, defaultInstallationRatePerKw, bomCatalog, bomRates, bomPricingMode, effectiveDealer]);
+  }, [kw, panelBrand, panelWatt, panelQuantity, ratePerWp, inverterBrand, inverterCapacityKw, inverterQuantity, inverterUnitPrice, structureType, hybridMonorailPercent, effectiveTransportCharge, installationPricingMode, installationFixedAmount, installationRatePerKw, defaultInstallationRatePerKw, bomCatalog, bomRates, bomPricingMode, effectiveDealer, deletedBomItemIds]);
+
+  // Reactive exclusion: if any BOM material is deleted in HardwareMaster, purge immediately from quotation BOM
+  useEffect(() => {
+    if (!deletedBomItemIds || deletedBomItemIds.length === 0) return;
+    setBomItems(prev => prev.filter(item => !deletedBomItemIds.includes(item.id)));
+  }, [deletedBomItemIds]);
 
   // Live BOM Totals
   const bomTotals = useMemo(() => {
@@ -749,8 +1189,8 @@ export default function CreateQuotation() {
   };
 
 
-  // Turnkey Base Cost before dealer margin strictly follows Field BOM Totals!
-  const baseProjectCost = bomTotals.grossTurnkeyCost;
+  // Turnkey Base Cost before dealer margin (Preset Matrix Base Price in Margin-Based flow; Field BOM Totals in Kit-Based flow)
+  const baseProjectCost = isMarginBased ? effectiveMarginBasePrice : bomTotals.grossTurnkeyCost;
 
   // Commercial margin computation (triple mode: per_kw, percent, or fixed ₹ amount)
   // For dealer partners: Custom Dealer Margin. For direct company quotes: Sunvine HO Company Margin.
@@ -763,8 +1203,9 @@ export default function CreateQuotation() {
   // Discount (if negotiated)
   const discountAmount = customDiscountPercent > 0 ? Math.round((baseProjectCost + dealerMarginINR) * (customDiscountPercent / 100)) : 0;
 
-  // Turnkey gross cost inclusive of GST
-  const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR - discountAmount);
+  // Turnkey gross cost inclusive of GST (including optional outstation transport charge)
+  const extraTransportChargeINR = (enableExtraTransport && Number(extraTransportAmount) > 0) ? Number(extraTransportAmount) : 0;
+  const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR + extraTransportChargeINR - discountAmount);
   const totalCost = grossTurnkeyBeforeSubsidy;
 
   // Transparent GST Invoice Breakdown:
@@ -777,7 +1218,7 @@ export default function CreateQuotation() {
   const structureEstimatedCost = bomItems.filter(i => i.category === 'structure').reduce((sum, i) => sum + (Number(i.baseAmount ?? i.total ?? (Number(i.qty || 0) * Number(i.rate || 0))) || 0), 0);
   const bosEstimatedCost = bomItems.filter(i => i.id !== 'solar_panel' && i.id !== 'solar_inverter' && i.id !== 'transportation' && i.id !== 'turnkey_installation' && i.category !== 'structure').reduce((sum, i) => sum + (Number(i.baseAmount ?? i.total ?? (Number(i.qty || 0) * Number(i.rate || 0))) || 0), 0);
   const allBosHardwareEstimatedCost = structureEstimatedCost + bosEstimatedCost;
-  const transportCharge = effectiveTransportCharge;
+  const transportCharge = (transportPreset === 'dealer_scope' ? 0 : effectiveTransportCharge) + extraTransportChargeINR;
   const installationEstimatedCost = installationPricingMode === 'fixed'
     ? Math.round(Number(installationFixedAmount) || 0)
     : Math.round(kw * (Number(installationRatePerKw) || defaultInstallationRatePerKw));
@@ -956,103 +1397,10 @@ export default function CreateQuotation() {
     }
 
     const isEdit = Boolean(editingQuotation?.id);
-    const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
-    const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
-
-    const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
-    const quotePayload = {
-      id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
-      date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
-      customerName: custName,
-      customerPhone: custPhone,
-      location: custLocation,
-      city: custLocation.split(',')[0]?.trim() || 'Rajkot',
-      state: 'Gujarat',
-      projectType,
-      type: `${panelBrand.split(' ')[0]} • ${projectType}`,
-      systemCapacityKW: kw,
-      capacityKW: kw,
-      panelType: fullPanelDescription,
-      solarModule: fullPanelDescription,
-      selectedModuleMake: panelBrand,
-      selectedInverterMake: inverterBrand,
-      moduleWattage: panelWatt,
-      moduleCount: panelQuantity,
-      ratePerWp: ratePerWp,
-      multiBrandComparison,
-      multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
-      structureLayout: selectedStructureLayout || null,
-      structureType,
-      hybridMonorailPercent: structureType === 'hybrid' ? hybridMonorailPercent : null,
-      transportPreset,
-      transportCharge: effectiveTransportCharge,
-      installationPricingMode,
-      installationFixedAmount: Number(installationFixedAmount) || 0,
-      installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
-      installationEstimatedCost,
-      marginMode,
-      marginRatePerKw: Number(marginRatePerKw) || 0,
-      pvModuleSize: '4 * 8',
-      inverterBrand,
-      inverterCapacityKw,
-      inverterQuantity,
-      inverterUnitPrice,
-      inverterType: inverterModel,
-      inverterCapacity: `${inverterCapacityKw} kW`,
-      inverterCount: `${inverterQuantity} NOS`,
-      financeType,
-      paymentMode: financeType,
-      loanBank: financeType === 'LOAN' ? loanBank : null,
-      loanTenureYears: financeType === 'LOAN' ? loanTenureYears : null,
-      estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
-      baseRatePerKW: ratePerKw,
-      baseCost: baseProjectCost,
-      dealerMargin: dealerMarginINR,
-      dealerTotalMargin: dealerMarginINR,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
-      hasCustomDealerPricing,
-      customDiscountPercent,
-      discountAmount,
-      moduleEstimatedCost,
-      inverterEstimatedCost,
-      structureEstimatedCost,
-      bosEstimatedCost,
-      baseBeforeGst,
-      gstPercentage: 13.8,
-      gstAmount,
-      isGstInclusive: true,
-      annualGenerationUnits,
-      monthlyGenerationUnits,
-      annualSavings,
-      monthlySavings,
-      paybackYears,
-      isDirectCompanyQuote,
-      quoteChannel,
-      creatorRole: role,
-      creatorStaffId: isStaff ? currentStaff?.id : null,
-      creatorStaffName: isStaff ? currentStaff?.name : null,
-      isFlagged: isMarginExceeded,
-      requiresAudit: isMarginExceeded,
-      auditFlagReason: isMarginExceeded ? `Margin of ₹${currentMarginPerKw}/kW exceeds tier cap of ₹${maxMarginCapPerKw}/kW` : null,
-      totalAmount: totalCost,
-      grandTotalCustomer: totalCost,
-      subsidyAmount: subsidy,
-      netPayable: finalPayable,
-      status: isEdit ? (editingQuotation.status || (isDirectCompanyQuote ? 'Approved / Direct' : 'Draft')) : (isMarginExceeded ? 'Audit Required' : (isDirectCompanyQuote ? 'Approved / Direct' : 'Draft')),
-      statusClass: isEdit ? (editingQuotation.statusClass || 'bg-secondary/15 text-secondary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
-      dealerCode: resolvedDealerCode,
-      dealerId: resolvedDealerCode,
-      dealerName: resolvedDealerName,
-      roofConfig: quotationRoofConfig,
-      coverImage: customCoverUrl || null,
-      customCoverUrl: customCoverUrl || null,
-      bomItems,
-      bomTotals,
-      pricingMode: bomPricingMode
-    };
+    const quotePayload = buildCurrentQuotePayload('Draft');
 
     setIsSubmitting(true);
-    setSaveStatus('Saving quotation...');
+    setSaveStatus('Saving quotation draft...');
     showLoader('Securing Quotation with Cloud...');
     try {
       if (isEdit && updateQuotation) {
@@ -1068,7 +1416,7 @@ export default function CreateQuotation() {
           type: '2D_ROOF_CAD',
           roofConfig: quotationRoofConfig,
           structureLayout: selectedStructureLayout,
-          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
+          specs: { moduleCount: panelQuantity, panelWatt, rooftopAreaSqFt }
         });
       }
 
@@ -1092,30 +1440,33 @@ export default function CreateQuotation() {
     }
   };
 
-  const handlePreview = () => {
-    if (!custName.trim()) {
-      addToast({
-        title: 'Customer Name Required',
-        message: 'Please specify the customer name before generating proposal preview.',
-        type: 'warning'
-      });
-      return;
-    }
-
-    if (isMarginExceeded) {
-      addToast({
-        title: 'Margin Audit Alert',
-        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
-        type: 'warning'
-      });
-    }
-
+  // Helper to build standardized quote payload
+  const buildCurrentQuotePayload = (explicitStatus = null) => {
     const isEdit = Boolean(editingQuotation?.id);
     const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
     const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
 
-    const fullPanelDescription = `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
-    const quotePayload = {
+    // In margin-based quotations, dealer doesn't select an inverter; list all admin inverter brands
+    const allInverterBrandNames = (activeInverters && activeInverters.length > 0)
+      ? Array.from(new Set(activeInverters.map((i) => i.brand?.trim()).filter(Boolean))).join(' / ')
+      : 'Solis / Growatt / Deye / Vsole / Sunvine';
+
+    const fullPanelDescription = isMarginBased
+      ? currentPresetMake.fullName
+      : `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
+
+    const defaultStatus = explicitStatus || (isEdit ? (editingQuotation.status || 'Active / Generated') : (isDirectCompanyQuote ? 'Approved / Direct' : 'Active / Generated'));
+    const statusClass = defaultStatus === 'Draft'
+      ? 'bg-secondary/15 text-secondary'
+      : isMarginExceeded
+        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+        : 'bg-primary/15 text-primary';
+
+    const effectiveModuleCount = isMarginBased
+      ? (panelQuantity || Number(matchedSlab?.noOfModules) || 6)
+      : panelQuantity;
+
+    return {
       id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
@@ -1127,12 +1478,12 @@ export default function CreateQuotation() {
       type: `${panelBrand.split(' ')[0]} • ${projectType}`,
       systemCapacityKW: kw,
       capacityKW: kw,
-      solarModule: fullPanelDescription,
       panelType: fullPanelDescription,
-      selectedModuleMake: panelBrand,
-      selectedInverterMake: inverterBrand,
-      moduleWattage: panelWatt,
-      moduleCount: panelQuantity,
+      solarModule: fullPanelDescription,
+      selectedModuleMake: isMarginBased ? currentPresetMake.name : panelBrand,
+      selectedInverterMake: isMarginBased ? allInverterBrandNames : inverterBrand,
+      moduleWattage: isMarginBased ? currentPresetMake.watt : panelWatt,
+      moduleCount: effectiveModuleCount,
       ratePerWp: ratePerWp,
       multiBrandComparison,
       multiBrandPackages: multiBrandComparison ? multiBrandPackages : null,
@@ -1140,7 +1491,10 @@ export default function CreateQuotation() {
       structureType,
       hybridMonorailPercent: structureType === 'hybrid' ? hybridMonorailPercent : null,
       transportPreset,
-      transportCharge: effectiveTransportCharge,
+      transportCharge: (transportPreset === 'dealer_scope' ? 0 : effectiveTransportCharge) + extraTransportChargeINR,
+      enableExtraTransport,
+      hasExtraTransport: enableExtraTransport && Number(extraTransportAmount) > 0,
+      extraTransportAmount: enableExtraTransport ? Number(extraTransportAmount) : 0,
       installationPricingMode,
       installationFixedAmount: Number(installationFixedAmount) || 0,
       installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
@@ -1148,13 +1502,13 @@ export default function CreateQuotation() {
       marginMode,
       marginRatePerKw: Number(marginRatePerKw) || 0,
       pvModuleSize: '4 * 8',
-      inverterBrand,
+      inverterBrand: isMarginBased ? allInverterBrandNames : inverterBrand,
       inverterCapacityKw,
-      inverterQuantity,
+      inverterQuantity: 1,
       inverterUnitPrice,
-      inverterCapacity: `${inverterCapacityKw} kW`,
-      inverterType: inverterModel,
-      inverterCount: `${inverterQuantity} NOS`,
+      inverterType: isMarginBased ? `${allInverterBrandNames} (${matchedSlab?.inverterCapacityKW || kw} kW)` : inverterModel,
+      inverterCapacity: `${matchedSlab?.inverterCapacityKW || inverterCapacityKw} kW`,
+      inverterCount: '1 NOS',
       financeType,
       paymentMode: financeType,
       loanBank: financeType === 'LOAN' ? loanBank : null,
@@ -1162,9 +1516,9 @@ export default function CreateQuotation() {
       estimatedMonthlyEmi: financeType === 'LOAN' ? estimatedMonthlyEmi : null,
       baseRatePerKW: ratePerKw,
       baseCost: baseProjectCost,
-      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
-      dealerTotalMargin: dealerMarginINR,
       dealerMargin: dealerMarginINR,
+      dealerTotalMargin: dealerMarginINR,
+      dealerMarginPerKW: isDirectCompanyQuote ? 0 : (kw > 0 ? Math.round(dealerMarginINR / kw) : 0),
       hasCustomDealerPricing,
       customDiscountPercent,
       discountAmount,
@@ -1193,37 +1547,43 @@ export default function CreateQuotation() {
       grandTotalCustomer: totalCost,
       subsidyAmount: subsidy,
       netPayable: finalPayable,
-      status: isEdit ? (editingQuotation.status || 'Active / Sent') : (isMarginExceeded ? 'Audit Required' : 'Active / Sent'),
-      statusClass: isEdit ? (editingQuotation.statusClass || 'bg-primary/15 text-primary') : (isMarginExceeded ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-primary/15 text-primary'),
-      dealerId: resolvedDealerCode,
+      status: defaultStatus,
+      statusClass,
       dealerCode: resolvedDealerCode,
+      dealerId: resolvedDealerCode,
       dealerName: resolvedDealerName,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
       customCoverUrl: customCoverUrl || null,
       bomItems,
       bomTotals,
-      pricingMode: bomPricingMode
+      pricingMode: isMarginBased ? 'margin_based' : bomPricingMode,
+      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based'
     };
+  };
 
-    showLoader('Generating Quotation Proposal...');
+  // Preview Quotation: ONLY prepares in-memory view, DOES NOT insert into database table!
+  const handlePreview = () => {
+    if (!custName.trim()) {
+      addToast({
+        title: 'Customer Name Required',
+        message: 'Please specify the customer name before generating proposal preview.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (isMarginExceeded) {
+      addToast({
+        title: 'Margin Audit Alert',
+        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for compliance audit.`,
+        type: 'warning'
+      });
+    }
+
+    showLoader('Preparing Proposal Preview...');
     try {
-      if (isEdit && updateQuotation) {
-        updateQuotation(quotePayload);
-      } else if (addQuotation) {
-        addQuotation(quotePayload);
-      }
-      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
-        saveDesignRecord({
-          quotationId: quotePayload.id,
-          customerName: custName,
-          capacityKw: kw,
-          type: '2D_ROOF_CAD',
-          roofConfig: quotationRoofConfig,
-          structureLayout: selectedStructureLayout,
-          specs: { moduleCount, panelWatt, rooftopAreaSqFt }
-        });
-      }
+      const quotePayload = buildCurrentQuotePayload();
       if (setPreviewQuotation) setPreviewQuotation(quotePayload);
       if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
       if (typeof window !== 'undefined') {
@@ -1233,7 +1593,79 @@ export default function CreateQuotation() {
       }
       setActiveTab('preview_quote');
     } finally {
-      setTimeout(() => hideLoader(), 350);
+      setTimeout(() => hideLoader(), 250);
+    }
+  };
+
+  // Generate Quotation: Officially saves/inserts quotation into database table!
+  const handleGenerateQuotation = async () => {
+    if (!custName.trim()) {
+      addToast({
+        title: 'Customer Name Required',
+        message: 'Please specify the customer name before generating proposal.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (isMarginExceeded) {
+      addToast({
+        title: 'Margin Audit Alert',
+        message: `Configured margin (₹${currentMarginPerKw.toLocaleString('en-IN')}/kW) exceeds your tier cap of ₹${maxMarginCapPerKw.toLocaleString('en-IN')}/kW. Proposal flagged for super admin compliance audit.`,
+        type: 'warning'
+      });
+    }
+
+    const isEdit = Boolean(editingQuotation?.id);
+    const quotePayload = buildCurrentQuotePayload(
+      isDirectCompanyQuote ? 'Approved / Direct' : (isMarginExceeded ? 'Audit Required' : 'Active / Generated')
+    );
+
+    setIsSubmitting(true);
+    setSaveStatus('Generating quotation...');
+    showLoader('Generating Quotation...');
+    try {
+      if (isEdit && updateQuotation) {
+        await updateQuotation(quotePayload);
+      } else if (addQuotation) {
+        await addQuotation(quotePayload);
+      }
+
+      if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
+        saveDesignRecord({
+          quotationId: quotePayload.id,
+          customerName: custName,
+          capacityKw: kw,
+          type: '2D_ROOF_CAD',
+          roofConfig: quotationRoofConfig,
+          structureLayout: selectedStructureLayout,
+          specs: { moduleCount: quotePayload.moduleCount, panelWatt, rooftopAreaSqFt }
+        });
+      }
+
+      addToast({
+        title: isEdit ? 'Quotation Updated' : 'Quotation Generated',
+        message: `Quotation #${quotePayload.id} has been generated successfully.`,
+        type: 'success'
+      });
+
+      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
+      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+      setActiveTab('preview_quote');
+    } catch (e) {
+      addToast({
+        title: 'Generation Failed',
+        message: e?.message || 'Could not generate quotation.',
+        type: 'error'
+      });
+    } finally {
+      setIsSubmitting(false);
+      hideLoader();
     }
   };
 
@@ -1473,17 +1905,28 @@ export default function CreateQuotation() {
                       <span className="material-symbols-outlined text-[16px] shrink-0">payments</span>
                       <span className="truncate">Cash Case</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setFinanceType('LOAN')}
-                      className={`h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap min-w-0 ${financeType === 'LOAN'
-                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                          : 'bg-surface-container-lowest text-secondary border-surface-container-high hover:border-amber-500'
-                        }`}
-                    >
-                      <span className="material-symbols-outlined text-[16px] shrink-0">account_balance</span>
-                      <span className="truncate">Solar Loan (EMI)</span>
-                    </button>
+                    <div className="relative group min-w-0">
+                      <button
+                        type="button"
+                        disabled
+                        aria-disabled="true"
+                        className="w-full h-10 px-2 sm:px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 transition-all cursor-not-allowed whitespace-nowrap min-w-0 bg-surface-container-low text-secondary/60 border-surface-container-high opacity-70"
+                        title="Solar Loan financing feature is coming soon. Currently accepting Cash Case settlements only."
+                      >
+                        <span className="material-symbols-outlined text-[16px] shrink-0 text-secondary/60">account_balance</span>
+                        <span className="truncate">Solar Loan (EMI)</span>
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-surface-container-high text-secondary hover:text-on-surface shrink-0 ml-0.5">
+                          <span className="material-symbols-outlined text-[12px]">info</span>
+                        </span>
+                      </button>
+                      {/* Professional English Tooltip on Hover */}
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center z-50 pointer-events-none w-60">
+                        <div className="bg-slate-900 text-white text-[11px] font-medium p-2.5 rounded-lg shadow-xl text-center leading-snug">
+                          <strong>Solar Loan Financing:</strong> This feature is under integration and will be available in an upcoming release. Currently, only Cash Case proposals are supported.
+                        </div>
+                        <div className="w-2.5 h-2.5 bg-slate-900 rotate-45 -mt-1"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1596,14 +2039,319 @@ export default function CreateQuotation() {
                   <span className="material-symbols-outlined text-[18px] sm:text-[20px]">solar_power</span>
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">System Details</h2>
-                  <p className="text-xs text-secondary hidden sm:block">Hardware configuration, inverter tier &amp; module capacity</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">System Details</h2>
+                  </div>
+                  <p className="text-xs text-secondary hidden sm:block">
+                    {isMarginBased ? 'System capacity slab, manufacturer make & equipment configuration' : 'Hardware configuration, inverter tier & module capacity'}
+                  </p>
                 </div>
               </div>
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.2</span>
             </div>
 
-            <div className="flex flex-col gap-4">
+            {isMarginBased ? (
+              <div className="flex flex-col gap-4">
+                {/* 1. SYSTEM CAPACITY (kW) SELECTOR — CUSTOM SMART DROPDOWN (MAX 6 ROWS + SCROLLBAR) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5 relative" ref={kwDropdownRef}>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetKwSelectLabel">
+                      <span>1. System Capacity (kW) *</span>
+                    </label>
+                    <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                      {panelQuantity || matchedSlab?.noOfModules || 6} Panels Required
+                    </span>
+                  </div>
+
+                  {/* Custom Dropdown Trigger */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      id="presetKwSelect"
+                      onClick={() => {
+                        setKwDropdownOpen((prev) => !prev);
+                        setMakeDropdownOpen(false);
+                      }}
+                      className="w-full h-11 px-3.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 flex items-center justify-between cursor-pointer transition-all text-left"
+                      aria-haspopup="listbox"
+                      aria-expanded={kwDropdownOpen}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">speed</span>
+                        <span className="truncate">
+                          {selectedPresetKw} kW System — {panelQuantity || matchedSlab?.noOfModules || 6} Panels
+                        </span>
+                      </div>
+                      <span className={`material-symbols-outlined text-secondary text-[22px] shrink-0 transition-transform duration-200 ${kwDropdownOpen ? 'rotate-180 text-emerald-600' : ''}`}>
+                        expand_more
+                      </span>
+                    </button>
+
+                    {/* Custom Dropdown Menu: Max 6 rows visible (max-h-[264px]), vertical scrollbar on overflow */}
+                    {kwDropdownOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-2xl max-h-[264px] overflow-y-auto divide-y divide-surface-container-high/40 scrollbar-thin animate-in fade-in zoom-in-95 duration-100"
+                        role="listbox"
+                        aria-labelledby="presetKwSelectLabel"
+                      >
+                        {availableKwOptions.map((opt) => {
+                          const isSelected = Math.abs(Number(opt.kw) - Number(selectedPresetKw)) < 0.01;
+                          return (
+                            <button
+                              key={`kw-opt-${opt.kw}`}
+                              type="button"
+                              role="option"
+                              aria-selected={isSelected}
+                              onClick={() => handleSelectPresetKw(opt.kw)}
+                              className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
+                                  : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
+                                  {isSelected ? 'check_circle' : 'circle'}
+                                </span>
+                                <span className="truncate">
+                                  {opt.kw} kW System
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-mono text-secondary shrink-0 ml-2 bg-surface-container px-2 py-0.5 rounded">
+                                {opt.panelsCount} Panels
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. SOLAR PANEL SELECTION — CUSTOM SMART DROPDOWN (ONLY COMPATIBLE PANELS, MAX 6 ROWS + SCROLLBAR) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2.5 relative" ref={makeDropdownRef}>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs sm:text-sm font-bold text-on-surface flex items-center gap-1.5" id="presetMakeSelectLabel">
+                      <span>2. Select Solar Panel *</span>
+                    </label>
+                    <span className="text-[11px] text-secondary font-mono">
+                      {compatiblePresetMakes.length} Compatible Models
+                    </span>
+                  </div>
+
+                  {/* Custom Dropdown Trigger */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      id="presetMakeSelect"
+                      onClick={() => {
+                        setMakeDropdownOpen((prev) => !prev);
+                        setKwDropdownOpen(false);
+                      }}
+                      className="w-full h-11 px-3.5 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs sm:text-sm font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 flex items-center justify-between cursor-pointer transition-all text-left"
+                      aria-haspopup="listbox"
+                      aria-expanded={makeDropdownOpen}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">solar_power</span>
+                        <span className="truncate">
+                          {currentPresetMake
+                            ? `${currentPresetMake.name} (${currentPresetMake.tech || `${currentPresetMake.watt}W`})`
+                            : '-- Select Compatible Solar Panel --'}
+                        </span>
+                      </div>
+                      <span className={`material-symbols-outlined text-secondary text-[22px] shrink-0 transition-transform duration-200 ${makeDropdownOpen ? 'rotate-180 text-emerald-600' : ''}`}>
+                        expand_more
+                      </span>
+                    </button>
+
+                    {/* Custom Dropdown Menu: Max 6 rows visible (max-h-[264px]), vertical scrollbar on overflow */}
+                    {makeDropdownOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-surface-container-lowest border border-surface-container-high rounded-xl shadow-2xl max-h-[264px] overflow-y-auto divide-y divide-surface-container-high/40 scrollbar-thin animate-in fade-in zoom-in-95 duration-100"
+                        role="listbox"
+                        aria-labelledby="presetMakeSelectLabel"
+                      >
+                        {compatiblePresetMakes.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-secondary">
+                            No solar panels configured whose wattage can form {selectedPresetKw} kW with a whole number of panels.
+                          </div>
+                        ) : (
+                          compatiblePresetMakes.map((make) => {
+                            const isSelected = make.id === selectedPresetMakeId;
+                            const reqModules = getPanelQuantityForCapacity(selectedPresetKw, make.watt);
+                            return (
+                              <button
+                                key={`make-opt-${make.id}`}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                onClick={() => handleSelectPresetMake(make.id)}
+                                className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
+                                    : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
+                                    {isSelected ? 'check_circle' : 'circle'}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="truncate font-bold text-on-surface">
+                                      {make.name}
+                                    </div>
+                                    <div className="text-[10px] text-secondary">
+                                      {make.brand} • {make.tech}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="text-right shrink-0 ml-2 flex flex-col items-end">
+                                  <span className="text-[11px] font-mono font-bold text-emerald-900 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
+                                    {reqModules} Panels
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. AUTO-GENERATED PLANT CAPACITY & HARDWARE TELEMETRY BANNER */}
+                <div className="p-3.5 sm:p-4 bg-emerald-500/15 border-2 border-emerald-500/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-950">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5 sm:mt-0">
+                      <span className="material-symbols-outlined text-[24px]">electric_bolt</span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] uppercase font-extrabold tracking-wider bg-emerald-700 text-white px-2 py-0.5 rounded-full shrink-0">
+                          Auto-Generated Plant Capacity
+                        </span>
+                        <span className="text-[11px] font-medium text-emerald-800">
+                          {panelQuantity} Panels × {currentPresetMake?.watt || panelWatt}W ({currentPresetMake?.name || panelBrand})
+                        </span>
+                      </div>
+                      <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
+                        {kw} kW System <span className="text-sm sm:text-base font-bold text-emerald-800">({parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3))} kWp)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center pt-2 sm:pt-0 border-t border-emerald-500/30 sm:border-t-0 sm:border-l sm:border-emerald-300 sm:pl-4 shrink-0">
+                    <div className="text-left sm:text-right">
+                      <div className="text-[11px] font-semibold text-emerald-800">Rooftop Area Required</div>
+                      <div className="text-[10px] text-emerald-700">Shadow-free roof space</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm sm:text-base font-bold text-emerald-950 font-mono">~{rooftopAreaSqFt} Sq. Ft.</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
+                <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-surface-container text-secondary flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[18px]">apartment</span>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-on-surface">Project Scheme &amp; Subsidy Eligibility</h4>
+                        <p className="text-[11px] text-secondary">Residential (PM Surya Ghar Subsidy up to ₹78,000) or Commercial/Industrial</p>
+                      </div>
+                    </div>
+                    <div className="w-full sm:w-80">
+                      <div className="relative">
+                        <select
+                          className="w-full h-10 pl-3 pr-9 rounded-lg bg-surface-container-lowest text-on-surface font-body-md text-xs outline-none shadow-sm border border-surface-container-high focus:border-primary-container font-semibold appearance-none cursor-pointer"
+                          id="projectType"
+                          value={projectType}
+                          onChange={(e) => setProjectType(e.target.value)}
+                        >
+                          <option value="Residential">Residential (PM Surya Ghar Subsidy Eligible)</option>
+                          <option value="Commercial">Commercial / Industrial (Accelerated Depr.)</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-secondary text-[20px] pointer-events-none">arrow_drop_down</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. EXTRA OUTSTATION TRANSPORT / FREIGHT CHARGE TOGGLE */}
+                <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${enableExtraTransport ? 'bg-primary/20 text-primary' : 'bg-surface-container text-secondary'}`}>
+                        <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-on-surface">Add Transport / Freight Charge</h4>
+                          {enableExtraTransport && Number(extraTransportAmount) > 0 && (
+                            <span className="text-[10px] bg-primary/15 text-primary font-bold px-2 py-0.5 rounded-full border border-primary/20 font-mono">
+                              + {formatINR(extraTransportAmount)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary">
+                          Toggle ON to manually include outstation doorstep transport / freight charges in this quotation &amp; PDF.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 self-end sm:self-auto">
+                      {/* Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => setEnableExtraTransport(!enableExtraTransport)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          enableExtraTransport ? 'bg-primary' : 'bg-surface-container-highest'
+                        }`}
+                        role="switch"
+                        aria-checked={enableExtraTransport}
+                        title={enableExtraTransport ? 'Disable extra transport charge' : 'Enable extra transport charge'}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                            enableExtraTransport ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {enableExtraTransport && (
+                    <div className="mt-3 pt-3 border-t border-surface-container-high/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in duration-150">
+                      <span className="text-xs text-on-surface font-semibold flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-xs text-primary">currency_rupee</span>
+                        Manual Extra Transport Charge (₹):
+                      </span>
+                      <div className="relative flex items-center w-full sm:w-56">
+                        <span className="absolute left-2.5 text-xs text-secondary font-bold pointer-events-none">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={extraTransportAmount === 0 ? '' : extraTransportAmount}
+                          placeholder="0"
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/^0+(?=\d)/, '');
+                            setExtraTransportAmount(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                          }}
+                          className="w-full h-9 pl-7 pr-3 text-xs font-mono font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
               {/* BRAND SELECTION & WATTAGE */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {/* Panel Brand Selector */}
@@ -1628,6 +2376,7 @@ export default function CreateQuotation() {
                       onChange={(e) => {
                         const val = e.target.value;
                         setPanelBrand(val);
+                        if (markCatalogItemSeen) markCatalogItemSeen(`brand_${val}`);
                         const matchMods = activeModules.filter(m => m.brand === val);
                         if (matchMods.length > 0) {
                           const targetMod = matchMods.find(m => Number(m.wattage) === Number(panelWatt)) || matchMods[0];
@@ -1642,7 +2391,7 @@ export default function CreateQuotation() {
                     >
                       {availablePanelBrands.map((bName) => (
                         <option key={bName} value={bName}>
-                          {bName} Solar Modules
+                          {bName} Solar Modules{isBrandNew(bName) ? ' 🟢 NEW' : ''}
                         </option>
                       ))}
                     </select>
@@ -1656,7 +2405,7 @@ export default function CreateQuotation() {
                 {/* Wattage per piece (Wp) and Dual Reactive Rate Controls */}
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <label className="font-label-sm text-label-sm text-on-surface font-semibold">
+                    <label className="font-label-sm text-label-sm text-on-surface font-semibold" htmlFor="panelWatt">
                       2. Watt per Piece (Wp) *
                     </label>
                     <span className="text-[11px] text-primary font-bold">
@@ -1670,6 +2419,11 @@ export default function CreateQuotation() {
                       onChange={(e) => {
                         const newWatt = Number(e.target.value);
                         setPanelWatt(newWatt);
+                        if (markCatalogItemSeen) {
+                          markCatalogItemSeen(`watt_${panelBrand}_${newWatt}`);
+                          const mRecord = brandModules.find(m => Number(m.wattage) === newWatt);
+                          if (mRecord?.id) markCatalogItemSeen(mRecord.id);
+                        }
                         const mod = brandModules.find(m => Number(m.wattage) === newWatt) || currentModuleRecord;
                         if (mod && !hasCustomDealerPricing) {
                           const newRate = parseNumericPrice(mod.ratePerWp, ratePerWp);
@@ -1683,9 +2437,10 @@ export default function CreateQuotation() {
                     >
                       {availableWattages.map((w) => {
                         const mRecord = brandModules.find(m => Number(m.wattage) === w);
+                        const isNew = isWattNew(panelBrand, w);
                         return (
                           <option key={w} value={w}>
-                            {w} Wp — {mRecord?.model || `${panelBrand} (${mRecord?.cellTech || 'TOPCon Bifacial'})`}
+                            {w} Wp — {mRecord?.model || `${panelBrand} (${mRecord?.cellTech || 'TOPCon Bifacial'})`}{isNew ? ' 🟢 NEW' : ''}
                           </option>
                         );
                       })}
@@ -1839,7 +2594,7 @@ export default function CreateQuotation() {
                         </span>
                       </div>
                       <div className="text-lg sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
-                        {kw} kW System <span className="text-sm sm:text-lg font-bold text-emerald-800">({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)</span>
+                        {kw} kW System <span className="text-sm sm:text-lg font-bold text-emerald-800">({parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3))} kWp)</span>
                       </div>
                     </div>
                   </div>
@@ -1879,11 +2634,12 @@ export default function CreateQuotation() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                   {/* Control 1: Inverter Brand */}
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-label-sm text-xs text-on-surface font-semibold">
+                    <label className="font-label-sm text-xs text-on-surface font-semibold" htmlFor="inverterBrandSelect">
                       Inverter Brand / Make *
                     </label>
                     <div className="relative">
                       <select
+                        id="inverterBrandSelect"
                         value={inverterBrand}
                         onChange={(e) => {
                           const newBrand = e.target.value;
@@ -1892,12 +2648,13 @@ export default function CreateQuotation() {
                           const matched = getAutoInverterMatch(kw, newBrand);
                           setInverterCapacityKw(matched.capacityKW);
                           setInverterUnitPrice(matched.price);
+                          if (markCatalogItemSeen) markCatalogItemSeen(`inv_${newBrand}`);
                         }}
                         className="w-full h-10 pl-3 pr-8 rounded-lg bg-surface-container-lowest text-on-surface text-xs font-bold border border-surface-container-high focus:border-primary-container outline-none appearance-none cursor-pointer"
                       >
                         {availableInverterBrands.map((bName) => (
                           <option key={bName} value={bName}>
-                            {bName}
+                            {bName}{isInvBrandNew(bName) ? ' 🟢 NEW' : ''}
                           </option>
                         ))}
                       </select>
@@ -1921,6 +2678,7 @@ export default function CreateQuotation() {
                           setInverterCapacityKw(newCap);
                           setUserOverrodeInverter(true);
                           const targetInv = brandInverters.find(i => Math.abs(Number(i.capacityKW) - newCap) < 0.05);
+                          if (targetInv?.id && markCatalogItemSeen) markCatalogItemSeen(targetInv.id);
                           const newPrice = targetInv ? parseNumericPrice(targetInv.basePrice, 15500) : getInverterBenchmarkRate(inverterBrand, newCap);
                           setInverterUnitPrice(newPrice);
                         }}
@@ -2024,7 +2782,7 @@ export default function CreateQuotation() {
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-on-surface">4. Project Scheme &amp; Subsidy Eligibility</h4>
-                      <p className="text-[11px] text-secondary">Residential (PM Surya Ghar DBT up to ₹78,000) or Commercial/Industrial</p>
+                      <p className="text-[11px] text-secondary">Residential (PM Surya Ghar Subsidy up to ₹78,000) or Commercial/Industrial</p>
                     </div>
                   </div>
                   <div className="w-full sm:w-80">
@@ -2498,7 +3256,7 @@ export default function CreateQuotation() {
                 <div className="flex items-center justify-between pb-2 border-b border-surface-container-high/60 gap-2">
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-[18px]">engineering</span>
-                    <h3 className="text-xs sm:text-sm font-bold text-on-surface">5. Site Engineering, Logistics &amp; Turnkey Services</h3>
+                    <h3 className="text-xs sm:text-sm font-bold text-on-surface">5. Site Engineering, Logistics &amp; Installation Services</h3>
                   </div>
                   <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
                     Auto-Scaled to {kw} kW
@@ -2814,7 +3572,8 @@ export default function CreateQuotation() {
                 )}
               </div>
             </div>
-          </section>
+          )}
+        </section>
 
           {/* Full 2D / 3D Layout Studio Modal - Full Window Workspace */}
           {showLayoutStudio && (
@@ -2873,7 +3632,7 @@ export default function CreateQuotation() {
                 </div>
                 <div className="min-w-0">
                   <h2 className="text-sm sm:text-base font-bold text-on-secondary-fixed leading-tight">Pricing &amp; Subsidy</h2>
-                  <p className="text-xs text-secondary hidden sm:block">PM Surya Ghar DBT computation</p>
+                  <p className="text-xs text-secondary hidden sm:block">PM Surya Ghar Subsidy computation</p>
                 </div>
               </div>
               <span className="text-[10px] text-secondary-fixed-dim uppercase tracking-wider font-semibold shrink-0">Step 1.3</span>
@@ -2884,62 +3643,86 @@ export default function CreateQuotation() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-primary font-label-md font-bold">
                   <span className="material-symbols-outlined text-[20px]">auto_graph</span>
-                  <span>Central DBT Subsidy Calculated</span>
+                  <span>Central Subsidy Calculated</span>
                 </div>
                 <span className="material-symbols-outlined text-primary/20 text-[36px] absolute -top-1 -right-1 pointer-events-none">payments</span>
               </div>
 
               {/* Itemized Cost Breakdown */}
               <div className="space-y-2 pt-1 border-t border-emerald-200">
-                {/* 1. Major Equipment & Hardware */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Tier-1 PV Modules &amp; Inverter</span>
-                    <span className="text-[10px] text-slate-500">{panelQuantity} Pcs {panelBrand.split(' ')[0]} + {inverterModel.split(' ')[0]}</span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(moduleEstimatedCost + inverterEstimatedCost)}
-                  </span>
-                </div>
+                {isMarginBased ? (
+                  <>
+                    {/* Base Package Price from Matrix */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
+                        <span className="text-[10px] text-slate-500">
+                          {currentPresetMake.name} ({currentPresetMake.watt}W) • {panelQuantity} Modules • {kw} kW
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(baseProjectCost)}
+                      </span>
+                    </div>
 
-                {/* 2. Structure & BOS Hardware */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Mounting Structure &amp; BOS Hardware</span>
-                    <span className="text-[10px] text-slate-500">HDGI MMS, DC/AC Wires, ACDB/DCDB, Earthing</span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(structureEstimatedCost + bosEstimatedCost)}
-                  </span>
-                </div>
+                    {/* Bundled Equipment & Scope Note */}
+                    <div className="text-[10px] text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 leading-snug">
+                      Includes Tier-1 PV Modules, {matchedSlab?.inverterCapacityKW || kw} kW Inverter, Mounting Structure, BOS Cables, Switchgear &amp; GST
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* 1. Major Equipment & Hardware */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Tier-1 PV Modules &amp; Inverter</span>
+                        <span className="text-[10px] text-slate-500">{panelQuantity} Pcs {panelBrand.split(' ')[0]} + {inverterModel.split(' ')[0]}</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(moduleEstimatedCost + inverterEstimatedCost)}
+                      </span>
+                    </div>
 
-                {/* 3. Doorstep Freight & Logistics Summary */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Doorstep Freight &amp; Logistics</span>
-                    <span className="text-[10px] text-slate-500">
-                      {transportPreset === 'rajkot_local' ? 'Rajkot Local Area (₹1k)' : (transportPreset === 'dealer_scope' ? 'Dealer / Client Scope (₹0)' : 'Outstation / Custom Freight')}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {effectiveTransportCharge > 0 ? formatINR(effectiveTransportCharge) : <span className="text-emerald-700 font-bold">₹0 (Dealer Scope)</span>}
-                  </span>
-                </div>
+                    {/* 2. Structure & BOS Hardware */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Mounting Structure &amp; BOS Hardware</span>
+                        <span className="text-[10px] text-slate-500">HDGI MMS, DC/AC Wires, ACDB/DCDB, Earthing</span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(structureEstimatedCost + bosEstimatedCost)}
+                      </span>
+                    </div>
 
-                {/* 4. Installation Charge Summary */}
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-slate-800 font-semibold truncate">Installation Charge</span>
-                    <span className="text-[10px] text-slate-500">
-                      {installationPricingMode === 'fixed'
-                        ? `Flat General Charge • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`
-                        : `₹${installationRatePerKw}/kW • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`}
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-900 shrink-0">
-                    {formatINR(installationEstimatedCost)}
-                  </span>
-                </div>
+                    {/* 3. Doorstep Freight & Logistics Summary */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Doorstep Freight &amp; Logistics</span>
+                        <span className="text-[10px] text-slate-500">
+                          {transportPreset === 'rajkot_local' ? 'Rajkot Local Area (₹1k)' : (transportPreset === 'dealer_scope' ? 'Dealer / Client Scope (₹0)' : 'Outstation / Custom Freight')}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {effectiveTransportCharge > 0 ? formatINR(effectiveTransportCharge) : <span className="text-emerald-700 font-bold">₹0 (Dealer Scope)</span>}
+                      </span>
+                    </div>
+
+                    {/* 4. Installation Charge Summary */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-slate-800 font-semibold truncate">Installation Charge</span>
+                        <span className="text-[10px] text-slate-500">
+                          {installationPricingMode === 'fixed'
+                            ? `Flat General Charge • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`
+                            : `₹${installationRatePerKw}/kW • ${structureType === 'monorail' ? 'Monorail' : (structureType === 'hybrid' ? 'Hybrid' : 'Standard HDGI')}`}
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-slate-900 shrink-0">
+                        {formatINR(installationEstimatedCost)}
+                      </span>
+                    </div>
+                  </>
+                )}
 
                 {/* 5. Dealer / Channel Margin */}
                 <div className="flex items-center justify-between text-xs">
@@ -2979,10 +3762,23 @@ export default function CreateQuotation() {
                 </div>
               </div>
 
+              {/* Extra Outstation Transport Charge (if toggled ON) */}
+              {enableExtraTransport && Number(extraTransportAmount) > 0 && (
+                <div className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-blue-50/70 border border-blue-200/80">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[15px] text-blue-700 shrink-0">local_shipping</span>
+                    <span className="text-blue-950 font-bold truncate">Extra Outstation Transport</span>
+                  </div>
+                  <span className="font-mono font-bold text-blue-900 shrink-0">
+                    + {formatINR(extraTransportAmount)}
+                  </span>
+                </div>
+              )}
+
               {/* Total Project Cost */}
               <div className="flex items-center justify-between gap-2 py-1.5 border-t border-dashed border-primary/30">
                 <div className="flex flex-col min-w-0">
-                  <span className="text-xs text-on-surface font-black">Gross Turnkey EPC Cost</span>
+                  <span className="text-xs text-on-surface font-black">Total Project Cost</span>
                   <span className="text-[10px] text-secondary">Inclusive of GST, freight &amp; liaisoning</span>
                 </div>
                 <span className="text-base text-on-secondary-fixed font-black tabular-nums whitespace-nowrap shrink-0">
@@ -2994,7 +3790,7 @@ export default function CreateQuotation() {
               <div className="flex items-center justify-between gap-2 bg-emerald-100/70 p-2 rounded-lg">
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs text-emerald-950 font-bold">PM Surya Ghar DBT Subsidy</span>
+                    <span className="text-xs text-emerald-950 font-bold">PM Surya Ghar Subsidy</span>
                     <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold">
                       Central Govt.
                     </span>
@@ -3006,16 +3802,6 @@ export default function CreateQuotation() {
                 </span>
               </div>
 
-              {/* Estimated Annual Savings */}
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="flex flex-col min-w-0">
-                  <span className="text-secondary font-medium">Estimated Generation &amp; Savings</span>
-                  <span className="text-[10px] text-secondary">{annualGenerationUnits.toLocaleString()} units/yr @ ~₹6.67/unit</span>
-                </div>
-                <span className="text-on-surface font-bold tabular-nums whitespace-nowrap shrink-0 font-mono">
-                  {formatINR(annualSavings)} <span className="text-[10px] text-secondary font-normal">/ yr</span>
-                </span>
-              </div>
 
               {/* Final Customer Payable */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t-2 border-[#6CBF3D]">
@@ -3023,7 +3809,7 @@ export default function CreateQuotation() {
                   <span className="font-label-md text-xs sm:text-sm text-on-secondary-fixed uppercase tracking-wider font-extrabold">
                     Net Effective Investment
                   </span>
-                  <span className="font-body-sm text-[11px] text-secondary">Final customer cost post-DBT reimbursement</span>
+                  <span className="font-body-sm text-[11px] text-secondary">Final customer cost post-subsidy reimbursement</span>
                 </div>
                 <div className="flex items-baseline gap-2 self-start sm:self-auto whitespace-nowrap shrink-0">
                   <span className="text-2xl sm:text-3xl font-black text-on-secondary-fixed tabular-nums whitespace-nowrap inline-flex items-baseline font-mono">
@@ -3054,20 +3840,6 @@ export default function CreateQuotation() {
               )}
             </div>
 
-            {/* ROI & Payback Micro-Telemetry Graphic */}
-            <div className="bg-surface-container-low rounded-xl p-4 flex flex-col gap-3 border border-surface-container-high">
-              <div className="flex items-center justify-between">
-                <span className="font-label-sm text-secondary font-medium">Estimated Payback Period</span>
-                <span className="font-label-md text-on-surface font-bold">{paybackYears} Years</span>
-              </div>
-              <div className="w-full bg-surface-container h-2.5 rounded-full overflow-hidden flex">
-                <div className="bg-primary-container h-full rounded-full transition-all duration-300" style={{ width: `${paybackPercent}%` }}></div>
-              </div>
-              <div className="flex items-center justify-between text-[10px] sm:text-label-xs text-secondary gap-2">
-                <span className="shrink-0">Break-even: {breakEvenYear}</span>
-                <span className="text-right">{25 - Math.ceil(parseFloat(paybackYears))}+ Yrs Free Power</span>
-              </div>
-            </div>
 
             {/* Interactive Commercials Card (Dealer Margin OR Admin Company Margin) */}
             <div className="p-3.5 sm:p-4 bg-surface rounded-xl border border-surface-container-high flex flex-col gap-3">
@@ -3162,8 +3934,13 @@ export default function CreateQuotation() {
                         type="number"
                         min="0"
                         step="100"
-                        value={marginRatePerKw}
-                        onChange={(e) => setMarginRatePerKw(Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={marginRatePerKw === 0 ? '' : marginRatePerKw}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setMarginRatePerKw(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                        }}
                         className="w-24 h-8 px-2 text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none font-mono"
                       />
                     </div>
@@ -3208,8 +3985,13 @@ export default function CreateQuotation() {
                         min="0"
                         max="50"
                         step="0.5"
-                        value={dealerMarginRate}
-                        onChange={(e) => setDealerMarginRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={dealerMarginRate === 0 ? '' : dealerMarginRate}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setDealerMarginRate(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                        }}
                         className="w-16 h-8 text-center text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none"
                       />
                       <span className="absolute right-2 text-xs text-secondary font-bold pointer-events-none">%</span>
@@ -3256,8 +4038,13 @@ export default function CreateQuotation() {
                         min="0"
                         max="500000"
                         step="1000"
-                        value={dealerMarginFixed}
-                        onChange={(e) => setDealerMarginFixed(Math.max(0, parseInt(e.target.value) || 0))}
+                        value={dealerMarginFixed === 0 ? '' : dealerMarginFixed}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setDealerMarginFixed(val === '' ? 0 : Math.max(0, parseInt(val) || 0));
+                        }}
                         className="w-24 h-8 pl-5 pr-2 text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none font-mono"
                       />
                     </div>
@@ -3330,7 +4117,7 @@ export default function CreateQuotation() {
                 Generate official 4-page branded PDF ready for preview &amp; WhatsApp sharing.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 min-w-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
               <button
                 onClick={handleReset}
                 type="button"
@@ -3345,6 +4132,7 @@ export default function CreateQuotation() {
                 disabled={isSubmitting}
                 type="button"
                 className="h-10 px-2 rounded-lg bg-surface-container-lowest text-on-surface hover:bg-surface-container-low transition-colors border border-surface-container-high shadow-xs cursor-pointer text-xs font-semibold flex items-center justify-center gap-1 disabled:opacity-50 min-w-0"
+                title="Save as Draft"
               >
                 <span className="material-symbols-outlined text-[16px] text-secondary shrink-0">bookmark_border</span>
                 <span className="truncate">{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
@@ -3353,10 +4141,21 @@ export default function CreateQuotation() {
                 onClick={handlePreview}
                 disabled={isSubmitting}
                 type="button"
-                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                className="h-10 px-2 rounded-lg bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 border border-sky-500/30 transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                title="Preview quotation proposal"
               >
+                <span className="material-symbols-outlined text-[16px] shrink-0">visibility</span>
                 <span className="truncate">Preview</span>
-                <span className="material-symbols-outlined text-[16px] shrink-0">arrow_forward</span>
+              </button>
+              <button
+                onClick={handleGenerateQuotation}
+                disabled={isSubmitting}
+                type="button"
+                className="h-10 px-2 rounded-lg bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-[0.99] text-white transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
+                title="Generate and issue quotation"
+              >
+                <span className="material-symbols-outlined text-[16px] shrink-0">check_circle</span>
+                <span className="truncate">{isSubmitting ? 'Generating...' : 'Generate'}</span>
               </button>
             </div>
           </div>

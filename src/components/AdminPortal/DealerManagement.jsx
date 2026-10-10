@@ -4,13 +4,14 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList } = useApp();
+  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList, quotations, customerFiles } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
   const [discomFilter, setDiscomFilter] = useState('all');
   const [tierFilter, setTierFilter] = useState('all');
   const [salesmanFilter, setSalesmanFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,9 +54,13 @@ export default function DealerManagement() {
     }
   };
 
-  // Dealer Custom Pricing Modal States
+  // Dealer Commercial Model & Pricing Modal States
   const [pricingModalDealer, setPricingModalDealer] = useState(null);
   const [pricingMode, setPricingMode] = useState('standard');
+  const [dealerCommercialType, setDealerCommercialType] = useState('margin_based');
+  const [dealerCommissionPerKw, setDealerCommissionPerKw] = useState(4500);
+  const [dealerRegistrationFee, setDealerRegistrationFee] = useState(2000);
+  const [dealerDistanceKm, setDealerDistanceKm] = useState(0);
   const [customWpRate, setCustomWpRate] = useState(18.00);
   const [customKwRate, setCustomKwRate] = useState(58000);
   const [customMarginKw, setCustomMarginKw] = useState(4500);
@@ -66,6 +71,10 @@ export default function DealerManagement() {
     setPricingModalDealer(d);
     const cfg = d.pricingConfig || {};
     setPricingMode(cfg.pricingMode || 'standard');
+    setDealerCommercialType(d.dealerType || cfg.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'));
+    setDealerCommissionPerKw(d.defaultCommissionPerKw || cfg.default_commission_per_kw || cfg.customMarginPerKw || 4500);
+    setDealerRegistrationFee(d.registrationFeeRate || cfg.registration_fee_rate || 2000);
+    setDealerDistanceKm(d.distanceFromRajkotKm || cfg.distance_from_rajkot_km || 0);
     setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : 18.00);
     setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : 58000);
     setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : 4500);
@@ -73,20 +82,42 @@ export default function DealerManagement() {
     setCustomNotes(cfg.customNotes || '');
   };
 
-  const handleSaveDealerPricing = () => {
+  const handleSaveDealerPricing = async () => {
     if (!pricingModalDealer) return;
     const newCfg = {
+      ...pricingModalDealer.pricingConfig,
       pricingMode,
+      dealer_type: dealerCommercialType,
+      default_commission_per_kw: Number(dealerCommissionPerKw) || 4500,
+      registration_fee_rate: Number(dealerRegistrationFee) || 2000,
+      distance_from_rajkot_km: Number(dealerDistanceKm) || 0,
       customBaseRatePerWp: Number(customWpRate) || 18.00,
       customBaseRatePerKw: Number(customKwRate) || 58000,
-      customMarginPerKw: Number(customMarginKw) || 4500,
+      customMarginPerKw: Number(dealerCommissionPerKw) || Number(customMarginKw) || 4500,
       customDiscountPercent: Number(customDiscount) || 0,
       customNotes: customNotes.trim()
     };
+
+    if (updateDealer) {
+      await updateDealer({
+        ...pricingModalDealer,
+        dealerType: dealerCommercialType,
+        category: dealerCommercialType === 'kit_based' ? 'Kit Based' : 'Margin Based',
+        defaultCommissionPerKw: Number(dealerCommissionPerKw) || 4500,
+        registrationFeeRate: Number(dealerRegistrationFee) || 2000,
+        distanceFromRajkotKm: Number(dealerDistanceKm) || 0,
+        pricingConfig: newCfg
+      });
+    }
+
     if (updateDealerPricing) {
       updateDealerPricing(pricingModalDealer.id, newCfg);
     }
-    addToast(`Pricing updated for ${pricingModalDealer.firmName} (${pricingMode === 'custom' ? `Custom ₹${newCfg.customBaseRatePerWp}/Wp` : 'Standard Tier'})`, 'success');
+
+    addToast(
+      `Commercial settings saved for ${pricingModalDealer.firmName} (${dealerCommercialType === 'kit_based' ? 'Kit-Based Model' : 'Margin-Based Commission Model'})`,
+      'success'
+    );
     setPricingModalDealer(null);
   };
 
@@ -118,6 +149,7 @@ export default function DealerManagement() {
   const [newPan, setNewPan] = useState('');
   const [newDiscomCode, setNewDiscomCode] = useState('PGVCL-VND-2025-0845');
   const [newTier, setNewTier] = useState('Gold EPC Partner (Quarterly Cap: 1.5 MW)');
+  const [newCategory, setNewCategory] = useState('Margin Based');
   const [newCap, setNewCap] = useState('5,000');
   const [newPassword, setNewPassword] = useState('Sunvine@2026');
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -224,6 +256,8 @@ export default function DealerManagement() {
   const activeDealersCount = (dealers || []).filter(d => d.status === 'Active').length;
   const pendingDealersCount = (dealers || []).filter(d => d.status === 'Pending').length;
   const suspendedDealersCount = (dealers || []).filter(d => d.status === 'Suspended').length;
+  const marginDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category || 'Margin Based') === 'Margin Based').length;
+  const kitDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category) === 'Kit Based').length;
   const totalCapacityMw = ((dealers || []).reduce((acc, d) => acc + (d.totalCapacityKw || 0), 0) / 1000).toFixed(1);
 
   // Sort dealers: newly onboarded / updated dealers first
@@ -254,6 +288,8 @@ export default function DealerManagement() {
 
     if (discomFilter !== 'all' && !(d.discom || '').toLowerCase().includes(discomFilter.toLowerCase())) return false;
     if (tierFilter !== 'all' && d.tier !== tierFilter) return false;
+    const cat = d.category || d.pricingConfig?.category || 'Margin Based';
+    if (categoryFilter !== 'all' && cat !== categoryFilter) return false;
     if (salesmanFilter !== 'all') {
       const sId = d.assignedStaffId || 'STF-DIRECT';
       const sName = (d.assignedStaffName || '').toLowerCase();
@@ -293,6 +329,7 @@ export default function DealerManagement() {
       'Default Margin / kW (INR)',
       'Max Margin Cap / kW (INR)',
       'Total Quotes Issued',
+      'Total Files Issued',
       'Capacity Sold (kW)',
       'GSTIN',
       'PAN Number',
@@ -309,6 +346,14 @@ export default function DealerManagement() {
     const csvRows = [headers.join(',')];
 
     dataToExport.forEach(d => {
+      const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+      const dFiles = (customerFiles || []).filter(f => {
+        if (!f) return false;
+        const fDId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '');
+        const fDName = (f.dealerName || f.dealer_name || '').trim().toLowerCase();
+        const dFirm = (d.firmName || '').trim().toLowerCase();
+        return (cleanId && fDId === cleanId) || (dFirm && fDName === dFirm);
+      });
       const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                       (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                       (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
@@ -321,7 +366,7 @@ export default function DealerManagement() {
         escapeCsv(d.firmName),
         escapeCsv(d.contactPerson),
         escapeCsv(d.mobile),
-        escapeCsv(d.email),
+        escapeCsv(d.email && !d.email.includes('@sunvinedealer.in') ? d.email : ''),
         escapeCsv(d.assignedStaffId || 'STF-801'),
         escapeCsv(d.assignedStaffName || 'Sunvine Sales Staff'),
         escapeCsv(d.city || 'Gujarat'),
@@ -331,6 +376,7 @@ export default function DealerManagement() {
         escapeCsv(defaultMargin),
         escapeCsv(marginCap),
         escapeCsv(d.totalQuotes || 0),
+        escapeCsv(dFiles.length),
         escapeCsv(d.totalCapacityKw || 0),
         escapeCsv(d.gstin || '24AFPFS7402A1Z7'),
         escapeCsv(d.pan || (d.gstin ? d.gstin.slice(2, 12) : 'AFPFS7402A')),
@@ -357,6 +403,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewCategory('Margin Based');
     setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewZone('Rajkot & Saurashtra Zone (Western Gujarat)');
     setNewAddress('');
@@ -377,6 +424,7 @@ export default function DealerManagement() {
     setNewContact(dealer.contactPerson || '');
     setNewMobile(dealer.mobile || dealer.phone || '');
     setNewEmail(dealer.email || '');
+    setNewCategory(dealer.category || dealer.pricingConfig?.category || 'Margin Based');
     setNewAssignedStaffId(dealer.assignedStaffId || salesStaffList[0]?.id || 'STF-801');
     const zone = (dealer.city || '').toLowerCase().includes('surat') ? 'Surat & South Gujarat Hub' :
                  (dealer.city || '').toLowerCase().includes('vadodara') ? 'Vadodara Industrial Corridor' :
@@ -407,6 +455,7 @@ export default function DealerManagement() {
     setNewContact('');
     setNewMobile('');
     setNewEmail('');
+    setNewCategory('Margin Based');
     setNewAssignedStaffId(salesStaffList[0]?.id || 'STF-801');
     setNewAddress('');
     setNewGstinState('');
@@ -477,6 +526,7 @@ export default function DealerManagement() {
     if (editingDealer) {
       const updatedDealerObj = {
         ...editingDealer,
+        category: newCategory,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
         mobile: cleanMobile,
@@ -495,12 +545,14 @@ export default function DealerManagement() {
         password: newPassword.trim() || editingDealer.password || '',
         pricingConfig: {
           ...(editingDealer.pricingConfig || {}),
+          category: newCategory,
           assignedStaffId,
           assignedStaffName
         }
       };
 
       const isUnchanged =
+        (editingDealer.category || editingDealer.pricingConfig?.category || 'Margin Based') === newCategory &&
         editingDealer.firmName === updatedDealerObj.firmName &&
         editingDealer.contactPerson === updatedDealerObj.contactPerson &&
         editingDealer.mobile === updatedDealerObj.mobile &&
@@ -553,6 +605,7 @@ export default function DealerManagement() {
       const newDealerObj = {
         id: finalDealerId,
         dealerCode: finalDealerId,
+        category: newCategory,
         firmName: newFirm.trim(),
         contactPerson: newContact.trim(),
         mobile: cleanMobile,
@@ -574,6 +627,7 @@ export default function DealerManagement() {
         joinedDate: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date()),
         password: newPassword.trim() || '',
         pricingConfig: {
+          category: newCategory,
           assignedStaffId,
           assignedStaffName
         }
@@ -585,7 +639,7 @@ export default function DealerManagement() {
       if (addNotification) {
         addNotification({
           title: 'New EPC Dealer Onboarded',
-          description: `${newFirm.trim()} (${tierClean}) added under Salesman ${assignedStaffName}.`,
+          description: `${newFirm.trim()} (${newCategory} • ${tierClean}) added under Salesman ${assignedStaffName}.`,
           type: 'success',
           icon: 'person_add',
           audience: 'admin'
@@ -919,6 +973,121 @@ export default function DealerManagement() {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-6">
+                {/* Dealer Business Model / Category Selection */}
+                <div className="col-span-1 md:col-span-2">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <span>Dealer Operating Model / Category</span>
+                      <span className="text-error">*</span>
+                    </span>
+                    <span className="text-[11px] text-secondary">
+                      Selected: <strong className={newCategory === 'Kit Based' ? 'text-purple-700 font-bold' : 'text-emerald-700 font-bold'}>{newCategory}</strong>
+                    </span>
+                  </label>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Option 1: Margin Based Partner */}
+                    <div
+                      onClick={() => setNewCategory('Margin Based')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                        newCategory === 'Margin Based'
+                          ? 'border-emerald-600 bg-emerald-50/60 shadow-sm'
+                          : 'border-surface-container-highest hover:border-slate-300 bg-surface-container-lowest'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                              newCategory === 'Margin Based'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-surface-container text-secondary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[18px]">percent</span>
+                            </div>
+                            <div>
+                              <div className="font-poppins font-bold text-on-surface text-[14px] leading-tight">
+                                Margin Based Partner
+                              </div>
+                              <div className="text-[11px] text-secondary mt-0.5">
+                                Standard EPC Quotation Model
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            newCategory === 'Margin Based'
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-slate-300'
+                          }`}>
+                            {newCategory === 'Margin Based' && (
+                              <span className="material-symbols-outlined text-[13px] font-bold">check</span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[12px] text-slate-600 leading-relaxed">
+                          Dealer sets custom margin (₹/kW) above company turnkey pricing. Commission is calculated per kW.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded">
+                          Turnkey Quotation
+                        </span>
+                        <span className="text-slate-500 font-mono">Custom ₹/kW Margin</span>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Kit Based Partner */}
+                    <div
+                      onClick={() => setNewCategory('Kit Based')}
+                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                        newCategory === 'Kit Based'
+                          ? 'border-purple-600 bg-purple-50/60 shadow-sm'
+                          : 'border-surface-container-highest hover:border-slate-300 bg-surface-container-lowest'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold shrink-0 ${
+                              newCategory === 'Kit Based'
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-surface-container text-secondary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+                            </div>
+                            <div>
+                              <div className="font-poppins font-bold text-on-surface text-[14px] leading-tight">
+                                Kit Based Partner
+                              </div>
+                              <div className="text-[11px] text-secondary mt-0.5">
+                                Complete Hardware Kit Procurement
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            newCategory === 'Kit Based'
+                              ? 'border-purple-600 bg-purple-600 text-white'
+                              : 'border-slate-300'
+                          }`}>
+                            {newCategory === 'Kit Based' && (
+                              <span className="material-symbols-outlined text-[13px] font-bold">check</span>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-[12px] text-slate-600 leading-relaxed">
+                          Dealer purchases complete solar hardware kits (Modules + Inverter + BOS). Fixed package kit rates apply.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-purple-800 bg-purple-100/90 px-2 py-0.5 rounded">
+                          Material Kit Package
+                        </span>
+                        <span className="text-slate-500 font-mono">BOS + Inverter + Modules</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="col-span-1">
                   <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5">
                     Assigned Partner Tier <span className="text-error">*</span>
@@ -1287,12 +1456,22 @@ export default function DealerManagement() {
               <option value="Standard Tier">Standard Tier (₹5.0k/kW)</option>
               <option value="Diamond Partner">Diamond Partner (₹8.0k/kW)</option>
             </select>
+            <select
+              value={categoryFilter}
+              onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
+              className="h-10 px-3 bg-white border border-[#E4E7EB] rounded-lg text-body-sm text-on-surface focus:border-[#6CBF3D] outline-none cursor-pointer"
+            >
+              <option value="all">Category / Model (All)</option>
+              <option value="Margin Based">💼 Margin Based ({marginDealersCount})</option>
+              <option value="Kit Based">📦 Kit Based ({kitDealersCount})</option>
+            </select>
             <button
               onClick={() => {
                 setSearchTerm('');
                 setActiveTabFilter('all');
                 setDiscomFilter('all');
                 setTierFilter('all');
+                setCategoryFilter('all');
                 setSalesmanFilter('all');
                 setCurrentPage(1);
               }}
@@ -1409,9 +1588,21 @@ export default function DealerManagement() {
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-poppins font-semibold text-on-surface text-sm truncate leading-tight">
-                            {d.firmName}
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-poppins font-semibold text-on-surface text-sm truncate leading-tight">
+                              {d.firmName}
+                            </h3>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                              (d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based')
+                                ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-[11px]">
+                                {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                              </span>
+                              {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                            </span>
+                          </div>
                           <p className="text-xs text-secondary mt-0.5 font-medium">{d.contactPerson}</p>
                           <p className="text-[11px] text-secondary font-mono mt-0.5 truncate">{d.mobile} • {d.email}</p>
                         </div>
@@ -1530,20 +1721,20 @@ export default function DealerManagement() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto xl:overflow-x-hidden">
+          <div className="w-full overflow-x-auto xl:overflow-x-visible">
             <table className="w-full text-left border-collapse table-auto">
             <thead>
               <tr className="bg-[#0F1B2E] text-white text-label-xs uppercase tracking-wider h-11 select-none">
-                <th className="py-3 px-3.5 font-semibold text-left whitespace-nowrap min-w-[120px]">Dealer ID</th>
-                <th className="py-3 px-3.5 font-semibold text-left min-w-[210px]">Dealer / Firm Name</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[130px]">Region &amp; DISCOM</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[150px]">Assigned Salesman</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[135px]">Pricing &amp; Margin</th>
-                <th className="py-3 px-3 font-semibold text-right min-w-[95px]">Quotes Issued</th>
-                <th className="py-3 px-3 font-semibold text-right min-w-[110px]">Capacity Sold</th>
-                <th className="py-3 px-3 font-semibold text-left min-w-[135px]">KYC &amp; GSTIN</th>
-                <th className="py-3 px-3 font-semibold text-center min-w-[90px]">Portal Status</th>
-                <th className="py-3 px-3 font-semibold text-center min-w-[95px]">Actions</th>
+                <th className="py-3 px-2.5 font-semibold text-left whitespace-nowrap w-[110px]">Dealer ID</th>
+                <th className="py-3 px-2.5 font-semibold text-left min-w-[170px]">Dealer / Firm Name</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[125px]">Region &amp; DISCOM</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[130px]">Assigned Salesman</th>
+                <th className="py-3 px-2.5 font-semibold text-left w-[120px]">Pricing &amp; Margin</th>
+                <th className="py-3 px-2 font-semibold text-right w-[85px]">Quotes</th>
+                <th className="py-3 px-2 font-semibold text-right w-[85px]">Files</th>
+                <th className="py-3 px-2.5 font-semibold text-right w-[95px]">Capacity Sold</th>
+                <th className="py-3 px-2 font-semibold text-center w-[80px]">Status</th>
+                <th className="py-3 px-2 font-semibold text-center w-[90px]">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
@@ -1566,54 +1757,56 @@ export default function DealerManagement() {
                     : isGold
                     ? 'bg-amber-50 text-amber-800 border-amber-200'
                     : 'bg-gray-100 text-gray-800 border-gray-300';
-                  const initials = (d.firmName || 'ST').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
                   const discomText = (d.discom || '').includes('Circle') ? d.discom : `${d.discom || 'PGVCL'} Circle`;
 
                   return (
                     <tr key={d.id} className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group">
-                      <td className="py-4 px-3.5 align-top whitespace-nowrap">
+                      <td className="py-3.5 px-2.5 align-top whitespace-nowrap">
                         <span className="font-mono text-label-xs font-semibold text-[#0F1B2E] bg-surface-container px-2 py-1 rounded inline-block whitespace-nowrap">
                           #{d.id}
                         </span>
                       </td>
-                      <td className="py-4 px-3.5 align-top">
-                        <div className="flex items-start gap-2.5">
-                          {d.avatar ? (
-                            <img
-                              alt={d.contactPerson}
-                              className="w-9 h-9 rounded-full object-cover ring-2 ring-[#6CBF3D]/40 shrink-0 mt-0.5"
-                              src={d.avatar}
-                            />
-                          ) : (
-                            <div className="w-9 h-9 rounded-full bg-surface-container-high text-primary font-bold flex items-center justify-center text-xs shrink-0 border border-primary/20 mt-0.5">
-                              {initials}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            {/* Line 1: Firm Name */}
-                            <div className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
+                      <td className="py-3.5 px-2.5 align-top">
+                        <div className="min-w-0">
+                          {/* Line 1: Firm Name + Category Badge */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-poppins font-semibold text-on-surface group-hover:text-primary transition-colors text-[13px] leading-tight">
                               {d.firmName}
-                            </div>
-                            {/* Line 2: Contact Person */}
-                            <div className="text-[12px] font-medium text-on-surface/90 mt-1 leading-tight">
-                              {d.contactPerson}
-                            </div>
-                            {/* Line 3: Phone & Email */}
-                            <div className="text-[11px] text-secondary flex items-center gap-1.5 mt-1 leading-tight flex-wrap font-mono">
-                              <span>{d.mobile}</span>
-                              <span className="text-outline-variant font-sans">•</span>
-                              <span className="truncate max-w-[170px]">{d.email}</span>
-                            </div>
+                            </span>
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                              (d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based')
+                                ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-[11px]">
+                                {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                              </span>
+                              {(d.category === 'Kit Based' || d.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                            </span>
+                          </div>
+                          {/* Line 2: Contact Person */}
+                          <div className="text-[12px] font-medium text-on-surface/90 mt-1 leading-tight">
+                            {d.contactPerson}
+                          </div>
+                          {/* Line 3: Phone & Genuine Email Only */}
+                          <div className="text-[11px] text-secondary flex items-center gap-1.5 mt-1 leading-tight flex-wrap font-mono">
+                            <span>{d.mobile}</span>
+                            {d.email && !d.email.includes('@sunvinedealer.in') && !d.email.startsWith(d.mobile) && (
+                              <>
+                                <span className="text-outline-variant font-sans">•</span>
+                                <span className="truncate max-w-[170px]">{d.email}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         <div className="font-medium text-on-surface text-[13px] leading-tight">{d.city}, Gujarat</div>
                         <span className="inline-block mt-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 whitespace-nowrap">
                           {discomText}
                         </span>
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         {d.assignedStaffId === 'STF-DIRECT' ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-900 font-medium text-[11px] shadow-xs">
                             <span className="material-symbols-outlined text-[15px] text-indigo-700" style={{ fontVariationSettings: "'FILL' 1" }}>corporate_fare</span>
@@ -1625,23 +1818,18 @@ export default function DealerManagement() {
                           const staffName = matchedStaff?.name || (!isLegacy && d.assignedStaffName) || salesStaffList[0]?.name || 'Sunvine Sales Staff';
                           const staffId = matchedStaff?.id || (!isLegacy && d.assignedStaffId) || salesStaffList[0]?.id || 'STF-801';
                           return (
-                            <div className="flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0 border border-primary/20">
-                                {staffName.slice(0, 2).toUpperCase()}
+                            <div className="min-w-0">
+                              <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
+                                {staffName}
                               </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-on-surface text-[12px] truncate leading-tight font-poppins">
-                                  {staffName}
-                                </div>
-                                <div className="text-[10px] text-secondary font-mono mt-0.5">
-                                  {staffId}
-                                </div>
+                              <div className="text-[10px] text-secondary font-mono mt-0.5">
+                                {staffId}
                               </div>
                             </div>
                           );
                         })()}
                       </td>
-                      <td className="py-4 px-3 align-top">
+                      <td className="py-3.5 px-2.5 align-top">
                         {(() => {
                           const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                           (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
@@ -1670,30 +1858,68 @@ export default function DealerManagement() {
                           );
                         })()}
                       </td>
-                      <td className="py-4 px-3 text-right align-top">
-                        <div className="font-semibold text-on-surface font-poppins text-[13px]">{d.totalQuotes} Quotes</div>
-                        <div className="text-[11px] text-[#2E7D32] mt-0.5">Active partner</div>
+                      {/* Quotes Issued */}
+                      <td className="py-3.5 px-2 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dQuotes = (quotations || []).filter(q => {
+                            const qDId = String(q.dealerId || q.dealer_id || q.dealerCode || '').replace(/^#/, '');
+                            return qDId === cleanId;
+                          });
+                          const quotesCount = d.totalQuotes !== undefined ? d.totalQuotes : dQuotes.length;
+                          return (
+                            <>
+                              <div className="font-semibold text-on-surface font-poppins text-[13px]">{quotesCount} Quotes</div>
+                              <div className="text-[11px] text-[#2E7D32] mt-0.5">Active</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 text-right align-top">
-                        <div className="font-bold text-on-surface font-poppins text-[13px]">
-                          {d.totalCapacityKw >= 1000 ? `${(d.totalCapacityKw / 1000).toFixed(2)} MW` : `${d.totalCapacityKw} kW`}
-                        </div>
-                        <div className="w-20 ml-auto mt-1.5 bg-surface-container rounded-full h-1.5 overflow-hidden">
-                          <div className="bg-[#6CBF3D] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(20, (d.totalCapacityKw / 30)))}%` }}></div>
-                        </div>
-                        <div className="text-[10px] text-secondary mt-0.5">Gujarat Grid</div>
+                      {/* Files Issued */}
+                      <td className="py-3.5 px-2 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dFiles = (customerFiles || []).filter(f => {
+                            if (!f) return false;
+                            const fDId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '');
+                            const fDName = (f.dealerName || f.dealer_name || '').trim().toLowerCase();
+                            const dFirm = (d.firmName || '').trim().toLowerCase();
+                            return (cleanId && fDId === cleanId) || (dFirm && fDName === dFirm);
+                          });
+                          return (
+                            <>
+                              <div className="font-semibold text-on-surface font-poppins text-[13px]">{dFiles.length} Files</div>
+                              <div className="text-[11px] text-teal-700 mt-0.5">Active</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 align-top">
-                        <div className="flex items-center gap-1 font-mono text-[11px] text-on-surface font-medium whitespace-nowrap">
-                          <span>{d.gstin || '24AFPFS7402A1Z7'}</span>
-                          <span className="material-symbols-outlined text-[14px] text-[#2E7D32]" title="GSTIN Active & Verified">check_circle</span>
-                        </div>
-                        <div className="flex items-center gap-1 mt-1">
-                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-green-50 text-green-700 font-semibold whitespace-nowrap">PAN OK</span>
-                          <span className="px-1.5 py-0.2 rounded text-[10px] bg-green-50 text-green-700 font-semibold whitespace-nowrap">Aadhaar e-KYC</span>
-                        </div>
+                      {/* Capacity Sold */}
+                      <td className="py-3.5 px-2.5 text-right align-top">
+                        {(() => {
+                          const cleanId = String(d.id || d.dealerCode || '').replace(/^#/, '');
+                          const dQuotes = (quotations || []).filter(q => {
+                            const qDId = String(q.dealerId || q.dealer_id || q.dealerCode || '').replace(/^#/, '');
+                            return qDId === cleanId;
+                          });
+                          const capVal = d.totalCapacityKw !== undefined
+                            ? Number(d.totalCapacityKw)
+                            : dQuotes.reduce((acc, q) => acc + (parseFloat(q.systemCapacityKw || q.capacity_kw || q.capacityKw) || 0), 0);
+                          return (
+                            <>
+                              <div className="font-bold text-on-surface font-poppins text-[13px]">
+                                {capVal >= 1000 ? `${(capVal / 1000).toFixed(2)} MW` : `${Number(capVal.toFixed(1))} kW`}
+                              </div>
+                              <div className="w-16 ml-auto mt-1.5 bg-surface-container rounded-full h-1.5 overflow-hidden">
+                                <div className="bg-[#6CBF3D] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(15, (capVal / 30) * 100))}%` }}></div>
+                              </div>
+                              <div className="text-[10px] text-secondary mt-0.5">Gujarat Grid</div>
+                            </>
+                          );
+                        })()}
                       </td>
-                      <td className="py-4 px-3 text-center align-top whitespace-nowrap">
+                      {/* Portal Status */}
+                      <td className="py-3.5 px-2 text-center align-top whitespace-nowrap">
                         <div className={`text-[10px] font-semibold inline-flex items-center gap-1 ${
                           d.status === 'Active' ? 'text-[#2E7D32]' : d.status === 'Pending' ? 'text-amber-700' : 'text-slate-500'
                         }`}>
@@ -2153,6 +2379,157 @@ export default function DealerManagement() {
                 className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Partner Commercial Operating Model (Boss Directives) */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-on-surface uppercase tracking-wider">
+                Dealer Operating Model
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDealerCommercialType('margin_based')}
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    dealerCommercialType === 'margin_based'
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/20 text-on-surface'
+                      : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface hover:border-surface-container-highest'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="flex items-center gap-2 font-bold text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-primary text-[18px]">engineering</span>
+                      <span>Margin-Based Model</span>
+                    </span>
+                    {dealerCommercialType === 'margin_based' && (
+                      <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-secondary leading-relaxed">
+                    Company provides complete material + installation. Partner sources lead and earns commission per kW.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDealerCommercialType('kit_based')}
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    dealerCommercialType === 'kit_based'
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/20 text-on-surface'
+                      : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface hover:border-surface-container-highest'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="flex items-center gap-2 font-bold text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-emerald-500 text-[18px]">inventory_2</span>
+                      <span>Kit-Based Model</span>
+                    </span>
+                    {dealerCommercialType === 'kit_based' && (
+                      <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-secondary leading-relaxed">
+                    Partner buys hardware kit and executes installation. Sunvine handles portal registration for a fee.
+                  </p>
+                </button>
+              </div>
+
+              {/* Model-specific parameters */}
+              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {dealerCommercialType === 'margin_based' ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Default Commission (₹/kW)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                        <input
+                          type="number"
+                          value={dealerCommissionPerKw}
+                          onChange={(e) => setDealerCommissionPerKw(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="4500"
+                        />
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Dealer earnings credited upon project execution</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Margin Cap Protection (₹/kW)
+                      </label>
+                      <div className="px-3 py-2 bg-surface rounded-lg border border-surface-container-high text-xs font-mono font-bold text-primary flex items-center justify-between">
+                        <span>₹{Number(pricingModalDealer.maxMarginCapPerKw || 6000).toLocaleString('en-IN')}/kW</span>
+                        <span className="text-[10px] text-secondary font-sans font-normal">Tier Cap</span>
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Configurable via Tier Margins master</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Portal Registration Fee (₹/file)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                        <input
+                          type="number"
+                          value={dealerRegistrationFee}
+                          onChange={(e) => setDealerRegistrationFee(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="2000"
+                        />
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Charged for official portal registration and filing</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Distance from Rajkot Hub (km)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={dealerDistanceKm}
+                          onChange={(e) => setDealerDistanceKm(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg px-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="e.g. 120"
+                        />
+                        <span className="absolute right-3 top-2.5 text-secondary text-xs font-bold">km</span>
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Used for kit transport distance slab computation</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Centralized Matrix Banner */}
+            <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-highest flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-[20px]">tune</span>
+                <div>
+                  <h4 className="text-xs font-bold text-on-surface">Specific Item Rates &amp; Overrides</h4>
+                  <p className="text-[11px] text-secondary">
+                    Individual panel, inverter, and BOM rates are centralized in the Master Pricing Matrix.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const dId = pricingModalDealer.id;
+                  setPricingModalDealer(null);
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState(null, '', `?tab=dealer_custom&dealerId=${dId}`);
+                  }
+                  if (setActiveTab) setActiveTab('pricing_master');
+                }}
+                className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                <span>Open in Pricing Master</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
               </button>
             </div>
 

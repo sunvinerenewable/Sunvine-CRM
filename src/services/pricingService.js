@@ -102,10 +102,12 @@ export const pricingService = {
           adaniBiFiPrice: Number(row.adani_bifi_price),
           apsBiFiPrice: Number(row.aps_bifi_price),
           rayzonePrice: Number(row.rayzone_price),
+          waaree540Price: Number(row.waaree_540_price) || 0,
           topcon585CapacityKW: Number(row.topcon585_capacity_kw) || (Number(row.capacity_kw) * 1.06),
-          waaree585Price: Number(row.waaree_585_price),
+          waaree585Price: Number(row.waaree_585_price) || 0,
           topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),
-          apsTopcon600Price: Number(row.aps_topcon_600_price)
+          apsTopcon600Price: Number(row.aps_topcon_600_price) || 0,
+          panelPrices: row.panel_prices || {}
         }));
       }
     } catch (err) {
@@ -129,10 +131,12 @@ export const pricingService = {
         adani_bifi_price: Number(item.adaniBiFiPrice) || 0,
         aps_bifi_price: Number(item.apsBiFiPrice) || 0,
         rayzone_price: Number(item.rayzonePrice) || 0,
+        waaree_540_price: Number(item.waaree540Price) || 0,
         topcon585_capacity_kw: Number(item.topcon585CapacityKW) || Number(item.capacityKW),
         waaree_585_price: Number(item.waaree585Price) || 0,
         topcon600_capacity_kw: Number(item.topcon600CapacityKW) || Number(item.capacityKW),
         aps_topcon_600_price: Number(item.apsTopcon600Price) || 0,
+        panel_prices: item.panelPrices || {},
         updated_at: new Date().toISOString()
       }));
 

@@ -64,18 +64,43 @@ async function callLoginApi(payload) {
   }
 }
 
+export function getSessionToken() {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem('sunvine_session_token') || null;
+}
+
+export function setSessionToken(token) {
+  if (typeof window === 'undefined') return;
+  if (token) {
+    sessionStorage.setItem('sunvine_session_token', token);
+  } else {
+    sessionStorage.removeItem('sunvine_session_token');
+  }
+}
+
 export const authService = {
   async logout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      const token = getSessionToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      await fetch('/api/auth/logout', { method: 'POST', headers, credentials: 'include' });
     } catch { /* offline */ }
+    setSessionToken(null);
+    try {
+      sessionStorage.removeItem('sunvine_session_role');
+      sessionStorage.removeItem('sunvine_session_user');
+      sessionStorage.removeItem('sunvine_session_auth');
+      sessionStorage.removeItem('sunvine_session_tab');
+    } catch (_) {}
     // Also clear any lingering Supabase anon session
     try { await supabase.auth.signOut(); } catch { /* ignore */ }
   },
 
   async verifySession() {
     try {
-      const res = await fetch('/api/auth/verify', { method: 'GET', credentials: 'include' });
+      const token = getSessionToken();
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/auth/verify', { method: 'GET', headers, credentials: 'include' });
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.authenticated && data?.user) return { authenticated: true, user: data.user };
@@ -96,7 +121,16 @@ export const authService = {
       // Fallback: try Supabase RPC (dev without /api server)
       return this._rpcLogin('admin', cleanIdentifier, password, rateKey);
     }
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, user: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      try {
+        sessionStorage.setItem('sunvine_session_role', 'admin');
+        sessionStorage.setItem('sunvine_session_auth', 'true');
+        sessionStorage.setItem('sunvine_session_user', JSON.stringify(apiRes.data.user));
+      } catch (_) {}
+      return { success: true, user: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };
@@ -113,7 +147,16 @@ export const authService = {
 
     const apiRes = await callLoginApi({ role: 'dealer', identifier: cleanMobile, password });
     if (!apiRes) return this._rpcLogin('dealer', cleanMobile, password, rateKey);
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, dealer: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      try {
+        sessionStorage.setItem('sunvine_session_role', 'dealer');
+        sessionStorage.setItem('sunvine_session_auth', 'true');
+        sessionStorage.setItem('sunvine_session_user', JSON.stringify(apiRes.data.user));
+      } catch (_) {}
+      return { success: true, dealer: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };
@@ -129,7 +172,16 @@ export const authService = {
 
     const apiRes = await callLoginApi({ role: 'staff', identifier: cleanMobile, password, staffRole: selectedRole });
     if (!apiRes) return this._rpcLogin('staff', cleanMobile, password, rateKey, selectedRole);
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, staff: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      try {
+        sessionStorage.setItem('sunvine_session_role', 'staff');
+        sessionStorage.setItem('sunvine_session_auth', 'true');
+        sessionStorage.setItem('sunvine_session_user', JSON.stringify(apiRes.data.user));
+      } catch (_) {}
+      return { success: true, staff: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };

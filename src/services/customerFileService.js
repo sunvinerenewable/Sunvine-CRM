@@ -166,14 +166,14 @@ export const customerFileService = {
         .select();
 
       if (error) {
-        console.warn('[customerFileService] Save direct notice:', error.message);
-        return { success: true, localOnly: true, data: file };
+        console.error('[customerFileService] Save direct error:', error.message);
+        return { success: false, error: error.message, data: file };
       }
 
       return { success: true, data };
     } catch (err) {
-      console.error('[customerFileService] Save error:', err);
-      return { success: true, localOnly: true, data: file };
+      console.error('[customerFileService] Save exception:', err);
+      return { success: false, error: err.message, data: file };
     }
   },
 

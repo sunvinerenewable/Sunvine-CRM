@@ -2,12 +2,14 @@
 
 Refer to `AGENTS.md` and `PROJECT_RULEBOOK.md` for full standards.
 
-Permanent Core Protocols:
-1. **Ponytail Protocol (DietrichGebert/ponytail)**: Decision ladder (YAGNI -> reuse -> stdlib -> native -> minimum code). Prevent bloated code and unnecessary packages.
-2. **UI/UX Pro Max Protocol (nextlevelbuilder/ui-ux-pro-max-skill)**: 192 reasoning rules, contrast >=4.5:1, touch targets >=44px, cursor-pointer, zero horizontal overflow, preserve brand colors (emerald/teal, #0D1527, #070D18) and typography.
-3. **Security Standards**: Zero secrets in Git. Never use password: near email in mock data (use accessCode).
-4. **Non-Blocking Workflows**: Document uploads are strictly optional.
-5. **Quality Gate**: Always verify `npm run build` passes with 0 errors before committing.
-6. **Branch Protection & Deployment Policy**: All commits and pushes must go to the `sumit-updates` branch. NEVER push directly to `main` branch or production without explicit confirmation from the user.
-7. **Direct Database Single Source of Truth**: All data added or updated MUST be saved directly to the database and fetched directly from the database upon mount / hard refresh. Never store data exclusively in client cache or localStorage, and ensure zero data loss on hard refresh. Must be upheld on every prompt without exception.
-
+Permanent Core Protocols (In Strict Priority Order):
+1. **Rule 1: Direct Database First & Schema Integrity**: Sole single source of truth. Zero cache-only/localStorage-only data. All data persists to Supabase/PostgreSQL. Live DB fetch on mount & hard refresh. Analyze DB schema first before new features; verify data genuinely saves (no fake/read-only saves).
+2. **Rule 2: Adversarial Backend Security & Zero Secrets**: Mandatory password hashing (bcrypt/crypto). Never store plaintext passwords. Zero hardcoded secrets/API keys. Think like a hacker: test & protect against SQL injection, IDOR, auth bypass, role escalation, and payload tampering.
+3. **Rule 3: Cross-Touchpoint Fullstack Consistency**: If a field/rule changes (e.g. mandatory field, remove field), update ALL forms, modals, tabs, and APIs across the entire project. Never leave sibling tabs inconsistent.
+4. **Rule 4: Senior Fullstack Architecture & Pre-Execution Planning (/plan)**: Always formulate a comprehensive technical plan before coding. Think as a senior fullstack engineer with end-to-end integration.
+5. **Rule 5: Zero Hardcoding & Dynamic Entity/Category Extensibility**: Never hardcode prices, categories, or units. Provide dynamic category/unit management automatically for new entities. Future-proof admin controls.
+6. **Rule 6: UI/UX Pro Max Protocol & Ultra-Smooth Performance**: Dark theme (`#0D1527`, `#070D18`), emerald/teal gradients, contrast >=4.5:1, touch targets >=44px, cursor-pointer, zero horizontal overflow. Ultra-fast and lag-free UI and backend.
+7. **Rule 7: Non-Blocking Workflows**: Document uploads are strictly optional.
+8. **Rule 8: Authentic Telemetry & Real-World Geolocation**: Zero synthetic/fake leads or dummy phones. High-accuracy GPS with >35m movement threshold and desktop fallback.
+9. **Rule 9: Pragmatic Package Management**: Install required packages cleanly via `npm` when needed (e.g. security/hashing/features).
+10. **Rule 10: Branch Protection & 0-Error Build Quality Gate**: All commits/pushes go to `sumit-updates` branch. NEVER push directly to `main`. Mandatory `npm run build` with 0 errors before committing.

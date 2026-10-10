@@ -113,3 +113,33 @@ export function createClearAuthCookieHeader() {
   const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
   return `sunvine_auth_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`;
 }
+
+/** Safely parse Cookie header string into key-value map */
+export function parseCookies(cookieHeader = '') {
+  const list = {};
+  if (!cookieHeader || typeof cookieHeader !== 'string') return list;
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.split('=');
+    if (parts.length >= 2) {
+      list[parts.shift().trim()] = decodeURIComponent(parts.join('='));
+    }
+  });
+  return list;
+}
+
+/**
+ * Robustly extract JWT auth token from HTTP request.
+ * Prioritizes Authorization Bearer header first (tab-scoped isolation),
+ * then falls back to sunvine_auth_token cookie.
+ */
+export function extractAuthToken(req) {
+  if (!req) return null;
+  const authHeader = req.headers?.authorization || req.headers?.Authorization;
+  if (authHeader && typeof authHeader === 'string') {
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (bearer) return bearer;
+  }
+  const cookies = parseCookies(req.headers?.cookie);
+  return cookies.sunvine_auth_token || null;
+}
+
