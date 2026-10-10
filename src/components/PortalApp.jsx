@@ -29,11 +29,13 @@ const VerificationDesk = lazy(() => import('./StaffPortal/VerificationDesk'));
 // Top-Level Lazy-Loaded Admin Portal Views
 const AdminDashboard = lazy(() => import('./AdminPortal/AdminDashboard'));
 const DealerManagement = lazy(() => import('./AdminPortal/DealerManagement'));
+const DealerAccountsManagement = lazy(() => import('./AdminPortal/DealerAccountsManagement'));
 const PricingMaster = lazy(() => import('./AdminPortal/PricingMaster'));
 const HardwareMaster = lazy(() => import('./AdminPortal/HardwareMaster'));
 const AllQuotations = lazy(() => import('./AdminPortal/AllQuotations'));
 const AdminSettings = lazy(() => import('./AdminPortal/AdminSettings'));
 const StaffManagement = lazy(() => import('./AdminPortal/StaffManagement'));
+const StaffAccountsManagement = lazy(() => import('./AdminPortal/StaffAccountsManagement'));
 const BusinessPerformance = lazy(() => import('./AdminPortal/BusinessPerformance'));
 const ReportsAnalytics = lazy(() => import('./AdminPortal/ReportsAnalytics'));
 const AuditLogViewer = lazy(() => import('./AdminPortal/AuditLogViewer'));
@@ -110,9 +112,9 @@ function PortalContent() {
         case 'admin_create_quote':
           return <CreateQuotation />;
         case 'dealers_mgmt':
-          return <DealerManagement />;
+          return <DealerAccountsManagement />;
         case 'staff_mgmt':
-          return <StaffManagement />;
+          return <StaffAccountsManagement />;
         case 'admin_reports':
           return <ReportsAnalytics />;
         case 'admin_audit':
