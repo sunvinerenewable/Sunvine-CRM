@@ -2,10 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DealerTableSkeletonRows,
+  DealerCardGridSkeleton,
+  DealerDashboardSkeleton
+} from './DealerSkeletons';
+import {
+  DEFAULT_PAGE_SIZE,
+  DealerTableHeader
+} from './DealerPageParts';
 
 export default function DealerManagement() {
   const {
     dealers = [],
+    isHardwareDbSyncing = false,
+    refreshDatabase = () => {},
     addDealer = () => {},
     updateDealer = () => {},
     deleteDealer = () => {},
@@ -29,7 +41,7 @@ export default function DealerManagement() {
   const [salesmanFilter, setSalesmanFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const pageSize = DEFAULT_PAGE_SIZE;
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDealer, setEditingDealer] = useState(null);
   const [showTierModal, setShowTierModal] = useState(false);
@@ -1293,11 +1305,17 @@ export default function DealerManagement() {
     );
   }
 
+  // Dev-only skeleton testing harness
+  const isMockSkeleton = typeof window !== 'undefined' && window.location.search.includes('skeleton=1');
+  if (isMockSkeleton) {
+    return <DealerDashboardSkeleton viewMode={viewMode} />;
+  }
+
   // Otherwise, render Exact Dealer Management Directory
   return (
     <div className="flex flex-col gap-6 w-full pb-16">
       {/* Page Header & Action Clusters */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 animate-stagger-fade">
         <div>
           <nav className="flex items-center gap-1.5 text-xs font-label-xs text-secondary mb-2">
             <button
@@ -1367,7 +1385,7 @@ export default function DealerManagement() {
       {/* 4 METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         {/* Card 1 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:60ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Total Registered Dealers</span>
@@ -1376,7 +1394,11 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{totalDealersCount}</span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-14 my-0.5 rounded-md" />
+              ) : (
+                <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{totalDealersCount}</span>
+              )}
               <span className="inline-flex items-center gap-0.5 text-label-xs font-semibold text-[#2E7D32] bg-[#6CBF3D]/15 px-2 py-0.5 rounded-full">
                 <span className="material-symbols-outlined text-[14px]">verified</span> 100% Gujarat
               </span>
@@ -1389,7 +1411,7 @@ export default function DealerManagement() {
         </div>
 
         {/* Card 2 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:120ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Active &amp; Quoting</span>
@@ -1398,23 +1420,35 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{activeDealersCount}</span>
-              <span className="text-label-sm font-semibold text-secondary">
-                ({totalDealersCount > 0 ? ((activeDealersCount / totalDealersCount) * 100).toFixed(0) : 0}% activation)
-              </span>
-              <span className="ml-auto inline-flex items-center text-label-xs font-semibold text-[#2E7D32]">
-                <span className="material-symbols-outlined text-[14px]">trending_up</span> Live
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-14 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{activeDealersCount}</span>
+                  <span className="text-label-sm font-semibold text-secondary">
+                    ({totalDealersCount > 0 ? ((activeDealersCount / totalDealersCount) * 100).toFixed(0) : 0}% activation)
+                  </span>
+                  <span className="ml-auto inline-flex items-center text-label-xs font-semibold text-[#2E7D32]">
+                    <span className="material-symbols-outlined text-[14px]">trending_up</span> Live
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] flex items-center justify-between text-body-sm text-secondary">
             <span>Cumulative Capacity</span>
-            <span className="font-semibold text-[#2E7D32]">{totalCapacityMw} MW</span>
+            <span className="font-semibold text-[#2E7D32]">
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-4 w-16 rounded inline-block" />
+              ) : (
+                `${totalCapacityMw} MW`
+              )}
+            </span>
           </div>
         </div>
 
         {/* Card 3 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:180ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Pending Verification / KYC</span>
@@ -1423,10 +1457,16 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{pendingDealersCount}</span>
-              <span className="inline-flex items-center text-label-xs font-semibold text-[#B27204] bg-[#F9A825]/15 px-2 py-0.5 rounded-full">
-                Requires Audit
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-10 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{pendingDealersCount}</span>
+                  <span className="inline-flex items-center text-label-xs font-semibold text-[#B27204] bg-[#F9A825]/15 px-2 py-0.5 rounded-full">
+                    Requires Audit
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] flex items-center justify-between text-body-sm text-secondary">
@@ -1436,7 +1476,7 @@ export default function DealerManagement() {
         </div>
 
         {/* Card 4 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:240ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Suspended / Inactive</span>
@@ -1445,10 +1485,16 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{suspendedDealersCount}</span>
-              <span className="inline-flex items-center text-label-xs font-medium text-secondary bg-surface-container px-2 py-0.5 rounded-full">
-                {totalDealersCount > 0 ? ((suspendedDealersCount / totalDealersCount) * 100).toFixed(1) : 0}%
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-10 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{suspendedDealersCount}</span>
+                  <span className="inline-flex items-center text-label-xs font-medium text-secondary bg-surface-container px-2 py-0.5 rounded-full">
+                    {totalDealersCount > 0 ? ((suspendedDealersCount / totalDealersCount) * 100).toFixed(1) : 0}%
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] text-body-sm text-secondary truncate">
@@ -1458,7 +1504,7 @@ export default function DealerManagement() {
       </div>
 
       {/* FILTER & CONTROL BAR */}
-      <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] space-y-3">
+      <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] space-y-3 animate-stagger-fade [animation-delay:300ms]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex-1 min-w-[280px] max-w-md relative">
             <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-[18px]">filter_list</span>
@@ -1578,17 +1624,19 @@ export default function DealerManagement() {
       </div>
 
       {/* DATA PRESENTATION: CARDS OR TABLE */}
-      <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden animate-stagger-fade [animation-delay:360ms]">
         {viewMode === 'card' ? (
-          <div className="p-4 sm:p-5">
-            {paginatedDealers.length === 0 ? (
+          <div>
+            {dealers.length === 0 && isHardwareDbSyncing ? (
+              <DealerCardGridSkeleton count={6} />
+            ) : paginatedDealers.length === 0 ? (
               <div className="py-12 text-center text-secondary">
                 <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
                 No Gujarat dealers match your current filter criteria.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {paginatedDealers.map((d) => {
+                {paginatedDealers.map((d, idx) => {
                   const isGold = d.tier.includes('Gold');
                   const isPlat = d.tier.includes('Platinum');
                   const isDiam = d.tier.includes('Diamond');
@@ -1607,7 +1655,11 @@ export default function DealerManagement() {
                   const conf = tierMargins?.[tierKey] || {};
 
                   return (
-                    <div key={d.id} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
+                    <div
+                      key={d.id}
+                      className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all animate-stagger-fade"
+                      style={{ animationDelay: `${360 + Math.min(idx * 30, 240)}ms` }}
+                    >
                       {/* Header */}
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-mono text-xs font-bold text-[#0F1B2E] bg-surface-container px-2 py-0.5 rounded">
@@ -1772,22 +1824,11 @@ export default function DealerManagement() {
         ) : (
           <div className="w-full overflow-x-auto xl:overflow-x-visible">
             <table className="w-full text-left border-collapse table-auto">
-            <thead>
-              <tr className="bg-[#0F1B2E] text-white text-label-xs uppercase tracking-wider h-11 select-none">
-                <th className="py-3 px-2.5 font-semibold text-left whitespace-nowrap w-[110px]">Dealer ID</th>
-                <th className="py-3 px-2.5 font-semibold text-left min-w-[170px]">Dealer / Firm Name</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[125px]">Region &amp; DISCOM</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[130px]">Assigned Salesman</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[120px]">Pricing &amp; Margin</th>
-                <th className="py-3 px-2 font-semibold text-right w-[85px]">Quotes</th>
-                <th className="py-3 px-2 font-semibold text-right w-[85px]">Files</th>
-                <th className="py-3 px-2.5 font-semibold text-right w-[95px]">Capacity Sold</th>
-                <th className="py-3 px-2 font-semibold text-center w-[80px]">Status</th>
-                <th className="py-3 px-2 font-semibold text-center w-[90px]">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
-              {paginatedDealers.length === 0 ? (
+              <DealerTableHeader />
+              <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
+                {dealers.length === 0 && isHardwareDbSyncing ? (
+                  <DealerTableSkeletonRows rows={DEFAULT_PAGE_SIZE} />
+              ) : paginatedDealers.length === 0 ? (
                 <tr>
                   <td colSpan="10" className="py-12 text-center text-secondary">
                     <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
@@ -1795,7 +1836,7 @@ export default function DealerManagement() {
                   </td>
                 </tr>
               ) : (
-                paginatedDealers.map((d) => {
+                paginatedDealers.map((d, idx) => {
                   const isGold = d.tier.includes('Gold');
                   const isPlat = d.tier.includes('Platinum');
                   const isDiam = d.tier.includes('Diamond');
@@ -1809,7 +1850,11 @@ export default function DealerManagement() {
                   const discomText = (d.discom || '').includes('Circle') ? d.discom : `${d.discom || 'PGVCL'} Circle`;
 
                   return (
-                    <tr key={d.id} className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group">
+                    <tr
+                      key={d.id}
+                      className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group animate-stagger-fade"
+                      style={{ animationDelay: `${360 + Math.min(idx * 20, 220)}ms` }}
+                    >
                       <td className="py-3.5 px-2.5 align-top whitespace-nowrap">
                         <span className="font-mono text-label-xs font-semibold text-[#0F1B2E] bg-surface-container px-2 py-1 rounded inline-block whitespace-nowrap">
                           #{d.id}

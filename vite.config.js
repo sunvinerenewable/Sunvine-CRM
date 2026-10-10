@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { VitePWA } from 'vite-plugin-pwa';
 import { ensureEnvLoaded } from './api/_lib/db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 ensureEnvLoaded();
 
@@ -84,6 +89,11 @@ function apiDevPlugin() {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
     'import.meta.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
