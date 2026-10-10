@@ -1,757 +1,965 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
-import { adminAccountService } from '../../services/adminAccountService';
+import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 
 export default function StaffAccountsManagement() {
   const { addToast } = useToast();
-  const { setStaffList } = useApp();
+  const {
+    customerFiles,
+    quotations,
+    staffList,
+    dealers,
+    refreshCustomerFiles,
+    setPreviewQuotation,
+    setActiveTab
+  } = useApp();
 
-  const [staffListState, setStaffListState] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Navigation Sub Tab: 'files' (Sales Team Files) or 'quotations' (Sales Team Quotations)
+  const [activeSubTab, setActiveSubTab] = useState('files');
+
+  // Filters
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState('all');
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [stageFilter, setStageFilter] = useState('all');
+  const [quoteStatusFilter, setQuoteStatusFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [staffFilter, setStaffFilter] = useState('all');
 
-  // Modals
-  const [showStaffModal, setShowStaffModal] = useState(false);
-  const [editingStaff, setEditingStaff] = useState(null);
-  const [staffForm, setStaffForm] = useState({
-    id: '',
-    name: '',
-    phone: '',
-    email: '',
-    department: 'Sales',
-    role: 'Senior Solar Field Executive',
-    city: 'Ahmedabad',
-    zone: 'Gujarat Sales Desk',
-    status: 'Active',
-    password: ''
-  });
+  // Custom Staff Dropdown State
+  const [isStaffDropdownOpen, setIsStaffDropdownOpen] = useState(false);
+  const [staffSearchInDropdown, setStaffSearchInDropdown] = useState('');
+  const staffDropdownRef = useRef(null);
 
-  const [passwordModal, setPasswordModal] = useState({
-    isOpen: false,
-    staff: null,
-    newPassword: '',
-    confirmPassword: '',
-    showPass: false
-  });
+  // Modal State for File Details
+  const [selectedFileForDetail, setSelectedFileForDetail] = useState(null);
 
-  const [deleteModal, setDeleteModal] = useState({
-    isOpen: false,
-    staff: null
-  });
-
-  const [submitting, setSubmitting] = useState(false);
-
-  // Load accounts from live DB
-  const loadAccounts = async (isManual = false) => {
-    if (isManual) setRefreshing(true);
-    else setLoading(true);
-
-    try {
-      const data = await adminAccountService.fetchAccounts();
-      const list = data.staff || [];
-      setStaffListState(list);
-      if (typeof setStaffList === 'function' && Array.isArray(list)) {
-        setStaffList(list);
-      }
-    } catch (err) {
-      if (addToast) addToast({ title: 'Error', message: 'Failed to load staff accounts from database', type: 'error' });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
+  // Close dropdown on outside click
   useEffect(() => {
-    loadAccounts();
+    function handleClickOutside(e) {
+      if (staffDropdownRef.current && !staffDropdownRef.current.contains(e.target)) {
+        setIsStaffDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const filteredStaff = useMemo(() => {
-    return staffListState.filter(s => {
-      const isVer = (s.department || '').toLowerCase().includes('verification') || (s.role || '').toLowerCase().includes('verification');
-      const matchesFilter =
-        staffFilter === 'all'
-          ? true
-          : staffFilter === 'verification'
-          ? isVer
-          : !isVer;
+  // Format staff list cleanly
+  const formattedStaffList = useMemo(() => {
+    const list = Array.isArray(staffList) ? staffList : [];
+    return list.map(s => ({
+      id: s.id,
+      name: s.name || 'Sales Executive',
+      phone: s.phone || '',
+      email: s.email || '',
+      department: s.department || 'Sales',
+      role: s.role || 'Solar Field Executive',
+      city: s.city || 'Ahmedabad',
+      status: s.status || 'Active'
+    })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [staffList]);
 
-      if (!matchesFilter) return false;
-      if (!searchQuery.trim()) return true;
+  // Currently selected staff object
+  const selectedStaff = useMemo(() => {
+    if (selectedStaffFilter === 'all') return null;
+    return formattedStaffList.find(
+      s => s.id === selectedStaffFilter || s.name.toLowerCase() === selectedStaffFilter.toLowerCase()
+    ) || null;
+  }, [formattedStaffList, selectedStaffFilter]);
 
-      const q = searchQuery.toLowerCase().trim();
-      return (
-        (s.name || '').toLowerCase().includes(q) ||
-        (s.phone || s.mobile_number || '').includes(q) ||
-        (s.email || '').toLowerCase().includes(q) ||
-        (s.id || '').toLowerCase().includes(q) ||
-        (s.city || '').toLowerCase().includes(q) ||
-        (s.role || '').toLowerCase().includes(q)
+  // Filter staff inside custom dropdown
+  const filteredStaffForDropdown = useMemo(() => {
+    if (!staffSearchInDropdown.trim()) return formattedStaffList;
+    const q = staffSearchInDropdown.toLowerCase().trim();
+    return formattedStaffList.filter(s =>
+      s.name.toLowerCase().includes(q) ||
+      s.id.toLowerCase().includes(q) ||
+      s.department.toLowerCase().includes(q) ||
+      s.role.toLowerCase().includes(q)
+    );
+  }, [formattedStaffList, staffSearchInDropdown]);
+
+  // -------------------------------------------------------------
+  // ALL FILES BELONGING TO SALES TEAM / DIRECT DESK
+  // -------------------------------------------------------------
+  const allStaffFiles = useMemo(() => {
+    const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
+
+    const baseStaffFiles = rawFiles.filter(f => {
+      if (!f) return false;
+      const hasStaff = Boolean(f.staffId || f.staff_id || f.staffName || f.staff_name);
+      const isDirect = (f.sourceType || f.source || '').toUpperCase() === 'DIRECT_STAFF';
+      return hasStaff || isDirect;
+    });
+
+    // Also match any direct/staff quotations that don't already have an explicit file in customerFiles
+    const staffQuotes = (quotations || []).filter(q => {
+      if (!q) return false;
+      const isStaffOrDirect = Boolean(
+        q.staffId ||
+        q.staff_id ||
+        q.staffName ||
+        (q.dealerName && q.dealerName.includes('Head Office')) ||
+        !q.dealerId
       );
+      if (!isStaffOrDirect) return false;
+      const alreadyHasFile = baseStaffFiles.some(f =>
+        f.quotationId === q.id ||
+        f.id === q.id ||
+        f.id === `FIL-${q.id}` ||
+        (f.customerName && q.customerName && f.customerName.trim().toLowerCase() === q.customerName.trim().toLowerCase())
+      );
+      return !alreadyHasFile;
     });
-  }, [staffListState, staffFilter, searchQuery]);
 
-  const handleOpenAddStaff = () => {
-    setEditingStaff(null);
-    const existingNums = staffListState.map(s => {
-      const m = String(s.id || '').match(/STF-(\d+)/);
-      return m ? parseInt(m[1], 10) : 0;
+    const synthesizedFromQuotes = staffQuotes.map(q => {
+      const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
+      const isWon = (q.status || '').toLowerCase().includes('won');
+      const isApproved = (q.status || '').toLowerCase().includes('approved');
+      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
+      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
+
+      return {
+        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
+        quotationId: q.id,
+        customerName: q.customerName || 'Solar Consumer',
+        phone: q.customerPhone || q.phone || 'N/A',
+        address: q.customerAddress || q.address || q.location || 'Gujarat',
+        city: q.city || 'Ahmedabad',
+        discom: q.discom || 'PGVCL',
+        consumerNo: q.consumerNo || 'PENDING',
+        solarSystemKw: capKw,
+        roofType: 'RCC Flat',
+        sourceType: 'DIRECT_STAFF',
+        source: 'DIRECT_STAFF',
+        staffId: q.staffId || 'STF-DIRECT',
+        staffName: q.staffName || 'Sunvine Sales Staff',
+        dealerId: null,
+        dealerName: 'Direct to Company (HQ Desk)',
+        stage: stage,
+        currentStage: stage,
+        status: status,
+        financeType: q.financeType || 'CASH',
+        loanBank: q.loanBank || '',
+        createdAt: q.date || q.created_at || new Date().toISOString(),
+        documents: {},
+        timeline: [
+          {
+            stage: 'Quotation Created',
+            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            actor: q.staffName || 'Sunvine Sales Desk',
+            notes: `Project file from quotation for ${q.customerName || 'Consumer'}`
+          }
+        ]
+      };
     });
-    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 805;
-    const nextId = `STF-${String(nextNum).padStart(3, '0')}`;
 
-    setStaffForm({
-      id: nextId,
-      name: '',
-      phone: '',
-      email: '',
-      department: 'Sales',
-      role: 'Senior Solar Field Executive',
-      city: 'Ahmedabad',
-      zone: 'Gujarat Sales Desk',
-      status: 'Active',
-      password: 'staff' + Math.floor(100 + Math.random() * 900)
-    });
-    setShowStaffModal(true);
-  };
+    return [...baseStaffFiles, ...synthesizedFromQuotes];
+  }, [customerFiles, quotations]);
 
-  const handleOpenEditStaff = (staff) => {
-    setEditingStaff(staff);
-    setStaffForm({
-      id: staff.id,
-      name: staff.name || '',
-      phone: (staff.phone || staff.mobile_number || '').replace(/\D/g, '').slice(-10),
-      email: staff.email || '',
-      department: staff.department || 'Sales',
-      role: staff.role || 'Senior Solar Field Executive',
-      city: staff.city || 'Ahmedabad',
-      zone: staff.zone || 'Gujarat Sales Desk',
-      status: staff.status || 'Active',
-      password: ''
-    });
-    setShowStaffModal(true);
-  };
+  // Filtered Files based on staff selection & search
+  const displayedFiles = useMemo(() => {
+    return allStaffFiles.filter(file => {
+      // 1. Filter by specific Staff Member
+      if (selectedStaffFilter !== 'all') {
+        const staff = selectedStaff;
+        const cleanSId = String(selectedStaffFilter).toLowerCase();
+        const staffName = staff ? staff.name.trim().toLowerCase() : '';
+        const fileSId = String(file.staffId || file.staff_id || '').toLowerCase();
+        const fileSName = (file.staffName || file.staff_name || '').trim().toLowerCase();
 
-  const handleSaveStaff = async (e) => {
-    if (e) e.preventDefault();
-    if (!staffForm.name.trim()) {
-      if (addToast) addToast({ title: 'Validation', message: 'Staff name is required', type: 'warning' });
-      return;
-    }
-    const cleanPhone = staffForm.phone.replace(/\D/g, '').slice(-10);
-    if (cleanPhone.length !== 10) {
-      if (addToast) addToast({ title: 'Validation', message: '10-digit mobile number is required', type: 'warning' });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      if (editingStaff) {
-        const res = await adminAccountService.updateStaff({
-          id: editingStaff.id,
-          name: staffForm.name,
-          phone: cleanPhone,
-          email: staffForm.email,
-          department: staffForm.department,
-          role: staffForm.role,
-          city: staffForm.city,
-          zone: staffForm.zone,
-          status: staffForm.status,
-          password: staffForm.password || undefined
+        // Also check if file belongs to a dealer assigned to this staff member
+        const assignedDealerMatch = (dealers || []).some(d => {
+          if (d.assignedStaffId !== selectedStaffFilter && d.assigned_staff_id !== selectedStaffFilter) return false;
+          const dFirm = (d.firmName || d.firm_name || '').trim().toLowerCase();
+          const fileDFirm = (file.dealerName || file.dealer_name || '').trim().toLowerCase();
+          return dFirm && fileDFirm && (dFirm === fileDFirm || fileDFirm.includes(dFirm));
         });
-        if (res.success) {
-          if (addToast) addToast({ title: 'Staff Updated', message: `${staffForm.name} profile updated successfully`, type: 'success' });
-          setShowStaffModal(false);
-          loadAccounts(true);
-        } else {
-          if (addToast) addToast({ title: 'Error', message: res.error || 'Failed to update staff', type: 'error' });
-        }
-      } else {
-        const res = await adminAccountService.createStaff({
-          id: staffForm.id,
-          name: staffForm.name,
-          phone: cleanPhone,
-          email: staffForm.email,
-          department: staffForm.department,
-          role: staffForm.role,
-          city: staffForm.city,
-          zone: staffForm.zone,
-          status: staffForm.status,
-          password: staffForm.password
-        });
-        if (res.success) {
-          if (addToast) addToast({ title: 'Staff Created', message: `${staffForm.name} registered with ID ${staffForm.id}`, type: 'success' });
-          setShowStaffModal(false);
-          loadAccounts(true);
-        } else {
-          if (addToast) addToast({ title: 'Error', message: res.error || 'Failed to create staff', type: 'error' });
+
+        const matches = (
+          (cleanSId && (fileSId === cleanSId || fileSId.includes(cleanSId))) ||
+          (staffName && fileSName && (fileSName === staffName || fileSName.includes(staffName))) ||
+          assignedDealerMatch
+        );
+
+        if (!matches) return false;
+      }
+
+      // 2. Customer search
+      if (customerSearchQuery.trim()) {
+        const q = customerSearchQuery.toLowerCase().trim();
+        const name = (file.customerName || file.customer_name || '').toLowerCase();
+        const phone = String(file.phone || '');
+        const consumer = String(file.consumerNo || file.consumer_no || '').toLowerCase();
+        const id = String(file.id || '').toLowerCase();
+        const city = String(file.city || '').toLowerCase();
+
+        if (!name.includes(q) && !phone.includes(q) && !consumer.includes(q) && !id.includes(q) && !city.includes(q)) {
+          return false;
         }
       }
-    } catch (err) {
-      if (addToast) addToast({ title: 'Error', message: err.message, type: 'error' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const handleOpenPasswordModal = (staff) => {
-    setPasswordModal({
-      isOpen: true,
-      staff,
-      newPassword: '',
-      confirmPassword: '',
-      showPass: false
+      // 3. Stage filter
+      if (stageFilter !== 'all') {
+        const currentStage = String(file.currentStage || file.stage || file.status || '').toLowerCase();
+        if (!currentStage.includes(stageFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  };
+  }, [allStaffFiles, selectedStaffFilter, selectedStaff, dealers, customerSearchQuery, stageFilter]);
 
-  const handleSavePassword = async (e) => {
-    if (e) e.preventDefault();
-    if (!passwordModal.newPassword || passwordModal.newPassword.length < 4) {
-      if (addToast) addToast({ title: 'Validation', message: 'Password must be at least 4 characters long', type: 'warning' });
-      return;
-    }
-    if (passwordModal.newPassword !== passwordModal.confirmPassword) {
-      if (addToast) addToast({ title: 'Validation', message: 'Passwords do not match', type: 'warning' });
-      return;
-    }
+  // -------------------------------------------------------------
+  // ALL QUOTATIONS BELONGING TO SALES TEAM / DIRECT DESK
+  // -------------------------------------------------------------
+  const allStaffQuotations = useMemo(() => {
+    const quotes = Array.isArray(quotations) ? quotations : [];
+    return quotes.filter(q => {
+      if (!q) return false;
+      const isDirect = (q.dealerName && q.dealerName.includes('Head Office')) || !q.dealerId;
+      const hasStaffRef = Boolean(q.staffId || q.staff_id || q.staffName || q.staff_name);
+      return isDirect || hasStaffRef;
+    });
+  }, [quotations]);
 
-    setSubmitting(true);
-    try {
-      const res = await adminAccountService.updatePassword('staff', passwordModal.staff.id, passwordModal.newPassword);
-      if (res.success) {
-        if (addToast) addToast({ title: 'Password Changed', message: `Password updated for ${passwordModal.staff.name}`, type: 'success' });
-        setPasswordModal({ isOpen: false, staff: null, newPassword: '', confirmPassword: '', showPass: false });
-        loadAccounts(true);
-      } else {
-        if (addToast) addToast({ title: 'Error', message: res.error || 'Failed to update password', type: 'error' });
+  // Filtered Quotations based on staff selection & search
+  const displayedQuotes = useMemo(() => {
+    return allStaffQuotations.filter(q => {
+      // 1. Filter by specific Staff Member
+      if (selectedStaffFilter !== 'all') {
+        const staff = selectedStaff;
+        const cleanSId = String(selectedStaffFilter).toLowerCase();
+        const staffName = staff ? staff.name.trim().toLowerCase() : '';
+        const qSId = String(q.staffId || q.staff_id || '').toLowerCase();
+        const qSName = (q.staffName || q.staff_name || '').trim().toLowerCase();
+
+        const matches = (
+          (cleanSId && (qSId === cleanSId || qSId.includes(cleanSId))) ||
+          (staffName && qSName && (qSName === staffName || qSName.includes(staffName))) ||
+          (cleanSId === 'stf-direct' && q.dealerName && q.dealerName.includes('Head Office'))
+        );
+
+        if (!matches) return false;
       }
-    } catch (err) {
-      if (addToast) addToast({ title: 'Error', message: err.message, type: 'error' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const handleOpenDelete = (staff) => {
-    setDeleteModal({ isOpen: true, staff });
-  };
+      // 2. Customer search
+      if (customerSearchQuery.trim()) {
+        const term = customerSearchQuery.toLowerCase().trim();
+        const name = (q.customerName || '').toLowerCase();
+        const phone = String(q.customerPhone || q.phone || '');
+        const id = String(q.quoteNumber || q.id || '').toLowerCase();
+        const city = String(q.city || q.location || '').toLowerCase();
 
-  const handleConfirmDelete = async () => {
-    if (!deleteModal.staff) return;
-    setSubmitting(true);
-    try {
-      const res = await adminAccountService.deleteStaff(deleteModal.staff.id);
-      if (res.success) {
-        if (addToast) addToast({ title: 'Staff Deleted', message: 'Staff member removed from database', type: 'info' });
-        setDeleteModal({ isOpen: false, staff: null });
-        loadAccounts(true);
-      } else {
-        if (addToast) addToast({ title: 'Error', message: res.error || 'Failed to delete staff', type: 'error' });
+        if (!name.includes(term) && !phone.includes(term) && !id.includes(term) && !city.includes(term)) {
+          return false;
+        }
       }
-    } catch (err) {
-      if (addToast) addToast({ title: 'Error', message: err.message, type: 'error' });
+
+      // 3. Quote Status filter
+      if (quoteStatusFilter !== 'all') {
+        const s = (q.status || '').toLowerCase();
+        if (!s.includes(quoteStatusFilter.toLowerCase())) return false;
+      }
+
+      return true;
+    });
+  }, [allStaffQuotations, selectedStaffFilter, selectedStaff, customerSearchQuery, quoteStatusFilter]);
+
+  // Dynamic KPI Calculations
+  const totalFilesCapacityKw = useMemo(() => {
+    return displayedFiles.reduce((acc, f) => acc + (Number(f.solarSystemKw || f.solar_system_kw) || 0), 0);
+  }, [displayedFiles]);
+
+  const totalQuotesValue = useMemo(() => {
+    return displayedQuotes.reduce((acc, q) => acc + (Number(q.grandTotalCustomer || q.totalAmount) || 0), 0);
+  }, [displayedQuotes]);
+
+  const totalQuotesCapacityKw = useMemo(() => {
+    return displayedQuotes.reduce((acc, q) => acc + (Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '')) || 0), 0);
+  }, [displayedQuotes]);
+
+  const totalCombinedCapacityKw = totalFilesCapacityKw + totalQuotesCapacityKw;
+
+  // Refresh handler
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      if (typeof refreshCustomerFiles === 'function') await refreshCustomerFiles();
+      if (addToast) addToast({ title: 'Data Refreshed', message: 'Sales team files & quotations synced with live database', type: 'success' });
+    } catch {
+      // silent
     } finally {
-      setSubmitting(false);
+      setTimeout(() => setRefreshing(false), 400);
     }
   };
 
-  const salesCount = staffListState.filter(s => !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).length;
-  const verCount = staffListState.filter(s => (s.department || '').toLowerCase().includes('verification') || (s.role || '').toLowerCase().includes('verification')).length;
+  // Helper for stage styling
+  const getStageBadge = (stage = '', status = '') => {
+    const s = (stage || status || '').toLowerCase();
+    if (s.includes('lead') || s.includes('sourced')) {
+      return { label: 'Lead Sourced', bg: 'bg-blue-50 text-blue-700 border-blue-200', icon: 'person_add' };
+    }
+    if (s.includes('survey') || s.includes('feasibility')) {
+      return { label: 'Feasibility Approved', bg: 'bg-amber-50 text-amber-700 border-amber-200', icon: 'verified' };
+    }
+    if (s.includes('discom')) {
+      return { label: 'DISCOM Application', bg: 'bg-purple-50 text-purple-700 border-purple-200', icon: 'electric_meter' };
+    }
+    if (s.includes('install')) {
+      return { label: 'Solar Installation', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: 'solar_power' };
+    }
+    if (s.includes('sync') || s.includes('meter')) {
+      return { label: 'Net-Meter Synced', bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'sync_alt' };
+    }
+    if (s.includes('subsidy')) {
+      return { label: 'Subsidy Claim', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: 'payments' };
+    }
+    if (s.includes('complete') || s.includes('commission')) {
+      return { label: 'Commissioned', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: 'check_circle' };
+    }
+    if (s.includes('cancel')) {
+      return { label: 'Cancelled', bg: 'bg-rose-50 text-rose-700 border-rose-200', icon: 'cancel' };
+    }
+    return { label: stage || status || 'In Progress', bg: 'bg-slate-50 text-slate-700 border-slate-200', icon: 'pending' };
+  };
+
+  const handleViewPdf = (quote) => {
+    if (setPreviewQuotation) setPreviewQuotation(quote);
+    if (setActiveTab) setActiveTab('preview_quote');
+  };
 
   return (
-    <div className="flex flex-col w-full pb-16 space-y-6">
+    <div className="flex flex-col w-full pb-16 space-y-5">
       {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-surface-container-highest">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E4E7EB]">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="material-symbols-outlined text-primary text-[28px]">groups</span>
-            <h1 className="font-headline-lg text-headline-lg font-bold text-on-surface">
-              Sales Team &amp; Staff Accounts
+            <span className="material-symbols-outlined text-[#107C41] text-[28px]">groups</span>
+            <h1 className="text-xl sm:text-2xl font-bold font-poppins text-slate-900">
+              Sales Team Operations &amp; Files Pipeline
             </h1>
           </div>
-          <p className="font-body-md text-body-md text-secondary">
-            Manage authenticated sales representatives, verification desk officers, permissions, and login credentials.
+          <p className="text-xs sm:text-sm text-slate-500">
+            Comprehensive console for Gujarat Field Sales Executives &amp; Verification Desk — track consumer files, quotations, and commercial pipeline.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => loadAccounts(true)}
+            onClick={handleRefresh}
             disabled={refreshing}
-            className="h-10 px-3.5 bg-surface-container border border-surface-container-highest text-on-surface font-semibold rounded-lg hover:bg-surface-container-high transition-all flex items-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
-            title="Refresh from PostgreSQL"
+            className="h-10 px-4 bg-white border border-[#E4E7EB] hover:bg-[#F6F8F7] text-slate-800 font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
+            title="Refresh Files &amp; Quotations from Database"
           >
-            <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>sync</span>
+            <span className={`material-symbols-outlined text-[18px] text-slate-600 ${refreshing ? 'animate-spin' : ''}`}>sync</span>
             <span>Refresh</span>
           </button>
-          <button
-            onClick={handleOpenAddStaff}
-            className="h-10 px-4 bg-primary text-on-primary font-semibold rounded-lg hover:bg-primary-hover transition-all flex items-center gap-2 shadow-sm text-xs sm:text-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[20px]">person_add</span>
-            <span>+ Add Staff Member</span>
-          </button>
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
-          <div className="text-secondary text-xs font-semibold uppercase">Total Staff</div>
-          <div className="text-2xl font-bold font-mono text-on-surface mt-1">{staffListState.length}</div>
-          <div className="text-[11px] text-primary mt-1 font-semibold">Active Empanelled Team</div>
+      {/* ========================================================================= */}
+      {/* 4 KPI CARDS — UNIFORM, MATCHING LIGHT THEME & DYNAMIC RECALCULATION */}
+      {/* ========================================================================= */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: TOTAL SALES TEAM (or Selected Staff) */}
+        <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+              {selectedStaff ? 'Selected Executive' : 'Total Field Sales Force'}
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <span className="material-symbols-outlined text-[18px]">person</span>
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-poppins text-slate-900">
+              {selectedStaff ? '1' : formattedStaffList.length}
+            </div>
+            <div className="text-xs text-slate-500 mt-1 truncate" title={selectedStaff ? selectedStaff.name : 'Gujarat Sales Force'}>
+              {selectedStaff ? `${selectedStaff.name} (${selectedStaff.role})` : 'Gujarat Field Force'}
+            </div>
+          </div>
         </div>
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
-          <div className="text-secondary text-xs font-semibold uppercase">Field Sales</div>
-          <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">{salesCount}</div>
-          <div className="text-[11px] text-secondary mt-1">Territory Field Executives</div>
+
+        {/* Card 2: SALES TEAM FILES */}
+        <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+              {selectedStaff ? 'Staff Project Files' : 'Total Staff Files'}
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+              <span className="material-symbols-outlined text-[18px]">folder_shared</span>
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-poppins text-slate-900">
+              {displayedFiles.length} <span className="text-xs font-normal text-slate-500">Files</span>
+            </div>
+            <div className="text-xs text-slate-500 mt-1 truncate">
+              {selectedStaff ? `${selectedStaff.name} Pipeline` : `${totalFilesCapacityKw.toFixed(1)} kW Solar Pipeline`}
+            </div>
+          </div>
         </div>
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
-          <div className="text-secondary text-xs font-semibold uppercase">Verification Desk</div>
-          <div className="text-2xl font-bold font-mono text-indigo-500 mt-1">{verCount}</div>
-          <div className="text-[11px] text-secondary mt-1">KYC &amp; Sanction Officers</div>
+
+        {/* Card 3: SALES TEAM QUOTATIONS */}
+        <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+              {selectedStaff ? 'Staff Quotations' : 'Total Staff Quotations'}
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+              <span className="material-symbols-outlined text-[18px]">request_quote</span>
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-poppins text-slate-900">
+              {displayedQuotes.length} <span className="text-xs font-normal text-slate-500">Quotes</span>
+            </div>
+            <div className="text-xs text-slate-500 mt-1 truncate">
+              {selectedStaff ? `${selectedStaff.name} Quotes` : `₹${Math.round(totalQuotesValue).toLocaleString('en-IN')} Total Value`}
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: COMBINED SOLAR CAPACITY */}
+        <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+              Total Solar Capacity
+            </span>
+            <span className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <span className="material-symbols-outlined text-[18px]">solar_power</span>
+            </span>
+          </div>
+          <div className="mt-2">
+            <div className="text-2xl font-bold font-poppins text-slate-900">
+              {totalCombinedCapacityKw.toFixed(1)} <span className="text-xs font-normal text-slate-500">kW</span>
+            </div>
+            <div className="text-xs text-slate-500 mt-1 truncate">
+              {selectedStaff ? `${selectedStaff.department} Desk` : 'Active Gujarat Capacity'}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Search & Department Filters Toolbar */}
-      <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs">
-        {/* Department Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          {[
-            { id: 'all', label: `All Staff (${staffListState.length})` },
-            { id: 'sales', label: `Field Sales (${salesCount})` },
-            { id: 'verification', label: `Verification Desk (${verCount})` }
-          ].map((pill) => (
-            <button
-              key={pill.id}
-              onClick={() => setStaffFilter(pill.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                staffFilter === pill.id
-                  ? 'bg-primary text-on-primary shadow-xs'
-                  : 'bg-surface-container text-secondary hover:text-on-surface'
-              }`}
-            >
-              {pill.label}
-            </button>
-          ))}
-        </div>
+      {/* ========================================================================= */}
+      {/* TABS: Project Files vs Quotations (Clean Green Pill Design) */}
+      {/* ========================================================================= */}
+      <div className="flex items-center gap-2 border-b border-[#E4E7EB] pb-3">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('files')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            activeSubTab === 'files'
+              ? 'bg-[#107C41] text-white shadow-xs'
+              : 'bg-white border border-[#E4E7EB] text-slate-600 hover:text-slate-900 hover:bg-[#F6F8F7]'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">folder_shared</span>
+          <span>Sales Team Project Files</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+            activeSubTab === 'files' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {displayedFiles.length}
+          </span>
+        </button>
 
-        {/* Search */}
-        <div className="relative min-w-0 sm:w-72">
-          <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-sm">search</span>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('quotations')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            activeSubTab === 'quotations'
+              ? 'bg-[#107C41] text-white shadow-xs'
+              : 'bg-white border border-[#E4E7EB] text-slate-600 hover:text-slate-900 hover:bg-[#F6F8F7]'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">request_quote</span>
+          <span>Sales Team Quotations</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+            activeSubTab === 'quotations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {displayedQuotes.length}
+          </span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SEARCH & FILTERS TOOLBAR (With Clean White Custom Staff Dropdown) */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-xl border border-[#E4E7EB] p-3.5 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        {/* Customer Search */}
+        <div className="relative flex-1 min-w-[260px]">
+          <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-[18px]">search</span>
           <input
             type="text"
-            placeholder="Search by name, ID, phone, role..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface placeholder-secondary focus:outline-none focus:border-primary transition-all"
+            placeholder={
+              activeSubTab === 'files'
+                ? "Search by customer name, mobile, consumer number, city, or file ID..."
+                : "Search by customer name, mobile, city, or quotation ID..."
+            }
+            value={customerSearchQuery}
+            onChange={(e) => setCustomerSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 bg-[#F6F8F7] border border-[#E4E7EB] rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#107C41] transition-all"
           />
+          {customerSearchQuery && (
+            <button
+              onClick={() => setCustomerSearchQuery('')}
+              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+              title="Clear search"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          )}
         </div>
-      </div>
 
-      {/* Staff Accounts Table */}
-      <div className="bg-surface-container-lowest rounded-xl border border-surface-container-high overflow-hidden shadow-sm">
-        {loading ? (
-          <div className="p-12 text-center text-secondary flex flex-col items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-3xl animate-spin text-primary">sync</span>
-            <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
-          </div>
-        ) : filteredStaff.length === 0 ? (
-          <div className="p-12 text-center text-secondary">
-            <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">groups</span>
-            <p className="text-sm font-medium">No staff members found matching your filter.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead className="bg-surface-container text-secondary text-xs uppercase tracking-wider font-semibold border-b border-surface-container-highest">
-                <tr>
-                  <th className="py-3 px-4">Staff Name &amp; ID</th>
-                  <th className="py-3 px-4">Mobile Number</th>
-                  <th className="py-3 px-4">Department &amp; Role</th>
-                  <th className="py-3 px-4">City / Zone</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-high">
-                {filteredStaff.map((staff) => {
-                  const phone = staff.phone || staff.mobile_number || '8000050580';
-                  const isVer = (staff.department || '').toLowerCase().includes('verification') || (staff.role || '').toLowerCase().includes('verification');
+        {/* Right Filter Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 1. Custom Clean Staff Dropdown */}
+          <div className="relative" ref={staffDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsStaffDropdownOpen(!isStaffDropdownOpen)}
+              className={`h-9 px-3 rounded-lg border text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer ${
+                selectedStaffFilter !== 'all'
+                  ? 'bg-emerald-50 border-[#107C41] text-[#107C41]'
+                  : 'bg-white border-[#E4E7EB] hover:bg-[#F6F8F7] text-slate-700'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px] text-slate-500">badge</span>
+              <span className="max-w-[180px] sm:max-w-[220px] truncate">
+                {selectedStaff ? `${selectedStaff.name}` : `All Sales Staff (${formattedStaffList.length})`}
+              </span>
+              <span className="material-symbols-outlined text-[16px] text-slate-400">
+                {isStaffDropdownOpen ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
 
-                  return (
-                    <tr key={staff.id} className="hover:bg-surface-container/60 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-sm border ${
-                            isVer
-                              ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
-                              : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                          }`}>
-                            {(staff.name || 'S').charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-on-surface">{staff.name}</div>
-                            <div className="text-[11px] text-secondary flex items-center gap-1.5 mt-0.5">
-                              <span className="font-mono text-primary font-semibold">{staff.id}</span>
-                              <span>•</span>
-                              <span>{staff.role || 'Field Executive'}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
+            {isStaffDropdownOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 bg-white border border-[#E4E7EB] rounded-xl shadow-xl z-50 p-2.5 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-100">
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
+                  <input
+                    type="text"
+                    placeholder="Search staff member name or ID..."
+                    value={staffSearchInDropdown}
+                    onChange={(e) => setStaffSearchInDropdown(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-[#F6F8F7] border border-[#E4E7EB] rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#107C41]"
+                    autoFocus
+                  />
+                </div>
 
-                      <td className="py-3.5 px-4 font-mono font-medium text-on-surface">
-                        <div className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-secondary text-sm">phone_iphone</span>
-                          <span>{phone}</span>
-                        </div>
-                      </td>
+                <div className="max-h-60 overflow-y-auto divide-y divide-[#F1F4F9]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedStaffFilter('all');
+                      setIsStaffDropdownOpen(false);
+                    }}
+                    className={`w-full px-2.5 py-2 text-left text-xs rounded-lg flex items-center justify-between transition-colors cursor-pointer ${
+                      selectedStaffFilter === 'all'
+                        ? 'bg-emerald-50 text-emerald-800 font-semibold'
+                        : 'hover:bg-[#F6F8F7] text-slate-700'
+                    }`}
+                  >
+                    <span>All Sales Staff ({formattedStaffList.length})</span>
+                    {selectedStaffFilter === 'all' && (
+                      <span className="material-symbols-outlined text-[16px] text-[#107C41]">check</span>
+                    )}
+                  </button>
 
-                      <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                          isVer
-                            ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'
-                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                        }`}>
-                          <span className="material-symbols-outlined text-xs">{isVer ? 'verified_user' : 'support_agent'}</span>
-                          <span>{staff.department || (isVer ? 'Verification' : 'Sales')}</span>
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <div className="text-on-surface font-medium">{staff.city || 'Ahmedabad'}</div>
-                        <div className="text-[11px] text-secondary font-mono">{staff.zone || 'Gujarat Sales Desk'}</div>
-                      </td>
-
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 text-xs text-primary font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                          <span>Active in DB</span>
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenPasswordModal(staff)}
-                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition-all cursor-pointer"
-                            title="Change Staff Password"
-                          >
-                            <span className="material-symbols-outlined text-sm">key</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditStaff(staff)}
-                            className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface border border-surface-container-highest transition-all cursor-pointer"
-                            title="Edit Staff Profile"
-                          >
-                            <span className="material-symbols-outlined text-sm">edit</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenDelete(staff)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all cursor-pointer"
-                            title="Delete Staff"
-                          >
-                            <span className="material-symbols-outlined text-sm">delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Add / Edit Staff Modal */}
-      {showStaffModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-lg shadow-2xl border border-surface-container-high flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-container-high bg-surface-container shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary">groups</span>
-                <h3 className="font-bold text-on-surface text-base">
-                  {editingStaff ? 'Edit Staff Profile' : 'Add New Staff Member'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowStaffModal(false)}
-                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container-high transition-colors"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveStaff} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Staff ID</label>
-                    <input
-                      type="text"
-                      required
-                      disabled={Boolean(editingStaff)}
-                      value={staffForm.id}
-                      onChange={(e) => setStaffForm(prev => ({ ...prev, id: e.target.value.toUpperCase() }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary disabled:opacity-60"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Department</label>
-                    <select
-                      value={staffForm.department}
-                      onChange={(e) => setStaffForm(prev => ({
-                        ...prev,
-                        department: e.target.value,
-                        role: e.target.value === 'Verification' ? 'KYC Verification Officer' : 'Senior Solar Field Executive'
-                      }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                  {filteredStaffForDropdown.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedStaffFilter(s.id);
+                        setIsStaffDropdownOpen(false);
+                      }}
+                      className={`w-full px-2.5 py-2 text-left text-xs rounded-lg flex flex-col gap-0.5 transition-colors cursor-pointer ${
+                        selectedStaffFilter === s.id
+                          ? 'bg-emerald-50 text-emerald-800 font-semibold'
+                          : 'hover:bg-[#F6F8F7] text-slate-700'
+                      }`}
                     >
-                      <option value="Sales">Sales &amp; Business Development</option>
-                      <option value="Verification">Verification &amp; KYC Desk</option>
-                      <option value="Operations">Operations &amp; Dispatch</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Full Legal Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ramesh Patel"
-                    value={staffForm.name}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, name: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Mobile Number (10 Digits)</label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 font-mono text-xs font-bold text-secondary select-none pointer-events-none flex items-center gap-1 z-10">
-                        <span>+91</span>
-                        <span className="text-secondary/40 font-normal">|</span>
-                      </span>
-                      <input
-                        type="tel"
-                        required
-                        maxLength={10}
-                        placeholder="8000050580"
-                        value={staffForm.phone}
-                        onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                        className="w-full pl-12 pr-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Designation / Role Title</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Field Executive"
-                      value={staffForm.role}
-                      onChange={(e) => setStaffForm(prev => ({ ...prev, role: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">City</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ahmedabad"
-                      value={staffForm.city}
-                      onChange={(e) => setStaffForm(prev => ({ ...prev, city: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Zone / Territory Desk</label>
-                    <input
-                      type="text"
-                      placeholder="Gujarat Sales Desk"
-                      value={staffForm.zone}
-                      onChange={(e) => setStaffForm(prev => ({ ...prev, zone: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">
-                    Official Corporate Email <span className="text-xs text-secondary/60 font-normal">(Optional)</span>
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="staff@sunvine.in"
-                    value={staffForm.email}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">
-                    {editingStaff ? 'New Password (Optional)' : 'Initial Portal Password'}
-                  </label>
-                  <input
-                    type="text"
-                    required={!editingStaff}
-                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'staff123'}
-                    value={staffForm.password}
-                    onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                  />
-                  <p className="text-[11px] text-secondary mt-1">Hashed with bcrypt before saving to PostgreSQL.</p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold truncate text-slate-900">{s.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{s.id}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                        <span>{s.department}</span>
+                        <span>•</span>
+                        <span>{s.city}</span>
+                        <span>•</span>
+                        <span className="text-emerald-700 font-medium">{s.role}</span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
-
-              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-surface-container-high bg-surface-container shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowStaffModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex items-center gap-1.5 px-5 py-2.5 bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
-                  <span>{editingStaff ? 'Save Changes' : 'Create Staff Member'}</span>
-                </button>
-              </div>
-            </form>
+            )}
           </div>
+
+          {/* 2. Stage Filter / Status Filter */}
+          {activeSubTab === 'files' ? (
+            <select
+              value={stageFilter}
+              onChange={(e) => setStageFilter(e.target.value)}
+              className="h-9 px-3 bg-white border border-[#E4E7EB] rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#107C41] cursor-pointer shadow-xs"
+            >
+              <option value="all">All Project Stages</option>
+              <option value="lead">Lead Sourced</option>
+              <option value="feasibility">Feasibility Approved</option>
+              <option value="discom">DISCOM Application</option>
+              <option value="install">Solar Installation</option>
+              <option value="sync">Net-Meter Sync</option>
+              <option value="complete">Commissioned</option>
+            </select>
+          ) : (
+            <select
+              value={quoteStatusFilter}
+              onChange={(e) => setQuoteStatusFilter(e.target.value)}
+              className="h-9 px-3 bg-white border border-[#E4E7EB] rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:border-[#107C41] cursor-pointer shadow-xs"
+            >
+              <option value="all">All Quote Statuses</option>
+              <option value="Active">Active / Sent</option>
+              <option value="Won">Won / Order Booked</option>
+              <option value="Approved">Approved</option>
+              <option value="Draft">Draft</option>
+            </select>
+          )}
+
+          {/* Reset Filters */}
+          {(selectedStaffFilter !== 'all' || customerSearchQuery || stageFilter !== 'all' || quoteStatusFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSelectedStaffFilter('all');
+                setCustomerSearchQuery('');
+                setStageFilter('all');
+                setQuoteStatusFilter('all');
+              }}
+              className="h-9 px-3 rounded-lg bg-[#F6F8F7] hover:bg-[#E4E7EB] border border-[#E4E7EB] text-slate-600 hover:text-slate-900 text-xs font-medium cursor-pointer transition-colors flex items-center gap-1 shadow-xs"
+              title="Reset all filters"
+            >
+              <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
+              <span>Clear</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* VIEW 1: SALES TEAM PROJECT FILES TABLE */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'files' && (
+        <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
+          {displayedFiles.length === 0 ? (
+            <div className="py-16 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                <span className="material-symbols-outlined text-[28px]">folder_off</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">No Sales Team Project Files Found</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {selectedStaffFilter !== 'all' || customerSearchQuery || stageFilter !== 'all'
+                    ? 'No consumer project files match the selected filter criteria.'
+                    : 'Sales staff have not registered any consumer project files yet.'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-[#F8FAFC] text-slate-500 text-[11px] uppercase tracking-wider font-semibold border-b border-[#E4E7EB]">
+                  <tr>
+                    <th className="py-3 px-4">File ID &amp; Date</th>
+                    <th className="py-3 px-4">Consumer / Customer</th>
+                    <th className="py-3 px-4">Assigned Sales Executive</th>
+                    <th className="py-3 px-4">System Size</th>
+                    <th className="py-3 px-4">Finance Mode</th>
+                    <th className="py-3 px-4">Project Stage</th>
+                    <th className="py-3 px-4 text-center">Docs</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F1F4F9]">
+                  {displayedFiles.map((file) => {
+                    const stageInfo = getStageBadge(file.currentStage || file.stage, file.status);
+                    const fileDate = file.createdAt
+                      ? new Date(file.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : 'Recent';
+                    const docCount = file.documents && typeof file.documents === 'object' ? Object.keys(file.documents).length : 0;
+                    const capKw = Number(file.solarSystemKw || file.solar_system_kw) || 4.4;
+
+                    return (
+                      <tr
+                        key={file.id}
+                        className="hover:bg-slate-50 transition-colors group cursor-pointer"
+                        onClick={() => setSelectedFileForDetail(file)}
+                      >
+                        {/* File ID & Date */}
+                        <td className="py-3.5 px-4 font-mono font-medium">
+                          <div className="text-emerald-700 font-bold text-xs flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[15px]">description</span>
+                            <span>{file.id}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{fileDate}</div>
+                        </td>
+
+                        {/* Customer Details */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-900 text-sm">
+                            {file.customerName || file.customer_name || 'Solar Consumer'}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                            <span className="flex items-center gap-0.5 font-mono">
+                              <span className="material-symbols-outlined text-[13px] text-slate-400">phone</span>
+                              <span>{file.phone || 'N/A'}</span>
+                            </span>
+                            <span>•</span>
+                            <span>{file.city || file.discom || 'Gujarat'}</span>
+                          </div>
+                          {file.consumerNo && (
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              Consumer: {file.consumerNo}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Sales Executive */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-emerald-600 text-[16px]">badge</span>
+                            <span className="font-semibold text-slate-800">
+                              {file.staffName || file.staff_name || 'Sunvine Sales Staff'}
+                            </span>
+                          </div>
+                          {file.staffId && (
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              ID: {file.staffId}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Solar Capacity */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold font-mono text-emerald-700 text-sm">
+                            {capKw} kW
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {file.roofType || 'RCC Flat'}
+                          </div>
+                        </td>
+
+                        {/* Payment / Finance */}
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                            String(file.financeType).toUpperCase() === 'LOAN'
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          }`}>
+                            <span className="material-symbols-outlined text-[12px]">
+                              {String(file.financeType).toUpperCase() === 'LOAN' ? 'account_balance' : 'payments'}
+                            </span>
+                            <span>{file.financeType || 'CASH'}</span>
+                          </span>
+                          {file.loanBank && (
+                            <div className="text-[10px] text-slate-400 truncate max-w-[130px] mt-0.5" title={file.loanBank}>
+                              {file.loanBank}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Project Stage */}
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${stageInfo.bg}`}>
+                            <span className="material-symbols-outlined text-[13px]">{stageInfo.icon}</span>
+                            <span>{stageInfo.label}</span>
+                          </span>
+                        </td>
+
+                        {/* Documents */}
+                        <td className="py-3.5 px-4 text-center">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-semibold ${
+                            docCount > 0 ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            <span className="material-symbols-outlined text-[12px]">attach_file</span>
+                            <span>{docCount}</span>
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => setSelectedFileForDetail(file)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-[#107C41] hover:text-white text-slate-700 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto shadow-2xs"
+                            title="View Full File Timeline &amp; Documents"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">visibility</span>
+                            <span>Details</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Password Reset Modal */}
-      {passwordModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-md shadow-2xl border border-surface-container-high p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-highest">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500">key</span>
-                <h3 className="font-bold text-on-surface text-base">Reset Staff Password</h3>
+      {/* ========================================================================= */}
+      {/* VIEW 2: SALES TEAM QUOTATIONS TABLE */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'quotations' && (
+        <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
+          {displayedQuotes.length === 0 ? (
+            <div className="py-16 text-center text-slate-500 flex flex-col items-center justify-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                <span className="material-symbols-outlined text-[28px]">request_quote</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setPasswordModal({ isOpen: false, staff: null, newPassword: '', confirmPassword: '', showPass: false })}
-                className="text-secondary hover:text-on-surface cursor-pointer"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">No Sales Team Quotations Found</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {selectedStaffFilter !== 'all' || customerSearchQuery || quoteStatusFilter !== 'all'
+                    ? 'No quotations match the selected filter criteria.'
+                    : 'Sales staff have not generated any direct quotations yet.'}
+                </p>
+              </div>
             </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-[#F8FAFC] text-slate-500 text-[11px] uppercase tracking-wider font-semibold border-b border-[#E4E7EB]">
+                  <tr>
+                    <th className="py-3 px-4">Quote ID &amp; Date</th>
+                    <th className="py-3 px-4">Customer Name</th>
+                    <th className="py-3 px-4">Sales Executive</th>
+                    <th className="py-3 px-4">System Size</th>
+                    <th className="py-3 px-4">Customer Total</th>
+                    <th className="py-3 px-4">Quote Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F1F4F9]">
+                  {displayedQuotes.map((q) => {
+                    const quoteNumber = q.quoteNumber || q.id;
+                    const quoteDate = q.displayDate || q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recent');
+                    const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
+                    const grandTotal = Number(q.grandTotalCustomer || q.totalAmount || 0);
+                    const isWon = (q.status || '').toLowerCase().includes('won');
+                    const isApproved = (q.status || '').toLowerCase().includes('approved');
 
-            <p className="text-xs text-secondary">
-              Updating password for <strong className="text-on-surface">{passwordModal.staff?.name}</strong> ({passwordModal.staff?.id}).
-            </p>
+                    return (
+                      <tr
+                        key={q.id || quoteNumber}
+                        className="hover:bg-slate-50 transition-colors group cursor-pointer"
+                        onClick={() => handleViewPdf(q)}
+                      >
+                        {/* Quote ID & Date */}
+                        <td className="py-3.5 px-4 font-mono font-medium">
+                          <div className="text-emerald-700 font-bold text-xs flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[15px]">tag</span>
+                            <span>{quoteNumber}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">{quoteDate}</div>
+                        </td>
 
-            <form onSubmit={handleSavePassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-secondary mb-1">New Password</label>
-                <input
-                  type={passwordModal.showPass ? 'text' : 'password'}
-                  required
-                  value={passwordModal.newPassword}
-                  onChange={(e) => setPasswordModal(prev => ({ ...prev, newPassword: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary"
-                  placeholder="Enter new secure password"
-                />
-              </div>
+                        {/* Customer */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-900 text-sm">
+                            {q.customerName || 'Solar Consumer'}
+                          </div>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                            <span className="flex items-center gap-0.5 font-mono">
+                              <span className="material-symbols-outlined text-[13px] text-slate-400">phone</span>
+                              <span>{q.customerPhone || q.phone || 'N/A'}</span>
+                            </span>
+                            <span>•</span>
+                            <span>{q.city || q.location || q.discom || 'Gujarat'}</span>
+                          </div>
+                        </td>
 
-              <div>
-                <label className="block text-xs font-semibold text-secondary mb-1">Confirm New Password</label>
-                <input
-                  type={passwordModal.showPass ? 'text' : 'password'}
-                  required
-                  value={passwordModal.confirmPassword}
-                  onChange={(e) => setPasswordModal(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary"
-                  placeholder="Re-enter password"
-                />
-              </div>
+                        {/* Sales Executive */}
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-emerald-600 text-[16px]">badge</span>
+                            <span className="font-semibold text-slate-800">
+                              {q.staffName || (q.dealerName && q.dealerName.includes('Head Office') ? 'Sunvine HQ Direct Desk' : 'Sunvine Sales Staff')}
+                            </span>
+                          </div>
+                          {q.staffId && (
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                              ID: {q.staffId}
+                            </div>
+                          )}
+                        </td>
 
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={passwordModal.showPass}
-                    onChange={(e) => setPasswordModal(prev => ({ ...prev, showPass: e.target.checked }))}
-                    className="rounded text-primary focus:ring-primary"
-                  />
-                  <span>Show password</span>
-                </label>
-              </div>
+                        {/* Capacity */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold font-mono text-emerald-700 text-sm">
+                            {capKw} kW
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[130px]" title={q.solarModule}>
+                            {q.solarModule || 'Waaree Bifacial'}
+                          </div>
+                        </td>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-surface-container-highest">
-                <button
-                  type="button"
-                  onClick={() => setPasswordModal({ isOpen: false, staff: null, newPassword: '', confirmPassword: '', showPass: false })}
-                  className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all disabled:opacity-50"
-                >
-                  {submitting ? 'Updating...' : 'Save Password'}
-                </button>
-              </div>
-            </form>
-          </div>
+                        {/* Grand Total */}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold font-mono text-slate-900 text-sm">
+                            ₹{grandTotal.toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Subsidy: ₹{Number(q.subsidyAmount || (capKw <= 2 ? 60000 : 78000)).toLocaleString('en-IN')}
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                            isWon
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : isApproved
+                              ? 'bg-blue-50 text-blue-800 border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            <span className="material-symbols-outlined text-[13px]">
+                              {isWon ? 'check_circle' : isApproved ? 'verified' : 'send'}
+                            </span>
+                            <span>{q.status || 'Active / Sent'}</span>
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleViewPdf(q)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-[#107C41] hover:text-white text-slate-700 text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto shadow-2xs"
+                            title="Open Full Quotation PDF Preview"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">picture_as_pdf</span>
+                            <span>View PDF</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-md shadow-2xl border border-surface-container-high p-5 sm:p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-500">
-              <span className="material-symbols-outlined text-3xl">warning</span>
-              <h3 className="font-bold text-on-surface text-base">Delete Staff Member?</h3>
-            </div>
-            <p className="text-xs text-secondary leading-relaxed">
-              Are you sure you want to permanently delete <strong className="text-on-surface">{deleteModal.staff?.name}</strong> ({deleteModal.staff?.id}) from the live database? This action cannot be undone.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-surface-container-highest">
-              <button
-                type="button"
-                onClick={() => setDeleteModal({ isOpen: false, staff: null })}
-                className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={submitting}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all disabled:opacity-50"
-              >
-                {submitting ? 'Deleting...' : 'Permanently Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* FILE DETAIL MODAL */}
+      {selectedFileForDetail && (
+        <CustomerFileDetailModal
+          file={selectedFileForDetail}
+          onClose={() => setSelectedFileForDetail(null)}
+        />
       )}
     </div>
   );

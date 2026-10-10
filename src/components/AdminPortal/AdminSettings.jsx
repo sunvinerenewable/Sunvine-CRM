@@ -3,8 +3,6 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { adminAccountService } from '../../services/adminAccountService';
 import { pushNotificationService } from '../../services/pushNotificationService';
-import DealerManagement from './DealerManagement';
-import StaffManagement from './StaffManagement';
 
 export default function AdminSettings() {
   const { addToast } = useToast();
@@ -1314,21 +1312,21 @@ export default function AdminSettings() {
               </button>
             </div>
 
-            {accountSubTab === 'admins' && (
-              <div className="flex items-center gap-3">
-                {/* Search Box */}
-                <div className="relative min-w-0 sm:w-60">
-                  <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                  <input
-                    type="text"
-                    placeholder="Search admins..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
-                  />
-                </div>
+            <div className="flex items-center gap-3">
+              {/* Search Box */}
+              <div className="relative min-w-0 sm:w-60">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                <input
+                  type="text"
+                  placeholder={`Search ${accountSubTab}...`}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:bg-white transition-all"
+                />
+              </div>
 
-                {/* Add Action Button */}
+              {/* Add Action Button */}
+              {accountSubTab === 'admins' && (
                 <button
                   onClick={handleOpenAddAdmin}
                   className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
@@ -1336,8 +1334,28 @@ export default function AdminSettings() {
                   <span className="material-symbols-outlined text-sm">person_add</span>
                   <span>New Admin</span>
                 </button>
-              </div>
-            )}
+              )}
+
+              {accountSubTab === 'dealers' && (
+                <button
+                  onClick={handleOpenAddDealer}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-sm">add_business</span>
+                  <span>New Dealer</span>
+                </button>
+              )}
+
+              {accountSubTab === 'staff' && (
+                <button
+                  onClick={handleOpenAddStaff}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm transition-all active:scale-95 whitespace-nowrap"
+                >
+                  <span className="material-symbols-outlined text-sm">group_add</span>
+                  <span>New Staff</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* ========================================================
@@ -1462,20 +1480,286 @@ export default function AdminSettings() {
           )}
 
           {/* ========================================================
-              SUB-TAB 2: DEALER MANAGEMENT OPERATIONS CONSOLE
+              SUB-TAB 2: DEALER ACCOUNTS TABLE
               ======================================================== */}
           {accountSubTab === 'dealers' && (
-            <div className="pt-2">
-              <DealerManagement />
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+              {loading ? (
+                <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                  <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
+                  <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                </div>
+              ) : filteredDealers.length === 0 ? (
+                <div className="p-12 text-center text-slate-500">
+                  <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">storefront</span>
+                  <p className="text-sm font-medium">No dealer partners found in database.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs sm:text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4">Dealer Partner / Firm</th>
+                        <th className="py-3 px-4">Mobile Number</th>
+                        <th className="py-3 px-4">City / DISCOM</th>
+                        <th className="py-3 px-4">Partner Tier</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredDealers.map((dealer) => {
+                        const firm = dealer.firm_name || dealer.firmName || 'Dealer Firm';
+                        const contact = dealer.contact_person || dealer.contactPerson || 'Authorized Person';
+                        const code = dealer.dealer_code || dealer.dealerCode || dealer.id;
+                        const mobile = dealer.mobile_number || dealer.mobile || '8000050580';
+                        return (
+                          <tr key={dealer.id || code} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center text-sm">
+                                  {firm.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-slate-900">{firm}</div>
+                                  <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <span>{contact}</span>
+                                    <span>•</span>
+                                    <span className="font-mono text-emerald-700 font-semibold">{code}</span>
+                                    <span>•</span>
+                                    {/* Category Pill */}
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                                      (dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based')
+                                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                      <span className="material-symbols-outlined text-[11px]">
+                                        {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                                      </span>
+                                      {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                                    </span>
+                                    <span>•</span>
+                                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                      (!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                      {(!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
+                                        ? 'Direct to Company'
+                                        : `Sales: ${dealer.assigned_staff_name || dealer.assignedStaffName || 'Sales Staff'}`}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4 font-mono font-medium text-slate-800">
+                              <div className="flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-slate-400 text-sm">phone_iphone</span>
+                                <span>{mobile}</span>
+                              </div>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <div className="text-slate-900 font-medium">{dealer.city || 'Ahmedabad'}</div>
+                              <div className="text-[11px] text-slate-500 font-mono">{dealer.discom || 'UGVCL'} Circle</div>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                <span className="material-symbols-outlined text-xs">workspace_premium</span>
+                                <span>{dealer.tier || 'Gold EPC'}</span>
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4">
+                              <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Active in DB</span>
+                              </span>
+                            </td>
+
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Password Button */}
+                                <button
+                                  onClick={() => handleOpenPasswordModal('dealer', dealer)}
+                                  className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer"
+                                  title="Change Dealer Password"
+                                >
+                                  <span className="material-symbols-outlined text-sm">key</span>
+                                </button>
+
+                                {/* Edit Button */}
+                                <button
+                                  onClick={() => handleOpenEditDealer(dealer)}
+                                  className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                                  title="Edit Dealer Profile"
+                                >
+                                  <span className="material-symbols-outlined text-sm">edit</span>
+                                </button>
+
+                                {/* Delete Button */}
+                                <button
+                                  onClick={() => handleOpenDelete('dealer', dealer)}
+                                  className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+                                  title="Delete Dealer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">delete</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
           {/* ========================================================
-              SUB-TAB 3: STAFF & SALES TEAM OPERATIONS CONSOLE
+              SUB-TAB 3: STAFF ACCOUNTS TABLE
               ======================================================== */}
           {accountSubTab === 'staff' && (
-            <div className="pt-2">
-              <StaffManagement />
+            <div className="space-y-3">
+              {/* Filter Pills */}
+              <div className="flex items-center gap-2">
+                {[
+                  { id: 'all', label: `All Staff (${staffListState.length})` },
+                  { id: 'sales', label: `Field Sales (${staffListState.filter(s => !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).length})` },
+                  { id: 'verification', label: `Verification Desk (${staffListState.filter(s => (s.department || '').toLowerCase().includes('verification') || (s.role || '').toLowerCase().includes('verification')).length})` }
+                ].map(pill => (
+                  <button
+                    key={pill.id}
+                    onClick={() => setStaffFilter(pill.id)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer transition-all ${
+                      staffFilter === pill.id
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                {loading ? (
+                  <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
+                    <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                  </div>
+                ) : filteredStaff.length === 0 ? (
+                  <div className="p-12 text-center text-slate-500">
+                    <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">person_off</span>
+                    <p className="text-sm font-medium">No staff members found matching filter.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-semibold border-b border-slate-200">
+                        <tr>
+                          <th className="py-3 px-4">Staff Member</th>
+                          <th className="py-3 px-4">Mobile Number</th>
+                          <th className="py-3 px-4">Department &amp; Role</th>
+                          <th className="py-3 px-4">Email</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStaff.map((staff) => {
+                          const isVer = (staff.department || '').toLowerCase().includes('verification') || (staff.role || '').toLowerCase().includes('verification');
+                          return (
+                            <tr key={staff.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-9 h-9 rounded-xl font-bold flex items-center justify-center text-sm ${
+                                    isVer ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                                  }`}>
+                                    {(staff.name || 'S').charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-900">{staff.name}</div>
+                                    <div className="text-[11px] text-slate-400 font-mono">ID: {staff.id}</div>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-mono font-medium text-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="material-symbols-outlined text-slate-400 text-sm">phone_iphone</span>
+                                  <span>{staff.phone || '8000050580'}</span>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div>
+                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                    isVer
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-xs">
+                                      {isVer ? 'fact_check' : 'campaign'}
+                                    </span>
+                                    <span>{isVer ? 'Verification Desk' : 'Field Sales'}</span>
+                                  </span>
+                                  <div className="text-xs text-slate-500 mt-1">{staff.role}</div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 font-mono text-xs text-slate-600">
+                                {staff.email}
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  <span>Active in DB</span>
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  {/* Password Button */}
+                                  <button
+                                    onClick={() => handleOpenPasswordModal('staff', staff)}
+                                    className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 transition-all cursor-pointer"
+                                    title="Change Password"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">key</span>
+                                  </button>
+
+                                  {/* Edit Button */}
+                                  <button
+                                    onClick={() => handleOpenEditStaff(staff)}
+                                    className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 transition-all cursor-pointer"
+                                    title="Edit Staff Profile"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">edit</span>
+                                  </button>
+
+                                  {/* Delete Button */}
+                                  <button
+                                    onClick={() => handleOpenDelete('staff', staff)}
+                                    className="p-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+                                    title="Delete Staff"
+                                  >
+                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

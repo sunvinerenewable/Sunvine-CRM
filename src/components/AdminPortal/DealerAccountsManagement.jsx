@@ -92,18 +92,29 @@ export default function DealerAccountsManagement() {
       return isDealerSource || hasDealerRef;
     });
 
-    // Also match won quotations by dealers that don't already exist in customerFiles
-    const wonQuotes = (quotations || []).filter(q => {
-      const isWon = q.status === 'Won / Order Booked';
+    // Match ALL dealer quotations that don't already have an explicit customerFile entry
+    const dealerQuotesToFiles = (quotations || []).filter(q => {
+      if (!q) return false;
       const isDealer = Boolean(q.dealerId || q.dealer_id || (q.dealerName && !q.dealerName.includes('Head Office')));
-      const alreadyHasFile = dealerCreatedFiles.some(f => f.quotationId === q.id || f.id === `FIL-${q.id}`);
-      return isWon && isDealer && !alreadyHasFile;
+      if (!isDealer) return false;
+      const alreadyHasFile = dealerCreatedFiles.some(f => 
+        f.quotationId === q.id || 
+        f.id === q.id || 
+        f.id === `FIL-${q.id}` ||
+        (f.customerName && q.customerName && f.customerName.trim().toLowerCase() === q.customerName.trim().toLowerCase() && f.dealerName && q.dealerName && f.dealerName.trim().toLowerCase() === q.dealerName.trim().toLowerCase())
+      );
+      return !alreadyHasFile;
     });
 
-    const synthesizedFromQuotes = wonQuotes.map(q => {
+    const synthesizedFromQuotes = dealerQuotesToFiles.map(q => {
       const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
+      const isWon = (q.status || '').toLowerCase().includes('won');
+      const isApproved = (q.status || '').toLowerCase().includes('approved');
+      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
+      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
+
       return {
-        id: `FIL-${q.id || Date.now()}`,
+        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
         quotationId: q.id,
         customerName: q.customerName || 'Solar Consumer',
         phone: q.customerPhone || q.phone || 'N/A',
@@ -117,19 +128,19 @@ export default function DealerAccountsManagement() {
         source: 'DEALER',
         dealerId: q.dealerId || null,
         dealerName: q.dealerName || 'Dealer Partner',
-        stage: 'DISCOM_APPLICATION',
-        currentStage: 'DISCOM_APPLICATION',
-        status: 'Verification',
+        stage: stage,
+        currentStage: stage,
+        status: status,
         financeType: q.financeType || 'CASH',
         loanBank: q.loanBank || '',
         createdAt: q.date || q.created_at || new Date().toISOString(),
         documents: {},
         timeline: [
           {
-            stage: 'Quotation Approved',
-            date: q.date || new Date().toISOString().split('T')[0],
+            stage: 'Quotation Created',
+            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
             actor: q.dealerName || 'Dealer Partner',
-            notes: 'Converted to project application'
+            notes: `Project file from quotation for ${q.customerName || 'Consumer'}`
           }
         ]
       };
