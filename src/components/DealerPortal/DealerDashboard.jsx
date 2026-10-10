@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { quotationService } from '../../services/quotationService';
 import { openWhatsAppChat } from '../../utils/quotationShare';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 
@@ -17,6 +18,11 @@ export default function DealerDashboard() {
   const [timeDropdownOpen, setTimeDropdownOpen] = useState(false);
   const [viewMode, setViewMode] = useTableViewMode('dealer_recent_quotes');
   const timeDropdownRef = useRef(null);
+
+  // Live database fetch on mount & hard refresh (Rule 1: Direct Database First)
+  useEffect(() => {
+    quotationService.getAllQuotations(100).catch(() => {});
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -43,100 +49,190 @@ export default function DealerDashboard() {
     { label: 'All Time', subtext: 'Complete lifetime history' }
   ];
 
-  const kpiData = {
-    'Today': {
-      totalQuotes: 2,
-      totalQuotesDelta: '+2 today (Active)',
-      periodQuotes: 2,
-      periodLabel: 'today',
-      periodTitle: "Today's Quotations",
-      periodValueText: '₹ 5.55 Lakhs quoted',
-      targetKW: '8 kW / 15 kW',
-      targetPercent: '53%',
-      totalValue: '₹ 5.55 L',
-      approvedValue: '₹ 3.45L',
-      pipelineValue: '₹ 2.10L',
-      approvedCount: '1 Approved • 1 Pending',
-      sparkHeights: ['h-1', 'h-1', 'h-2', 'h-2', 'h-3', 'h-5', 'h-8']
-    },
-    'Last 7 Days': {
-      totalQuotes: 9,
-      totalQuotesDelta: '+9 this week (↑ 18%)',
-      periodQuotes: 9,
-      periodLabel: 'this week',
-      periodTitle: 'Weekly Quotations',
-      periodValueText: '₹ 14.8 Lakhs quoted',
-      targetKW: '28 kW / 40 kW',
-      targetPercent: '70%',
-      totalValue: '₹ 19.30 L',
-      approvedValue: '₹ 11.4L',
-      pipelineValue: '₹ 7.9L',
-      approvedCount: '3 Approved • 2 In Progress',
-      sparkHeights: ['h-2', 'h-3', 'h-4', 'h-2', 'h-5', 'h-7', 'h-8']
-    },
-    'Last 30 Days': {
-      totalQuotes: 42,
-      totalQuotesDelta: '+8 this month (↑ 24%)',
-      periodQuotes: 14,
-      periodLabel: 'in October',
-      periodTitle: 'This Month Quotations',
-      periodValueText: '₹ 18.4 Lakhs quoted',
-      targetKW: '70 kW / 100 kW',
-      targetPercent: '70%',
-      totalValue: '₹ 58.20 L',
-      approvedValue: '₹ 34.8L',
-      pipelineValue: '₹ 23.4L',
-      approvedCount: '8 Approved • 4 Commissioned',
-      sparkHeights: ['h-2', 'h-3', 'h-3', 'h-5', 'h-4', 'h-6', 'h-8']
-    },
-    'This Quarter (Q4)': {
-      totalQuotes: 98,
-      totalQuotesDelta: '+34 this quarter (↑ 38%)',
-      periodQuotes: 42,
-      periodLabel: 'this quarter',
-      periodTitle: 'Quarterly Quotations',
-      periodValueText: '₹ 64.2 Lakhs quoted',
-      targetKW: '185 kW / 250 kW',
-      targetPercent: '74%',
-      totalValue: '₹ 1.48 Cr',
-      approvedValue: '₹ 92.4L',
-      pipelineValue: '₹ 55.6L',
-      approvedCount: '24 Approved • 12 Commissioned',
-      sparkHeights: ['h-3', 'h-4', 'h-5', 'h-6', 'h-7', 'h-7', 'h-8']
-    },
-    'Financial Year 2024-25': {
-      totalQuotes: 284,
-      totalQuotesDelta: '+112 this fiscal (↑ 45%)',
-      periodQuotes: 142,
-      periodLabel: 'FY 24-25',
-      periodTitle: 'Annual Quotations',
-      periodValueText: '₹ 2.15 Cr quoted',
-      targetKW: '620 kW / 800 kW',
-      targetPercent: '77.5%',
-      totalValue: '₹ 4.12 Cr',
-      approvedValue: '₹ 2.65 Cr',
-      pipelineValue: '₹ 1.47 Cr',
-      approvedCount: '78 Approved • 52 Commissioned',
-      sparkHeights: ['h-4', 'h-5', 'h-6', 'h-7', 'h-7', 'h-8', 'h-8']
-    },
-    'All Time': {
-      totalQuotes: 412,
-      totalQuotesDelta: 'Lifetime Record',
-      periodQuotes: 412,
-      periodLabel: 'all time',
-      periodTitle: 'Cumulative Quotations',
-      periodValueText: '₹ 3.80 Cr quoted',
-      targetKW: '940 kW / 1.2 MW',
-      targetPercent: '78.3%',
-      totalValue: '₹ 6.45 Cr',
-      approvedValue: '₹ 4.20 Cr',
-      pipelineValue: '₹ 2.25 Cr',
-      approvedCount: '124 Approved • 98 Commissioned',
-      sparkHeights: ['h-4', 'h-5', 'h-6', 'h-7', 'h-8', 'h-8', 'h-8']
-    }
-  };
+  // Scoped quotations belonging to the current authorized dealer
+  const dealerQuotes = useMemo(() => {
+    if (!Array.isArray(quotations)) return [];
+    if (!currentDealer) return quotations;
+    const dId = String(currentDealer.id || '').toLowerCase();
+    const dCode = String(currentDealer.dealer_code || currentDealer.dealerCode || '').toLowerCase();
+    const dFirm = String(currentDealer.firmName || currentDealer.firm_name || '').toLowerCase();
+    const dPerson = String(currentDealer.contactPerson || currentDealer.contact_person || '').toLowerCase();
+    const dMobile = String(currentDealer.mobileNumber || currentDealer.mobile_number || currentDealer.mobile || '').toLowerCase();
 
-  const activeKpi = kpiData[selectedTimeRange] || kpiData['Last 30 Days'];
+    return quotations.filter(q => {
+      const qId = String(q.dealer_id || q.dealerId || '').toLowerCase();
+      const qCode = String(q.dealer_code || q.dealerCode || '').toLowerCase();
+      const qName = String(q.dealer_name || q.dealerName || '').toLowerCase();
+      const qMobile = String(q.dealer_mobile || q.dealerMobile || '').toLowerCase();
+
+      if (dId && (qId === dId || qCode === dId)) return true;
+      if (dCode && (qCode === dCode || qId === dCode)) return true;
+      if (dMobile && qMobile && qMobile === dMobile) return true;
+      if (dFirm && qName && (qName.includes(dFirm) || dFirm.includes(qName))) return true;
+      if (dPerson && qName && (qName.includes(dPerson) || dPerson.includes(qName))) return true;
+      return false;
+    });
+  }, [quotations, currentDealer]);
+
+  // Filter quotations based on selected time window
+  const quotesInPeriod = useMemo(() => {
+    const now = new Date();
+    return dealerQuotes.filter(q => {
+      const rawDate = q.created_at || q.createdAt || q.date;
+      const qDate = rawDate ? new Date(rawDate) : now;
+      if (isNaN(qDate.getTime())) return true;
+
+      if (selectedTimeRange === 'Today') {
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        return qDate >= startOfToday;
+      }
+      if (selectedTimeRange === 'Last 7 Days') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return qDate >= weekAgo;
+      }
+      if (selectedTimeRange === 'Last 30 Days') {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        return qDate >= monthAgo;
+      }
+      if (selectedTimeRange === 'This Quarter (Q4)') {
+        const qtrMonth = Math.floor(now.getMonth() / 3) * 3;
+        const startOfQuarter = new Date(now.getFullYear(), qtrMonth, 1);
+        return qDate >= startOfQuarter;
+      }
+      if (selectedTimeRange.includes('Financial Year')) {
+        const fyYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+        const startOfFY = new Date(fyYear, 3, 1);
+        return qDate >= startOfFY;
+      }
+      return true; // 'All Time'
+    });
+  }, [dealerQuotes, selectedTimeRange]);
+
+  // Authentic live telemetry metrics calculated dynamically from database
+  const activeKpi = useMemo(() => {
+    const totalQuotes = dealerQuotes.length;
+    const periodQuotes = quotesInPeriod.length;
+
+    const periodTotalValue = quotesInPeriod.reduce((sum, q) => {
+      return sum + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+    }, 0);
+
+    const periodKW = quotesInPeriod.reduce((sum, q) => {
+      return sum + Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0);
+    }, 0);
+
+    let targetCapKW = 100;
+    if (selectedTimeRange === 'Today') targetCapKW = 15;
+    else if (selectedTimeRange === 'Last 7 Days') targetCapKW = 40;
+    else if (selectedTimeRange === 'Last 30 Days') targetCapKW = 100;
+    else if (selectedTimeRange === 'This Quarter (Q4)') targetCapKW = 250;
+    else targetCapKW = 500;
+
+    const targetPercent = targetCapKW > 0
+      ? Math.min(100, Math.round((periodKW / targetCapKW) * 100))
+      : 0;
+
+    const totalBusinessValue = dealerQuotes.reduce((sum, q) => {
+      return sum + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
+    }, 0);
+
+    const approvedQuotes = dealerQuotes.filter(q => {
+      const st = String(q.status || '').toLowerCase();
+      return st.includes('approved') || st.includes('converted') || st.includes('commissioned');
+    });
+    const pipelineQuotes = dealerQuotes.filter(q => {
+      const st = String(q.status || '').toLowerCase();
+      return !st.includes('approved') && !st.includes('converted') && !st.includes('commissioned');
+    });
+
+    const approvedValueNum = approvedQuotes.reduce((sum, q) => sum + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
+    const pipelineValueNum = pipelineQuotes.reduce((sum, q) => sum + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
+
+    const now = new Date();
+    const currentMonthName = now.toLocaleString('en-IN', { month: 'long' });
+    let periodLabel = `in ${currentMonthName}`;
+    let periodTitle = 'This Month Quotations';
+    if (selectedTimeRange === 'Today') {
+      periodLabel = 'today';
+      periodTitle = "Today's Quotations";
+    } else if (selectedTimeRange === 'Last 7 Days') {
+      periodLabel = 'this week';
+      periodTitle = 'Weekly Quotations';
+    } else if (selectedTimeRange === 'This Quarter (Q4)') {
+      periodLabel = 'this quarter';
+      periodTitle = 'Quarterly Quotations';
+    } else if (selectedTimeRange.includes('Financial Year')) {
+      periodLabel = 'this fiscal';
+      periodTitle = 'Annual Quotations';
+    } else if (selectedTimeRange === 'All Time') {
+      periodLabel = 'all time';
+      periodTitle = 'Cumulative Quotations';
+    }
+
+    // Dynamic authentic sparkline distribution
+    let sparkHeights = ['h-1.5', 'h-1.5', 'h-1.5', 'h-1.5', 'h-1.5', 'h-1.5', 'h-1.5'];
+    if (dealerQuotes.length > 0) {
+      const numBuckets = 7;
+      const buckets = new Array(numBuckets).fill(0);
+      const timestamps = dealerQuotes.map(q => {
+        const d = q.created_at || q.createdAt ? new Date(q.created_at || q.createdAt) : now;
+        return isNaN(d.getTime()) ? now.getTime() : d.getTime();
+      });
+      const minTime = Math.min(...timestamps);
+      const maxTime = Math.max(...timestamps, minTime + 1);
+      const span = maxTime - minTime || 1;
+
+      timestamps.forEach(t => {
+        const bIdx = Math.min(numBuckets - 1, Math.floor(((t - minTime) / span) * numBuckets));
+        buckets[bIdx]++;
+      });
+
+      const maxBucket = Math.max(...buckets, 1);
+      sparkHeights = buckets.map(count => {
+        if (count === 0) return 'h-1.5';
+        const ratio = count / maxBucket;
+        if (ratio >= 0.8) return 'h-8';
+        if (ratio >= 0.6) return 'h-6';
+        if (ratio >= 0.4) return 'h-4';
+        if (ratio >= 0.2) return 'h-3';
+        return 'h-2';
+      });
+    }
+
+    const formatCompact = (num) => {
+      if (!num || isNaN(num) || num <= 0) return '₹\u00A00';
+      if (num >= 10000000) return `₹\u00A0${(num / 10000000).toFixed(2)} Cr`;
+      if (num >= 100000) return `₹\u00A0${(num / 100000).toFixed(2)} L`;
+      return `₹\u00A0${Number(num).toLocaleString('en-IN')}`;
+    };
+
+    const formatShort = (num) => {
+      if (!num || isNaN(num) || num <= 0) return '₹0';
+      if (num >= 10000000) return `₹${(num / 10000000).toFixed(1)}Cr`;
+      if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`;
+      return `₹${Math.round(num / 1000)}k`;
+    };
+
+    const totalQuotesDelta = periodQuotes > 0
+      ? `+${periodQuotes} in period (Active)`
+      : (totalQuotes > 0 ? `${totalQuotes} live in database` : '0 active proposals');
+
+    return {
+      totalQuotes,
+      totalQuotesDelta,
+      periodQuotes,
+      periodLabel,
+      periodTitle,
+      periodValueText: `${formatCompact(periodTotalValue)} quoted`,
+      targetKW: `${periodKW.toFixed(1)} kW / ${targetCapKW} kW`,
+      targetPercent: `${targetPercent}%`,
+      totalValue: formatCompact(totalBusinessValue),
+      approvedValue: formatShort(approvedValueNum),
+      pipelineValue: formatShort(pipelineVal),
+      approvedCount: `${approvedQuotes.length} Approved • ${pipelineQuotes.length} In Pipeline`,
+      sparkHeights
+    };
+  }, [dealerQuotes, quotesInPeriod, selectedTimeRange]);
 
   const handleOpenPDF = (quote) => {
     if (setPreviewQuotation) setPreviewQuotation(quote);
@@ -153,21 +249,24 @@ export default function DealerDashboard() {
     document.body.removeChild(link);
   };
 
-  const recentQuotes = (quotations && quotations.length > 0)
-    ? quotations.slice(0, 5).map(q => ({
-        ...q,
-        customerName: q.customer_name || q.customerName || 'Customer',
-        capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
-        type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
-        amount: typeof q.amount === 'string' 
-          ? q.amount 
-          : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
-        subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
-        status: q.status || 'Active / Sent',
-        statusClass: q.statusClass || 'bg-primary/15 text-primary',
-        location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat')
-      }))
-    : [];
+  const recentQuotes = useMemo(() => {
+    return (dealerQuotes && dealerQuotes.length > 0)
+      ? dealerQuotes.slice(0, 5).map(q => ({
+          ...q,
+          customerName: q.customer_name || q.customerName || 'Customer',
+          capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
+          type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
+          amount: typeof q.amount === 'string' 
+            ? q.amount 
+            : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
+          subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
+          status: q.status || 'Active / Sent',
+          statusClass: q.statusClass || (String(q.status || '').includes('Approved') ? 'bg-emerald-500/15 text-emerald-700' : 'bg-primary/15 text-primary'),
+          location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat'),
+          date: q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today')
+        }))
+      : [];
+  }, [dealerQuotes]);
 
   return (
     <div className="flex flex-col w-full max-w-full min-w-0 overflow-x-hidden gap-space-lg">
@@ -390,7 +489,7 @@ export default function DealerDashboard() {
           <div className="flex items-center gap-space-sm">
             <h2 className="font-headline-md text-headline-md text-on-surface">Recent Quotations</h2>
             <span className="px-space-xs py-0.5 rounded text-label-xs font-label-xs bg-surface-container-high text-secondary">
-              5 Recent
+              {recentQuotes.length > 0 ? `${recentQuotes.length} Recent` : '0 Quotations'}
             </span>
           </div>
           <div className="flex items-center gap-2.5">
@@ -399,7 +498,7 @@ export default function DealerDashboard() {
               onClick={() => setActiveTab('my_quotes')}
               className="flex items-center gap-space-xs font-label-sm text-label-sm text-primary hover:text-on-primary-container font-semibold transition-colors cursor-pointer"
             >
-              <span>View All ({quotations?.length || 0})</span>
+              <span>View All ({dealerQuotes?.length || 0})</span>
               <span className="material-symbols-outlined text-[16px]">east</span>
             </button>
           </div>
@@ -407,62 +506,81 @@ export default function DealerDashboard() {
 
         {/* Card View Mode (Default on Mobile, responsive grid) */}
         {viewMode === 'card' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {recentQuotes.map((q, idx) => (
-              <div key={idx} className="bg-surface-container-lowest p-4 rounded-xl shadow-sm flex flex-col justify-between gap-3 border border-surface-container-high/60 hover:border-primary/40 transition-all">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-label-md text-sm text-on-surface font-bold truncate">{q.customerName}</span>
-                      <span className={`px-2 py-0.5 rounded-full font-label-xs text-[10px] shrink-0 font-semibold ${q.statusClass}`}>
-                        {q.status}
-                      </span>
-                    </div>
-                    <p className="font-body-sm text-xs text-secondary mt-0.5">{q.capacity} • {q.type}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="font-headline-sm text-sm font-bold text-on-surface block">{q.amount}</span>
-                    <span className="font-label-xs text-[10px] text-secondary">{q.subsidy}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-surface-container bg-surface-container-low/50 px-2.5 py-1.5 rounded-lg text-xs">
-                  <div className="flex items-center gap-1 text-secondary min-w-0">
-                    <span className="material-symbols-outlined text-[15px] text-tertiary shrink-0">location_on</span>
-                    <span className="font-label-xs text-[11px] truncate max-w-[110px]">{q.location.split(',')[0]}</span>
-                    <span className="text-outline-variant shrink-0">•</span>
-                    <span className="font-label-xs text-[11px] shrink-0">{q.date}</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => startEditingQuotation(q)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-primary/10 transition-colors"
-                      title="Edit Quotation"
-                      type="button"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">edit</span>
-                    </button>
-                    <button
-                      onClick={() => handleOpenPDF(q)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high transition-colors"
-                      title="View Proposal PDF"
-                      type="button"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">description</span>
-                    </button>
-                    <button
-                      onClick={() => openWhatsAppChat(q)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors"
-                      title="WhatsApp Customer"
-                      type="button"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">chat</span>
-                    </button>
-                  </div>
-                </div>
+          recentQuotes.length === 0 ? (
+            <div className="py-12 px-4 text-center rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/40">
+              <div className="w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center mb-3">
+                <span className="material-symbols-outlined text-2xl">request_quote</span>
               </div>
-            ))}
-          </div>
+              <h3 className="text-on-surface font-semibold text-sm mb-1">No Quotations Yet</h3>
+              <p className="text-secondary text-xs max-w-sm mx-auto mb-4">
+                You haven't generated any quotations yet. Create customized solar quotations with instant subsidy calculations in under 2 minutes.
+              </p>
+              <button
+                onClick={() => setActiveTab('new_quote')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold text-xs hover:bg-primary-hover shadow-sm transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                <span>Create First Quotation</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {recentQuotes.map((q, idx) => (
+                <div key={idx} className="bg-surface-container-lowest p-4 rounded-xl shadow-sm flex flex-col justify-between gap-3 border border-surface-container-high/60 hover:border-primary/40 transition-all">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-label-md text-sm text-on-surface font-bold truncate">{q.customerName}</span>
+                        <span className={`px-2 py-0.5 rounded-full font-label-xs text-[10px] shrink-0 font-semibold ${q.statusClass}`}>
+                          {q.status}
+                        </span>
+                      </div>
+                      <p className="font-body-sm text-xs text-secondary mt-0.5">{q.capacity} • {q.type}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-headline-sm text-sm font-bold text-on-surface block">{q.amount}</span>
+                      <span className="font-label-xs text-[10px] text-secondary">{q.subsidy}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-surface-container bg-surface-container-low/50 px-2.5 py-1.5 rounded-lg text-xs">
+                    <div className="flex items-center gap-1 text-secondary min-w-0">
+                      <span className="material-symbols-outlined text-[15px] text-tertiary shrink-0">location_on</span>
+                      <span className="font-label-xs text-[11px] truncate max-w-[110px]">{q.location.split(',')[0]}</span>
+                      <span className="text-outline-variant shrink-0">•</span>
+                      <span className="font-label-xs text-[11px] shrink-0">{q.date}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => startEditingQuotation(q)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-primary/10 transition-colors"
+                        title="Edit Quotation"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleOpenPDF(q)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high transition-colors"
+                        title="View Proposal PDF"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">description</span>
+                      </button>
+                      <button
+                        onClick={() => openWhatsAppChat(q)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors"
+                        title="WhatsApp Customer"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chat</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : (
           /* Table View Mode (Traditional full-width / scrollable table) */
           <div className="w-full overflow-x-auto rounded-xl shadow-sm bg-surface-container-lowest border border-surface-container-high/60">
@@ -478,64 +596,85 @@ export default function DealerDashboard() {
                 </tr>
               </thead>
               <tbody className="font-body-md text-body-md divide-y divide-surface-container">
-                {recentQuotes.map((q, idx) => (
-                  <tr key={idx} className="bg-surface-container-lowest hover:bg-surface-container-low/80 transition-colors">
-                    <td className="px-space-lg py-3.5">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-on-surface">{q.customerName}</span>
-                        <span className="text-label-xs text-secondary">{q.location}</span>
+                {recentQuotes.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="py-12 px-4 text-center">
+                      <div className="w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center mb-3">
+                        <span className="material-symbols-outlined text-2xl">request_quote</span>
                       </div>
-                    </td>
-                    <td className="px-space-lg py-3.5">
-                      <div className="flex items-center gap-2.5 font-semibold text-on-surface whitespace-nowrap">
-                        <div className="w-7 h-7 rounded-lg bg-primary-container/15 text-primary flex items-center justify-center shrink-0 border border-primary/20">
-                          <span className="material-symbols-outlined text-[16px] leading-none select-none">solar_power</span>
-                        </div>
-                        <span className="font-mono font-bold text-inverse-surface">{q.capacity}</span>
-                      </div>
-                    </td>
-                    <td className="px-space-lg py-3.5 text-secondary font-label-xs whitespace-nowrap">
-                      {q.date}
-                    </td>
-                    <td className="px-space-lg py-3.5 text-right font-bold text-on-surface tabular-nums">
-                      {q.amount}
-                    </td>
-                    <td className="px-space-lg py-3.5 text-center whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-label-xs font-label-xs ${q.statusClass}`}>
-                        <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                        {q.status}
-                      </span>
-                    </td>
-                    <td className="px-space-lg py-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => startEditingQuotation(q)}
-                          className="p-1.5 rounded hover:bg-primary/10 text-secondary hover:text-primary transition-colors cursor-pointer"
-                          title="Edit Quotation"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleOpenPDF(q)}
-                          className="p-1.5 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                          title="View Proposal PDF"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">description</span>
-                        </button>
-                        <button
-                          onClick={() => openWhatsAppChat(q)}
-                          className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
-                          title="Share via WhatsApp"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">chat</span>
-                        </button>
-                      </div>
+                      <h3 className="text-on-surface font-semibold text-sm mb-1">No Quotations Yet</h3>
+                      <p className="text-secondary text-xs max-w-sm mx-auto mb-4">
+                        You haven't generated any quotations yet. Create customized solar quotations with instant subsidy calculations in under 2 minutes.
+                      </p>
+                      <button
+                        onClick={() => setActiveTab('new_quote')}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold text-xs hover:bg-primary-hover shadow-sm transition-all cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        <span>Create First Quotation</span>
+                      </button>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  recentQuotes.map((q, idx) => (
+                    <tr key={idx} className="bg-surface-container-lowest hover:bg-surface-container-low/80 transition-colors">
+                      <td className="px-space-lg py-3.5">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-on-surface">{q.customerName}</span>
+                          <span className="text-label-xs text-secondary">{q.location}</span>
+                        </div>
+                      </td>
+                      <td className="px-space-lg py-3.5">
+                        <div className="flex items-center gap-2.5 font-semibold text-on-surface whitespace-nowrap">
+                          <div className="w-7 h-7 rounded-lg bg-primary-container/15 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                            <span className="material-symbols-outlined text-[16px] leading-none select-none">solar_power</span>
+                          </div>
+                          <span className="font-mono font-bold text-inverse-surface">{q.capacity}</span>
+                        </div>
+                      </td>
+                      <td className="px-space-lg py-3.5 text-secondary font-label-xs whitespace-nowrap">
+                        {q.date}
+                      </td>
+                      <td className="px-space-lg py-3.5 text-right font-bold text-on-surface tabular-nums">
+                        {q.amount}
+                      </td>
+                      <td className="px-space-lg py-3.5 text-center whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-label-xs font-label-xs ${q.statusClass}`}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                          {q.status}
+                        </span>
+                      </td>
+                      <td className="px-space-lg py-3.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => startEditingQuotation(q)}
+                            className="p-1.5 rounded hover:bg-primary/10 text-secondary hover:text-primary transition-colors cursor-pointer"
+                            title="Edit Quotation"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenPDF(q)}
+                            className="p-1.5 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                            title="View Proposal PDF"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">description</span>
+                          </button>
+                          <button
+                            onClick={() => openWhatsAppChat(q)}
+                            className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
+                            title="Share via WhatsApp"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">chat</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
