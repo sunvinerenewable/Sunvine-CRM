@@ -8,43 +8,45 @@ import AppUpdateModal from './Shared/AppUpdateModal';
 import UpdateNotificationPopup from './Shared/UpdateNotificationPopup';
 import NetworkStatusBanner from './Shared/NetworkStatusBanner';
 
+import lazyWithRetry from '../utils/lazyWithRetry';
+
 // Top-Level Lazy-Loaded Authentication Views
-const DealerLogin = lazy(() => import('./Auth/DealerLogin'));
-const AdminLogin = lazy(() => import('./Auth/AdminLogin'));
-const StaffLogin = lazy(() => import('./Auth/StaffLogin'));
+const DealerLogin = lazyWithRetry(() => import('./Auth/DealerLogin'));
+const AdminLogin = lazyWithRetry(() => import('./Auth/AdminLogin'));
+const StaffLogin = lazyWithRetry(() => import('./Auth/StaffLogin'));
 
 // Top-Level Lazy-Loaded Dealer Portal Views
-const DealerDashboard = lazy(() => import('./DealerPortal/DealerDashboard'));
-const CreateQuotation = lazy(() => import('./DealerPortal/CreateQuotation'));
-const QuotationPreview = lazy(() => import('./DealerPortal/QuotationPreview'));
-const MyQuotations = lazy(() => import('./DealerPortal/MyQuotations'));
-const MyApplications = lazy(() => import('./DealerPortal/MyApplications'));
-const DealerSettings = lazy(() => import('./DealerPortal/DealerSettings'));
+const DealerDashboard = lazyWithRetry(() => import('./DealerPortal/DealerDashboard'));
+const CreateQuotation = lazyWithRetry(() => import('./DealerPortal/CreateQuotation'));
+const QuotationPreview = lazyWithRetry(() => import('./DealerPortal/QuotationPreview'));
+const MyQuotations = lazyWithRetry(() => import('./DealerPortal/MyQuotations'));
+const MyApplications = lazyWithRetry(() => import('./DealerPortal/MyApplications'));
+const DealerSettings = lazyWithRetry(() => import('./DealerPortal/DealerSettings'));
 
 // Top-Level Lazy-Loaded Staff Portal Views
-const StaffDashboard = lazy(() => import('./StaffPortal/StaffDashboard'));
-const StaffFiles = lazy(() => import('./StaffPortal/StaffFiles'));
-const VerificationDesk = lazy(() => import('./StaffPortal/VerificationDesk'));
+const StaffDashboard = lazyWithRetry(() => import('./StaffPortal/StaffDashboard'));
+const StaffFiles = lazyWithRetry(() => import('./StaffPortal/StaffFiles'));
+const VerificationDesk = lazyWithRetry(() => import('./StaffPortal/VerificationDesk'));
 
 // Top-Level Lazy-Loaded Admin Portal Views
-const AdminDashboard = lazy(() => import('./AdminPortal/AdminDashboard'));
-const DealerManagement = lazy(() => import('./AdminPortal/DealerManagement'));
-const DealerAccountsManagement = lazy(() => import('./AdminPortal/DealerAccountsManagement'));
-const PricingMaster = lazy(() => import('./AdminPortal/PricingMaster'));
-const HardwareMaster = lazy(() => import('./AdminPortal/HardwareMaster'));
-const AllQuotations = lazy(() => import('./AdminPortal/AllQuotations'));
-const AdminSettings = lazy(() => import('./AdminPortal/AdminSettings'));
-const StaffManagement = lazy(() => import('./AdminPortal/StaffManagement'));
-const StaffAccountsManagement = lazy(() => import('./AdminPortal/StaffAccountsManagement'));
-const BusinessPerformance = lazy(() => import('./AdminPortal/BusinessPerformance'));
-const ReportsAnalytics = lazy(() => import('./AdminPortal/ReportsAnalytics'));
-const AuditLogViewer = lazy(() => import('./AdminPortal/AuditLogViewer'));
-const DealerPaymentLedger = lazy(() => import('./AdminPortal/DealerPaymentLedger'));
+const AdminDashboard = lazyWithRetry(() => import('./AdminPortal/AdminDashboard'));
+const DealerManagement = lazyWithRetry(() => import('./AdminPortal/DealerManagement'));
+const DealerAccountsManagement = lazyWithRetry(() => import('./AdminPortal/DealerAccountsManagement'));
+const PricingMaster = lazyWithRetry(() => import('./AdminPortal/PricingMaster'));
+const HardwareMaster = lazyWithRetry(() => import('./AdminPortal/HardwareMaster'));
+const AllQuotations = lazyWithRetry(() => import('./AdminPortal/AllQuotations'));
+const AdminSettings = lazyWithRetry(() => import('./AdminPortal/AdminSettings'));
+const StaffManagement = lazyWithRetry(() => import('./AdminPortal/StaffManagement'));
+const StaffAccountsManagement = lazyWithRetry(() => import('./AdminPortal/StaffAccountsManagement'));
+const BusinessPerformance = lazyWithRetry(() => import('./AdminPortal/BusinessPerformance'));
+const ReportsAnalytics = lazyWithRetry(() => import('./AdminPortal/ReportsAnalytics'));
+const AuditLogViewer = lazyWithRetry(() => import('./AdminPortal/AuditLogViewer'));
+const DealerPaymentLedger = lazyWithRetry(() => import('./AdminPortal/DealerPaymentLedger'));
 
 // Shared Views
-const LeadGenerationComingSoon = lazy(() => import('./Shared/LeadGenerationComingSoon'));
-const DocumentationHub = lazy(() => import('./Shared/DocumentationHub'));
-const ComingSoonPlaceholder = lazy(() => import('./Shared/ComingSoonPlaceholder'));
+const LeadGenerationComingSoon = lazyWithRetry(() => import('./Shared/LeadGenerationComingSoon'));
+const DocumentationHub = lazyWithRetry(() => import('./Shared/DocumentationHub'));
+const ComingSoonPlaceholder = lazyWithRetry(() => import('./Shared/ComingSoonPlaceholder'));
 
 function PortalContent() {
   const { isAuthenticated, authView, role, activeTab, currentStaff } = useApp();

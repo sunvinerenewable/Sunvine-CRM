@@ -32,9 +32,10 @@ function getPublicProposalId() {
 }
 
 import PortalApp from './components/PortalApp';
+import lazyWithRetry from './utils/lazyWithRetry';
 
 // Lazy-load only the isolated public quotation viewer for WhatsApp customers
-const PublicQuotationView = lazy(() => import('./components/PublicQuotationView'));
+const PublicQuotationView = lazyWithRetry(() => import('./components/PublicQuotationView'));
 
 export default function App() {
   const isPublic = isPublicProposalRoute();

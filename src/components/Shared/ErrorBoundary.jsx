@@ -31,14 +31,21 @@ export default class ErrorBoundary extends React.Component {
       localStorage.setItem('sunvine_last_error', JSON.stringify(errorDetails));
     } catch (_) {}
 
-    // Auto-recover once on live deployment chunk mismatch
-    const isChunkError = error?.message?.includes('dynamically imported module') ||
-                         error?.message?.includes('ChunkLoadError') ||
-                         error?.message?.includes('Failed to fetch');
-    if (isChunkError) {
+    // Auto-recover immediately on deployment chunk mismatch or dynamic import errors
+    const errorMsg = String(error?.message || '').toLowerCase();
+    const isChunkOrImportError =
+      errorMsg.includes('dynamically imported') ||
+      errorMsg.includes('chunkloaderror') ||
+      errorMsg.includes('failed to fetch') ||
+      errorMsg.includes('importing a module script failed') ||
+      errorMsg.includes('loading chunk') ||
+      errorMsg.includes('preload') ||
+      errorMsg.includes('failed to load module');
+
+    if (isChunkOrImportError) {
       const lastAutoReload = sessionStorage.getItem('sunvine_chunk_autoreload');
       const now = Date.now();
-      if (!lastAutoReload || now - Number(lastAutoReload) > 15000) {
+      if (!lastAutoReload || now - Number(lastAutoReload) > 10000) {
         sessionStorage.setItem('sunvine_chunk_autoreload', String(now));
         window.location.reload();
       }
@@ -95,7 +102,41 @@ export default class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
-      const errorMsg = this.state.error?.message || 'An unexpected application state occurred.';
+      const errorMsg = String(this.state.error?.message || '').toLowerCase();
+      const isChunkOrNetworkError =
+        errorMsg.includes('dynamically imported') ||
+        errorMsg.includes('chunkloaderror') ||
+        errorMsg.includes('failed to fetch') ||
+        errorMsg.includes('importing a module script failed') ||
+        errorMsg.includes('loading chunk') ||
+        errorMsg.includes('failed to load module') ||
+        errorMsg.includes('preload') ||
+        errorMsg.includes('syntaxerror') ||
+        errorMsg.includes('unexpected token');
+
+      // Auto-reload silently if it's a chunk/network mismatch or first boot glitch
+      const sessionKey = 'sunvine_eb_autoreload_ts';
+      const lastReload = Number(sessionStorage.getItem(sessionKey) || 0);
+      const now = Date.now();
+      const canAutoReload = !lastReload || (now - lastReload > 12000);
+
+      if (isChunkOrNetworkError || canAutoReload) {
+        if (canAutoReload) {
+          sessionStorage.setItem(sessionKey, String(now));
+          setTimeout(() => {
+            window.location.reload();
+          }, 350);
+        }
+        return (
+          <div className="min-h-screen bg-[#070D18] flex flex-col items-center justify-center p-6 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/5">
+              <span className="material-symbols-outlined text-3xl text-emerald-400 animate-spin">sync</span>
+            </div>
+            <h3 className="text-sm font-bold text-white tracking-wide">Syncing Portal Application...</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">Loading latest build and configuration. Please wait a moment.</p>
+          </div>
+        );
+      }
 
       return (
         <div className="min-h-screen bg-[#F7F9FF] text-[#181C20] flex items-center justify-center p-4 sm:p-6 font-sans">
