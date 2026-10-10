@@ -57,4 +57,5 @@ backups/
 scratch/
 PRE_LAUNCH_CHANGES_AND_TESTING_GUIDE.md
 supabase/config.toml
+.wrangler/
 
