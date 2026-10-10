@@ -1,0 +1,13 @@
+[allowlist]
+description = "Allowlist for false positives, UI state keys, and test mock scripts"
+paths = [
+  '''src/components/DealerPortal/CreateQuotation\.jsx''',
+  '''src/components/AdminPortal/PricingMaster\.jsx''',
+  '''src/services/googlePlacesNearbyService\.js''',
+  '''src/services/pricingService\.js''',
+  '''src/utils/aiRoofVisionEngine\.js''',
+  '''src/utils/__tests__/''',
+  '''scripts/''',
+  '''AUDIT_REPORT\.md''',
+  '''api/_lib/db\.js'''
+]

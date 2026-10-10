@@ -226,15 +226,15 @@ test('PUBLIC PROPOSAL E2E: Expired share token fails safely with 410 Gone', asyn
   };
 
   const mockDb = {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          neq: () => ({
-            maybeSingle: async () => ({ data: expiredQuote, error: null })
-          })
-        })
-      })
-    })
+    from: () => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        neq: () => q,
+        maybeSingle: async () => ({ data: expiredQuote, error: null })
+      };
+      return q;
+    }
   };
 
   const mockReq = { query: { token: 'expired_token_123' }, headers: {} };
@@ -640,24 +640,27 @@ test('PUBLIC PROPOSAL AUDIT: handleSave automatically generates unguessable shar
   const mockDb = {
     from: (table) => {
       if (table === 'system_settings') {
-        return {
-          select: () => ({
-            maybeSingle: async () => ({ data: { key: 'governance', value: { quote_prefix: 'SV', validity_days: 15 } }, error: null })
-          })
+        const q = {
+          select: () => q,
+          eq: () => q,
+          maybeSingle: async () => ({ data: { key: 'governance', value: { quote_prefix: 'SV', validity_days: 15 } }, error: null })
         };
+        return q;
       }
       if (table === 'bom_catalog') {
-        return {
+        const q = {
           select: async () => ({ data: [{ id: 'panel', item_name: 'Panel', default_rate_inr: 10000, gst_rate_pct: 5, category: 'MODULE' }], error: null })
         };
+        return q;
       }
       if (table === 'dealer_accounts' || table === 'dealers') {
-        return {
-          select: () => ({
-            eq: () => ({ maybeSingle: async () => ({ data: { id: 'd-1', dealer_code: 'DLR-01', firm_name: 'Solar Tech', max_margin_cap_per_kw: 6000 }, error: null }) }),
-            or: () => ({ maybeSingle: async () => ({ data: { id: 'd-1', dealer_code: 'DLR-01', firm_name: 'Solar Tech', max_margin_cap_per_kw: 6000 }, error: null }) })
-          })
+        const q = {
+          select: () => q,
+          eq: () => q,
+          or: () => q,
+          maybeSingle: async () => ({ data: { id: 'd-1', dealer_code: 'DLR-01', firm_name: 'Solar Tech', max_margin_cap_per_kw: 6000 }, error: null })
         };
+        return q;
       }
       if (table === 'quotations') {
         return {
