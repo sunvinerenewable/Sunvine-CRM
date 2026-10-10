@@ -29,6 +29,7 @@ test('isDocUploaded: accurately resolves direct keys and aliases', () => {
 });
 
 test('renderMainMessage: builds Block Kit card with required checklist and alias resolution', () => {
+  process.env.APP_BASE_URL = process.env.APP_BASE_URL || 'https://portal.sunvinesolar.com';
   const fileRow = {
     id: 'CF-2026-TEST1',
     customer_name: 'Rajesh Sharma',
