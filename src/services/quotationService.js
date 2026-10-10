@@ -12,6 +12,61 @@ import { supabase } from '../lib/supabase';
  * Falls back to direct Supabase / local cache only when the API server is unreachable.
  */
 
+export function normalizeQuotationRow(row) {
+  if (!row) return null;
+  let payload = {};
+  if (typeof row.quote_payload === 'string') {
+    try { payload = JSON.parse(row.quote_payload); } catch {}
+  } else if (row.quote_payload && typeof row.quote_payload === 'object') {
+    payload = row.quote_payload;
+  }
+
+  const customerName = row.customer_name || payload.customerName || row.customerName || 'Customer';
+  const customerPhone = row.customer_phone || payload.customerPhone || row.customerPhone || '';
+  const city = row.customer_city || payload.city || payload.customerCity || row.city || 'Gujarat';
+  const state = row.customer_state || payload.state || payload.customerState || row.state || 'Gujarat';
+  const capacityKW = Number(row.system_capacity_kw ?? payload.systemCapacityKW ?? payload.capacityKW ?? row.capacity ?? 0);
+  const totalAmount = Number(row.total_amount ?? payload.grandTotalCustomer ?? payload.totalAmount ?? row.grandTotalCustomer ?? 0);
+  const dealerMargin = Number(row.dealer_margin ?? payload.dealerTotalMargin ?? payload.dealerMargin ?? 0);
+  const dealerId = row.dealer_id || payload.dealerId || row.dealerId || payload.dealerCode || row.dealer_code || 'SV-DIRECT';
+  const dealerCode = row.dealer_code || payload.dealerCode || row.dealerCode || (dealerId === 'SV-DIRECT' ? 'SV-DIRECT' : dealerId);
+  const dealerName = row.dealer_name || payload.dealerName || row.dealerName || (dealerCode === 'SV-DIRECT' ? 'Sunvine Renewable Energy (Head Office)' : 'Solar Partner');
+  const status = row.status || payload.status || 'Active / Sent';
+  const rawDate = row.created_at || payload.date || payload.createdAt || row.date;
+  const displayDate = payload.date || (rawDate ? new Date(rawDate).toLocaleDateString('en-IN') : 'Today');
+
+  return {
+    ...payload,
+    ...row,
+    id: row.id || payload.id,
+    quoteNumber: row.id || payload.quoteNumber || payload.id,
+    customerName,
+    customer_name: customerName,
+    customerPhone,
+    customer_phone: customerPhone,
+    city,
+    state,
+    systemCapacityKW: capacityKW,
+    system_capacity_kw: capacityKW,
+    capacity: capacityKW,
+    totalAmount,
+    grandTotalCustomer: totalAmount,
+    total_amount: totalAmount,
+    dealerMargin,
+    dealer_margin: dealerMargin,
+    dealerId,
+    dealerCode,
+    dealer_code: dealerCode,
+    dealerName,
+    dealer_name: dealerName,
+    status,
+    date: displayDate,
+    displayDate,
+    created_at: row.created_at || rawDate,
+    createdAt: row.created_at || rawDate
+  };
+}
+
 export const quotationService = {
   /**
    * Fetch all quotations (scoped by role via server API)
@@ -25,12 +80,7 @@ export const quotationService = {
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.success && Array.isArray(data.quotations)) {
-          return data.quotations.map(row => {
-            if (row.quote_payload && typeof row.quote_payload === 'object') {
-              return { ...row.quote_payload, ...row, id: row.id };
-            }
-            return row;
-          });
+          return data.quotations.map(normalizeQuotationRow).filter(Boolean);
         }
       }
     } catch (err) {
@@ -52,12 +102,7 @@ export const quotationService = {
         console.warn('Supabase quotation fetch notice:', error.message);
         return [];
       }
-      return (data || []).map(row => {
-        if (row.quote_payload && typeof row.quote_payload === 'object') {
-          return { ...row.quote_payload, ...row, id: row.id };
-        }
-        return row;
-      });
+      return (data || []).map(normalizeQuotationRow).filter(Boolean);
     } catch (err) {
       console.error('Fetch quotations error:', err);
       return [];
@@ -79,10 +124,7 @@ export const quotationService = {
       if (res.ok) {
         const json = await res.json().catch(() => null);
         if (json?.success && json.quotation) {
-          const row = json.quotation;
-          return (row.quote_payload && typeof row.quote_payload === 'object')
-            ? { ...row.quote_payload, ...row, id: row.id }
-            : row;
+          return normalizeQuotationRow(json.quotation);
         }
       }
     } catch (_) {
@@ -98,9 +140,7 @@ export const quotationService = {
         .maybeSingle();
 
       if (!error && data) {
-        return (data.quote_payload && typeof data.quote_payload === 'object')
-          ? { ...data.quote_payload, ...data, id: data.id }
-          : data;
+        return normalizeQuotationRow(data);
       }
     } catch (_) {}
 
@@ -267,7 +307,22 @@ export const quotationService = {
   async deleteQuotation(id) {
     if (!id) return { success: false };
     try {
-      await supabase.from('quotations').delete().eq('id', id);
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch('/api/quotations', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({ action: 'delete', id })
+      });
+      if (res.ok) {
+        return { success: true };
+      }
+    } catch (_) {}
+
+    try {
+      const { error } = await supabase.from('quotations').delete().eq('id', id);
+      if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };

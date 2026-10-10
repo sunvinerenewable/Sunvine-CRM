@@ -245,6 +245,8 @@ export default function HardwareMaster() {
     const isEdit = !!editingModule;
     const currentEditing = editingModule;
     const brandTrimmed = moduleForm.brand.trim();
+    const existingBrandMatch = (modulesList || []).find(m => m.brand?.toLowerCase() === brandTrimmed.toLowerCase());
+    const canonicalBrand = existingBrandMatch ? existingBrandMatch.brand : brandTrimmed;
     const modelTrimmed = moduleForm.model.trim();
 
     // 1. Immediately close modal and reset state so modal never hangs
@@ -266,7 +268,7 @@ export default function HardwareMaster() {
     if (isEdit && currentEditing) {
       const updatedMod = {
         ...currentEditing,
-        brand: brandTrimmed,
+        brand: canonicalBrand,
         model: modelTrimmed,
         cellTech: finalCellTech,
         wattage: wattageNum,
@@ -282,10 +284,10 @@ export default function HardwareMaster() {
 
       if (addNotification) {
         addNotification({
-          type: 'success',
+          type: 'info',
           icon: 'solar_power',
-          title: `Updated Solar Module: ${updatedMod.brand} ${updatedMod.model}`,
-          description: `${updatedMod.wattage}W (${updatedMod.cellTech}) specifications updated.`,
+          title: `Sunvine Solar: Module Wattage / Specs Updated (${updatedMod.brand})`,
+          description: `Sunvine Solar / Admin updated ${updatedMod.brand} ${updatedMod.model} specifications (${updatedMod.wattage}W, ${updatedMod.cellTech}) in catalog.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
@@ -300,7 +302,7 @@ export default function HardwareMaster() {
     } else {
       const newMod = {
         id: `mod-${Date.now()}`,
-        brand: brandTrimmed,
+        brand: canonicalBrand,
         model: modelTrimmed,
         cellTech: finalCellTech,
         wattage: wattageNum,
@@ -320,8 +322,8 @@ export default function HardwareMaster() {
         addNotification({
           type: 'success',
           icon: 'solar_power',
-          title: `New Solar Module Added: ${newMod.brand} ${newMod.model}`,
-          description: `High-efficiency ${newMod.wattage}W (${newMod.cellTech}) published.`,
+          title: `Sunvine Solar: New Solar Module Added (${newMod.brand})`,
+          description: `Sunvine Solar / Admin added new ${newMod.brand} ${newMod.model} (${newMod.wattage}W, ${newMod.cellTech}) to the official catalog.`,
           audience: 'all',
           targetTab: 'create_quote'
         });
@@ -404,6 +406,8 @@ export default function HardwareMaster() {
     const isEdit = !!editingInverter;
     const currentEditingInv = editingInverter;
     const brandTrimmed = inverterForm.brand.trim();
+    const existingBrandMatch = (invertersList || []).find(i => i.brand?.toLowerCase() === brandTrimmed.toLowerCase());
+    const canonicalBrand = existingBrandMatch ? existingBrandMatch.brand : brandTrimmed;
     const modelTrimmed = inverterForm.model.trim();
 
     // 1. Immediately close modal and reset form
@@ -422,7 +426,7 @@ export default function HardwareMaster() {
     if (isEdit && currentEditingInv) {
       const updatedInv = {
         ...currentEditingInv,
-        brand: brandTrimmed,
+        brand: canonicalBrand,
         model: modelTrimmed,
         capacity: formattedCap,
         capacityKW: numCap,
@@ -434,6 +438,16 @@ export default function HardwareMaster() {
       if (setInvertersList) {
         setInvertersList(prev => (prev || []).map(i => i.id === currentEditingInv.id ? updatedInv : i));
       }
+      if (addNotification) {
+        addNotification({
+          type: 'info',
+          icon: 'bolt',
+          title: `Sunvine Solar: Inverter Updated (${updatedInv.brand})`,
+          description: `Sunvine Solar / Admin updated inverter "${updatedInv.brand} ${updatedInv.model}" (${updatedInv.capacity}) in catalog.`,
+          audience: 'all',
+          targetTab: 'create_quote'
+        });
+      }
       const res = await hardwareService.saveInverter(updatedInv);
       if (res && res.success) {
         triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to Supabase database!`);
@@ -443,7 +457,7 @@ export default function HardwareMaster() {
     } else {
       const newInv = {
         id: `inv-${Date.now()}`,
-        brand: brandTrimmed,
+        brand: canonicalBrand,
         model: modelTrimmed,
         capacity: formattedCap,
         capacityKW: numCap,
@@ -451,10 +465,21 @@ export default function HardwareMaster() {
         efficiency: inverterForm.efficiency,
         warranty: inverterForm.warranty,
         basePrice: inverterForm.basePrice || '₹ 54,000',
+        isNew: true,
         createdAt: Date.now()
       };
       if (setInvertersList) {
         setInvertersList(prev => [...(prev || []), newInv]);
+      }
+      if (addNotification) {
+        addNotification({
+          type: 'success',
+          icon: 'bolt',
+          title: `Sunvine Solar: New Inverter Brand Added (${newInv.brand})`,
+          description: `Sunvine Solar / Admin added new inverter make "${newInv.brand} ${newInv.model}" (${newInv.capacity}) to the official catalog.`,
+          audience: 'all',
+          targetTab: 'create_quote'
+        });
       }
       const res = await hardwareService.saveInverter(newInv);
       if (res && res.success) {

@@ -42,7 +42,7 @@ import {
   calculateOverallBusinessMetrics
 } from '../utils/performanceAnalytics';
 import { hardwareService } from '../services/hardwareService';
-import { quotationService } from '../services/quotationService';
+import { quotationService, normalizeQuotationRow } from '../services/quotationService';
 import { pricingService } from '../services/pricingService';
 import { customerFileService } from '../services/customerFileService';
 import { staffService } from '../services/staffService';
@@ -184,8 +184,12 @@ const getInitialTabFromUrl = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  // Authentication & Session State
+  // Authentication & Session State (Tab-isolated via sessionStorage first, fallback to device localStorage)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessAuth = sessionStorage.getItem('sunvine_auth');
+      if (sessAuth !== null) return sessAuth === 'true';
+    }
     return localStorage.getItem('sunvine_auth') === 'true';
   });
 
@@ -211,8 +215,14 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Role: 'dealer' or 'admin'
-  const [role, setRole] = useState(() => localStorage.getItem('sunvine_role') || 'dealer');
+  // Role: 'dealer', 'admin', or 'staff' (Tab-scoped)
+  const [role, setRole] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessRole = sessionStorage.getItem('sunvine_role');
+      if (sessRole) return sessRole;
+    }
+    return localStorage.getItem('sunvine_role') || 'dealer';
+  });
   const [activeTab, setActiveTabState] = useState(getInitialTabFromUrl);
 
   const setActiveTab = (newTab, replace = false) => {
@@ -434,27 +444,43 @@ export const AppProvider = ({ children }) => {
     }
   }, [isAuthenticated, activeTab, role]);
   
-// Safe storage parser and serializer
+// Tab-isolated session keys set
+const SESSION_KEYS = new Set([
+  'sunvine_auth',
+  'sunvine_role',
+  'sunvine_tab',
+  'sunvine_current_dealer',
+  'sunvine_current_staff',
+  'sunvine_session_token'
+]);
+
+// Safe storage parser and serializer (sessionStorage takes priority for tab isolation)
 const safeJsonParse = (key, fallback) => {
   if (typeof window === 'undefined') return fallback;
   try {
+    if (SESSION_KEYS.has(key)) {
+      const sessItem = sessionStorage.getItem(key);
+      if (sessItem && sessItem !== 'undefined' && sessItem !== 'null') {
+        return JSON.parse(sessItem) ?? fallback;
+      }
+    }
     const item = localStorage.getItem(key);
     if (!item || item === 'undefined' || item === 'null') return fallback;
     const parsed = JSON.parse(item);
     return parsed ?? fallback;
   } catch (err) {
-    console.warn(`[Sunvine Storage] Resetting corrupted key: ${key}`);
-    try {
-      localStorage.removeItem(key);
-    } catch (_) {}
     return fallback;
   }
 };
 
 const safeSetItem = (key, value) => {
   if (typeof window === 'undefined') return;
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   try {
-    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    if (SESSION_KEYS.has(key)) {
+      sessionStorage.setItem(key, serialized);
+    }
+    localStorage.setItem(key, serialized);
   } catch (err) {
     console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
   }
@@ -593,10 +619,7 @@ const safeSetItem = (key, value) => {
     }
   ]);
 
-  // Catalog items viewed by dealer (for "NEW" badge management)
-  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
-    return safeJsonParse('sunvine_seen_catalog_items', []);
-  });
+
 
   // Quotations List (Live Supabase Database + SWR Cache)
   const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
@@ -616,6 +639,28 @@ const safeSetItem = (key, value) => {
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
     return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
+  });
+
+  // Dynamic user-scoped storage key so Admin acknowledging an item never clears the "NEW" badge for Dealers
+  const getCatalogSeenStorageKey = useCallback(() => {
+    if (role === 'dealer' && currentDealer?.id) {
+      return `sunvine_seen_catalog_dealer_${currentDealer.id}`;
+    }
+    if (role === 'staff' && currentStaff?.id) {
+      return `sunvine_seen_catalog_staff_${currentStaff.id}`;
+    }
+    return `sunvine_seen_catalog_${role || 'admin'}`;
+  }, [role, currentDealer?.id, currentStaff?.id]);
+
+  // Catalog items viewed by dealer (for "NEW" badge management) - Scoped per user/role
+  const [seenCatalogItemIds, setSeenCatalogItemIds] = useState(() => {
+    const curRole = localStorage.getItem('sunvine_role') || 'dealer';
+    const curDlr = safeJsonParse('sunvine_current_dealer', null);
+    const curStf = safeJsonParse('sunvine_current_staff', null);
+    let key = `sunvine_seen_catalog_${curRole}`;
+    if (curRole === 'dealer' && curDlr?.id) key = `sunvine_seen_catalog_dealer_${curDlr.id}`;
+    if (curRole === 'staff' && curStf?.id) key = `sunvine_seen_catalog_staff_${curStf.id}`;
+    return safeJsonParse(key, []);
   });
 
   // Sales Staff Directory — DB is sole source of truth. Never pre-populate from localStorage.
@@ -661,13 +706,16 @@ const safeSetItem = (key, value) => {
 
       const tierLower = (d.tier || '').toLowerCase();
       const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
+      const category = d.category || d.pricingConfig?.category || 'Margin Based';
       return {
         ...d,
+        category,
         assignedStaffId,
         assignedStaffName,
         onboardedDate: d.onboardedDate || '2025-06-15',
         pricingConfig: {
           ...(d.pricingConfig || {}),
+          category,
           assignedStaffId,
           assignedStaffName,
           pricingMode: d.pricingConfig?.pricingMode || 'standard',
@@ -792,8 +840,13 @@ const safeSetItem = (key, value) => {
         setIsHardwareDbConnected(true);
       }
       if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
-        setInvertersList(dbInverters.value);
-        cacheManager.set('inverters_list', dbInverters.value);
+        const canonicalInverters = dbInverters.value.map(inv => {
+          if (!inv.brand) return inv;
+          const cleanBrand = inv.brand.trim();
+          return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+        });
+        setInvertersList(canonicalInverters);
+        cacheManager.set('inverters_list', canonicalInverters);
         setIsHardwareDbConnected(true);
       }
       if (dbPresets.status === 'fulfilled' && dbPresets.value) {
@@ -891,13 +944,11 @@ const safeSetItem = (key, value) => {
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          const row = payload.new;
-          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
-          setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
+          const formatted = normalizeQuotationRow(payload.new);
+          if (formatted) setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
         } else if (payload.eventType === 'UPDATE') {
-          const row = payload.new;
-          const formatted = row.quote_payload && typeof row.quote_payload === 'object' ? { ...row.quote_payload, ...row, id: row.id } : row;
-          setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
+          const formatted = normalizeQuotationRow(payload.new);
+          if (formatted) setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
         } else if (payload.eventType === 'DELETE') {
           setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
         }
@@ -950,8 +1001,13 @@ const safeSetItem = (key, value) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
         hardwareService.getAllInverters().then(data => {
           if (Array.isArray(data)) {
-            setInvertersList(data);
-            cacheManager.set('inverters_list', data);
+            const canonicalInverters = data.map(inv => {
+              if (!inv.brand) return inv;
+              const cleanBrand = inv.brand.trim();
+              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+            });
+            setInvertersList(canonicalInverters);
+            cacheManager.set('inverters_list', canonicalInverters);
           }
         });
       })
@@ -1040,12 +1096,16 @@ const safeSetItem = (key, value) => {
   useEffect(() => {
     const syncFreshData = async () => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers] = await Promise.allSettled([
+        const [files, quotes, docMaster, freshStaff, freshDealers, freshModules, freshInverters, freshBom, freshNotifs] = await Promise.allSettled([
           customerFileService.getAllCustomerFiles(),
           quotationService.getAllQuotations(100),
           documentMasterService.fetchDocumentMaster(),
           staffService.getAllStaff(),
-          dealerService.getAllDealers()
+          dealerService.getAllDealers(),
+          hardwareService.getAllModules(),
+          hardwareService.getAllInverters(),
+          hardwareService.getAllBomItems(),
+          auditLogService.getNotifications()
         ]);
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
@@ -1084,6 +1144,26 @@ const safeSetItem = (key, value) => {
           if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
             setCategoryDocRules(docMaster.value.rules);
           }
+        }
+        if (freshModules.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
+          setModulesList(freshModules.value);
+          cacheManager.set('modules_list', freshModules.value);
+        }
+        if (freshInverters.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
+          const canonicalInverters = freshInverters.value.map(inv => {
+            if (!inv.brand) return inv;
+            const cleanBrand = inv.brand.trim();
+            return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+          });
+          setInvertersList(canonicalInverters);
+          cacheManager.set('inverters_list', canonicalInverters);
+        }
+        if (freshBom.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
+          setBomCatalog(freshBom.value);
+          cacheManager.set('bom_catalog', freshBom.value);
+        }
+        if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
+          setNotifications(freshNotifs.value);
         }
       } catch (err) {
         // silent background sync
@@ -1219,9 +1299,17 @@ const safeSetItem = (key, value) => {
     safeSetItem('sunvine_current_staff', currentStaff);
   }, [currentStaff]);
 
+  // Switch seen IDs when user or role changes
   useEffect(() => {
-    safeSetItem('sunvine_seen_catalog_items', seenCatalogItemIds);
-  }, [seenCatalogItemIds]);
+    const key = getCatalogSeenStorageKey();
+    const stored = safeJsonParse(key, []);
+    setSeenCatalogItemIds(stored);
+  }, [getCatalogSeenStorageKey]);
+
+  useEffect(() => {
+    const key = getCatalogSeenStorageKey();
+    safeSetItem(key, seenCatalogItemIds);
+  }, [seenCatalogItemIds, getCatalogSeenStorageKey]);
 
   const updateBomItemRate = (itemId, newRate) => {
     setBomRates(prev => ({
@@ -1300,12 +1388,21 @@ const safeSetItem = (key, value) => {
     await hardwareService.saveBomItem(merged);
   };
 
+  const [deletedBomItemIds, setDeletedBomItemIds] = useState(() => {
+    return safeJsonParse('sunvine_deleted_bom_ids', []);
+  });
+
   const deleteBomItem = async (itemId) => {
     setBomCatalog(prev => prev.filter(i => i.id !== itemId));
     setBomRates(prev => {
       const next = { ...prev };
       delete next[itemId];
       return next;
+    });
+    setDeletedBomItemIds(prev => {
+      const updated = Array.from(new Set([...prev, itemId]));
+      safeSetItem('sunvine_deleted_bom_ids', updated);
+      return updated;
     });
     await hardwareService.deleteBomItem(itemId);
   };
@@ -1316,7 +1413,8 @@ const safeSetItem = (key, value) => {
   };
 
   const addNewModule = async (newModule) => {
-    const brand = newModule.brand?.trim() || 'Custom';
+    const existingBrandMatch = (modulesList || []).find(m => m.brand?.toLowerCase() === newModule.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newModule.brand?.trim() || 'Custom');
     const model = newModule.model?.trim() || 'Solar Module';
     const id = newModule.id || `mod-${Date.now()}`;
     const moduleEntry = {
@@ -1336,8 +1434,8 @@ const safeSetItem = (key, value) => {
     addNotification({
       type: 'success',
       icon: 'solar_power',
-      title: 'New Solar Module Added',
-      description: `Admin introduced ${brand} ${model} (${moduleEntry.wattage}W) to dealer catalogs.`,
+      title: `Sunvine Solar: New Solar Module Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${moduleEntry.wattage}W) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1346,7 +1444,8 @@ const safeSetItem = (key, value) => {
   };
 
   const addNewInverter = async (newInverter) => {
-    const brand = newInverter.brand?.trim() || 'Custom';
+    const existingBrandMatch = (invertersList || []).find(i => i.brand?.toLowerCase() === newInverter.brand?.trim().toLowerCase());
+    const brand = existingBrandMatch ? existingBrandMatch.brand : (newInverter.brand?.trim() || 'Custom');
     const model = newInverter.model?.trim() || 'Solar Inverter';
     const id = newInverter.id || `inv-${Date.now()}`;
     const capStr = newInverter.capacity ? (String(newInverter.capacity).toLowerCase().includes('kw') ? newInverter.capacity : `${newInverter.capacity} kW`) : '5.0 kW';
@@ -1368,8 +1467,8 @@ const safeSetItem = (key, value) => {
     addNotification({
       type: 'success',
       icon: 'bolt',
-      title: 'New Solar Inverter Added',
-      description: `Admin introduced ${brand} ${model} (${inverterEntry.capacity}) to dealer catalogs.`,
+      title: `Sunvine Solar: New Inverter Added (${brand})`,
+      description: `Sunvine Solar / Admin added new ${brand} ${model} (${inverterEntry.capacity}) to catalog.`,
       audience: 'all'
     });
     // Sync directly to Supabase DB
@@ -1381,17 +1480,18 @@ const safeSetItem = (key, value) => {
     if (!itemId) return;
     setSeenCatalogItemIds(prev => {
       if (prev.includes(itemId)) return prev;
-      return [...prev, itemId];
+      const updated = [...prev, itemId];
+      const key = getCatalogSeenStorageKey();
+      safeSetItem(key, updated);
+      return updated;
     });
   };
 
   const isCatalogItemNew = (item) => {
-    if (!item) return false;
-    const itemId = item.id || `${item.brand}-${item.model}`;
+    if (!item || !item.isNew) return false;
+    const itemId = item.id || `${item.brand}-${item.model || item.wattage || item.capacityKW}`;
     if (seenCatalogItemIds.includes(itemId)) return false;
-    if (item.isNew) return true;
-    if (item.createdAt && (Date.now() - item.createdAt < 7 * 24 * 3600 * 1000)) return true;
-    return false;
+    return true;
   };
 
   const getResolvedBom = (capacityKW) => {
@@ -1403,6 +1503,8 @@ const safeSetItem = (key, value) => {
     startTransition(() => {
       setIsAuthenticated(true);
       setRole(userRole);
+      safeSetItem('sunvine_auth', 'true');
+      safeSetItem('sunvine_role', userRole);
       if (userRole === 'admin') {
         setActiveTab('admin_dashboard');
         pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
@@ -1430,6 +1532,14 @@ const safeSetItem = (key, value) => {
       setIsAuthenticated(false);
       setAuthView('dealer_login', true);
     });
+    try {
+      sessionStorage.removeItem('sunvine_auth');
+      sessionStorage.removeItem('sunvine_role');
+      sessionStorage.removeItem('sunvine_tab');
+      sessionStorage.removeItem('sunvine_current_staff');
+      sessionStorage.removeItem('sunvine_current_dealer');
+      sessionStorage.removeItem('sunvine_session_token');
+    } catch (_) {}
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
     if (typeof window !== 'undefined') {
@@ -1438,11 +1548,13 @@ const safeSetItem = (key, value) => {
     authService.logout().catch(() => {});
   };
 
-  // The UI flag (localStorage) can outlive the HttpOnly JWT cookie (24h). Validate on load;
-  // only a definite 401 logs the user out (network errors are ignored so offline use still works).
+  // The UI flag can outlive the token. Validate on load using tab-isolated token header;
+  // only a definite 401 logs the user out.
   useEffect(() => {
     if (!isAuthenticated) return;
-    fetch('/api/auth/verify', { credentials: 'include' })
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch('/api/auth/verify', { headers, credentials: 'include' })
       .then(res => { if (res.status === 401) logout(); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2066,11 +2178,33 @@ const safeSetItem = (key, value) => {
     });
   };
 
+  const deleteQuotation = async (id) => {
+    if (!id) return { success: false };
+    setQuotations(prev => prev.filter(q => q.id !== id && q.quoteNumber !== id));
+    try {
+      const res = await quotationService.deleteQuotation(id);
+      broadcastDbEvent('SYNC_FILES');
+      return res;
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete quotation from DB:', e);
+      return { success: false, error: e.message };
+    }
+  };
+
   const addDealer = async (newDealer) => {
-    setDealers(prev => [newDealer, ...prev]);
+    const finalCategory = newDealer.category || newDealer.pricingConfig?.category || 'Margin Based';
+    const finalNewDealer = {
+      ...newDealer,
+      category: finalCategory,
+      pricingConfig: {
+        ...(newDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
+    setDealers(prev => [finalNewDealer, ...prev]);
     broadcastDbEvent('SYNC_DEALERS');
     try {
-      await dealerService.createDealer(newDealer);
+      await dealerService.createDealer(finalNewDealer);
       broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to create dealer in DB:', e);
@@ -2081,7 +2215,16 @@ const safeSetItem = (key, value) => {
     if (!updatedDealer) return;
     const cleanId = String(updatedDealer.id || updatedDealer.dealerCode || '').replace(/^#/, '');
     const cleanEmail = (updatedDealer.email && String(updatedDealer.email).trim()) ? String(updatedDealer.email).trim() : null;
-    const finalUpdated = { ...updatedDealer, email: cleanEmail };
+    const finalCategory = updatedDealer.category || updatedDealer.pricingConfig?.category || 'Margin Based';
+    const finalUpdated = {
+      ...updatedDealer,
+      category: finalCategory,
+      email: cleanEmail,
+      pricingConfig: {
+        ...(updatedDealer.pricingConfig || {}),
+        category: finalCategory
+      }
+    };
 
     setDealers(prev => prev.map(d => {
       const dCode = String(d.id || d.dealerCode || '').replace(/^#/, '');
@@ -2655,6 +2798,10 @@ const safeSetItem = (key, value) => {
   const visibleNotifications = useMemo(() => {
     return notifications
       .filter(n => {
+        // Exclude developer / system update logs per user directive (only real business notifications: item created, price update, etc.)
+        if (n.isRelease || n.id?.startsWith('release-') || n.title?.toLowerCase().includes('system updated') || n.title?.toLowerCase().includes('update log')) {
+          return false;
+        }
         if (dismissedNotifIds.includes(n.id)) return false;
         const aud = n.audience || 'all';
         if (aud === 'all') return true;
@@ -2715,7 +2862,7 @@ const safeSetItem = (key, value) => {
     const newNotif = {
       id: notif.id || `notif-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      audience: notif.audience || (role === 'admin' ? 'admin' : 'dealer'),
+      audience: notif.audience || 'all',
       type: notif.type || 'info',
       ...notif
     };
@@ -2729,6 +2876,7 @@ const safeSetItem = (key, value) => {
       const filtered = prev.filter(n => n.id !== newNotif.id);
       return [newNotif, ...filtered];
     });
+    auditLogService.saveNotification(newNotif).catch(() => {});
   };
 
   // Master Document Registry & Dynamic Category Rules Engine
@@ -2973,6 +3121,7 @@ const safeSetItem = (key, value) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     previewQuotation,
     setPreviewQuotation,
     notifications: visibleNotifications,
@@ -3012,6 +3161,7 @@ const safeSetItem = (key, value) => {
     updateBomItem,
     deleteBomItem,
     archiveBomItem,
+    deletedBomItemIds,
     // Dynamic Catalogs & 'NEW' Badge Tracking
     addNewModule,
     addNewInverter,
@@ -3050,8 +3200,11 @@ const safeSetItem = (key, value) => {
     // Customer File Timeline Progression
     addCustomerFileTimelineEvent,
     // Solar Loan Partner Banks
-    solarBanks
+    solarBanks,
+    // Database Live Hydration
+    refreshDatabase: hydrateAllFromSupabase
   }), [
+    hydrateAllFromSupabase,
     isAuthenticated,
     authView,
     role,
@@ -3135,6 +3288,7 @@ const safeSetItem = (key, value) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     openChangelogModal,
     markNotificationAsRead,
     markAllNotificationsAsRead,

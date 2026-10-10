@@ -11,16 +11,34 @@ export default function MyQuotations() {
     clearEditingQuotation, 
     clearActiveDraftQuote, 
     setActiveTab, 
-    setPreviewQuotation 
+    setPreviewQuotation,
+    deleteQuotation
   } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useTableViewMode('dealer_my_quotes');
   const [convertingQuote, setConvertingQuote] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const handleOpenPDF = (quote) => {
     if (setPreviewQuotation) setPreviewQuotation(quote);
     setActiveTab('preview_quote');
+  };
+
+  const handleDeleteQuote = async (id, e) => {
+    e?.stopPropagation();
+    if (!id) return;
+    if (!window.confirm(`Are you sure you want to delete quotation ${id}? This cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      if (deleteQuotation) {
+        await deleteQuotation(id);
+      }
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   // Harmonized quotation list matching live database schema
@@ -185,6 +203,17 @@ export default function MyQuotations() {
                   >
                     <span className="material-symbols-outlined text-[16px]">chat</span>
                   </button>
+                  <button
+                    onClick={(e) => handleDeleteQuote(q.id, e)}
+                    disabled={deletingId === q.id}
+                    className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    title="Delete Quotation"
+                    type="button"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {deletingId === q.id ? 'hourglass_top' : 'delete'}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -273,6 +302,17 @@ export default function MyQuotations() {
                         type="button"
                       >
                         <span className="material-symbols-outlined text-[18px]">chat</span>
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteQuote(q.id, e)}
+                        disabled={deletingId === q.id}
+                        className="p-1.5 rounded hover:bg-red-500/15 text-secondary hover:text-red-400 transition-colors cursor-pointer"
+                        title="Delete Quotation"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          {deletingId === q.id ? 'hourglass_top' : 'delete'}
+                        </span>
                       </button>
                     </div>
                   </td>

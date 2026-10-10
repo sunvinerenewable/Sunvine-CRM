@@ -18,10 +18,15 @@ export default function AdminSettings() {
     updateCategoryDocRule,
     resetDocumentRulesToDefault,
     refreshMasterDocuments,
-    applicationCategories
+    applicationCategories,
+    applicationStages,
+    addApplicationStage,
+    updateApplicationStage,
+    deleteApplicationStage,
+    resetApplicationStages
   } = useApp();
 
-  const VALID_SETTINGS_TABS = ['account_center', 'document_rules', 'security', 'system'];
+  const VALID_SETTINGS_TABS = ['account_center', 'document_rules', 'pipeline_stages', 'security', 'system'];
   const VALID_CATEGORIES = ['RESIDENTIAL', 'BANK_LOAN', 'NBFC_LOAN', 'COMMERCIAL', 'HOUSING_SOCIETY'];
 
   // Primary Settings Page Tabs: 'account_center' | 'document_rules' | 'security' | 'system'
@@ -107,6 +112,91 @@ export default function AdminSettings() {
       addToast(e.message, 'error');
     } finally {
       setIsPushLoading(false);
+    }
+  };
+
+  // Application Pipeline Stages State & Handlers
+  const [showStageModal, setShowStageModal] = useState(false);
+  const [editingStage, setEditingStage] = useState(null);
+  const [stageForm, setStageForm] = useState({
+    id: '',
+    label: '',
+    description: '',
+    mandatory: true
+  });
+
+  const handleOpenAddStage = () => {
+    setEditingStage(null);
+    setStageForm({
+      id: '',
+      label: '',
+      description: '',
+      mandatory: true
+    });
+    setShowStageModal(true);
+  };
+
+  const handleOpenEditStage = (stage) => {
+    setEditingStage(stage);
+    setStageForm({
+      id: stage.id,
+      label: stage.label,
+      description: stage.description || '',
+      mandatory: stage.mandatory !== undefined ? stage.mandatory : true
+    });
+    setShowStageModal(true);
+  };
+
+  const handleSaveStage = (e) => {
+    e.preventDefault();
+    if (!stageForm.label.trim()) {
+      addToast('Please enter a stage label/name', 'error');
+      return;
+    }
+    if (editingStage) {
+      updateApplicationStage(editingStage.id, {
+        label: stageForm.label.trim(),
+        description: stageForm.description.trim(),
+        mandatory: stageForm.mandatory
+      });
+      addToast(`Updated stage: "${stageForm.label.trim()}"`, 'success');
+    } else {
+      const generatedId = stageForm.id.trim() || stageForm.label.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      addApplicationStage({
+        id: generatedId,
+        label: stageForm.label.trim(),
+        description: stageForm.description.trim(),
+        mandatory: stageForm.mandatory
+      });
+      addToast(`Created new pipeline stage: "${stageForm.label.trim()}"`, 'success');
+    }
+    setShowStageModal(false);
+  };
+
+  const handleMoveStage = (index, direction) => {
+    const list = [...(applicationStages || [])];
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const temp = list[index];
+    list[index] = list[targetIdx];
+    list[targetIdx] = temp;
+    list.forEach((s, idx) => {
+      updateApplicationStage(s.id, { order: idx + 1 });
+    });
+    addToast('Pipeline stage sequence updated', 'info');
+  };
+
+  const handleDeleteStage = (stage) => {
+    if (window.confirm(`Are you sure you want to remove stage "${stage.label}"?`)) {
+      deleteApplicationStage(stage.id);
+      addToast(`Stage "${stage.label}" removed from application pipeline`, 'info');
+    }
+  };
+
+  const handleResetStages = () => {
+    if (window.confirm('Reset all application stages back to official 10-stage defaults? Any custom stages will be removed.')) {
+      resetApplicationStages();
+      addToast('Reset to official 10-stage solar application pipeline', 'success');
     }
   };
 
@@ -224,6 +314,7 @@ export default function AdminSettings() {
   const [dealerForm, setDealerForm] = useState({
     id: '',
     dealerCode: '',
+    category: 'Margin Based',
     firmName: '',
     contactPerson: '',
     mobile: '',
@@ -548,6 +639,7 @@ export default function AdminSettings() {
     setDealerForm({
       id: nextCode,
       dealerCode: nextCode,
+      category: 'Margin Based',
       firmName: '',
       contactPerson: '',
       mobile: '',
@@ -571,6 +663,7 @@ export default function AdminSettings() {
     setDealerForm({
       id: dealer.id || dealer.dealer_code,
       dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
+      category: dealer.category || dealer.pricing_config?.category || dealer.pricingConfig?.category || 'Margin Based',
       firmName: dealer.firm_name || dealer.firmName || '',
       contactPerson: dealer.contact_person || dealer.contactPerson || '',
       mobile: dealer.mobile_number || dealer.mobile || '',
@@ -619,6 +712,7 @@ export default function AdminSettings() {
         const res = await adminAccountService.updateDealer({
           id: editingDealer.id,
           dealerCode: dealerForm.dealerCode,
+          category: dealerForm.category || 'Margin Based',
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
@@ -638,6 +732,7 @@ export default function AdminSettings() {
       } else {
         const res = await adminAccountService.createDealer({
           dealerCode: dealerForm.dealerCode,
+          category: dealerForm.category || 'Margin Based',
           firmName: dealerForm.firmName,
           contactPerson: dealerForm.contactPerson,
           mobile: cleanMobile,
@@ -1061,6 +1156,21 @@ export default function AdminSettings() {
         </button>
 
         <button
+          onClick={() => startTransition(() => setSettingsTab('pipeline_stages'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'pipeline_stages'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">alt_route</span>
+          <span>Application Stages</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 font-bold ml-1">
+            {(applicationStages || []).length}
+          </span>
+        </button>
+
+        <button
           onClick={() => startTransition(() => setSettingsTab('security'))}
           className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
             settingsTab === 'security'
@@ -1416,6 +1526,18 @@ export default function AdminSettings() {
                                     <span>{contact}</span>
                                     <span>•</span>
                                     <span className="font-mono text-emerald-700 font-semibold">{code}</span>
+                                    <span>•</span>
+                                    {/* Category Pill */}
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
+                                      (dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based')
+                                        ? 'bg-purple-50 text-purple-800 border-purple-200'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                      <span className="material-symbols-outlined text-[11px]">
+                                        {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'inventory_2' : 'percent'}
+                                      </span>
+                                      {(dealer.category === 'Kit Based' || dealer.pricing_config?.category === 'Kit Based' || dealer.pricingConfig?.category === 'Kit Based') ? 'Kit Based' : 'Margin Based'}
+                                    </span>
                                     <span>•</span>
                                     <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
                                       (!dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT')
@@ -1960,6 +2082,138 @@ export default function AdminSettings() {
       )}
 
       {/* ========================================================
+          TAB CONTENT: PIPELINE STAGES (Custom Milestone Workflow)
+          ======================================================== */}
+      {settingsTab === 'pipeline_stages' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-600 text-xl">alt_route</span>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                    Application Pipeline Stages Master
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                  Configure every stage an application passes through—from initial lead intake and roof CAD survey to DISCOM net-metering and PM Surya Ghar subsidy payout.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleResetStages}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  title="Reset to official 10-stage default sequence"
+                >
+                  <span className="material-symbols-outlined text-sm">restart_alt</span>
+                  <span>Reset Defaults</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenAddStage}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">add_circle</span>
+                  <span>Add New Stage</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Stage List in Sequential Order */}
+            <div className="mt-5 space-y-3">
+              {(applicationStages || []).map((stage, idx) => (
+                <div
+                  key={stage.id || idx}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 transition-all gap-3"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    {/* Order Index Badge */}
+                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                      #{idx + 1}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-slate-900">{stage.label}</h4>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                          {stage.id}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            stage.mandatory !== false
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {stage.mandatory !== false ? 'Mandatory Stage' : 'Optional Stage'}
+                        </span>
+                      </div>
+                      {stage.description && (
+                        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                          {stage.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions & Reordering Controls */}
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() => handleMoveStage(idx, 'up')}
+                      className={`p-1.5 rounded-lg border text-slate-600 transition-colors ${
+                        idx === 0
+                          ? 'opacity-30 cursor-not-allowed border-slate-200'
+                          : 'hover:bg-white hover:text-slate-900 border-slate-300 cursor-pointer'
+                      }`}
+                      title="Move stage up"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={idx === (applicationStages || []).length - 1}
+                      onClick={() => handleMoveStage(idx, 'down')}
+                      className={`p-1.5 rounded-lg border text-slate-600 transition-colors ${
+                        idx === (applicationStages || []).length - 1
+                          ? 'opacity-30 cursor-not-allowed border-slate-200'
+                          : 'hover:bg-white hover:text-slate-900 border-slate-300 cursor-pointer'
+                      }`}
+                      title="Move stage down"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditStage(stage)}
+                      className="p-1.5 rounded-lg border border-slate-300 hover:bg-white hover:text-emerald-700 text-slate-600 transition-colors cursor-pointer"
+                      title="Edit stage details"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">edit</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteStage(stage)}
+                      className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      title="Delete stage"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
           TAB CONTENT: 3. SECURITY & POLICIES (Future Tab Placeholder)
           ======================================================== */}
       {settingsTab === 'security' && (
@@ -2270,6 +2524,60 @@ export default function AdminSettings() {
                       <option value="Gold EPC">Gold EPC</option>
                       <option value="Silver Installer">Silver Installer</option>
                     </select>
+                  </div>
+                </div>
+
+                {/* Operating Model / Category */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 flex items-center justify-between">
+                    <span>Dealer Operating Model / Category <span className="text-rose-500">*</span></span>
+                    <span className="text-[11px] font-semibold text-slate-500">
+                      Selected: <strong className={dealerForm.category === 'Kit Based' ? 'text-purple-700 font-bold' : 'text-emerald-700 font-bold'}>{dealerForm.category || 'Margin Based'}</strong>
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Margin Based' }))}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        (dealerForm.category || 'Margin Based') === 'Margin Based'
+                          ? 'border-emerald-500 bg-emerald-50/70 text-emerald-950 font-semibold shadow-xs ring-1 ring-emerald-400/40'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        (dealerForm.category || 'Margin Based') === 'Margin Based'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">percent</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold leading-tight">Margin Based Partner</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-normal">Custom ₹/kW margin</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Kit Based' }))}
+                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
+                        dealerForm.category === 'Kit Based'
+                          ? 'border-purple-500 bg-purple-50/70 text-purple-950 font-semibold shadow-xs ring-1 ring-purple-400/40'
+                          : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        dealerForm.category === 'Kit Based'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold leading-tight">Kit Based Partner</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-normal">Fixed kit package</div>
+                      </div>
+                    </button>
                   </div>
                 </div>
 
@@ -2979,6 +3287,113 @@ export default function AdminSettings() {
                 <span>Reset to Factory Defaults</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL: ADD / EDIT PIPELINE STAGE
+          ======================================================== */}
+      {showStageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600">alt_route</span>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {editingStage ? 'Edit Pipeline Stage' : 'Add New Application Stage'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStageModal(false)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStage} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Stage Name / Label *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 5. Technical Feasibility & Sanction Approved"
+                    value={stageForm.label}
+                    onChange={(e) => setStageForm(prev => ({ ...prev, label: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Unique Stage Identifier (ID)
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!!editingStage}
+                    placeholder="e.g. TECH_FEASIBILITY"
+                    value={stageForm.id}
+                    onChange={(e) => setStageForm(prev => ({ ...prev, id: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '') }))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 font-mono disabled:opacity-60"
+                  />
+                  <span className="text-[11px] text-slate-500 mt-0.5 block">
+                    {editingStage ? 'Stage ID cannot be changed once created.' : 'Auto-generated from title if left blank.'}
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Stage Description &amp; Scope
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Describe what occurs during this milestone (e.g. DISCOM portal filing, site inspection, token payment)..."
+                    value={stageForm.description}
+                    onChange={(e) => setStageForm(prev => ({ ...prev, description: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 resize-none"
+                  />
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-800">
+                      Mandatory Milestone
+                    </label>
+                    <span className="text-[11px] text-slate-500 block">
+                      When checked, files must be moved through this stage in regular sequence.
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={stageForm.mandatory}
+                    onChange={(e) => setStageForm(prev => ({ ...prev, mandatory: e.target.checked }))}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowStageModal(false)}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">save</span>
+                  <span>{editingStage ? 'Save Changes' : 'Create Stage'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

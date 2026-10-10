@@ -4,6 +4,28 @@ import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 import ConvertQuotationModal from '../DealerPortal/ConvertQuotationModal';
 
+// Helper to reliably parse date strings into millisecond timestamps
+const parseQuoteDateToMs = (dateStr) => {
+  if (!dateStr) return 0;
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const t = new Date(dateStr).getTime();
+    if (!isNaN(t)) return t;
+  }
+  const parts = String(dateStr).trim().split(/[\s\/\-]+/);
+  if (parts.length === 3 && parts[2].length === 4) {
+    const day = parseInt(parts[0], 10);
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    let mIdx = months.findIndex(m => parts[1].toLowerCase().startsWith(m));
+    if (mIdx === -1) mIdx = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    if (!isNaN(day) && mIdx >= 0 && mIdx < 12 && !isNaN(year)) {
+      return new Date(year, mIdx, day).getTime();
+    }
+  }
+  const parsed = new Date(dateStr).getTime();
+  return isNaN(parsed) ? 0 : parsed;
+};
+
 export default function AllQuotations() {
   const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
   const { addToast } = useToast();
@@ -16,12 +38,12 @@ export default function AllQuotations() {
   const [convertingQuote, setConvertingQuote] = useState(null);
   const [viewMode, setViewMode] = useTableViewMode('admin_all_quotations');
 
-  // Top Filter Controls (SR-18)
-  const [datePresetLabel, setDatePresetLabel] = useState('Current Fiscal (2025-26)');
-  const [startDate, setStartDate] = useState('2025-04-01');
-  const [endDate, setEndDate] = useState('2026-03-31');
-  const [customStart, setCustomStart] = useState('2025-04-01');
-  const [customEnd, setCustomEnd] = useState('2026-03-31');
+  // Top Filter Controls (Default to All Time Records so all live database quotations appear)
+  const [datePresetLabel, setDatePresetLabel] = useState('All Time Records');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
   const [dateError, setDateError] = useState('');
   const [showDateDropdown, setShowDateDropdown] = useState(false);
 
@@ -99,11 +121,11 @@ export default function AllQuotations() {
   };
 
   const handleResetAllTopFilters = () => {
-    setDatePresetLabel('Current Fiscal (2025-26)');
-    setStartDate('2025-04-01');
-    setEndDate('2026-03-31');
-    setCustomStart('2025-04-01');
-    setCustomEnd('2026-03-31');
+    setDatePresetLabel('All Time Records');
+    setStartDate('');
+    setEndDate('');
+    setCustomStart('');
+    setCustomEnd('');
     setDateError('');
     setSelectedDealerId('all');
     setSelectedDealerName('');
@@ -112,7 +134,7 @@ export default function AllQuotations() {
   };
 
   const isAnyTopFilterActive =
-    datePresetLabel !== 'Current Fiscal (2025-26)' ||
+    datePresetLabel !== 'All Time Records' ||
     selectedDealerId !== 'all' ||
     selectedDiscom !== 'all';
 
@@ -188,10 +210,11 @@ export default function AllQuotations() {
 
     // Date range filter
     if (startDate || endDate) {
-      const qDate = q.date;
-      if (qDate) {
-        if (startDate && qDate < startDate) return false;
-        if (endDate && qDate > endDate) return false;
+      const qMs = parseQuoteDateToMs(q.created_at || q.createdAt || q.date || q.displayDate);
+      if (qMs > 0) {
+        const startMs = startDate ? new Date(startDate + 'T00:00:00').getTime() : 0;
+        const endMs = endDate ? new Date(endDate + 'T23:59:59').getTime() : Infinity;
+        if (qMs < startMs || qMs > endMs) return false;
       }
     }
 

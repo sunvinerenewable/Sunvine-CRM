@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { verifyJwt } from './_lib/jwt.js';
+import { verifyJwt, extractAuthToken } from './_lib/jwt.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
 
@@ -115,8 +115,8 @@ function mapDbToFrontend(f) {
 }
 
 export default async function handler(req, res) {
-  const cookies = parseCookies(req.headers.cookie);
-  const jwt = verifyJwt(cookies.sunvine_auth_token);
+  const token = extractAuthToken(req);
+  const jwt = verifyJwt(token);
 
   if (!jwt.valid) {
     return res.status(401).json({ error: 'Authentication required.' });

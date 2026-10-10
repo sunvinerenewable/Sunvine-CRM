@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS public.bos_pricing_matrix (
     waaree_585_price NUMERIC(12,2) NOT NULL,
     topcon600_capacity_kw NUMERIC(6,3) DEFAULT 0,
     aps_topcon_600_price NUMERIC(12,2) NOT NULL,
+    waaree_540_price NUMERIC(12,2) DEFAULT 0,
+    panel_prices JSONB DEFAULT '{}'::jsonb,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

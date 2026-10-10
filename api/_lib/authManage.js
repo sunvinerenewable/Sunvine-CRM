@@ -77,8 +77,10 @@ export default async function handler(req, res) {
         const assignedStaffName = assignedStaffId === 'STF-DIRECT' 
           ? 'Direct to Company (HQ Desk)' 
           : (payload.assignedStaffName || 'Sunvine Sales Staff');
+        const dealerCategory = payload.category || payload.pricingConfig?.category || 'Margin Based';
         const pricingConfig = JSON.stringify({
           ...(payload.pricingConfig || {}),
+          category: dealerCategory,
           assignedStaffId,
           assignedStaffName
         });
@@ -195,9 +197,13 @@ export default async function handler(req, res) {
           params.push(payload.assignedStaffName);
         }
 
-        if (payload.pricingConfig) {
-          updates.push(`pricing_config = $${idx++}::jsonb`);
-          params.push(JSON.stringify(payload.pricingConfig));
+        if (payload.pricingConfig || payload.category) {
+          const cfg = {
+            ...(payload.pricingConfig || {}),
+            ...(payload.category ? { category: payload.category } : {})
+          };
+          updates.push(`pricing_config = COALESCE(pricing_config, '{}'::jsonb) || $${idx++}::jsonb`);
+          params.push(JSON.stringify(cfg));
         }
 
         updates.push(`updated_at = NOW()`);

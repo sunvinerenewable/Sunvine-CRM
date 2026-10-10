@@ -192,6 +192,7 @@ export default async function handler(req, res) {
         maxMarginCapPerKw: matchedDealer.max_margin_cap_per_kw || 6000,
         assignedStaffId: matchedDealer.assigned_staff_id || 'STF-DIRECT',
         assignedStaffName: matchedDealer.assigned_staff_name || (isDirect ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff'),
+        category: matchedDealer.pricing_config?.category || matchedDealer.category || 'Margin Based',
         pricingConfig: matchedDealer.pricing_config || {}
       };
 
@@ -315,6 +316,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       message: 'Authentication successful',
+      token,
       user: userPayload
     });
 
