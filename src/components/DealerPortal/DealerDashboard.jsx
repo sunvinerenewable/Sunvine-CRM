@@ -228,7 +228,7 @@ export default function DealerDashboard() {
       targetPercent: `${targetPercent}%`,
       totalValue: formatCompact(totalBusinessValue),
       approvedValue: formatShort(approvedValueNum),
-      pipelineValue: formatShort(pipelineVal),
+      pipelineValue: formatShort(pipelineValueNum),
       approvedCount: `${approvedQuotes.length} Approved • ${pipelineQuotes.length} In Pipeline`,
       sparkHeights
     };
