@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js';
+import bcrypt from 'bcryptjs';
 
 async function invalidateCatalogCache(keys) {
   try {
@@ -82,7 +83,11 @@ export const dealerService = {
           rating: Number(d.rating) || 4.9,
           tier: d.tier || 'Gold EPC',
           category: d.pricing_config?.category || d.category || 'Margin Based',
-          maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 0,
+          dealerType: d.dealer_type || d.pricing_config?.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'),
+          defaultCommissionPerKw: Number(d.default_commission_per_kw) || 4500,
+          registrationFeeRate: Number(d.registration_fee_rate) || 2000,
+          distanceFromRajkotKm: Number(d.distance_from_rajkot_km) || 0,
+          maxMarginCapPerKw: (d.max_margin_cap_per_kw !== undefined && d.max_margin_cap_per_kw !== null) ? Number(d.max_margin_cap_per_kw) : 0,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
           assignedStaffId: (() => {
             const rawId = d.assigned_staff_id || d.pricing_config?.assignedStaffId;
@@ -263,6 +268,90 @@ export const dealerService = {
       ...(finalStaffId ? { assignedStaffId: finalStaffId, assigned_staff_id: finalStaffId } : {}),
       ...(finalStaffName ? { assignedStaffName: finalStaffName, assigned_staff_name: finalStaffName } : {})
     };
+
+    if (fields.firmName !== undefined) updatePayload.firm_name = fields.firmName;
+    if (fields.contactPerson !== undefined) updatePayload.contact_person = fields.contactPerson;
+    if (fields.mobile !== undefined || fields.mobileNumber !== undefined) {
+      updatePayload.mobile_number = String(fields.mobile || fields.mobileNumber).replace(/\D/g, '').slice(-10);
+    }
+    if (fields.email !== undefined) {
+      updatePayload.email = (fields.email && String(fields.email).trim()) ? String(fields.email).trim() : null;
+    }
+    if (fields.city !== undefined) updatePayload.city = fields.city;
+    if (fields.state !== undefined) updatePayload.state = fields.state;
+    if (fields.discom !== undefined) updatePayload.discom = fields.discom;
+    if (fields.status !== undefined) updatePayload.status = fields.status.toLowerCase();
+    if (fields.tier !== undefined) updatePayload.tier = fields.tier;
+    if (fields.maxMarginCapPerKw !== undefined) updatePayload.max_margin_cap_per_kw = Number(fields.maxMarginCapPerKw);
+    if (fields.assignedStaffId !== undefined) {
+      updatePayload.assigned_staff_id = fields.assignedStaffId;
+      if (fields.assignedStaffId === 'STF-DIRECT') {
+        updatePayload.assigned_staff_name = 'Direct to Company (HQ Desk)';
+      }
+    }
+    if (fields.assignedStaffName !== undefined) {
+      updatePayload.assigned_staff_name = fields.assignedStaffId === 'STF-DIRECT'
+        ? 'Direct to Company (HQ Desk)'
+        : fields.assignedStaffName;
+    }
+    if (fields.bankName !== undefined) updatePayload.bank_name = fields.bankName;
+    if (fields.accountNumber !== undefined) updatePayload.account_number = fields.accountNumber;
+    if (fields.ifscCode !== undefined) updatePayload.ifsc_code = fields.ifscCode;
+    if (fields.branch !== undefined) updatePayload.branch = fields.branch;
+    if (fields.dealerType !== undefined || fields.dealer_type !== undefined) {
+      updatePayload.dealer_type = fields.dealerType || fields.dealer_type;
+    }
+    if (fields.defaultCommissionPerKw !== undefined || fields.default_commission_per_kw !== undefined) {
+      updatePayload.default_commission_per_kw = Number(fields.defaultCommissionPerKw ?? fields.default_commission_per_kw);
+    }
+    if (fields.registrationFeeRate !== undefined || fields.registration_fee_rate !== undefined) {
+      updatePayload.registration_fee_rate = Number(fields.registrationFeeRate ?? fields.registration_fee_rate);
+    }
+    if (fields.distanceFromRajkotKm !== undefined || fields.distance_from_rajkot_km !== undefined) {
+      updatePayload.distance_from_rajkot_km = Number(fields.distanceFromRajkotKm ?? fields.distance_from_rajkot_km);
+    }
+    if (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined || fields.category !== undefined) {
+      const finalStaffId = fields.assignedStaffId !== undefined ? fields.assignedStaffId : fields.pricingConfig?.assignedStaffId;
+      const finalStaffName = finalStaffId === 'STF-DIRECT'
+        ? 'Direct to Company (HQ Desk)'
+        : (fields.assignedStaffName !== undefined ? fields.assignedStaffName : fields.pricingConfig?.assignedStaffName);
+      const categoryVal = fields.category !== undefined ? fields.category : fields.pricingConfig?.category;
+      updatePayload.pricing_config = {
+        ...(fields.pricingConfig || {}),
+        ...(categoryVal ? { category: categoryVal } : {}),
+        ...(finalStaffId ? { assignedStaffId: finalStaffId } : {}),
+        ...(finalStaffName ? { assignedStaffName: finalStaffName } : {})
+      };
+    }
+    if (fields.password || fields.accessCode) {
+      const plainPassword = String(fields.password || fields.accessCode).trim();
+      updatePayload.password_hash = bcrypt.hashSync(plainPassword, 10);
+    }
+
+    if (fields.password || fields.accessCode || fields.mobile || fields.mobileNumber || fields.email !== undefined || fields.assignedStaffId || fields.category !== undefined) {
+      try {
+        await fetch('/api/auth/manage-credentials', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            action: 'update-dealer-credentials',
+            payload: {
+              dealerCode: dealerCodeOrId,
+              email: (fields.email && String(fields.email).trim()) ? String(fields.email).trim() : null,
+              mobile: updatePayload.mobile_number,
+              password: fields.password || fields.accessCode,
+              firmName: fields.firmName,
+              name: fields.contactPerson,
+              category: fields.category,
+              assignedStaffId: fields.assignedStaffId,
+              assignedStaffName: fields.assignedStaffName,
+              pricingConfig: updatePayload.pricing_config
+            }
+          })
+        });
+      } catch (_) {}
+    }
 
     // 1. Try /api/auth/admin-dealers
     try {

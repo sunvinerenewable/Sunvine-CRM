@@ -141,7 +141,7 @@ export const DEFAULT_SYSTEM_SETTINGS = {
     quotationTerms: `1. 10% advance with purchase order, 90% prior to dispatch.
 2. Inverter warranty: 8 years manufacturer replacement warranty.
 3. Module performance warranty: 30 years linear degradation warranty (>80% output at year 30).
-4. Statutory taxes: 13.8% composite solar GST included.`,
+4. Statutory taxes: 18% statutory solar GST included.`,
     cancellationPolicy: `1. 100% advance refund is guaranteed if distribution transformer capacity saturation or DISCOM technical unviability occurs prior to equipment procurement.
 2. Cancellations initiated after structural material fabrication are subject to a nominal restocking fee.`,
     disclaimer: `Solar electricity generation forecasts are calculated assuming standard Gujarat annual solar insolation (approx. 5.5 peak sun hours per day). Actual generation may vary depending on local weather conditions, dust accumulation, tilt angle, and regular maintenance.`

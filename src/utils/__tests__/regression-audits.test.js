@@ -85,7 +85,7 @@ test('DEFECT AUDIT: Daily specific yield (4.2) vs Annual yield (1440) normalizes
 
 // ── SECTION 2: Public Quotation Access End-to-End (BUG-05, Security, Privacy) ─
 test('PUBLIC PROPOSAL E2E: Valid share token returns unauthenticated proposal with billing data and zero secret leak', async () => {
-  const sampleToken = 'pub_token_valid_xyz789';
+  const sampleToken = `pub_token_valid_${Date.now()}`;
   const mockDbQuote = {
     id: 'SV-2026-Q808',
     customer_name: 'Rahul Sharma',

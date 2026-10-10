@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { openWhatsAppChat } from '../../utils/quotationShare';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
@@ -7,37 +7,86 @@ import ConvertQuotationModal from './ConvertQuotationModal';
 export default function MyQuotations() {
   const { 
     quotations, 
+    currentDealer,
+    role,
     startEditingQuotation, 
     clearEditingQuotation, 
     clearActiveDraftQuote, 
     setActiveTab, 
-    setPreviewQuotation 
+    setPreviewQuotation,
+    deleteQuotation
   } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [viewMode, setViewMode] = useTableViewMode('dealer_my_quotes');
   const [convertingQuote, setConvertingQuote] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const handleOpenPDF = (quote) => {
     if (setPreviewQuotation) setPreviewQuotation(quote);
     setActiveTab('preview_quote');
   };
 
+  const handleDeleteQuote = async (id, e) => {
+    e?.stopPropagation();
+    if (!id) return;
+    if (!window.confirm(`Are you sure you want to delete quotation ${id}? This cannot be undone.`)) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      if (deleteQuotation) {
+        await deleteQuotation(id);
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  // Strictly scope quotations to the logged-in dealer partner (Zero cross-dealer data leakage)
+  const dealerQuotes = useMemo(() => {
+    if (!quotations || quotations.length === 0) return [];
+    if (!currentDealer && role !== 'dealer') return quotations;
+    if (!currentDealer) return [];
+
+    const dId = String(currentDealer.id || currentDealer.dealerId || currentDealer.dealer_id || '').toLowerCase().trim();
+    const dCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').toLowerCase().trim();
+    const dFirm = String(currentDealer.firmName || currentDealer.firm_name || currentDealer.businessName || currentDealer.name || '').toLowerCase().trim();
+    const dPerson = String(currentDealer.contactPerson || currentDealer.contact_person || '').toLowerCase().trim();
+    const dMobile = String(currentDealer.mobileNumber || currentDealer.mobile_number || currentDealer.mobile || '').toLowerCase().trim();
+
+    return quotations.filter(q => {
+      const qId = String(q.dealer_id || q.dealerId || '').toLowerCase().trim();
+      const qCode = String(q.dealer_code || q.dealerCode || '').toLowerCase().trim();
+      const qName = String(q.dealer_name || q.dealerName || q.dealerFirm || '').toLowerCase().trim();
+      const qMobile = String(q.dealer_mobile || q.dealerMobile || '').toLowerCase().trim();
+
+      if (dId && (qId === dId || qCode === dId)) return true;
+      if (dCode && (qCode === dCode || qId === dCode)) return true;
+      if (dMobile && qMobile && qMobile === dMobile) return true;
+      if (dFirm && qName && (qName === dFirm || qName.includes(dFirm) || dFirm.includes(qName))) return true;
+      if (dPerson && qName && (qName === dPerson || qName.includes(dPerson) || dPerson.includes(qName))) return true;
+      return false;
+    });
+  }, [quotations, currentDealer, role]);
+
   // Harmonized quotation list matching live database schema
-  const quotesList = (quotations && quotations.length > 0 ? quotations : []).map(q => ({
-    ...q,
-    customerName: q.customer_name || q.customerName || 'Customer',
-    capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
-    type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
-    amount: typeof q.amount === 'string'
-      ? q.amount
-      : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
-    subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
-    status: q.status || 'Active / Sent',
-    statusClass: q.statusClass || 'bg-primary/15 text-primary',
-    location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat'),
-    date: q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today')
-  }));
+  const quotesList = useMemo(() => {
+    return (dealerQuotes && dealerQuotes.length > 0 ? dealerQuotes : []).map(q => ({
+      ...q,
+      customerName: q.customer_name || q.customerName || 'Customer',
+      capacity: (q.system_capacity_kw || q.systemCapacityKW) ? `${q.system_capacity_kw || q.systemCapacityKW} kW` : (q.capacity || '5.0 kW'),
+      type: q.panel_type || q.projectType || q.type || 'Mono Perc • Residential',
+      amount: typeof q.amount === 'string'
+        ? q.amount
+        : '₹\u00A0' + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0).toLocaleString('en-IN'),
+      subsidy: (q.subsidy_amount || q.subsidyAmount) ? `₹\u00A0${Number(q.subsidy_amount || q.subsidyAmount).toLocaleString('en-IN')} Subsidy` : 'Subsidy Eligible',
+      status: q.status || 'Active / Sent',
+      statusClass: q.statusClass || 'bg-primary/15 text-primary',
+      location: q.location || ((q.customer_city || q.city) ? `${q.customer_city || q.city}, ${q.customer_state || q.state || 'Gujarat'}` : 'Gujarat'),
+      date: q.date || (q.created_at ? new Date(q.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today')
+    }));
+  }, [dealerQuotes]);
 
   const filteredQuotes = quotesList.filter(q => {
     const term = searchTerm.toLowerCase();
@@ -127,69 +176,105 @@ export default function MyQuotations() {
 
       {/* Card View Mode (Default on Mobile, responsive grid) */}
       {viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {filteredQuotes.map((q, idx) => (
-            <div key={idx} className="bg-surface-container-lowest p-4 rounded-xl shadow-sm flex flex-col justify-between gap-3 border border-surface-container-high/60 hover:border-primary/40 transition-all">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-label-md text-sm text-on-surface font-bold truncate">{q.customerName}</span>
-                    <span className={`px-2 py-0.5 rounded-full font-label-xs text-[10px] shrink-0 font-semibold ${q.statusClass}`}>
-                      {q.status}
-                    </span>
-                  </div>
-                  <p className="font-body-sm text-xs text-secondary mt-0.5">{q.capacity} • {q.type}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className="font-headline-sm text-sm font-bold text-on-surface block whitespace-nowrap">{q.amount}</span>
-                  <span className="font-label-xs text-[10px] text-secondary">{q.subsidy}</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-surface-container bg-surface-container-low/50 px-2.5 py-1.5 rounded-lg text-xs">
-                <div className="flex items-center gap-1 text-secondary min-w-0">
-                  <span className="material-symbols-outlined text-[15px] text-tertiary shrink-0">location_on</span>
-                  <span className="font-label-xs text-[11px] truncate max-w-[120px]">{q.location.split(',')[0]}</span>
-                  <span className="text-outline-variant shrink-0">•</span>
-                  <span className="font-label-xs text-[11px] shrink-0">{q.date}</span>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => startEditingQuotation(q)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
-                    title="Edit Quotation"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">edit</span>
-                  </button>
-                  <button
-                    onClick={() => handleOpenPDF(q)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-                    title="View Proposal PDF"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">description</span>
-                  </button>
-                  <button
-                    onClick={() => setConvertingQuote(q)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:bg-primary-container/20 transition-colors cursor-pointer"
-                    title="Book Order / Convert to Customer File"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                  </button>
-                  <button
-                    onClick={() => openWhatsAppChat(q)}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
-                    title="Share via WhatsApp"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">chat</span>
-                  </button>
-                </div>
-              </div>
+        filteredQuotes.length === 0 ? (
+          <div className="py-12 px-4 text-center rounded-xl border border-dashed border-outline-variant/40 bg-surface-container-low/40">
+            <div className="w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center mb-3">
+              <span className="material-symbols-outlined text-2xl">request_quote</span>
             </div>
-          ))}
-        </div>
+            <h3 className="text-on-surface font-semibold text-sm mb-1">No Quotations Found</h3>
+            <p className="text-secondary text-xs max-w-sm mx-auto mb-4">
+              {searchTerm || statusFilter !== 'all'
+                ? 'No quotations match your current search or filter criteria.'
+                : "You haven't generated any quotations yet. Create customized solar quotations with instant subsidy calculations in under 2 minutes."}
+            </p>
+            <button
+              onClick={() => {
+                if (clearEditingQuotation) clearEditingQuotation();
+                if (clearActiveDraftQuote) clearActiveDraftQuote();
+                setActiveTab('create_quote');
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold text-xs hover:bg-primary-hover shadow-sm transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              <span>Create New Quotation</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {filteredQuotes.map((q, idx) => (
+              <div key={idx} className="bg-surface-container-lowest p-4 rounded-xl shadow-sm flex flex-col justify-between gap-3 border border-surface-container-high/60 hover:border-primary/40 transition-all">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-label-md text-sm text-on-surface font-bold truncate">{q.customerName}</span>
+                      <span className={`px-2 py-0.5 rounded-full font-label-xs text-[10px] shrink-0 font-semibold ${q.statusClass}`}>
+                        {q.status}
+                      </span>
+                    </div>
+                    <p className="font-body-sm text-xs text-secondary mt-0.5">{q.capacity} • {q.type}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="font-headline-sm text-sm font-bold text-on-surface block whitespace-nowrap">{q.amount}</span>
+                    <span className="font-label-xs text-[10px] text-secondary">{q.subsidy}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-surface-container bg-surface-container-low/50 px-2.5 py-1.5 rounded-lg text-xs">
+                  <div className="flex items-center gap-1 text-secondary min-w-0">
+                    <span className="material-symbols-outlined text-[15px] text-tertiary shrink-0">location_on</span>
+                    <span className="font-label-xs text-[11px] truncate max-w-[120px]">{q.location.split(',')[0]}</span>
+                    <span className="text-outline-variant shrink-0">•</span>
+                    <span className="font-label-xs text-[11px] shrink-0">{q.date}</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => startEditingQuotation(q)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer"
+                      title="Edit Quotation"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">edit</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenPDF(q)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
+                      title="View Proposal PDF"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">description</span>
+                    </button>
+                    <button
+                      onClick={() => setConvertingQuote(q)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:bg-primary-container/20 transition-colors cursor-pointer"
+                      title="Book Order / Convert to Customer File"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                    </button>
+                    <button
+                      onClick={() => openWhatsAppChat(q)}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
+                      title="Share via WhatsApp"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">chat</span>
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteQuote(q.id, e)}
+                      disabled={deletingId === q.id}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-secondary hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                      title="Delete Quotation"
+                      type="button"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        {deletingId === q.id ? 'hourglass_top' : 'delete'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         /* Table View Mode (Full Data Table with Sticky Header & Scroll) */
         <div className="w-full max-h-[calc(100vh-270px)] min-h-[420px] overflow-y-auto overflow-x-auto rounded-xl shadow-sm bg-surface-container-lowest border border-surface-container-high/60 relative">
@@ -205,79 +290,117 @@ export default function MyQuotations() {
               </tr>
             </thead>
             <tbody className="font-body-md text-body-md divide-y divide-surface-container">
-              {filteredQuotes.map((q, idx) => (
-                <tr key={idx} className="bg-surface-container-lowest hover:bg-surface-container-low/80 transition-colors">
-                  <td className="px-space-lg py-3.5">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-on-surface">{q.customerName}</span>
-                        {q.id && (
-                          <span className="text-[10px] font-mono text-secondary bg-surface-container px-1.5 py-0.5 rounded">
-                            {q.id}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-label-xs text-secondary mt-0.5">{q.location}</span>
+              {filteredQuotes.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-12 px-4 text-center">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 text-primary mx-auto flex items-center justify-center mb-3">
+                      <span className="material-symbols-outlined text-2xl">request_quote</span>
                     </div>
-                  </td>
-                  <td className="px-space-lg py-3.5">
-                    <div className="flex items-center gap-2.5 font-semibold text-on-surface whitespace-nowrap">
-                      <div className="w-7 h-7 rounded-lg bg-primary-container/15 text-primary flex items-center justify-center shrink-0 border border-primary/20">
-                        <span className="material-symbols-outlined text-[16px] leading-none select-none">solar_power</span>
-                      </div>
-                      <span className="font-mono font-bold text-inverse-surface">{q.capacity}</span>
-                    </div>
-                  </td>
-                  <td className="px-space-lg py-3.5 text-secondary font-label-xs whitespace-nowrap">
-                    {q.date}
-                  </td>
-                  <td className="px-space-lg py-3.5 text-right font-bold text-on-surface tabular-nums whitespace-nowrap">
-                    {q.amount}
-                  </td>
-                  <td className="px-space-lg py-3.5 text-center whitespace-nowrap">
-                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-label-xs font-label-xs ${q.statusClass}`}>
-                      <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
-                      {q.status}
-                    </span>
-                  </td>
-                  <td className="px-space-lg py-3.5 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => startEditingQuotation(q)}
-                        className="p-1.5 rounded hover:bg-primary/10 text-secondary hover:text-primary transition-colors cursor-pointer"
-                        title="Edit Quotation"
-                        type="button"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">edit</span>
-                      </button>
-                      <button
-                        onClick={() => handleOpenPDF(q)}
-                        className="p-1.5 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
-                        title="View Proposal PDF"
-                        type="button"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">description</span>
-                      </button>
-                      <button
-                        onClick={() => setConvertingQuote(q)}
-                        className="p-1.5 rounded hover:bg-primary-container/20 text-primary transition-colors cursor-pointer"
-                        title="Book Order / Convert to Customer File"
-                        type="button"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                      </button>
-                      <button
-                        onClick={() => openWhatsAppChat(q)}
-                        className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
-                        title="Share via WhatsApp"
-                        type="button"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">chat</span>
-                      </button>
-                    </div>
+                    <h3 className="text-on-surface font-semibold text-sm mb-1">No Quotations Found</h3>
+                    <p className="text-secondary text-xs max-w-sm mx-auto mb-4">
+                      {searchTerm || statusFilter !== 'all'
+                        ? 'No quotations match your current search or filter criteria.'
+                        : "You haven't generated any quotations yet. Create customized solar quotations with instant subsidy calculations in under 2 minutes."}
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (clearEditingQuotation) clearEditingQuotation();
+                        if (clearActiveDraftQuote) clearActiveDraftQuote();
+                        setActiveTab('create_quote');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold text-xs hover:bg-primary-hover shadow-sm transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      <span>Create New Quotation</span>
+                    </button>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filteredQuotes.map((q, idx) => (
+                  <tr key={idx} className="bg-surface-container-lowest hover:bg-surface-container-low/80 transition-colors">
+                    <td className="px-space-lg py-3.5">
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-on-surface">{q.customerName}</span>
+                          {q.id && (
+                            <span className="text-[10px] font-mono text-secondary bg-surface-container px-1.5 py-0.5 rounded">
+                              {q.id}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-label-xs text-secondary mt-0.5">{q.location}</span>
+                      </div>
+                    </td>
+                    <td className="px-space-lg py-3.5">
+                      <div className="flex items-center gap-2.5 font-semibold text-on-surface whitespace-nowrap">
+                        <div className="w-7 h-7 rounded-lg bg-primary-container/15 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                          <span className="material-symbols-outlined text-[16px] leading-none select-none">solar_power</span>
+                        </div>
+                        <span className="font-mono font-bold text-inverse-surface">{q.capacity}</span>
+                      </div>
+                    </td>
+                    <td className="px-space-lg py-3.5 text-secondary font-label-xs whitespace-nowrap">
+                      {q.date}
+                    </td>
+                    <td className="px-space-lg py-3.5 text-right font-bold text-on-surface tabular-nums whitespace-nowrap">
+                      {q.amount}
+                    </td>
+                    <td className="px-space-lg py-3.5 text-center whitespace-nowrap">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-label-xs font-label-xs ${q.statusClass}`}>
+                        <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
+                        {q.status}
+                      </span>
+                    </td>
+                    <td className="px-space-lg py-3.5 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => startEditingQuotation(q)}
+                          className="p-1.5 rounded hover:bg-primary/10 text-secondary hover:text-primary transition-colors cursor-pointer"
+                          title="Edit Quotation"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                        <button
+                          onClick={() => handleOpenPDF(q)}
+                          className="p-1.5 rounded hover:bg-surface-container text-secondary hover:text-on-surface transition-colors cursor-pointer"
+                          title="View Proposal PDF"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">description</span>
+                        </button>
+                        <button
+                          onClick={() => setConvertingQuote(q)}
+                          className="p-1.5 rounded hover:bg-primary-container/20 text-primary transition-colors cursor-pointer"
+                          title="Book Order / Convert to Customer File"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                        </button>
+                        <button
+                          onClick={() => openWhatsAppChat(q)}
+                          className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
+                          title="Share via WhatsApp"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">chat</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteQuote(q.id, e)}
+                          disabled={deletingId === q.id}
+                          className="p-1.5 rounded hover:bg-red-500/15 text-secondary hover:text-red-400 transition-colors cursor-pointer"
+                          title="Delete Quotation"
+                          type="button"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {deletingId === q.id ? 'hourglass_top' : 'delete'}
+                          </span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

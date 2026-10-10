@@ -150,7 +150,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   };
 
   // Resolve numerical capacity and dimensions
-  const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(2));
+  const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(3));
   const rawWattMatch = (solarModule || '').match(/(\d{3})\s*W/i);
   const resolvedWatt = Number(moduleWattage || (rawWattMatch ? rawWattMatch[1] : 585));
   const resolvedCount = Number(moduleCount || Math.ceil((resolvedCapKW * 1000) / resolvedWatt) || 6);
@@ -341,27 +341,27 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
-  const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
+  const extraTransportCharge = Number(quotation.extraTransportAmount || (quotation.hasExtraTransport ? quotation.transportCharge : 0)) || 0;
+  const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || (Math.round(customerRatePerKW * resolvedCapKW) + extraTransportCharge);
 
   const isInterState = quotation.isInterState || (String(quotation.customerState || quotation.state || 'Gujarat').trim().toLowerCase() !== 'gujarat');
-  const bomTotals = quotation.bomTotals || quotation.quote_payload?.bomTotals;
-  const baseBeforeGst = bomTotals?.totalTaxableBase || quotation.baseBeforeGst || Math.round(grossTurnkey / 1.138);
-  const gstAmount = bomTotals?.totalGstAmount || quotation.gstAmount || (grossTurnkey - baseBeforeGst);
-  const cgstAmount = bomTotals?.cgstTotal !== undefined ? bomTotals.cgstTotal : (isInterState ? 0 : Math.round(gstAmount / 2));
-  const sgstAmount = bomTotals?.sgstTotal !== undefined ? bomTotals.sgstTotal : (isInterState ? 0 : gstAmount - cgstAmount);
-  const igstAmount = bomTotals?.igstTotal !== undefined ? bomTotals.igstTotal : (isInterState ? gstAmount : 0);
+  const gstRate = Number(quotation.gstPercentage || quotation.gstPercent || 18);
+  const baseBeforeGst = quotation.baseBeforeGst || Math.round(grossTurnkey / (1 + (gstRate / 100)));
+  const gstAmount = quotation.gstAmount || (grossTurnkey - baseBeforeGst);
+  const cgstAmount = quotation.cgstAmount !== undefined ? quotation.cgstAmount : (isInterState ? 0 : Math.round(gstAmount / 2));
+  const sgstAmount = quotation.sgstAmount !== undefined ? quotation.sgstAmount : (isInterState ? 0 : gstAmount - cgstAmount);
+  const igstAmount = quotation.igstAmount !== undefined ? quotation.igstAmount : (isInterState ? gstAmount : 0);
 
   const subsidyAmount = quotation.subsidyAmount !== undefined
     ? quotation.subsidyAmount
     : calculateSubsidy(resolvedCapKW, projectType);
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
-  // Line item breakdown
-  const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : 1000;
-  const installationCost = quotation.installationEstimatedCost || (quotation.installationPricingMode === 'fixed' ? Number(quotation.installationFixedAmount || 0) : Math.round(resolvedCapKW * Number(quotation.installationRatePerKw || 0)));
-  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * Number(quotation.ratePerWp || 0));
-  const inverterCost = quotation.inverterEstimatedCost || 0;
-  const structureCost = quotation.structureEstimatedCost || 0;
+  const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : (extraTransportCharge || 1000);
+  const installationCost = quotation.installationEstimatedCost || (quotation.installationPricingMode === 'fixed' ? Number(quotation.installationFixedAmount || 0) : (Number(quotation.installationRatePerKw) ? Math.round(resolvedCapKW * Number(quotation.installationRatePerKw)) : Math.round(resolvedCapKW * 2000)));
+  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (Number(quotation.ratePerWp) || 18.00));
+  const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
+  const structureCost = quotation.structureEstimatedCost || Math.round(resolvedCount * 3200);
   const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
 
   // Telemetry metrics
@@ -453,7 +453,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     );
   }
 
-  const resolvedCoverSrc = customCoverUrl || coverImage || '/sunvine_quotation_cover.png';
+  const rawCoverSrc = customCoverUrl || coverImage || '/sunvine_quotation_cover.png';
+  const resolvedCoverSrc = rawCoverSrc.includes('?') ? rawCoverSrc : `${rawCoverSrc}?v=20261010`;
 
   return (
     <div className="pdf-document font-sans text-[#0F1B2E] bg-white print:bg-white select-none">
@@ -527,7 +528,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 {resolvedCapKW} kW On-Grid Solar PV Plant
               </div>
               <div className="text-[11px] text-gray-700 mt-0.5">
-                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({((resolvedCount * resolvedWatt) / 1000).toFixed(2)} kWp)
+                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({parseFloat(((resolvedCount * resolvedWatt) / 1000).toFixed(3))} kWp)
               </div>
               <div className="text-[10px] text-gray-600 mt-0.5">
                 Inverter: {inverterType.split('(')[0]?.trim() || inverterType} • Roof: ~{resolvedArea} Sq. Ft.
@@ -606,8 +607,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                   <tr className="bg-slate-50/60">
                     <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500">2</td>
                     <td className="py-2 px-3 border-r border-slate-200">
-                      <span className="font-bold text-[#0B2545]">Integrated GST (IGST)</span>
-                      <span className="text-[10px] text-gray-500 ml-1.5">(Statutory Composite Tax)</span>
+                      <span className="font-bold text-[#0B2545]">Integrated GST (IGST - {gstRate}%)</span>
+                      <span className="text-[10px] text-gray-500 ml-1.5">(Statutory Interstate Tax)</span>
                     </td>
                     <td className="py-2 px-3 text-right font-mono font-bold text-sm text-emerald-800">
                       {formatINR(igstAmount)}
@@ -618,8 +619,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <tr className="bg-slate-50/40">
                       <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">2</td>
                       <td className="py-1.5 px-3 border-r border-slate-200">
-                        <span className="font-semibold text-gray-700">Central GST (CGST)</span>
-                        <span className="text-[10px] text-gray-500 ml-1.5">(Statutory Composite Central Share)</span>
+                        <span className="font-semibold text-gray-700">Central GST (CGST - {(gstRate / 2)}%)</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">(Central Share)</span>
                       </td>
                       <td className="py-1.5 px-3 text-right font-mono font-semibold text-xs text-gray-800">
                         {formatINR(cgstAmount)}
@@ -628,8 +629,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <tr className="bg-slate-50/40">
                       <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">3</td>
                       <td className="py-1.5 px-3 border-r border-slate-200">
-                        <span className="font-semibold text-gray-700">State GST (SGST / Gujarat)</span>
-                        <span className="text-[10px] text-gray-500 ml-1.5">(Statutory Composite State Share)</span>
+                        <span className="font-semibold text-gray-700">State GST (SGST - {(gstRate / 2)}% / Gujarat)</span>
+                        <span className="text-[10px] text-gray-500 ml-1.5">(State Share)</span>
                       </td>
                       <td className="py-1.5 px-3 text-right font-mono font-semibold text-xs text-gray-800">
                         {formatINR(sgstAmount)}
@@ -640,7 +641,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                       <td className="py-1.5 px-3 border-r border-slate-200 text-emerald-950">
                         <div className="flex items-center gap-1.5">
                           <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase font-bold">GST Included</span>
-                          <span>Total Statutory GST (CGST + SGST)</span>
+                          <span>Total Statutory GST ({gstRate}%)</span>
                         </div>
                       </td>
                       <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">
@@ -648,6 +649,25 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                       </td>
                     </tr>
                   </>
+                )}
+
+                {/* Extra Doorstep Transport & Logistics (if added by dealer) */}
+                {extraTransportCharge > 0 && (
+                  <tr className="bg-blue-50/40 border-t border-blue-200">
+                    <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500">•</td>
+                    <td className="py-2 px-3 border-r border-slate-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded uppercase font-bold">LOGISTICS</span>
+                        <span className="font-bold text-[#0B2545]">Doorstep Transport &amp; Freight</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        Dedicated outstation site delivery, safe transit &amp; insurance
+                      </p>
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono font-bold text-sm text-blue-900">
+                      ₹ {formatINR(extraTransportCharge)}
+                    </td>
+                  </tr>
                 )}
 
                 {/* 3. Total Project Cost */}

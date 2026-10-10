@@ -1,19 +1,8 @@
-import { verifyJwt } from './jwt.js';
+import { verifyJwt, extractAuthToken } from './jwt.js';
 import { redisGet } from './redis.js';
 
-function parseCookies(cookieHeader) {
-  const list = {};
-  if (!cookieHeader) return list;
-  cookieHeader.split(';').forEach(cookie => {
-    const parts = cookie.split('=');
-    list[parts.shift().trim()] = decodeURI(parts.join('='));
-  });
-  return list;
-}
-
 export default async function handler(req, res) {
-  const cookies = parseCookies(req.headers.cookie);
-  const token = cookies.sunvine_auth_token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = extractAuthToken(req);
 
   if (!token) {
     return res.status(401).json({ authenticated: false, error: 'No active session token' });

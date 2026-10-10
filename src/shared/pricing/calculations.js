@@ -381,3 +381,73 @@ export function calcEMI(principal, annualRatePctOrSettings = DEFAULT_SOLAR_LOAN_
   return Math.round(emi);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. SOLAR PANEL WATTAGE & CAPACITY COMPATIBILITY
+//    Dynamically checks if a panel model's wattage (Wp) can form the exact
+//    system capacity using a whole number of panels, within floating precision
+//    tolerance (<= 5 W).
+//    Examples:
+//      - 540 W x 4 = 2.16 kW  => Compatible with 2.16 kW
+//      - 550 W x 4 = 2.20 kW  => Compatible with 2.20 kW
+//      - 540 W on 2.20 kW     => Incompatible (diff = 40 W > 5 W)
+//      - 600 W on 3.30 kW     => Incompatible (diff = 300 W > 5 W)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * @param {number|string} capacityKw - System capacity in kW (e.g. 2.16, 2.20, 3.30)
+ * @param {number|string} panelWattage - Panel rating in Wp (e.g. 540, 545, 550, 555, 560, 580, 585, 600)
+ * @param {number|string} [noOfModules] - Optional module count if explicitly constrained
+ * @returns {boolean} true if panel can form system capacity with an integer panel count
+ */
+export function isPanelWattageCompatible(capacityKw, panelWattage, noOfModules = null) {
+  const cap = Number(capacityKw);
+  const watt = Number(panelWattage);
+  if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(watt) || watt <= 0) return false;
+
+  const totalWatts = Math.round(cap * 1000);
+  const exactModules = totalWatts / watt;
+  const roundedModules = Math.round(exactModules);
+  if (roundedModules < 1) return false;
+
+  // Whole number of panels multiplied by wattage must equal system capacity within <= 5W tolerance
+  const wattDiff = Math.abs((roundedModules * watt) - totalWatts);
+  if (wattDiff > 5) return false;
+
+  if (noOfModules !== null && noOfModules !== undefined && Number(noOfModules) > 0) {
+    const mods = Number(noOfModules);
+    const specificDiff = Math.abs((mods * watt) - totalWatts);
+    if (specificDiff > 5) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Calculates the required whole number of panels for a compatible system capacity.
+ * @param {number|string} capacityKw
+ * @param {number|string} panelWattage
+ * @returns {number}
+ */
+export function getPanelQuantityForCapacity(capacityKw, panelWattage) {
+  const cap = Number(capacityKw);
+  const watt = Number(panelWattage);
+  if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(watt) || watt <= 0) return 0;
+  return Math.round(Math.round(cap * 1000) / watt);
+}
+
+/**
+ * Normalizes a solar OEM brand name string for reliable deduplication and matching.
+ * Handles variations like "Rayzone Solar" vs "Rayzon", "APS Solar" vs "APS", "Waaree Energies" vs "Waaree".
+ * @param {string} brand
+ * @returns {string}
+ */
+export function normalizeBrand(brand) {
+  if (!brand || typeof brand !== 'string') return '';
+  return brand
+    .toLowerCase()
+    .replace(/rayzone/gi, 'rayzon')
+    .replace(/\s*(solar|energies|energy|limited|ltd|pvt|mudra)\b/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+}
+
+

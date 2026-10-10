@@ -4,6 +4,7 @@ import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 import { hardwareService } from '../../services/hardwareService';
 import { pricingService } from '../../services/pricingService';
 import { settingsService } from '../../services/settingsService';
+import { isPanelWattageCompatible, getPanelQuantityForCapacity, normalizeBrand } from '../../shared/pricing/calculations';
 import DealerCustomPricingMatrix from './DealerCustomPricingMatrix';
 
 const DEFAULT_INVERTER_BENCHMARK_MATRIX = [
@@ -62,6 +63,16 @@ export default function PricingMaster() {
     return 'base';
   });
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (['base', 'modules', 'inverters', 'bom', 'bank', 'dealer_custom'].includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+    }
+  }, []);
+
   const [toastMessage, setToastMessage] = useState('');
   const triggerToast = (msg) => {
     setToastMessage(msg);
@@ -90,15 +101,14 @@ export default function PricingMaster() {
     capacityKW: '',
     noOfModules: '',
     inverterCapacityKW: '',
-    adaniBiFiPrice: '',
-    apsBiFiPrice: '',
-    rayzonePrice: '',
-    waaree540Price: '',
-    topcon585CapacityKW: '',
-    waaree585Price: '',
-    topcon600CapacityKW: '',
-    apsTopcon600Price: ''
+    bypassCompatibilityFilter: false,
+    panelItems: []
   });
+
+  // BOS Matrix Table Filters (Brand & System Size Filter)
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState('all');
+  const [selectedCapFilter, setSelectedCapFilter] = useState('all');
+  const [showAllBrandColumns, setShowAllBrandColumns] = useState(false);
 
   // Dedicated Inverter Sizing & Benchmark Pricing Matrix states (SR-57)
   const [inverterBenchmarkMatrix, setInverterBenchmarkMatrix] = useState(() => {
@@ -266,6 +276,161 @@ export default function PricingMaster() {
   const getWaareePrice = (row) => row.waaree585Price ?? row.waaree585Topcon ?? row.waaree_585_price ?? 0;
   const getApsTopconPrice = (row) => row.apsTopcon600Price ?? row.apsTopcon600 ?? row.aps_topcon_600_price ?? 0;
 
+  // Dynamic Panel Catalog List combining core recognized models and active modules from modulesList
+  const allAvailablePanels = useMemo(() => {
+    const basePanels = [
+      { id: 'mod-adani-555', key: 'adani_bifi', brand: 'Adani', wattage: 555, model: '555W Bi-Fi', cellTech: 'Bi-Fi', legacyKey: 'adaniBiFiPrice', color: 'emerald' },
+      { id: 'mod-aps-550', key: 'aps_bifi', brand: 'APS', wattage: 550, model: '550W Bi-Fi', cellTech: 'Bi-Fi', legacyKey: 'apsBiFiPrice', color: 'teal' },
+      { id: 'mod-rayzon-550', key: 'rayzone', brand: 'Rayzon', wattage: 550, model: '550W Bi-Fi', cellTech: 'Bi-Fi', legacyKey: 'rayzonePrice', color: 'emerald' },
+      { id: 'mod-waaree-540', key: 'waaree_540', brand: 'Waaree', wattage: 540, model: '540W Mono PERC', cellTech: 'Mono PERC', legacyKey: 'waaree540Price', color: 'blue' },
+      { id: 'mod-waaree-585', key: 'waaree_585', brand: 'Waaree', wattage: 585, model: '585W TOPCon', cellTech: 'TOPCon', legacyKey: 'waaree585Price', color: 'amber' },
+      { id: 'mod-aps-600', key: 'aps_topcon_600', brand: 'APS', wattage: 600, model: '600W TOPCon', cellTech: 'TOPCon', legacyKey: 'apsTopcon600Price', color: 'cyan' }
+    ];
+
+    const result = [...basePanels];
+
+    (modulesList || []).forEach((m) => {
+      const watt = Number(m.wattage);
+      if (!watt || m.isArchived) return;
+      const brandStr = m.brand || 'Custom';
+      const existing = result.find(
+        (p) => p.id === m.id || (normalizeBrand(p.brand) === normalizeBrand(brandStr) && p.wattage === watt)
+      );
+      if (existing) {
+        // Enrich base panel with actual hardware catalog metadata if matching
+        if (m.model) existing.model = m.model;
+        if (m.cellTech) existing.cellTech = m.cellTech;
+        if (m.id) existing.id = m.id;
+      } else {
+        result.push({
+          id: m.id || `mod-${brandStr.toLowerCase().replace(/\s+/g, '_')}-${watt}`,
+          key: m.id || `mod_${brandStr.toLowerCase().replace(/\s+/g, '_')}_${watt}`,
+          brand: brandStr,
+          wattage: watt,
+          model: m.model || `${brandStr} ${watt}W Module`,
+          cellTech: m.cellTech || 'Solar Module',
+          legacyKey: null,
+          color: 'indigo'
+        });
+      }
+    });
+
+    return result;
+  }, [modulesList]);
+
+  // Compatibility logic: Returns true if panel wattage can mathematically form this system capacity using a whole number of panels
+  const isPanelCompatibleWithSystem = (capacityKW, panelWattage) => {
+    return isPanelWattageCompatible(capacityKW, panelWattage);
+  };
+
+  // Robust Resolver: Resolves configured price for a given slab and panel.
+  // Returns null if the panel was not added or is incompatible with the slab capacity (rendered as "-" in the matrix).
+  const getPriceForPanel = (row, panel) => {
+    if (!row || !panel) return null;
+
+    // Strict compatibility check: If panel wattage cannot form row.capacityKW with integer modules, return null
+    if (!isPanelWattageCompatible(row.capacityKW, panel.wattage)) {
+      return null;
+    }
+
+    if (row.panelPrices && typeof row.panelPrices === 'object') {
+      const direct = row.panelPrices[panel.id] ?? row.panelPrices[panel.key] ?? row.panelPrices[panel.legacyKey];
+      if (direct !== undefined && direct !== null) {
+        const num = Number(direct);
+        return num > 0 ? num : null;
+      }
+    }
+
+    if (panel.legacyKey && row[panel.legacyKey] !== undefined && row[panel.legacyKey] !== null) {
+      const num = Number(row[panel.legacyKey]);
+      if (num > 0) {
+        return num;
+      }
+    }
+
+    return null;
+  };
+
+  // Unique list of brands present in allAvailablePanels
+  const availableMatrixBrands = useMemo(() => {
+    const brands = new Set();
+    allAvailablePanels.forEach(p => {
+      if (p.brand) brands.add(p.brand);
+    });
+    return Array.from(brands).sort();
+  }, [allAvailablePanels]);
+
+  // Available system sizes for the selected brand
+  const availableSizesForBrand = useMemo(() => {
+    if (selectedBrandFilter === 'all') {
+      const sizes = new Set(localBosMatrix.map(r => Number(r.capacityKW || r.capacity_kw)).filter(Boolean));
+      return Array.from(sizes).sort((a, b) => a - b);
+    }
+    const brandPanels = allAvailablePanels.filter(
+      p => normalizeBrand(p.brand) === normalizeBrand(selectedBrandFilter)
+    );
+    const matchingSizes = new Set();
+    localBosMatrix.forEach(row => {
+      const rowKw = Number(row.capacityKW || row.capacity_kw);
+      if (!rowKw) return;
+      const isCompatOrPriced = brandPanels.some(p => {
+        const isCompat = isPanelCompatibleWithSystem(rowKw, p.wattage);
+        const price = getPriceForPanel(row, p);
+        return isCompat || (price && Number(price) > 0);
+      });
+      if (isCompatOrPriced) {
+        matchingSizes.add(rowKw);
+      }
+    });
+    return Array.from(matchingSizes).sort((a, b) => a - b);
+  }, [selectedBrandFilter, localBosMatrix, allAvailablePanels]);
+
+  // Reset selectedCapFilter if it's no longer present in availableSizesForBrand
+  useEffect(() => {
+    if (selectedCapFilter !== 'all') {
+      const numCap = Number(selectedCapFilter);
+      const stillExists = availableSizesForBrand.some(s => Math.abs(s - numCap) < 0.001);
+      if (!stillExists) {
+        setSelectedCapFilter('all');
+      }
+    }
+  }, [selectedBrandFilter, availableSizesForBrand, selectedCapFilter]);
+
+  // Filtered rows for the matrix table preserving original index in localBosMatrix
+  const filteredBosMatrixWithIdx = useMemo(() => {
+    return localBosMatrix
+      .map((row, originalIndex) => ({ row, originalIndex }))
+      .filter(({ row }) => {
+        const rowKw = Number(row.capacityKW || row.capacity_kw);
+        if (selectedCapFilter !== 'all' && Math.abs(rowKw - Number(selectedCapFilter)) > 0.001) {
+          return false;
+        }
+        if (selectedBrandFilter !== 'all') {
+          const brandPanels = allAvailablePanels.filter(
+            p => normalizeBrand(p.brand) === normalizeBrand(selectedBrandFilter)
+          );
+          const matches = brandPanels.some(p => {
+            const isCompat = isPanelCompatibleWithSystem(rowKw, p.wattage);
+            const price = getPriceForPanel(row, p);
+            return isCompat || (price && Number(price) > 0);
+          });
+          if (!matches) return false;
+        }
+        return true;
+      });
+  }, [localBosMatrix, selectedBrandFilter, selectedCapFilter, allAvailablePanels]);
+
+  // Filtered columns: by default when a brand is selected, automatically show ONLY that brand's panel columns
+  const displayedPanels = useMemo(() => {
+    if (selectedBrandFilter !== 'all' && !showAllBrandColumns) {
+      const filtered = allAvailablePanels.filter(
+        p => normalizeBrand(p.brand) === normalizeBrand(selectedBrandFilter)
+      );
+      if (filtered.length > 0) return filtered;
+    }
+    return allAvailablePanels;
+  }, [allAvailablePanels, selectedBrandFilter, showAllBrandColumns]);
+
   const formatINR = (val) => {
     if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
     return '₹\u00A0' + Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 });
@@ -322,7 +487,7 @@ Please find the revised turnkey EPC benchmark rates and PM Surya Ghar DBT subsid
 ⚙️ *KEY HARDWARE SPECIFICATIONS*
 • Solar Modules: ${selectedDefaultModule}
 • Solar Inverter: ${selectedDefaultInverter}
-• Composite GST: 13.8% included in BoS matrix
+• Statutory GST: 18% included in BoS matrix
 • Portal Proposals: All new quotations will automatically apply these updated matrices.
 
 🔗 *Access Dealer Portal & Create Proposals:*
@@ -384,10 +549,35 @@ ${origin}/?tab=pricing_master
   // Handle inline cell changes in Matrix
   const handleMatrixCellChange = (index, field, value) => {
     const updated = [...localBosMatrix];
-    updated[index] = {
-      ...updated[index],
-      [field]: Number(value) || value
-    };
+    const row = { ...updated[index] };
+    const num = Number(value) || 0;
+
+    if (field === 'capacityKW' || field === 'noOfModules' || field === 'inverterCapacityKW') {
+      row[field] = field === 'capacityKW' || field === 'noOfModules' ? (Number(value) || value) : value;
+    } else {
+      const panel = allAvailablePanels.find(p => p.id === field || p.key === field || p.legacyKey === field);
+      const updatedPanelPrices = { ...(row.panelPrices || {}) };
+      if (panel) {
+        if (num > 0) {
+          updatedPanelPrices[panel.id] = num;
+        } else {
+          delete updatedPanelPrices[panel.id];
+        }
+        if (panel.legacyKey) {
+          row[panel.legacyKey] = num;
+        }
+      } else {
+        if (num > 0) {
+          updatedPanelPrices[field] = num;
+        } else {
+          delete updatedPanelPrices[field];
+        }
+        row[field] = num;
+      }
+      row.panelPrices = updatedPanelPrices;
+    }
+
+    updated[index] = row;
     setLocalBosMatrix(updated);
   };
 
@@ -398,14 +588,10 @@ ${origin}/?tab=pricing_master
       capacityKW: '',
       noOfModules: '',
       inverterCapacityKW: '',
-      adaniBiFiPrice: '',
-      apsBiFiPrice: '',
-      rayzonePrice: '',
-      waaree540Price: '',
-      topcon585CapacityKW: '',
-      waaree585Price: '',
-      topcon600CapacityKW: '',
-      apsTopcon600Price: ''
+      bypassCompatibilityFilter: false,
+      panelItems: [
+        { panelId: '', price: '' }
+      ]
     });
     setShowAddSlabModal(true);
   };
@@ -413,18 +599,40 @@ ${origin}/?tab=pricing_master
   const handleOpenEditSlabModal = (index) => {
     const row = localBosMatrix[index];
     setEditingRowIndex(index);
+
+    const items = [];
+    const addedIds = new Set();
+
+    // 1. Extract from dynamic panelPrices object (only if compatible)
+    if (row.panelPrices && typeof row.panelPrices === 'object') {
+      Object.entries(row.panelPrices).forEach(([panelId, price]) => {
+        if (price && Number(price) > 0) {
+          const matched = allAvailablePanels.find(p => p.id === panelId || p.key === panelId || p.legacyKey === panelId);
+          if (matched && isPanelWattageCompatible(row.capacityKW, matched.wattage)) {
+            items.push({ panelId: matched.id, price: Number(price) });
+            addedIds.add(matched.id);
+          }
+        }
+      });
+    }
+
+    // 2. Extract from legacy fields if compatible and not already in items
+    allAvailablePanels.forEach(p => {
+      if (addedIds.has(p.id)) return;
+      if (p.legacyKey && row[p.legacyKey] && Number(row[p.legacyKey]) > 0) {
+        if (isPanelWattageCompatible(row.capacityKW, p.wattage)) {
+          items.push({ panelId: p.id, price: Number(row[p.legacyKey]) });
+          addedIds.add(p.id);
+        }
+      }
+    });
+
     setSlabForm({
       capacityKW: row.capacityKW ?? '',
       noOfModules: getModules(row),
       inverterCapacityKW: row.inverterCapacityKW ?? row.inverter ?? '',
-      adaniBiFiPrice: getAdaniPrice(row),
-      apsBiFiPrice: getApsBiFiPrice(row),
-      rayzonePrice: getRayzonePrice(row),
-      waaree540Price: getWaaree540Price(row),
-      topcon585CapacityKW: row.topcon585CapacityKW ?? '',
-      waaree585Price: getWaareePrice(row),
-      topcon600CapacityKW: row.topcon600CapacityKW ?? '',
-      apsTopcon600Price: getApsTopconPrice(row)
+      bypassCompatibilityFilter: false,
+      panelItems: items.length > 0 ? items : [{ panelId: '', price: '' }]
     });
     setShowAddSlabModal(true);
   };
@@ -436,18 +644,49 @@ ${origin}/?tab=pricing_master
       return;
     }
 
+    const newPanelPrices = {};
+    const legacyMap = {
+      adaniBiFiPrice: 0,
+      apsBiFiPrice: 0,
+      rayzonePrice: 0,
+      waaree540Price: 0,
+      waaree585Price: 0,
+      apsTopcon600Price: 0
+    };
+
+    (slabForm.panelItems || []).forEach(item => {
+      if (!item.panelId) return;
+      const val = Number(item.price) || 0;
+      if (val <= 0) return;
+
+      newPanelPrices[item.panelId] = val;
+
+      const p = allAvailablePanels.find(x => x.id === item.panelId);
+      if (p) {
+        if (p.legacyKey) {
+          legacyMap[p.legacyKey] = val;
+        } else {
+          const b = p.brand?.toLowerCase() || '';
+          const w = Number(p.wattage) || 0;
+          if (b.includes('adani')) legacyMap.adaniBiFiPrice = val;
+          else if (b.includes('aps') && w === 600) legacyMap.apsTopcon600Price = val;
+          else if (b.includes('aps')) legacyMap.apsBiFiPrice = val;
+          else if (b.includes('rayzon')) legacyMap.rayzonePrice = val;
+          else if (b.includes('waaree') && w === 585) legacyMap.waaree585Price = val;
+          else if (b.includes('waaree') && w === 540) legacyMap.waaree540Price = val;
+        }
+      }
+    });
+
+    const capKw = Number(slabForm.capacityKW) || slabForm.capacityKW;
     const newRow = {
-      capacityKW: Number(slabForm.capacityKW) || slabForm.capacityKW,
-      noOfModules: Number(slabForm.noOfModules) || slabForm.noOfModules,
-      inverterCapacityKW: Number(slabForm.inverterCapacityKW) || slabForm.inverterCapacityKW,
-      adaniBiFiPrice: Number(slabForm.adaniBiFiPrice) || 0,
-      apsBiFiPrice: Number(slabForm.apsBiFiPrice) || 0,
-      rayzonePrice: Number(slabForm.rayzonePrice) || 0,
-      waaree540Price: Number(slabForm.waaree540Price) || 0,
-      topcon585CapacityKW: Number(slabForm.topcon585CapacityKW) || Number(slabForm.capacityKW),
-      waaree585Price: Number(slabForm.waaree585Price) || 0,
-      topcon600CapacityKW: Number(slabForm.topcon600CapacityKW) || Number(slabForm.capacityKW),
-      apsTopcon600Price: Number(slabForm.apsTopcon600Price) || 0
+      capacityKW: capKw,
+      noOfModules: Number(slabForm.noOfModules) || Math.round(Number(capKw) * 1000 / 550),
+      inverterCapacityKW: slabForm.inverterCapacityKW ? String(slabForm.inverterCapacityKW) : `${capKw}KW`,
+      topcon585CapacityKW: Number(capKw) * 1.06,
+      topcon600CapacityKW: Number(capKw) * 1.09,
+      panelPrices: newPanelPrices,
+      ...legacyMap
     };
 
     let updated;
@@ -1163,7 +1402,9 @@ ${origin}/?tab=pricing_master
                           Sunvine Official BOS Price List Matrix
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-primary-container/20 text-primary text-[11px] font-bold">
-                          {localBosMatrix.length} Slabs
+                          {filteredBosMatrixWithIdx.length === localBosMatrix.length 
+                            ? `${localBosMatrix.length} Slabs` 
+                            : `${filteredBosMatrixWithIdx.length} of ${localBosMatrix.length} Slabs`}
                         </span>
                       </div>
                       <p className="font-body-sm text-body-sm text-secondary mt-0.5">
@@ -1206,331 +1447,350 @@ ${origin}/?tab=pricing_master
                   </div>
                 </div>
 
-                {/* MOBILE VIEW: Responsive Compact Cards (< md) */}
-                <div className="block md:hidden space-y-3">
-                  {localBosMatrix.map((row, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-3"
-                    >
-                      {/* Top Row: Capacity, Modules, and Action Buttons */}
-                      <div className="flex items-center justify-between gap-2 border-b border-surface-container-high/60 pb-2.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {isInlineEditingMatrix ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] font-semibold text-secondary">KW:</span>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={row.capacityKW}
-                                onChange={(e) => handleMatrixCellChange(idx, 'capacityKW', e.target.value)}
-                                className="w-16 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-center"
-                              />
-                            </div>
-                          ) : (
-                            <span className="px-2.5 py-1 rounded-lg bg-inverse-surface text-surface-container-lowest font-mono font-bold text-xs">
-                              {row.capacityKW} kW
-                            </span>
-                          )}
-
-                          {isInlineEditingMatrix ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[11px] font-semibold text-secondary">Mods:</span>
-                              <input
-                                type="number"
-                                value={getModules(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'noOfModules', e.target.value)}
-                                className="w-14 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono text-primary font-bold text-center"
-                              />
-                            </div>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-mono font-bold text-[11px] border border-emerald-200">
-                              {getModules(row)} Modules
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditSlabModal(idx)}
-                            className="p-1.5 rounded-lg hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
-                            title="Edit slab"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">edit_note</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSlab(idx)}
-                            className="p-1.5 rounded-lg hover:bg-rose-50 text-secondary hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Delete slab"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Equipment Prices Grid */}
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        {/* Adani Bi-Fi */}
-                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
-                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">Adani Bi-Fi</div>
-                          {isInlineEditingMatrix ? (
-                            <input
-                              type="number"
-                              value={getAdaniPrice(row)}
-                              onChange={(e) => handleMatrixCellChange(idx, 'adaniBiFiPrice', e.target.value)}
-                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
-                            />
-                          ) : (
-                            <div className="font-mono font-semibold text-on-surface mt-0.5">
-                              ₹ {Number(getAdaniPrice(row)).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* APS Bi-Fi */}
-                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
-                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">APS Bi-Fi</div>
-                          {isInlineEditingMatrix ? (
-                            <input
-                              type="number"
-                              value={getApsBiFiPrice(row)}
-                              onChange={(e) => handleMatrixCellChange(idx, 'apsBiFiPrice', e.target.value)}
-                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
-                            />
-                          ) : (
-                            <div className="font-mono font-semibold text-on-surface mt-0.5">
-                              ₹ {Number(getApsBiFiPrice(row)).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Rayzone */}
-                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
-                          <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider">Rayzone</div>
-                          {isInlineEditingMatrix ? (
-                            <input
-                              type="number"
-                              value={getRayzonePrice(row)}
-                              onChange={(e) => handleMatrixCellChange(idx, 'rayzonePrice', e.target.value)}
-                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
-                            />
-                          ) : (
-                            <div className="font-mono font-semibold text-on-surface mt-0.5">
-                              ₹ {Number(getRayzonePrice(row)).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* APS TOPCon 600W */}
-                        <div className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
-                          <div className="text-[10px] font-semibold text-[#256676] uppercase tracking-wider">APS 600W TOPCon</div>
-                          {isInlineEditingMatrix ? (
-                            <input
-                              type="number"
-                              value={getApsTopconPrice(row)}
-                              onChange={(e) => handleMatrixCellChange(idx, 'apsTopcon600Price', e.target.value)}
-                              className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-bold text-[#256676]"
-                            />
-                          ) : (
-                            <div className="font-mono font-bold text-[#256676] mt-0.5">
-                              ₹ {Number(getApsTopconPrice(row)).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Waaree 585W TOPCon (Full-width featured on mobile) */}
-                        <div className="col-span-2 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 flex items-center justify-between">
-                          <div>
-                            <div className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Waaree 585W TOPCon</div>
-                            <div className="text-[10px] text-emerald-700">Official Gujarat Standard</div>
-                          </div>
-                          {isInlineEditingMatrix ? (
-                            <input
-                              type="number"
-                              value={getWaareePrice(row)}
-                              onChange={(e) => handleMatrixCellChange(idx, 'waaree585Price', e.target.value)}
-                              className="w-28 px-1.5 py-1 bg-white border border-emerald-300 rounded text-xs font-mono font-bold text-primary text-right"
-                            />
-                          ) : (
-                            <div className="font-mono font-bold text-primary text-sm">
-                              ₹ {Number(getWaareePrice(row)).toLocaleString('en-IN')}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                {/* ADVANCED FILTER TOOLBAR: Filter by Brand & Dynamic System Size */}
+                <div className="mb-4 p-3 rounded-xl bg-surface-container-low/80 border border-surface-container-high/60 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Brand Filter Dropdown */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-secondary uppercase tracking-wider flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px] text-primary">filter_alt</span>
+                        Brand:
+                      </span>
+                      <select
+                        value={selectedBrandFilter}
+                        onChange={(e) => {
+                          setSelectedBrandFilter(e.target.value);
+                          if (e.target.value === 'all') setShowAllBrandColumns(false);
+                        }}
+                        className="h-8 px-2.5 bg-surface-container-lowest border border-surface-container-high rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                      >
+                        <option value="all">All Brands (Show All)</option>
+                        {availableMatrixBrands.map((b) => (
+                          <option key={b} value={b}>
+                            {b}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
+
+                    {/* System Size Filter Dropdown */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-secondary uppercase tracking-wider flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px] text-primary">speed</span>
+                        System Size:
+                      </span>
+                      <select
+                        value={selectedCapFilter}
+                        onChange={(e) => setSelectedCapFilter(e.target.value)}
+                        className="h-8 px-2.5 bg-surface-container-lowest border border-surface-container-high rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                      >
+                        <option value="all">
+                          {selectedBrandFilter === 'all' 
+                            ? `All System Sizes (${availableSizesForBrand.length} Slabs)` 
+                            : `All Sizes for ${selectedBrandFilter} (${availableSizesForBrand.length} Slabs)`}
+                        </option>
+                        {availableSizesForBrand.map((size) => (
+                          <option key={size} value={size}>
+                            {size} kW System
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Brand Column Indicator & Compare Toggle */}
+                    {selectedBrandFilter !== 'all' && (
+                      <div className="flex items-center gap-2 pl-1 border-l border-surface-container-high/60">
+                        <span className="text-[11px] font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md border border-primary/20 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px]">view_column</span>
+                          Showing only {selectedBrandFilter} columns ({displayedPanels.length})
+                        </span>
+                        <label className="flex items-center gap-1.5 text-xs text-secondary hover:text-on-surface cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={showAllBrandColumns}
+                            onChange={(e) => setShowAllBrandColumns(e.target.checked)}
+                            className="rounded border-surface-container-highest text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
+                          />
+                          <span className="font-medium text-[11px]">Compare all brands</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reset Filters Button */}
+                  {(selectedBrandFilter !== 'all' || selectedCapFilter !== 'all' || showAllBrandColumns) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedBrandFilter('all');
+                        setSelectedCapFilter('all');
+                        setShowAllBrandColumns(false);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-500 hover:text-rose-600 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                      <span>Reset Filters</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* DESKTOP VIEW: Full Comparison Table (>= md) */}
-                <div className="hidden md:block overflow-x-auto w-full">
-                  <table className="w-full text-left border-collapse min-w-[700px] md:min-w-full">
-                    <thead>
-                      <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-none">
-                        <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">KW</th>
-                        <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">Modules</th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[90px]">
-                          Adani 555W<br/><span className="text-[10px] font-normal text-emerald-400">Bi-Fi</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[90px]">
-                          APS 550W<br/><span className="text-[10px] font-normal text-teal-400">Bi-Fi</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[85px]">
-                          Rayzone 550W<br/><span className="text-[10px] font-normal text-emerald-400">Bi-Fi</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[95px]">
-                          Waaree 540W<br/><span className="text-[10px] font-normal text-blue-400">Mono PERC</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[105px]">
-                          Waaree 585W<br/><span className="text-[10px] font-normal text-amber-400">TOPCon</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-right leading-tight max-w-[105px]">
-                          APS 600W<br/><span className="text-[10px] font-normal text-cyan-400">TOPCon</span>
-                        </th>
-                        <th className="px-2 py-2 text-xs text-center w-16 whitespace-nowrap">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
-                      {localBosMatrix.map((row, idx) => (
-                        <tr key={idx} className={`hover:bg-surface-container-low/60 transition-colors ${idx % 2 === 1 ? 'bg-surface-container-low/20' : ''}`}>
-                          {/* Capacity KW */}
-                          <td className="px-2 py-2.5 font-bold font-mono text-inverse-surface text-center whitespace-nowrap">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={row.capacityKW}
-                                onChange={(e) => handleMatrixCellChange(idx, 'capacityKW', e.target.value)}
-                                className="w-14 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-mono font-bold text-center"
-                              />
-                            ) : (
-                              `${row.capacityKW} kW`
-                            )}
-                          </td>
+                {/* MOBILE VIEW: Responsive Compact Cards (< md) */}
+                <div className="block md:hidden space-y-3">
+                  {filteredBosMatrixWithIdx.length === 0 ? (
+                    <div className="p-6 text-center text-secondary text-xs bg-surface-container-lowest rounded-xl border border-surface-container-high">
+                      No pricing slabs match the selected filter.
+                    </div>
+                  ) : (
+                    filteredBosMatrixWithIdx.map(({ row, originalIndex: idx }) => {
+                      const rowMods = getModules(row);
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-3"
+                        >
+                          {/* Top Row: Capacity, Modules, and Action Buttons */}
+                          <div className="flex items-center justify-between gap-2 border-b border-surface-container-high/60 pb-2.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {isInlineEditingMatrix ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] font-semibold text-secondary">KW:</span>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={row.capacityKW}
+                                    onChange={(e) => handleMatrixCellChange(idx, 'capacityKW', e.target.value)}
+                                    className="w-16 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono font-bold text-center"
+                                  />
+                                </div>
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-lg bg-inverse-surface text-surface-container-lowest font-mono font-bold text-xs">
+                                  {row.capacityKW} kW
+                                </span>
+                              )}
 
-                          {/* No of Modules */}
-                          <td className="px-2 py-2.5 font-semibold text-primary font-mono text-center whitespace-nowrap">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getModules(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'noOfModules', e.target.value)}
-                                className="w-12 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-mono text-primary font-bold text-center"
-                              />
-                            ) : (
-                              getModules(row)
-                            )}
-                          </td>
+                              {isInlineEditingMatrix ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[11px] font-semibold text-secondary">Mods:</span>
+                                  <input
+                                    type="number"
+                                    value={rowMods}
+                                    onChange={(e) => handleMatrixCellChange(idx, 'noOfModules', e.target.value)}
+                                    className="w-14 px-1.5 py-1 bg-surface-container-low border border-surface-container-high rounded text-xs font-mono text-primary font-bold text-center"
+                                  />
+                                </div>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-mono font-bold text-[11px] border border-emerald-200">
+                                  {rowMods} Modules
+                                </span>
+                              )}
+                            </div>
 
-                          {/* Adani 555W Bi-Fi */}
-                          <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getAdaniPrice(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'adaniBiFiPrice', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getAdaniPrice(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* APS 550W Bi-Fi */}
-                          <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getApsBiFiPrice(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'apsBiFiPrice', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getApsBiFiPrice(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* Rayzone 550W */}
-                          <td className="px-2 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getRayzonePrice(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'rayzonePrice', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getRayzonePrice(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* Waaree 540W Mono PERC */}
-                          <td className="px-2 py-2.5 text-right font-mono font-semibold text-blue-600 whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getWaaree540Price(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'waaree540Price', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono text-blue-600 font-semibold"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getWaaree540Price(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* Waaree 585W TOPCon */}
-                          <td className="px-2 py-2.5 text-right font-mono font-bold text-primary whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getWaareePrice(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'waaree585Price', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono text-primary font-bold"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getWaareePrice(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* APS TOPCon 600W */}
-                          <td className="px-2 py-2.5 text-right font-mono font-bold text-[#256676] whitespace-nowrap tabular-nums">
-                            {isInlineEditingMatrix ? (
-                              <input
-                                type="number"
-                                value={getApsTopconPrice(row)}
-                                onChange={(e) => handleMatrixCellChange(idx, 'apsTopcon600Price', e.target.value)}
-                                className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono text-[#256676] font-bold"
-                              />
-                            ) : (
-                              <span className="whitespace-nowrap">₹ {Number(getApsTopconPrice(row)).toLocaleString('en-IN')}</span>
-                            )}
-                          </td>
-
-                          {/* Actions: Edit Modal / Delete */}
-                          <td className="px-2 py-2.5 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditSlabModal(idx)}
-                                className="p-1 rounded hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
-                                title="Edit this slab in modal"
+                                className="p-1.5 rounded-lg hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
+                                title="Edit slab"
                               >
-                                <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                                <span className="material-symbols-outlined text-[18px]">edit_note</span>
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteSlab(idx)}
-                                className="p-1 rounded hover:bg-rose-50 text-secondary hover:text-rose-600 transition-colors cursor-pointer"
-                                title="Delete this slab"
+                                className="p-1.5 rounded-lg hover:bg-rose-500/10 text-secondary hover:text-rose-500 transition-colors cursor-pointer"
+                                title="Delete slab"
                               >
-                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                <span className="material-symbols-outlined text-[18px]">delete</span>
                               </button>
                             </div>
+                          </div>
+
+                          {/* Equipment Prices Grid */}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            {displayedPanels.map((panel) => {
+                              const isCompat = isPanelCompatibleWithSystem(row.capacityKW, panel.wattage, rowMods);
+                              const price = getPriceForPanel(row, panel);
+
+                              if (isInlineEditingMatrix) {
+                                return (
+                                  <div key={panel.id} className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                                    <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider truncate">
+                                      {panel.brand} {panel.wattage}W
+                                    </div>
+                                    {isCompat ? (
+                                      <input
+                                        type="number"
+                                        value={price || ''}
+                                        placeholder="-"
+                                        onChange={(e) => handleMatrixCellChange(idx, panel.id, e.target.value)}
+                                        className="w-full mt-1 px-1.5 py-1 bg-surface-container-lowest border border-surface-container-high rounded text-xs font-mono font-semibold"
+                                      />
+                                    ) : (
+                                      <div className="font-mono text-secondary/30 mt-1 text-center">-</div>
+                                    )}
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div key={panel.id} className="p-2 rounded-lg bg-surface-container-low/40 border border-surface-container-high/40">
+                                  <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider truncate">
+                                    {panel.brand} {panel.wattage}W
+                                  </div>
+                                  <div className="font-mono font-semibold text-on-surface mt-0.5">
+                                    {price ? `₹ ${Number(price).toLocaleString('en-IN')}` : <span className="text-secondary/40 font-bold">-</span>}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* DESKTOP VIEW: Full Comparison Table with Sticky KW, Modules & Action Columns */}
+                <div className="hidden md:block overflow-x-auto w-full border border-surface-container-high rounded-xl relative bg-surface-container-lowest shadow-xs">
+                  <table className="w-full text-left border-collapse min-w-[880px]">
+                    <thead>
+                      <tr className="bg-inverse-surface text-surface-container-lowest text-label-sm font-semibold h-11 border-none">
+                        {/* Pinned Column 1: KW (Sticky Left 0) */}
+                        <th className="sticky left-0 z-30 bg-inverse-surface text-surface-container-lowest px-2.5 py-2 text-xs text-center w-[72px] min-w-[72px] max-w-[72px] whitespace-nowrap border-r border-surface-container-lowest/15 shadow-[2px_0_4px_rgba(0,0,0,0.25)]">
+                          KW
+                        </th>
+
+                        {/* Pinned Column 2: Modules (Sticky Left 72px) */}
+                        <th className="sticky left-[72px] z-30 bg-inverse-surface text-surface-container-lowest px-2.5 py-2 text-xs text-center w-[78px] min-w-[78px] max-w-[78px] whitespace-nowrap border-r-2 border-surface-container-lowest/25 shadow-[3px_0_5px_rgba(0,0,0,0.25)]">
+                          Modules
+                        </th>
+
+                        {/* Horizontally Scrollable Middle Columns: Dynamic Solar Panels */}
+                        {displayedPanels.map((panel) => (
+                          <th key={panel.id} className="px-3 py-2 text-xs text-right leading-tight min-w-[115px] whitespace-nowrap bg-inverse-surface text-surface-container-lowest border-r border-surface-container-lowest/15">
+                            {panel.brand} {panel.wattage}W<br/>
+                            <span className={`text-[10px] font-normal ${
+                              panel.color === 'emerald' ? 'text-emerald-400' :
+                              panel.color === 'teal' ? 'text-teal-400' :
+                              panel.color === 'blue' ? 'text-blue-400' :
+                              panel.color === 'amber' ? 'text-amber-400' :
+                              panel.color === 'cyan' ? 'text-cyan-400' : 'text-indigo-400'
+                            }`}>
+                              {panel.cellTech || panel.model}
+                            </span>
+                          </th>
+                        ))}
+
+                        {/* Pinned Last Column: Actions (Sticky Right 0) */}
+                        <th className="sticky right-0 z-30 bg-inverse-surface text-surface-container-lowest px-2 py-2 text-xs text-center w-20 min-w-[80px] max-w-[80px] whitespace-nowrap border-l-2 border-surface-container-lowest/25 shadow-[-3px_0_5px_rgba(0,0,0,0.25)]">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
+                      {filteredBosMatrixWithIdx.length === 0 ? (
+                        <tr>
+                          <td colSpan={displayedPanels.length + 3} className="py-8 text-center text-secondary text-xs bg-surface-container-lowest">
+                            No pricing slabs found matching the selected brand or capacity filter.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        filteredBosMatrixWithIdx.map(({ row, originalIndex: idx }) => {
+                          const rowMods = getModules(row);
+                          const rowBg = idx % 2 === 1 ? 'bg-surface-container-low/30' : 'bg-surface-container-lowest';
+                          return (
+                            <tr key={idx} className={`group hover:bg-surface-container-low transition-colors ${rowBg}`}>
+                              {/* Pinned Col 1: Capacity KW */}
+                              <td className={`sticky left-0 z-10 ${rowBg} group-hover:bg-surface-container-low transition-colors px-2.5 py-2.5 font-bold font-mono text-inverse-surface text-center whitespace-nowrap w-[72px] min-w-[72px] max-w-[72px] border-r border-surface-container-high shadow-[2px_0_4px_rgba(0,0,0,0.06)]`}>
+                                {isInlineEditingMatrix ? (
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={row.capacityKW}
+                                    onChange={(e) => handleMatrixCellChange(idx, 'capacityKW', e.target.value)}
+                                    className="w-14 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-mono font-bold text-center text-on-surface"
+                                  />
+                                ) : (
+                                  `${row.capacityKW} kW`
+                                )}
+                              </td>
+
+                              {/* Pinned Col 2: No of Modules */}
+                              <td className={`sticky left-[72px] z-10 ${rowBg} group-hover:bg-surface-container-low transition-colors px-2.5 py-2.5 font-semibold text-primary font-mono text-center whitespace-nowrap w-[78px] min-w-[78px] max-w-[78px] border-r-2 border-surface-container-highest shadow-[3px_0_5px_rgba(0,0,0,0.06)]`}>
+                                {isInlineEditingMatrix ? (
+                                  <input
+                                    type="number"
+                                    value={rowMods}
+                                    onChange={(e) => handleMatrixCellChange(idx, 'noOfModules', e.target.value)}
+                                    className="w-12 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs font-mono text-primary font-bold text-center"
+                                  />
+                                ) : (
+                                  rowMods
+                                )}
+                              </td>
+
+                              {/* Dynamically Horizontally Scrollable Middle Columns */}
+                              {displayedPanels.map((panel) => {
+                                const isCompat = isPanelCompatibleWithSystem(row.capacityKW, panel.wattage, rowMods);
+                                const price = getPriceForPanel(row, panel);
+
+                                if (isInlineEditingMatrix) {
+                                  if (!isCompat) {
+                                    return (
+                                      <td key={panel.id} className="px-2 py-2 text-center min-w-[115px] border-r border-surface-container-high/40">
+                                        <span className="text-secondary/30 font-mono text-xs select-none" title={`Incompatible with ${row.capacityKW} kW`}>-</span>
+                                      </td>
+                                    );
+                                  }
+                                  return (
+                                    <td key={panel.id} className="px-2 py-2 text-right min-w-[115px] border-r border-surface-container-high/40">
+                                      <input
+                                        type="number"
+                                        value={price || ''}
+                                        placeholder="-"
+                                        onChange={(e) => handleMatrixCellChange(idx, panel.id, e.target.value)}
+                                        className="w-20 px-1 py-1 bg-surface-container-lowest border border-surface-container-highest rounded text-xs text-right font-mono text-on-surface font-semibold"
+                                      />
+                                    </td>
+                                  );
+                                }
+
+                                return (
+                                  <td key={panel.id} className="px-3 py-2.5 text-right font-mono font-semibold whitespace-nowrap tabular-nums min-w-[115px] border-r border-surface-container-high/40">
+                                    {price ? (
+                                      <span className="whitespace-nowrap font-bold text-inverse-surface">₹ {Number(price).toLocaleString('en-IN')}</span>
+                                    ) : (
+                                      <span className="text-secondary/40 font-mono text-center block text-sm select-none font-bold">-</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+
+                              {/* Pinned Last Column: Actions */}
+                              <td className={`sticky right-0 z-10 ${rowBg} group-hover:bg-surface-container-low transition-colors px-2 py-2.5 text-center whitespace-nowrap w-20 min-w-[80px] max-w-[80px] border-l-2 border-surface-container-highest shadow-[-3px_0_5px_rgba(0,0,0,0.06)]`}>
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditSlabModal(idx)}
+                                    className="p-1 rounded hover:bg-surface-container text-secondary hover:text-primary transition-colors cursor-pointer"
+                                    title="Edit this slab in modal"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSlab(idx)}
+                                    className="p-1 rounded hover:bg-rose-500/10 text-secondary hover:text-rose-500 transition-colors cursor-pointer"
+                                    title="Delete this slab"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2352,8 +2612,28 @@ ${origin}/?tab=pricing_master
                 </div>
               </div>
 
-              {/* Individual Dealer-Wise Panel Pricing Matrix */}
-              <DealerCustomPricingMatrix initialCategory="module" onShowToast={triggerToast} />
+              {/* Consolidated Dealer Pricing Link */}
+              <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">tune</span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-on-surface">Need dealer-specific panel rates or special margins?</h4>
+                    <p className="text-[11px] text-secondary">
+                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing Matrix.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dealer_custom')}
+                  className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span>Open Dealer Custom Pricing</span>
+                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </button>
+              </div>
             </>
           )}
 
@@ -2822,8 +3102,28 @@ ${origin}/?tab=pricing_master
                 )}
               </div>
 
-              {/* Individual Dealer-Wise Inverter Pricing Matrix */}
-              <DealerCustomPricingMatrix initialCategory="inverter" onShowToast={triggerToast} />
+              {/* Consolidated Dealer Pricing Link */}
+              <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">tune</span>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-on-surface">Need dealer-specific inverter rates or special margins?</h4>
+                    <p className="text-[11px] text-secondary">
+                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing Matrix.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('dealer_custom')}
+                  className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span>Open Dealer Custom Pricing</span>
+                  <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                </button>
+              </div>
             </>
           )}
 
@@ -3274,8 +3574,28 @@ ${origin}/?tab=pricing_master
                   </div>
                 </div>
 
-                {/* Individual Dealer-Wise BOM Hardware Pricing Matrix */}
-                <DealerCustomPricingMatrix initialCategory="bom" onShowToast={triggerToast} />
+                {/* Consolidated Dealer Pricing Link */}
+                <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-high flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[20px]">tune</span>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-on-surface">Need dealer-specific BOM rates or custom margins?</h4>
+                      <p className="text-[11px] text-secondary">
+                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing Matrix.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('dealer_custom')}
+                    className="px-3 py-1.5 bg-primary/15 hover:bg-primary/25 text-primary text-xs font-bold rounded-lg border border-primary/30 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <span>Open Dealer Custom Pricing</span>
+                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                  </button>
+                </div>
               </>
             );
           })()}
@@ -3452,11 +3772,33 @@ ${origin}/?tab=pricing_master
                   </label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
                     required
                     value={slabForm.capacityKW}
-                    onChange={(e) => setSlabForm({ ...slabForm, capacityKW: e.target.value })}
-                    placeholder="e.g. 5.5"
+                    onChange={(e) => {
+                      const cap = e.target.value;
+                      const numCap = Number(cap);
+                      const autoMods = cap ? Math.round(Number(cap) * 1000 / 550) : '';
+
+                      // Refresh panel dropdown immediately: clear any previously selected panel that becomes incompatible
+                      const cleanedItems = (slabForm.panelItems || []).map(item => {
+                        if (!item.panelId) return item;
+                        const p = allAvailablePanels.find(x => x.id === item.panelId);
+                        if (p && numCap > 0 && !isPanelWattageCompatible(numCap, p.wattage)) {
+                          return { ...item, panelId: '', price: '' };
+                        }
+                        return item;
+                      });
+
+                      setSlabForm(prev => ({
+                        ...prev,
+                        capacityKW: cap,
+                        noOfModules: prev.noOfModules || autoMods,
+                        inverterCapacityKW: prev.inverterCapacityKW || (cap ? `${cap}KW` : ''),
+                        panelItems: cleanedItems
+                      }));
+                    }}
+                    placeholder="e.g. 3.3 or 5.5"
                     className="w-full px-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-bold text-on-surface focus:outline-none focus:border-primary"
                   />
                 </div>
@@ -3487,109 +3829,211 @@ ${origin}/?tab=pricing_master
                 </div>
               </div>
 
-              {/* Module Prices by Brand */}
-              <div className="border-t border-surface-container-high pt-3">
-                <h4 className="text-xs font-bold text-inverse-surface uppercase tracking-wider mb-2.5">
-                  Manufacturer Package Prices (₹ Total Including GST)
-                </h4>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-secondary mb-1">
-                      Adani Bi-Fi Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-secondary font-bold text-xs">₹</span>
-                      <input
-                        type="number"
-                        value={slabForm.adaniBiFiPrice}
-                        onChange={(e) => setSlabForm({ ...slabForm, adaniBiFiPrice: e.target.value })}
-                        placeholder="e.g. 202950"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-semibold text-on-surface focus:outline-none focus:border-primary"
-                      />
-                    </div>
+              {/* Dynamic Solar Panel Package Pricing Line Items (Image 3 Voucher Style) */}
+              <div className="border-t border-surface-container-high pt-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 mb-3 gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-inverse-surface uppercase tracking-wider">
+                      Panel Package Pricing Line Items ({slabForm.panelItems?.filter(i => i.panelId && i.price).length || 0})
+                    </h4>
+                    <span className="text-[10px] bg-emerald-500/15 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      GST Included
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-medium text-secondary mb-1">
-                      APS Bi-Fi Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-secondary font-bold text-xs">₹</span>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-[11px] text-secondary cursor-pointer hover:text-on-surface transition-colors select-none">
                       <input
-                        type="number"
-                        value={slabForm.apsBiFiPrice}
-                        onChange={(e) => setSlabForm({ ...slabForm, apsBiFiPrice: e.target.value })}
-                        placeholder="e.g. 183150"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-semibold text-on-surface focus:outline-none focus:border-primary"
+                        type="checkbox"
+                        checked={slabForm.bypassCompatibilityFilter}
+                        onChange={(e) => setSlabForm({ ...slabForm, bypassCompatibilityFilter: e.target.checked })}
+                        className="rounded border-surface-container-highest text-primary focus:ring-primary w-3.5 h-3.5 cursor-pointer"
                       />
-                    </div>
-                  </div>
+                      <span>Show All Panels</span>
+                    </label>
 
-                  <div>
-                    <label className="block text-xs font-medium text-secondary mb-1">
-                      Rayzone 550W Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-secondary font-bold text-xs">₹</span>
-                      <input
-                        type="number"
-                        value={slabForm.rayzonePrice}
-                        onChange={(e) => setSlabForm({ ...slabForm, rayzonePrice: e.target.value })}
-                        placeholder="e.g. 183150"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-mono font-semibold text-on-surface focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-blue-600 mb-1">
-                      Waaree 540W Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-blue-600 font-bold text-xs">₹</span>
-                      <input
-                        type="number"
-                        value={slabForm.waaree540Price}
-                        onChange={(e) => setSlabForm({ ...slabForm, waaree540Price: e.target.value })}
-                        placeholder="e.g. 155844"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-blue-300 rounded-lg text-xs font-mono font-semibold text-blue-700 focus:outline-none focus:border-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-primary mb-1">
-                      Waaree 585W TOPCon Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-primary font-bold text-xs">₹</span>
-                      <input
-                        type="number"
-                        value={slabForm.waaree585Price}
-                        onChange={(e) => setSlabForm({ ...slabForm, waaree585Price: e.target.value })}
-                        placeholder="e.g. 225120"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-primary/40 rounded-lg text-xs font-mono font-bold text-primary focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-[#256676] mb-1">
-                      APS TOPCon 600W Package (₹)
-                    </label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 text-[#256676] font-bold text-xs">₹</span>
-                      <input
-                        type="number"
-                        value={slabForm.apsTopcon600Price}
-                        onChange={(e) => setSlabForm({ ...slabForm, apsTopcon600Price: e.target.value })}
-                        placeholder="e.g. 216000"
-                        className="w-full pl-7 pr-3 py-2 bg-surface-container-lowest border border-[#256676]/40 rounded-lg text-xs font-mono font-bold text-[#256676] focus:outline-none focus:border-[#256676]"
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const available = slabForm.bypassCompatibilityFilter
+                          ? allAvailablePanels
+                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                        const unused = available.find(p => !(slabForm.panelItems || []).some(item => item.panelId === p.id));
+                        setSlabForm({
+                          ...slabForm,
+                          panelItems: [
+                            ...(slabForm.panelItems || []),
+                            { panelId: unused?.id || available[0]?.id || '', price: '' }
+                          ]
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:text-primary-container px-2.5 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                      <span>+ Add Line Item</span>
+                    </button>
                   </div>
                 </div>
+
+                {/* Compatibility explanation banner */}
+                <div className="mb-3 px-3 py-2 rounded-lg bg-surface-container-low/80 border border-surface-container-high/60 flex items-center justify-between text-xs text-secondary">
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-emerald-400 text-[18px]">verified</span>
+                    <span>
+                      {slabForm.bypassCompatibilityFilter ? (
+                        <span className="text-amber-400 font-semibold">Filter Bypassed: Displaying all catalog panels.</span>
+                      ) : (
+                        <span>
+                          Auto-filtering panels for <strong>{slabForm.capacityKW || 0} kW</strong>. Only panels whose wattage can form this exact capacity using whole numbers of panels are shown.
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Line Items Table */}
+                {(!slabForm.panelItems || slabForm.panelItems.length === 0) ? (
+                  <div className="text-center py-6 px-4 rounded-xl border border-dashed border-surface-container-high bg-surface-container-low/40">
+                    <p className="text-xs text-secondary mb-2">No solar panels added to this capacity slab yet.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const available = slabForm.bypassCompatibilityFilter
+                          ? allAvailablePanels
+                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                        setSlabForm({
+                          ...slabForm,
+                          panelItems: [{ panelId: available[0]?.id || '', price: '' }]
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-surface-container-lowest text-xs font-bold hover:bg-primary/90 transition-colors cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      <span>Add First Panel Pricing</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="overflow-x-auto rounded-xl border border-surface-container-high bg-surface-container-lowest">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-surface-container-low text-secondary font-semibold border-b border-surface-container-high text-[11px]">
+                            <th className="py-2.5 px-2.5 w-10 text-center">#</th>
+                            <th className="py-2.5 px-3 min-w-[210px]">Select Solar Panel / Module *</th>
+                            <th className="py-2.5 px-3 w-44">Sizing &amp; Modules</th>
+                            <th className="py-2.5 px-3 w-48 text-right">Package Price (₹) *</th>
+                            <th className="py-2.5 px-2 w-14 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-surface-container-high font-body-sm">
+                          {slabForm.panelItems.map((item, itemIdx) => {
+                            const availablePanels = slabForm.bypassCompatibilityFilter
+                              ? allAvailablePanels
+                              : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+
+                            const selectedPanel = allAvailablePanels.find(p => p.id === item.panelId);
+                            const calcMods = selectedPanel && slabForm.capacityKW
+                              ? getPanelQuantityForCapacity(slabForm.capacityKW, selectedPanel.wattage)
+                              : (slabForm.noOfModules || '-');
+
+                            return (
+                              <tr key={itemIdx} className="hover:bg-surface-container-low/40 transition-colors">
+                                <td className="py-2.5 px-2.5 text-center font-mono text-secondary font-bold">
+                                  {itemIdx + 1}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <select
+                                    value={item.panelId}
+                                    onChange={(e) => {
+                                      const newItems = [...slabForm.panelItems];
+                                      newItems[itemIdx] = { ...newItems[itemIdx], panelId: e.target.value };
+                                      setSlabForm({ ...slabForm, panelItems: newItems });
+                                    }}
+                                    className="w-full py-1.5 px-2.5 bg-surface-container-low border border-surface-container-high rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
+                                  >
+                                    <option value="">-- Select Solar Panel --</option>
+                                    {availablePanels.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.brand} {p.wattage}W — {p.model || p.cellTech}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  {selectedPanel ? (
+                                    <div className="flex flex-col">
+                                      <span className="font-mono font-bold text-primary text-xs">
+                                        {calcMods} Modules ({selectedPanel.wattage}Wp)
+                                      </span>
+                                      <span className="text-[10px] text-secondary">
+                                        {selectedPanel.cellTech || selectedPanel.model}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-secondary text-[11px]">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 text-right">
+                                  <div className="relative flex items-center">
+                                    <span className="absolute left-2.5 text-secondary font-bold text-xs">₹</span>
+                                    <input
+                                      type="number"
+                                      value={item.price}
+                                      onChange={(e) => {
+                                        const newItems = [...slabForm.panelItems];
+                                        newItems[itemIdx] = { ...newItems[itemIdx], price: e.target.value };
+                                        setSlabForm({ ...slabForm, panelItems: newItems });
+                                      }}
+                                      placeholder="e.g. 148500"
+                                      className="w-full pl-6 pr-2.5 py-1.5 bg-surface-container-lowest border border-surface-container-high rounded-lg text-xs font-mono font-bold text-right text-on-surface focus:outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newItems = slabForm.panelItems.filter((_, i) => i !== itemIdx);
+                                      setSlabForm({ ...slabForm, panelItems: newItems });
+                                    }}
+                                    className="p-1 rounded-md text-secondary hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                    title="Remove this panel pricing"
+                                  >
+                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Bottom Add Line Item Button matching image 3 style */}
+                    <div className="flex justify-center pt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const available = slabForm.bypassCompatibilityFilter
+                            ? allAvailablePanels
+                            : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                          const unused = available.find(p => !(slabForm.panelItems || []).some(item => item.panelId === p.id));
+                          setSlabForm({
+                            ...slabForm,
+                            panelItems: [
+                              ...(slabForm.panelItems || []),
+                              { panelId: unused?.id || available[0]?.id || '', price: '' }
+                            ]
+                          });
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 text-primary text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                        <span>+ Add Another Panel Pricing</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Modal Buttons */}

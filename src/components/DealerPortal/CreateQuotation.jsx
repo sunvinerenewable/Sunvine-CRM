@@ -18,7 +18,10 @@ import {
   DEFAULT_SPECIFIC_YIELD,
   DEFAULT_TARIFF_PER_UNIT,
   DEFAULT_SOLAR_LOAN_RATE_PA,
-  DEFAULT_SUBSIDY_CAP
+  DEFAULT_SUBSIDY_CAP,
+  isPanelWattageCompatible,
+  getPanelQuantityForCapacity,
+  normalizeBrand
 } from '../../shared/pricing/calculations';
 import { PDF_BOS_PRICE_MATRIX } from '../../data/gujaratDatabase';
 
@@ -33,10 +36,10 @@ export const QUICK_PANEL_COUNTS = [4, 6, 8, 10, 12, 14, 16, 18, 20, 24];
 export const PRESET_MAKES = [
   {
     id: 'adani_bifi',
-    name: 'Adani 550W Bi-Fi',
-    fullName: 'Adani 550W Vertex Mono PERC Bifacial',
+    name: 'Adani 555W Bi-Fi',
+    fullName: 'Adani 555W Vertex Mono PERC Bifacial',
     brand: 'Adani',
-    watt: 550,
+    watt: 555,
     priceKey: 'adaniBiFiPrice',
     badge: 'Tier-1 ALMM',
     tech: '550W Bi-Fi'
@@ -216,6 +219,35 @@ export default function CreateQuotation() {
   const [loanBank, setLoanBank] = useState(initialSource?.loanBank || 'State Bank of India (Surya Ghar Loan)');
   const [customCoverUrl, setCustomCoverUrl] = useState(initialSource?.customCoverUrl || initialSource?.coverImage || '');
 
+  const [panelBrand, setPanelBrand] = useState(() => {
+    if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
+    if (initialSource?.solarModule) {
+      const match = (modulesList || []).find(b => initialSource.solarModule.includes(b.brand));
+      if (match) return match.brand;
+    }
+    return (modulesList && modulesList[0]?.brand) || '';
+  });
+
+  const [panelWatt, setPanelWatt] = useState(() => {
+    if (initialSource?.moduleWattage) return Number(initialSource.moduleWattage);
+    const m = (initialSource?.solarModule || initialSource?.panelType || '').match(/(\d{3})\s*W/i);
+    return m ? Number(m[1]) : ((modulesList && modulesList[0]?.wattage) || 550);
+  });
+
+  const [panelQuantity, setPanelQuantity] = useState(() => {
+    if (initialSource?.moduleCount) return Number(initialSource.moduleCount);
+    const rawKw = parseFloat(initialSource?.systemCapacityKW || initialSource?.capacity || 3.3);
+    return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
+  });
+
+  const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
+    if (initialSource?.inverterCapacity) {
+      const parsed = parseFloat(initialSource.inverterCapacity);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 3.6;
+  });
+
   // 1. Dynamic Database Mapping for Solar Modules & Inverters
   const activeModules = useMemo(() => {
     return (modulesList || []).filter(m => !m.isArchived);
@@ -319,29 +351,49 @@ export default function CreateQuotation() {
     return Array.isArray(pdfBosMatrix) && pdfBosMatrix.length > 0 ? pdfBosMatrix : PDF_BOS_PRICE_MATRIX;
   }, [pdfBosMatrix]);
 
-  // 1. All available panel makes combining PRESET_MAKES and any admin-created active modules
+  // 1. All available panel makes: Strictly single source of truth from database activeModules,
+  // deduplicated by normalized brand and wattage so each panel model appears EXACTLY ONCE.
   const allAvailablePresetMakes = useMemo(() => {
-    const list = [...PRESET_MAKES];
-    (activeModules || []).forEach((m) => {
-      const watt = Number(m.wattage);
-      if (!watt) return;
-      const alreadyExists = list.some(
-        (p) => p.id === m.id || (p.brand?.toLowerCase() === m.brand?.toLowerCase() && p.watt === watt)
-      );
-      if (!alreadyExists) {
-        list.push({
-          id: m.id || `mod_${m.brand?.toLowerCase().replace(/\s+/g, '_')}_${watt}`,
-          name: `${m.brand} ${watt}W`,
-          fullName: `${m.brand} ${m.model || ''} (${watt}W)`.trim(),
-          brand: m.brand,
+    // If activeModules is loaded from database, use it as the single authoritative source
+    if (Array.isArray(activeModules) && activeModules.length > 0) {
+      const makes = [];
+      activeModules.forEach((m) => {
+        const watt = Number(m.wattage);
+        if (!watt || m.isArchived) return;
+        const brand = m.brand?.trim() || 'Custom';
+
+        // Prevent duplicate panels for the same brand and wattage
+        const alreadyExists = makes.some((p) => {
+          return p.id === m.id || (normalizeBrand(p.brand) === normalizeBrand(brand) && p.watt === watt);
+        });
+        if (alreadyExists) return;
+
+        // Resolve standard matrix priceKey in bos_pricing_matrix
+        let priceKey = null;
+        const normB = normalizeBrand(brand);
+        if (normB.includes('aps') && watt === 600) priceKey = 'apsTopcon600Price';
+        else if (normB.includes('waaree') && watt === 585) priceKey = 'waaree585Price';
+        else if (normB.includes('waaree') && watt === 540) priceKey = 'waaree540Price';
+        else if (normB.includes('rayzon') && watt === 550) priceKey = 'rayzonePrice';
+        else if (normB.includes('aps') && watt === 550) priceKey = 'apsBiFiPrice';
+        else if (normB.includes('adani') && (watt === 550 || watt === 555)) priceKey = 'adaniBiFiPrice';
+
+        makes.push({
+          id: m.id || `mod_${brand.toLowerCase().replace(/\s+/g, '_')}_${watt}`,
+          name: `${brand} ${watt}W`,
+          fullName: m.model || `${brand} ${watt}W (${m.cellTech || 'Solar Module'})`,
+          brand: brand,
           watt: watt,
-          priceKey: watt === 600 ? 'apsTopcon600Price' : watt === 585 ? 'waaree585Price' : watt === 540 ? 'waaree540Price' : 'apsBiFiPrice',
-          badge: m.cellTech || 'ALMM',
+          priceKey: priceKey || 'apsBiFiPrice',
+          badge: m.cellTech ? m.cellTech.split(' ')[0] : 'ALMM',
           tech: `${watt}W ${m.cellTech || 'Solar Module'}`
         });
-      }
-    });
-    return list;
+      });
+      return makes;
+    }
+
+    // Fallback only if database modules not yet loaded
+    return PRESET_MAKES;
   }, [activeModules]);
 
   // 2. kW Options: STRICTLY derived from the pricing preset matrix slabs created by Admin in activeBosMatrix
@@ -373,10 +425,13 @@ export default function CreateQuotation() {
     return 3.3;
   });
 
-  // All preset makes created/configured in the database matrix
+  // All preset makes created/configured in the database matrix that are mathematically compatible with selectedPresetKw
   const compatiblePresetMakes = useMemo(() => {
-    return allAvailablePresetMakes;
-  }, [allAvailablePresetMakes]);
+    if (!selectedPresetKw || Number(selectedPresetKw) <= 0) return allAvailablePresetMakes;
+    return allAvailablePresetMakes.filter((m) =>
+      isPanelWattageCompatible(selectedPresetKw, m.watt)
+    );
+  }, [allAvailablePresetMakes, selectedPresetKw]);
 
   // Selected Make Brand ID for margin-based presets flow
   const [selectedPresetMakeId, setSelectedPresetMakeId] = useState(() => {
@@ -388,25 +443,37 @@ export default function CreateQuotation() {
       );
       if (found) return found.id;
     }
-    return 'aps_bifi';
+    return 'mod-aps-550';
   });
 
-  // Keep selectedPresetMakeId synchronized with available makes
+  // Keep selectedPresetMakeId synchronized with available makes; clear/reset any incompatible panel immediately
   useEffect(() => {
-    if (isMarginBased && compatiblePresetMakes.length > 0) {
-      const isCurrentValid = compatiblePresetMakes.some((m) => m.id === selectedPresetMakeId);
-      if (!isCurrentValid) {
-        const nextMake = compatiblePresetMakes[0];
-        setSelectedPresetMakeId(nextMake.id);
-        setPanelBrand(nextMake.brand);
-        setPanelWatt(nextMake.watt);
+    if (isMarginBased) {
+      if (compatiblePresetMakes.length > 0) {
+        const isCurrentValid = compatiblePresetMakes.some((m) => m.id === selectedPresetMakeId);
+        if (!isCurrentValid) {
+          const matchedByBrandWatt = compatiblePresetMakes.find((m) => {
+            const cur = PRESET_MAKES.find((p) => p.id === selectedPresetMakeId);
+            return cur && normalizeBrand(cur.brand) === normalizeBrand(m.brand) && cur.watt === m.watt;
+          });
+          const nextMake = matchedByBrandWatt || compatiblePresetMakes[0];
+          setSelectedPresetMakeId(nextMake.id);
+          setPanelBrand(nextMake.brand);
+          setPanelWatt(nextMake.watt);
+          const reqQty = getPanelQuantityForCapacity(selectedPresetKw, nextMake.watt);
+          if (reqQty > 0) setPanelQuantity(reqQty);
+        }
+      } else {
+        setSelectedPresetMakeId('');
+        setPanelBrand('');
+        setPanelWatt(0);
       }
     }
-  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId]);
+  }, [isMarginBased, compatiblePresetMakes, selectedPresetMakeId, selectedPresetKw]);
 
   // Active Make object
   const currentPresetMake = useMemo(() => {
-    return compatiblePresetMakes.find((m) => m.id === selectedPresetMakeId) || compatiblePresetMakes[0] || PRESET_MAKES[0];
+    return compatiblePresetMakes.find((m) => m.id === selectedPresetMakeId) || compatiblePresetMakes[0] || null;
   }, [compatiblePresetMakes, selectedPresetMakeId]);
 
   // Active slab strictly matching selected kW from the admin matrix
@@ -430,6 +497,15 @@ export default function CreateQuotation() {
   // Preset Turnkey Base Price from the database matrix for current kW & make
   const activePresetBasePrice = useMemo(() => {
     if (!matchedSlab || !currentPresetMake) return 0;
+    // Check dynamic panelPrices object first
+    if (matchedSlab.panelPrices && typeof matchedSlab.panelPrices === 'object') {
+      const dynPrice = matchedSlab.panelPrices[currentPresetMake.id] ?? 
+                       matchedSlab.panelPrices[currentPresetMake.priceKey] ?? 
+                       matchedSlab.panelPrices[currentPresetMake.brand];
+      if (dynPrice !== undefined && dynPrice !== null && Number(dynPrice) > 0) {
+        return Number(dynPrice);
+      }
+    }
     const camelVal = matchedSlab[currentPresetMake.priceKey];
     if (camelVal !== undefined && camelVal !== null) return Number(camelVal) || 0;
     // Snake_case DB fallback
@@ -486,13 +562,43 @@ export default function CreateQuotation() {
     const numKw = Number(kwVal);
     setSelectedPresetKw(numKw);
     setKwDropdownOpen(false);
+
+    // Filter available makes for this newly selected capacity
+    const nextCompatibleMakes = allAvailablePresetMakes.filter((m) =>
+      isPanelWattageCompatible(numKw, m.watt)
+    );
+
+    const isCurrentStillValid = nextCompatibleMakes.some((m) => m.id === selectedPresetMakeId);
+    if (!isCurrentStillValid) {
+      if (nextCompatibleMakes.length > 0) {
+        const nextMake = nextCompatibleMakes[0];
+        setSelectedPresetMakeId(nextMake.id);
+        setPanelBrand(nextMake.brand);
+        setPanelWatt(nextMake.watt);
+        const reqQty = getPanelQuantityForCapacity(numKw, nextMake.watt);
+        if (reqQty > 0) {
+          setPanelQuantity(reqQty);
+        }
+      } else {
+        setSelectedPresetMakeId('');
+        setPanelBrand('');
+        setPanelWatt(0);
+      }
+    } else {
+      const curMake = nextCompatibleMakes.find((m) => m.id === selectedPresetMakeId);
+      if (curMake) {
+        const reqQty = getPanelQuantityForCapacity(numKw, curMake.watt);
+        if (reqQty > 0) {
+          setPanelQuantity(reqQty);
+        }
+      }
+    }
+
     const targetSlab = (activeBosMatrix || []).find((r) => {
       const slabKw = Number(r.capacityKW || r.capacity_kw);
       return Math.abs(slabKw - numKw) < 0.05;
     });
     if (targetSlab) {
-      const modules = Number(targetSlab.noOfModules || targetSlab.no_of_modules) || 4;
-      setPanelQuantity(modules);
       const invCap = parseFloat(targetSlab.inverterCapacityKW || targetSlab.inverter_capacity_kw) || numKw;
       setInverterCapacityKw(invCap);
     }
@@ -506,39 +612,19 @@ export default function CreateQuotation() {
     if (targetMake) {
       setPanelBrand(targetMake.brand);
       setPanelWatt(targetMake.watt);
-      const modules = Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity;
+      const reqQty = getPanelQuantityForCapacity(selectedPresetKw, targetMake.watt);
+      const modules = reqQty > 0 ? reqQty : (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity);
       setPanelQuantity(modules);
     }
     setCustomPresetBasePrice(null);
   };
 
-  const [panelBrand, setPanelBrand] = useState(() => {
-    if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
-    if (initialSource?.solarModule) {
-      const match = (modulesList || []).find(b => initialSource.solarModule.includes(b.brand));
-      if (match) return match.brand;
-    }
-    return (modulesList && modulesList[0]?.brand) || '';
-  });
-
-  const [panelWatt, setPanelWatt] = useState(() => {
-    if (initialSource?.moduleWattage) return Number(initialSource.moduleWattage);
-    const m = (initialSource?.solarModule || initialSource?.panelType || '').match(/(\d{3})\s*W/i);
-    return m ? Number(m[1]) : ((modulesList && modulesList[0]?.wattage) || 550);
-  });
-
-  const [panelQuantity, setPanelQuantity] = useState(() => {
-    if (initialSource?.moduleCount) return Number(initialSource.moduleCount);
-    const rawKw = parseFloat(initialSource?.systemCapacityKW || initialSource?.capacity || 3.3);
-    return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
-  });
-
   // Auto-calculated System Capacity (kW)
   // Accurately aligned with Admin preset slab capacity
   const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
   const kw = isMarginBased
-    ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || ((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(2))
-    : Number(((panelWatt * panelQuantity) / 1000).toFixed(2));
+    ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || parseFloat(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(3)))
+    : parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3));
   const moduleCount = actualModuleCount;
   const rooftopAreaSqFt = Math.round(kw * 64);
 
@@ -640,15 +726,6 @@ export default function CreateQuotation() {
       { kw: 10.0, label: '10.0 kW (Three Phase) — ₹54,000', phase: 'Three Phase', price: 54000 }
     ];
   }, [brandInverters, seenCatalogItemIds]);
-
-  const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
-    if (initialSource?.inverterCapacity) {
-      const parsed = parseFloat(initialSource.inverterCapacity);
-      if (!isNaN(parsed)) return parsed;
-    }
-    const initialMatched = getAutoInverterMatch(kw, inverterBrand);
-    return initialMatched.capacityKW;
-  });
 
   const [inverterQuantity, setInverterQuantity] = useState(() => {
     return Number(initialSource?.inverterQuantity || initialSource?.inverterQty) || 1;
@@ -809,6 +886,14 @@ export default function CreateQuotation() {
   });
   const effectiveTransportCharge = transportPreset === 'dealer_scope' ? 0 :
     (transportPreset === 'rajkot_local' ? 1000 : Math.max(0, Number(customTransportCharge) || 0));
+
+  // 2b. Extra Outstation Transport / Freight Charge Toggle (Manual input for dealer quote & PDF)
+  const [enableExtraTransport, setEnableExtraTransport] = useState(() => {
+    return Boolean(initialSource?.enableExtraTransport || initialSource?.hasExtraTransport || (initialSource?.extraTransportAmount && Number(initialSource.extraTransportAmount) > 0));
+  });
+  const [extraTransportAmount, setExtraTransportAmount] = useState(() => {
+    return Number(initialSource?.extraTransportAmount) || (initialSource?.hasExtraTransport ? Number(initialSource?.transportCharge) : 0);
+  });
 
   // 3. Adaptive Installation & Liaisoning Rate Engine
   // Residential / Standard HDGI -> ₹2,000/kW | Industrial Monorail -> ₹1,400/kW | Hybrid -> Weighted
@@ -1123,13 +1208,24 @@ export default function CreateQuotation() {
   // Discount (if negotiated)
   const discountAmount = customDiscountPercent > 0 ? Math.round((baseProjectCost + dealerMarginINR) * (customDiscountPercent / 100)) : 0;
 
-  // Turnkey gross cost inclusive of GST
-  const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR - discountAmount);
+  // Turnkey gross cost inclusive of GST (including optional outstation transport charge)
+  const extraTransportChargeINR = (enableExtraTransport && Number(extraTransportAmount) > 0) ? Number(extraTransportAmount) : 0;
+  const grossTurnkeyBeforeSubsidy = Math.max(0, baseProjectCost + dealerMarginINR + extraTransportChargeINR - discountAmount);
   const totalCost = grossTurnkeyBeforeSubsidy;
 
-  // Transparent GST Invoice Breakdown:
-  const baseBeforeGst = bomTotals.totalTaxableBase;
-  const gstAmount = bomTotals.totalGstAmount;
+  // Dynamic Statutory GST Rate (defaults to 18% standard for solar EPC works contract)
+  const effectiveGstPercent = Number(pricingPresets?.taxes?.gstPercent ?? pricingPresets?.gstPercent ?? 18);
+
+  // Exact Statutory GST Breakdown:
+  // Total Project Cost = Taxable Base + GST
+  // Taxable Base = Total / (1 + GST% / 100)
+  // GST Amount = Total - Taxable Base
+  const isInterState = String(custLocation || '').toLowerCase().includes('interstate') || Boolean(initialSource?.isInterState);
+  const baseBeforeGst = Math.round(grossTurnkeyBeforeSubsidy / (1 + (effectiveGstPercent / 100)));
+  const gstAmount = Math.max(0, grossTurnkeyBeforeSubsidy - baseBeforeGst);
+  const cgstAmount = isInterState ? 0 : Math.round(gstAmount / 2);
+  const sgstAmount = isInterState ? 0 : (gstAmount - cgstAmount);
+  const igstAmount = isInterState ? gstAmount : 0;
 
   // Equipment & Service Component Breakdown from BOM:
   const moduleEstimatedCost = bomItems.find(i => i.id === 'solar_panel')?.baseAmount ?? bomItems.find(i => i.id === 'solar_panel')?.total ?? Math.round(panelWatt * panelQuantity * ratePerWp);
@@ -1137,7 +1233,7 @@ export default function CreateQuotation() {
   const structureEstimatedCost = bomItems.filter(i => i.category === 'structure').reduce((sum, i) => sum + (Number(i.baseAmount ?? i.total ?? (Number(i.qty || 0) * Number(i.rate || 0))) || 0), 0);
   const bosEstimatedCost = bomItems.filter(i => i.id !== 'solar_panel' && i.id !== 'solar_inverter' && i.id !== 'transportation' && i.id !== 'turnkey_installation' && i.category !== 'structure').reduce((sum, i) => sum + (Number(i.baseAmount ?? i.total ?? (Number(i.qty || 0) * Number(i.rate || 0))) || 0), 0);
   const allBosHardwareEstimatedCost = structureEstimatedCost + bosEstimatedCost;
-  const transportCharge = effectiveTransportCharge;
+  const transportCharge = (transportPreset === 'dealer_scope' ? 0 : effectiveTransportCharge) + extraTransportChargeINR;
   const installationEstimatedCost = installationPricingMode === 'fixed'
     ? Math.round(Number(installationFixedAmount) || 0)
     : Math.round(kw * (Number(installationRatePerKw) || defaultInstallationRatePerKw));
@@ -1365,7 +1461,7 @@ export default function CreateQuotation() {
   };
 
   // Helper to build standardized quote payload
-  const buildCurrentQuotePayload = (explicitStatus = null) => {
+  function buildCurrentQuotePayload(explicitStatus = null) {
     const isEdit = Boolean(editingQuotation?.id);
     const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
     const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
@@ -1396,8 +1492,6 @@ export default function CreateQuotation() {
     const targetBrandClean = cleanBrand(targetBrand);
 
     const resolvedPanelObj = (modulesList || []).find(m => 
-      (typeof selectedPanelId !== 'undefined' && m.id === selectedPanelId)
-    ) || (modulesList || []).find(m => 
       Number(m.wattage) === Number(targetWatt) && m.brand?.toLowerCase() === targetBrand?.toLowerCase()
     ) || (modulesList || []).find(m =>
       Number(m.wattage) === Number(targetWatt) && (
@@ -1412,8 +1506,7 @@ export default function CreateQuotation() {
       || null;
 
     const targetInvCap = Number(matchedSlab?.inverterCapacityKW || matchedSlab?.inverter_capacity_kw || inverterCapacityKw || kw);
-    const resolvedInverterObj = (typeof selectedInverterId !== 'undefined' ? (invertersList || []).find(i => i.id === selectedInverterId) : null)
-      || (invertersList || []).find(i => 
+    const resolvedInverterObj = (invertersList || []).find(i => 
         Math.abs(Number(i.capacity_kw || i.capacityKW || 0) - targetInvCap) < 0.1 &&
         (i.brand?.toLowerCase() === inverterBrand?.toLowerCase() || inverterBrand?.toLowerCase()?.includes(i.brand?.toLowerCase()))
       )
@@ -1460,7 +1553,10 @@ export default function CreateQuotation() {
       structureType,
       hybridMonorailPercent: structureType === 'hybrid' ? hybridMonorailPercent : null,
       transportPreset,
-      transportCharge: effectiveTransportCharge,
+      transportCharge: (transportPreset === 'dealer_scope' ? 0 : effectiveTransportCharge) + extraTransportChargeINR,
+      enableExtraTransport,
+      hasExtraTransport: enableExtraTransport && Number(extraTransportAmount) > 0,
+      extraTransportAmount: enableExtraTransport ? Number(extraTransportAmount) : 0,
       installationPricingMode,
       installationFixedAmount: Number(installationFixedAmount) || 0,
       installationRatePerKw: Number(installationRatePerKw) || defaultInstallationRatePerKw,
@@ -1493,8 +1589,12 @@ export default function CreateQuotation() {
       structureEstimatedCost,
       bosEstimatedCost,
       baseBeforeGst,
-      gstPercentage: 13.8,
+      gstPercentage: effectiveGstPercent,
       gstAmount,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
+      isInterState,
       isGstInclusive: true,
       annualGenerationUnits,
       monthlyGenerationUnits,
@@ -1518,6 +1618,9 @@ export default function CreateQuotation() {
       dealerCode: resolvedDealerCode,
       dealerId: resolvedDealerCode,
       dealerName: resolvedDealerName,
+      dealer_id: resolvedDealerCode,
+      dealer_code: resolvedDealerCode,
+      dealer_name: resolvedDealerName,
       roofConfig: quotationRoofConfig,
       coverImage: customCoverUrl || null,
       customCoverUrl: customCoverUrl || null,
@@ -2129,7 +2232,7 @@ export default function CreateQuotation() {
                       <span>2. Select Solar Panel *</span>
                     </label>
                     <span className="text-[11px] text-secondary font-mono">
-                      {compatiblePresetMakes.length} Preset Makes
+                      {compatiblePresetMakes.length} Compatible Models
                     </span>
                   </div>
 
@@ -2149,7 +2252,9 @@ export default function CreateQuotation() {
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">solar_power</span>
                         <span className="truncate">
-                          {currentPresetMake?.name} ({currentPresetMake?.tech || `${currentPresetMake?.watt}W`})
+                          {currentPresetMake
+                            ? `${currentPresetMake.name} (${currentPresetMake.tech || `${currentPresetMake.watt}W`})`
+                            : '-- Select Compatible Solar Panel --'}
                         </span>
                       </div>
                       <span className={`material-symbols-outlined text-secondary text-[22px] shrink-0 transition-transform duration-200 ${makeDropdownOpen ? 'rotate-180 text-emerald-600' : ''}`}>
@@ -2164,44 +2269,49 @@ export default function CreateQuotation() {
                         role="listbox"
                         aria-labelledby="presetMakeSelectLabel"
                       >
-                        {compatiblePresetMakes.map((make) => {
-                          const isSelected = make.id === selectedPresetMakeId;
-                          const slabModules = Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity;
-                          const slabPrice = matchedSlab ? (matchedSlab[make.priceKey] || matchedSlab[make.priceKey?.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)]) : null;
-                          return (
-                            <button
-                              key={`make-opt-${make.id}`}
-                              type="button"
-                              role="option"
-                              aria-selected={isSelected}
-                              onClick={() => handleSelectPresetMake(make.id)}
-                              className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
-                                isSelected
-                                  ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
-                                  : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
-                                  {isSelected ? 'check_circle' : 'circle'}
-                                </span>
-                                <div className="min-w-0">
-                                  <div className="truncate font-bold text-on-surface">
-                                    {make.name}
-                                  </div>
-                                  <div className="text-[10px] text-secondary">
-                                    {make.brand} • {make.tech}
+                        {compatiblePresetMakes.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-secondary">
+                            No solar panels configured whose wattage can form {selectedPresetKw} kW with a whole number of panels.
+                          </div>
+                        ) : (
+                          compatiblePresetMakes.map((make) => {
+                            const isSelected = make.id === selectedPresetMakeId;
+                            const reqModules = getPanelQuantityForCapacity(selectedPresetKw, make.watt);
+                            return (
+                              <button
+                                key={`make-opt-${make.id}`}
+                                type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                onClick={() => handleSelectPresetMake(make.id)}
+                                className={`w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between text-left text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-500/15 text-emerald-950 font-bold border-l-4 border-emerald-600 pl-2.5'
+                                    : 'text-on-surface hover:bg-surface-container hover:text-emerald-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-emerald-700' : 'text-secondary/50'}`}>
+                                    {isSelected ? 'check_circle' : 'circle'}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="truncate font-bold text-on-surface">
+                                      {make.name}
+                                    </div>
+                                    <div className="text-[10px] text-secondary">
+                                      {make.brand} • {make.tech}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                              <div className="text-right shrink-0 ml-2 flex flex-col items-end">
-                                <span className="text-[11px] font-mono font-bold text-emerald-900 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
-                                  {slabModules} Panels
-                                </span>
-                              </div>
-                            </button>
-                          );
-                        })}
+                                <div className="text-right shrink-0 ml-2 flex flex-col items-end">
+                                  <span className="text-[11px] font-mono font-bold text-emerald-900 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
+                                    {reqModules} Panels
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                        )}
                       </div>
                     )}
                   </div>
@@ -2219,11 +2329,11 @@ export default function CreateQuotation() {
                           Auto-Generated Plant Capacity
                         </span>
                         <span className="text-[11px] font-medium text-emerald-800">
-                          {matchedSlab?.noOfModules || panelQuantity} Panels × {currentPresetMake.watt}W ({currentPresetMake.name})
+                          {panelQuantity} Panels × {currentPresetMake?.watt || panelWatt}W ({currentPresetMake?.name || panelBrand})
                         </span>
                       </div>
                       <div className="text-xl sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
-                        {kw} kW System <span className="text-sm sm:text-base font-bold text-emerald-800">({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)</span>
+                        {kw} kW System <span className="text-sm sm:text-base font-bold text-emerald-800">({parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3))} kWp)</span>
                       </div>
                     </div>
                   </div>
@@ -2266,6 +2376,75 @@ export default function CreateQuotation() {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* 5. EXTRA OUTSTATION TRANSPORT / FREIGHT CHARGE TOGGLE */}
+                <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${enableExtraTransport ? 'bg-primary/20 text-primary' : 'bg-surface-container text-secondary'}`}>
+                        <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-on-surface">Add Transport / Freight Charge</h4>
+                          {enableExtraTransport && Number(extraTransportAmount) > 0 && (
+                            <span className="text-[10px] bg-primary/15 text-primary font-bold px-2 py-0.5 rounded-full border border-primary/20 font-mono">
+                              + {formatINR(extraTransportAmount)}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary">
+                          Toggle ON to manually include outstation doorstep transport / freight charges in this quotation &amp; PDF.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 self-end sm:self-auto">
+                      {/* Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => setEnableExtraTransport(!enableExtraTransport)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          enableExtraTransport ? 'bg-primary' : 'bg-surface-container-highest'
+                        }`}
+                        role="switch"
+                        aria-checked={enableExtraTransport}
+                        title={enableExtraTransport ? 'Disable extra transport charge' : 'Enable extra transport charge'}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                            enableExtraTransport ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {enableExtraTransport && (
+                    <div className="mt-3 pt-3 border-t border-surface-container-high/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in fade-in duration-150">
+                      <span className="text-xs text-on-surface font-semibold flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-xs text-primary">currency_rupee</span>
+                        Manual Extra Transport Charge (₹):
+                      </span>
+                      <div className="relative flex items-center w-full sm:w-56">
+                        <span className="absolute left-2.5 text-xs text-secondary font-bold pointer-events-none">₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={extraTransportAmount === 0 ? '' : extraTransportAmount}
+                          placeholder="0"
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/^0+(?=\d)/, '');
+                            setExtraTransportAmount(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                          }}
+                          className="w-full h-9 pl-7 pr-3 text-xs font-mono font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -2512,7 +2691,7 @@ export default function CreateQuotation() {
                         </span>
                       </div>
                       <div className="text-lg sm:text-2xl font-black text-emerald-900 mt-1 sm:mt-0.5 tracking-tight font-mono break-words">
-                        {kw} kW System <span className="text-sm sm:text-lg font-bold text-emerald-800">({((panelWatt * panelQuantity) / 1000).toFixed(2)} kWp)</span>
+                        {kw} kW System <span className="text-sm sm:text-lg font-bold text-emerald-800">({parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3))} kWp)</span>
                       </div>
                     </div>
                   </div>
@@ -3663,11 +3842,11 @@ export default function CreateQuotation() {
                   </span>
                 </div>
 
-                {/* 6. Statutory Composite GST 13.8% */}
+                {/* 6. Statutory GST */}
                 <div className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-emerald-100/60 border border-emerald-200">
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-1">
-                      <span className="text-emerald-950 font-bold">Statutory Composite GST (13.8%)</span>
+                      <span className="text-emerald-950 font-bold">Statutory GST ({effectiveGstPercent}%)</span>
                       <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded font-bold">Included</span>
                     </div>
                     <span className="text-[10px] text-emerald-800">
@@ -3679,6 +3858,19 @@ export default function CreateQuotation() {
                   </span>
                 </div>
               </div>
+
+              {/* Extra Outstation Transport Charge (if toggled ON) */}
+              {enableExtraTransport && Number(extraTransportAmount) > 0 && (
+                <div className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-blue-50/70 border border-blue-200/80">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="material-symbols-outlined text-[15px] text-blue-700 shrink-0">local_shipping</span>
+                    <span className="text-blue-950 font-bold truncate">Extra Outstation Transport</span>
+                  </div>
+                  <span className="font-mono font-bold text-blue-900 shrink-0">
+                    + {formatINR(extraTransportAmount)}
+                  </span>
+                </div>
+              )}
 
               {/* Total Project Cost */}
               <div className="flex items-center justify-between gap-2 py-1.5 border-t border-dashed border-primary/30">
@@ -3849,8 +4041,13 @@ export default function CreateQuotation() {
                         type="number"
                         min="0"
                         step="100"
-                        value={marginRatePerKw}
-                        onChange={(e) => setMarginRatePerKw(Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={marginRatePerKw === 0 ? '' : marginRatePerKw}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setMarginRatePerKw(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                        }}
                         className="w-24 h-8 px-2 text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none font-mono"
                       />
                     </div>
@@ -3895,8 +4092,13 @@ export default function CreateQuotation() {
                         min="0"
                         max="50"
                         step="0.5"
-                        value={dealerMarginRate}
-                        onChange={(e) => setDealerMarginRate(Math.max(0, parseFloat(e.target.value) || 0))}
+                        value={dealerMarginRate === 0 ? '' : dealerMarginRate}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setDealerMarginRate(val === '' ? 0 : Math.max(0, parseFloat(val) || 0));
+                        }}
                         className="w-16 h-8 text-center text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none"
                       />
                       <span className="absolute right-2 text-xs text-secondary font-bold pointer-events-none">%</span>
@@ -3943,8 +4145,13 @@ export default function CreateQuotation() {
                         min="0"
                         max="500000"
                         step="1000"
-                        value={dealerMarginFixed}
-                        onChange={(e) => setDealerMarginFixed(Math.max(0, parseInt(e.target.value) || 0))}
+                        value={dealerMarginFixed === 0 ? '' : dealerMarginFixed}
+                        placeholder="0"
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/^0+(?=\d)/, '');
+                          setDealerMarginFixed(val === '' ? 0 : Math.max(0, parseInt(val) || 0));
+                        }}
                         className="w-24 h-8 pl-5 pr-2 text-xs font-bold rounded-lg border border-surface-container-high bg-surface-container-lowest focus:border-primary-container focus:ring-1 focus:ring-primary-container outline-none font-mono"
                       />
                     </div>

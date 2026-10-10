@@ -86,14 +86,17 @@ export default function DealerManagement() {
     }
   };
 
-  // Dealer Custom Pricing Modal States
   const [pricingModalDealer, setPricingModalDealer] = useState(null);
   const [pricingMode, setPricingMode] = useState('standard');
-  const baseKw = pricingPresets?.baseRatePerKw || 0;
-  const baseWp = baseKw > 0 ? Number((baseKw / 1000).toFixed(2)) : 0;
+  const baseKw = pricingPresets?.baseRatePerKw || 58000;
+  const baseWp = baseKw > 0 ? Number((baseKw / 1000).toFixed(2)) : 18.00;
+  const [dealerCommercialType, setDealerCommercialType] = useState('margin_based');
+  const [dealerCommissionPerKw, setDealerCommissionPerKw] = useState(4500);
+  const [dealerRegistrationFee, setDealerRegistrationFee] = useState(2000);
+  const [dealerDistanceKm, setDealerDistanceKm] = useState(0);
   const [customWpRate, setCustomWpRate] = useState(baseWp);
   const [customKwRate, setCustomKwRate] = useState(baseKw);
-  const [customMarginKw, setCustomMarginKw] = useState(0);
+  const [customMarginKw, setCustomMarginKw] = useState(4500);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [customNotes, setCustomNotes] = useState('');
 
@@ -105,31 +108,57 @@ export default function DealerManagement() {
                     (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
     const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     setPricingMode(cfg.pricingMode || 'standard');
+    setDealerCommercialType(d.dealerType || cfg.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'));
+    setDealerCommissionPerKw(d.defaultCommissionPerKw || cfg.default_commission_per_kw || cfg.customMarginPerKw || dynMargin || 4500);
+    setDealerRegistrationFee(d.registrationFeeRate || cfg.registration_fee_rate || 2000);
+    setDealerDistanceKm(d.distanceFromRajkotKm || cfg.distance_from_rajkot_km || 0);
     setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : baseWp);
     setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : baseKw);
-    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : dynMargin);
+    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : (dynMargin || 4500));
     setCustomDiscount(cfg.customDiscountPercent || 0);
     setCustomNotes(cfg.customNotes || '');
   };
 
-  const handleSaveDealerPricing = () => {
+  const handleSaveDealerPricing = async () => {
     if (!pricingModalDealer) return;
     const tierKey = (pricingModalDealer.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                     (pricingModalDealer.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                     (pricingModalDealer.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
     const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     const newCfg = {
+      ...pricingModalDealer.pricingConfig,
       pricingMode,
+      dealer_type: dealerCommercialType,
+      default_commission_per_kw: Number(dealerCommissionPerKw) || 4500,
+      registration_fee_rate: Number(dealerRegistrationFee) || 2000,
+      distance_from_rajkot_km: Number(dealerDistanceKm) || 0,
       customBaseRatePerWp: Number(customWpRate) || baseWp,
       customBaseRatePerKw: Number(customKwRate) || baseKw,
-      customMarginPerKw: Number(customMarginKw) || dynMargin,
+      customMarginPerKw: Number(dealerCommissionPerKw) || Number(customMarginKw) || dynMargin || 4500,
       customDiscountPercent: Number(customDiscount) || 0,
       customNotes: customNotes.trim()
     };
+
+    if (updateDealer) {
+      await updateDealer({
+        ...pricingModalDealer,
+        dealerType: dealerCommercialType,
+        category: dealerCommercialType === 'kit_based' ? 'Kit Based' : 'Margin Based',
+        defaultCommissionPerKw: Number(dealerCommissionPerKw) || 4500,
+        registrationFeeRate: Number(dealerRegistrationFee) || 2000,
+        distanceFromRajkotKm: Number(dealerDistanceKm) || 0,
+        pricingConfig: newCfg
+      });
+    }
+
     if (updateDealerPricing) {
       updateDealerPricing(pricingModalDealer.id, newCfg);
     }
-    addToast(`Pricing updated for ${pricingModalDealer.firmName} (${pricingMode === 'custom' ? `Custom ₹${newCfg.customBaseRatePerWp}/Wp` : 'Standard Tier'})`, 'success');
+
+    addToast(
+      `Commercial settings saved for ${pricingModalDealer.firmName} (${dealerCommercialType === 'kit_based' ? 'Kit-Based Model' : 'Margin-Based Commission Model'})`,
+      'success'
+    );
     setPricingModalDealer(null);
   };
 
@@ -550,8 +579,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim() || editingDealer.address,
-        gstin: newGstinState.trim() || editingDealer.gstin || '',
-        pan: newPan.trim() || (newGstinState.trim() ? newGstinState.trim().slice(2, 12) : editingDealer.pan || ''),
+        gstin: newGstin.trim() || editingDealer.gstin || '',
+        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || ''),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
         password: newPassword.trim() || editingDealer.password || '',
         pricingConfig: {
@@ -629,8 +658,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim(),
-        gstin: newGstinState.trim() || '',
-        pan: newPan.trim() || (newGstinState.trim() ? newGstinState.trim().slice(2, 12) : ''),
+        gstin: newGstin.trim() || '',
+        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : ''),
         discomLicense: newDiscomCode.trim(),
         totalQuotes: 0,
         totalCapacityKw: 0,
@@ -994,7 +1023,7 @@ export default function DealerManagement() {
                     type="text"
                     maxLength={15}
                     placeholder="e.g. 24AAECB1234F1Z5"
-                    value={newGstinState}
+                    value={newGstin}
                     onChange={(e) => setNewGstin(e.target.value)}
                     autoComplete="off"
                   />
@@ -2473,6 +2502,157 @@ export default function DealerManagement() {
                 className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            {/* Partner Commercial Operating Model (Boss Directives) */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-on-surface uppercase tracking-wider">
+                Dealer Operating Model
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDealerCommercialType('margin_based')}
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    dealerCommercialType === 'margin_based'
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/20 text-on-surface'
+                      : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface hover:border-surface-container-highest'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="flex items-center gap-2 font-bold text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-primary text-[18px]">engineering</span>
+                      <span>Margin-Based Model</span>
+                    </span>
+                    {dealerCommercialType === 'margin_based' && (
+                      <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-secondary leading-relaxed">
+                    Company provides complete material + installation. Partner sources lead and earns commission per kW.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDealerCommercialType('kit_based')}
+                  className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    dealerCommercialType === 'kit_based'
+                      ? 'bg-primary/10 border-primary ring-2 ring-primary/20 text-on-surface'
+                      : 'bg-surface-container-low border-surface-container-high text-secondary hover:text-on-surface hover:border-surface-container-highest'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="flex items-center gap-2 font-bold text-xs text-on-surface">
+                      <span className="material-symbols-outlined text-emerald-500 text-[18px]">inventory_2</span>
+                      <span>Kit-Based Model</span>
+                    </span>
+                    {dealerCommercialType === 'kit_based' && (
+                      <span className="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-secondary leading-relaxed">
+                    Partner buys hardware kit and executes installation. Sunvine handles portal registration for a fee.
+                  </p>
+                </button>
+              </div>
+
+              {/* Model-specific parameters */}
+              <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {dealerCommercialType === 'margin_based' ? (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Default Commission (₹/kW)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                        <input
+                          type="number"
+                          value={dealerCommissionPerKw}
+                          onChange={(e) => setDealerCommissionPerKw(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="4500"
+                        />
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Dealer earnings credited upon project execution</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Margin Cap Protection (₹/kW)
+                      </label>
+                      <div className="px-3 py-2 bg-surface rounded-lg border border-surface-container-high text-xs font-mono font-bold text-primary flex items-center justify-between">
+                        <span>₹{Number(pricingModalDealer.maxMarginCapPerKw || 6000).toLocaleString('en-IN')}/kW</span>
+                        <span className="text-[10px] text-secondary font-sans font-normal">Tier Cap</span>
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Configurable via Tier Margins master</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Portal Registration Fee (₹/file)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2.5 text-secondary text-xs font-bold">₹</span>
+                        <input
+                          type="number"
+                          value={dealerRegistrationFee}
+                          onChange={(e) => setDealerRegistrationFee(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="2000"
+                        />
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Charged for official portal registration and filing</span>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-on-surface mb-1">
+                        Distance from Rajkot Hub (km)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={dealerDistanceKm}
+                          onChange={(e) => setDealerDistanceKm(e.target.value)}
+                          className="w-full bg-surface border border-surface-container-high rounded-lg px-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
+                          placeholder="e.g. 120"
+                        />
+                        <span className="absolute right-3 top-2.5 text-secondary text-xs font-bold">km</span>
+                      </div>
+                      <span className="text-[10px] text-secondary mt-0.5 block">Used for kit transport distance slab computation</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Centralized Matrix Banner */}
+            <div className="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-highest flex items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-primary text-[20px]">tune</span>
+                <div>
+                  <h4 className="text-xs font-bold text-on-surface">Specific Item Rates &amp; Overrides</h4>
+                  <p className="text-[11px] text-secondary">
+                    Individual panel, inverter, and BOM rates are centralized in the Master Pricing Matrix.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const dId = pricingModalDealer.id;
+                  setPricingModalDealer(null);
+                  if (typeof window !== 'undefined') {
+                    window.history.pushState(null, '', `?tab=dealer_custom&dealerId=${dId}`);
+                  }
+                  if (setActiveTab) setActiveTab('pricing_master');
+                }}
+                className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                <span>Open in Pricing Master</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
               </button>
             </div>
 

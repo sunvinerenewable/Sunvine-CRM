@@ -132,9 +132,10 @@ export const pricingService = {
           rayzonePrice: Number(row.rayzone_price),
           waaree540Price: Number(row.waaree_540_price) || 0,
           topcon585CapacityKW: Number(row.topcon585_capacity_kw) || (Number(row.capacity_kw) * 1.06),
-          waaree585Price: Number(row.waaree_585_price),
+          waaree585Price: Number(row.waaree_585_price) || 0,
           topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),
-          apsTopcon600Price: Number(row.aps_topcon_600_price)
+          apsTopcon600Price: Number(row.aps_topcon_600_price) || 0,
+          panelPrices: row.panel_prices || {}
         }));
       }
     } catch (err) {

@@ -5,7 +5,7 @@ import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 export default function StaffNewLead() {
-  const { currentStaff, addCustomerFile, setActiveTab, dealers, pricingPresets } = useApp();
+  const { currentStaff, addCustomerFile, setActiveTab, dealers, pricingPresets, showLoader, hideLoader } = useApp();
   const { addToast } = useToast();
 
   const [customerName, setCustomerName] = useState('');
@@ -46,7 +46,7 @@ export default function StaffNewLead() {
     return Math.round(kw * baseRate);
   }, [solarSystemKw, pricingPresets]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!customerName.trim() || !phone.trim()) {
       addToast('Customer Name and Mobile Number are required', 'error');

@@ -232,9 +232,13 @@ const getInitialTabFromUrl = () => {
 };
 
 export const AppProvider = ({ children }) => {
-  // Authentication & Session State
+  // Authentication & Session State (Tab-isolated via sessionStorage first, fallback to device localStorage)
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessAuth = sessionStorage.getItem('sunvine_auth');
+      if (sessAuth !== null) return sessAuth === 'true';
+    }
     return localStorage.getItem('sunvine_auth') === 'true';
   });
 
@@ -260,8 +264,14 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Role: 'dealer' or 'admin'
-  const [role, setRole] = useState(() => localStorage.getItem('sunvine_role') || 'dealer');
+  // Role: 'dealer', 'admin', or 'staff' (Tab-scoped)
+  const [role, setRole] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const sessRole = sessionStorage.getItem('sunvine_role');
+      if (sessRole) return sessRole;
+    }
+    return localStorage.getItem('sunvine_role') || 'dealer';
+  });
   const [activeTab, setActiveTabState] = useState(getInitialTabFromUrl);
 
   const setActiveTab = (newTab, replace = false) => {
@@ -1398,6 +1408,8 @@ export const AppProvider = ({ children }) => {
       setIsAuthenticated(true);
       setRole(userRole);
       setCurrentUser(userProfile ? { ...userProfile, role: userRole } : { role: userRole });
+      safeSetItem('sunvine_auth', 'true');
+      safeSetItem('sunvine_role', userRole);
       if (userRole === 'admin') {
         setActiveTab('admin_dashboard');
         pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
@@ -1427,6 +1439,14 @@ export const AppProvider = ({ children }) => {
       setCurrentUser(null);
       setAuthView('dealer_login', true);
     });
+    try {
+      sessionStorage.removeItem('sunvine_auth');
+      sessionStorage.removeItem('sunvine_role');
+      sessionStorage.removeItem('sunvine_tab');
+      sessionStorage.removeItem('sunvine_current_staff');
+      sessionStorage.removeItem('sunvine_current_dealer');
+      sessionStorage.removeItem('sunvine_session_token');
+    } catch (_) {}
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
     localStorage.removeItem('sunvine_current_dealer');
@@ -2154,6 +2174,19 @@ export const AppProvider = ({ children }) => {
     } catch (err) {
       console.error('[AppContext] Failed to update quotation status:', err);
       throw err;
+    }
+  };
+
+  const deleteQuotation = async (id) => {
+    if (!id) return { success: false };
+    setQuotations(prev => prev.filter(q => q.id !== id && q.quoteNumber !== id));
+    try {
+      const res = await quotationService.deleteQuotation(id);
+      broadcastDbEvent('SYNC_FILES');
+      return res;
+    } catch (e) {
+      console.warn('[AppContext] Failed to delete quotation from DB:', e);
+      return { success: false, error: e.message };
     }
   };
 
@@ -3167,6 +3200,7 @@ export const AppProvider = ({ children }) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     previewQuotation,
     setPreviewQuotation,
     notifications: visibleNotifications,
@@ -3334,6 +3368,7 @@ export const AppProvider = ({ children }) => {
     setActiveDraftQuote,
     clearActiveDraftQuote,
     updateQuotationStatus,
+    deleteQuotation,
     openChangelogModal,
     markNotificationAsRead,
     markAllNotificationsAsRead,

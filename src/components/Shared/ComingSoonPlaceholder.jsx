@@ -6,7 +6,8 @@ export default function ComingSoonPlaceholder({
   subtitle = 'Coming Soon in Version 2.3',
   icon = 'construction',
   description = 'We are actively developing this next-generation module to empower Sunvine dealers and sales executives with automated intelligence. This feature will be unlocked in the upcoming release.',
-  backTab
+  backTab,
+  highlights = null
 }) {
   const { role, setActiveTab, currentStaff } = useApp();
 
@@ -56,22 +57,17 @@ export default function ComingSoonPlaceholder({
 
         {/* Expected Highlights Checklist */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mt-8 text-left">
-          <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">check_circle</span>
-            <span className="text-xs font-semibold text-on-surface">Integrated Telemetry Engine</span>
-          </div>
-          <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">check_circle</span>
-            <span className="text-xs font-semibold text-on-surface">Gujarat DISCOM Geo-Fencing</span>
-          </div>
-          <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">check_circle</span>
-            <span className="text-xs font-semibold text-on-surface">Direct Document Submissions</span>
-          </div>
-          <div className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">check_circle</span>
-            <span className="text-xs font-semibold text-on-surface">Enterprise Lead Auto-Dispatch</span>
-          </div>
+          {(highlights || [
+            'Integrated Telemetry Engine',
+            'Gujarat DISCOM Geo-Fencing',
+            'Direct Document Submissions',
+            'Enterprise Lead Auto-Dispatch'
+          ]).map((item, idx) => (
+            <div key={idx} className="p-3 rounded-xl bg-surface-container-low border border-surface-container-high flex items-center gap-2.5">
+              <span className="material-symbols-outlined text-emerald-600 text-[20px] shrink-0">check_circle</span>
+              <span className="text-xs font-semibold text-on-surface">{item}</span>
+            </div>
+          ))}
         </div>
 
         {/* Navigation Action */}

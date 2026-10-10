@@ -315,9 +315,14 @@ export const quotationService = {
   async deleteQuotation(id) {
     if (!id) return { success: false, error: 'ID is required.' };
     try {
+      const token = typeof window !== 'undefined' ? (sessionStorage.getItem('sunvine_session_token') || localStorage.getItem('sunvine_session_token')) : null;
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      };
       const res = await fetch('/api/quotations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ action: 'delete', id })
       });
