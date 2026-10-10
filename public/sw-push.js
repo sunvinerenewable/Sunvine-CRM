@@ -47,11 +47,23 @@ self.addEventListener('push', (event) => {
   );
 });
 
+function sanitizeTargetUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return '/?tab=applications';
+  try {
+    const parsed = new URL(urlStr, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      return parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch (_) {}
+  return '/?tab=applications';
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const clickData = event.notification.data || {};
-  const targetUrl = clickData.url || '/?tab=applications';
+  const rawUrl = clickData.url || '/?tab=applications';
+  const targetUrl = sanitizeTargetUrl(rawUrl);
   const targetFileId = clickData.fileId;
 
   event.waitUntil(

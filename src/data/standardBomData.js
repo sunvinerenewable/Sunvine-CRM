@@ -368,6 +368,34 @@ export const STANDARD_BOM_CATALOG = [
     defaultRate: 120,
     rate: 120,
     gstRate: 18
+  },
+  {
+    id: 'transportation',
+    category: 'logistics',
+    name: 'Transportation & Doorstep Freight',
+    make: 'Doorstep Insured Logistics',
+    description: 'Doorstep freight and logistics',
+    specs: 'Freight & Logistics',
+    unit: 'LOT',
+    defaultRate: 1000,
+    rate: 1000,
+    minRate: 0,
+    maxRate: 50000,
+    gstRate: 0
+  },
+  {
+    id: 'turnkey_installation',
+    category: 'services',
+    name: 'Turnkey Installation & Net-Metering Service',
+    make: 'Sunvine Certified EPC Field Team',
+    description: 'Turnkey Installation & Net-Metering Service',
+    specs: 'Installation & Net-Metering',
+    unit: 'JOB',
+    defaultRate: 2000,
+    rate: 2000,
+    minRate: 0,
+    maxRate: 200000,
+    gstRate: 18
   }
 ];
 

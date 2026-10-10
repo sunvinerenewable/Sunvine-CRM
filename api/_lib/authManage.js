@@ -1,7 +1,8 @@
 import { query, getSupabaseServiceClient, ensureEnvLoaded } from './db.js';
-import { hashBcrypt } from './security.js';
+import { hashBcrypt, validatePasswordComplexity } from './security.js';
 import { applyCors } from './cors.js';
 import { requireAdmin } from './requireAuth.js';
+import { generateCollisionFreeDealerCode, generateCollisionFreeStaffCode, isUuid } from './adminHandlers.js';
 
 ensureEnvLoaded();
 
@@ -11,6 +12,8 @@ ensureEnvLoaded();
  * Centralized server-side credential and account management endpoint.
  * Ensures consistent Bcrypt password hashing ($2a$10$...) for PostgreSQL
  * across Dealer Onboarding, Staff Creation, and Verification Desk management.
+ * Provides automatic fallback to Supabase Service Client (HTTPS REST)
+ * when direct TCP database pooler encounters connection limits.
  */
 export default async function handler(req, res) {
   applyCors(req, res);
@@ -24,7 +27,7 @@ export default async function handler(req, res) {
   }
 
   // --- Admin authentication guard (SEC-001) ---
-  const adminPayload = requireAdmin(req, res);
+  const adminPayload = await requireAdmin(req, res);
   if (!adminPayload) return; // requireAdmin already sent 401/403
 
   const { action, payload } = req.body || {};
@@ -63,11 +66,48 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Firm name and contact person are required.' });
         }
 
-        const plainPassword = String(password || 'Sunvine@2026').trim();
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
+        }
+
+        // Check duplicate collision
+        let collisionFound = false;
+        try {
+          if (dealerCode) {
+            const collision = await query('SELECT id FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          } else {
+            const collision = await query('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          }
+        } catch (_) {
+          try {
+            const supabase = getSupabaseServiceClient();
+            let q = supabase.from('dealer_accounts').select('id');
+            if (dealerCode) {
+              q = q.or(`dealer_code.eq.${dealerCode},mobile_number.eq.${cleanMobile}`);
+            } else {
+              q = q.eq('mobile_number', cleanMobile);
+            }
+            const { data } = await q.limit(1);
+            if (data && data.length > 0) collisionFound = true;
+          } catch (e) {
+            console.warn('[manage-credentials:create-dealer] Duplicate check fallback failed:', e.message);
+          }
+        }
+
+        if (collisionFound) {
+          return res.status(409).json({ error: `Dealer with code "${dealerCode || ''}" or mobile "${cleanMobile}" already exists.` });
+        }
+
+        const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
-        const code = dealerCode || `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
+        const code = dealerCode || (await generateCollisionFreeDealerCode());
         const cleanTier = tier || 'Gold EPC Partner';
-        const cleanCap = Number(maxMarginCapPerKw) || 6000;
+        const cleanCap = maxMarginCapPerKw !== undefined && maxMarginCapPerKw !== null && maxMarginCapPerKw !== ''
+          ? Number(maxMarginCapPerKw)
+          : null;
         const cleanStatus = (status || 'Active').toLowerCase();
         const cleanEmail = email || `${cleanMobile}@sunvinedealer.in`;
         const cleanCity = city || 'Ahmedabad';
@@ -78,69 +118,84 @@ export default async function handler(req, res) {
           ? 'Direct to Company (HQ Desk)' 
           : (payload.assignedStaffName || 'Sunvine Sales Staff');
         const dealerCategory = payload.category || payload.pricingConfig?.category || 'Margin Based';
-        const pricingConfig = JSON.stringify({
+        const pricingConfig = {
           ...(payload.pricingConfig || {}),
           category: dealerCategory,
+          address: address || payload.address || '',
+          gstin: gstin || payload.gstin || '',
+          pan: pan || payload.pan || '',
+          discomLicense: discomLicense || payload.discomLicense || '',
           assignedStaffId,
           assignedStaffName
-        });
+        };
 
-        const sql = `
-          INSERT INTO dealer_accounts (
-            dealer_code, firm_name, contact_person, mobile_number, email,
-            password_hash, city, state, discom, tier, max_margin_cap_per_kw,
-            status, gst_number, pan_number, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, NOW(), NOW())
-          ON CONFLICT (dealer_code) DO UPDATE SET
-            firm_name = EXCLUDED.firm_name,
-            contact_person = EXCLUDED.contact_person,
-            mobile_number = EXCLUDED.mobile_number,
-            email = EXCLUDED.email,
-            password_hash = EXCLUDED.password_hash,
-            city = EXCLUDED.city,
-            state = EXCLUDED.state,
-            discom = EXCLUDED.discom,
-            tier = EXCLUDED.tier,
-            max_margin_cap_per_kw = EXCLUDED.max_margin_cap_per_kw,
-            status = EXCLUDED.status,
-            gst_number = EXCLUDED.gst_number,
-            pan_number = EXCLUDED.pan_number,
-            assigned_staff_id = EXCLUDED.assigned_staff_id,
-            assigned_staff_name = EXCLUDED.assigned_staff_name,
-            pricing_config = EXCLUDED.pricing_config,
-            updated_at = NOW()
-          RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name;
-        `;
+        let newDealer = null;
+        try {
+          const sql = `
+            INSERT INTO dealer_accounts (
+              dealer_code, firm_name, contact_person, mobile_number, email,
+              password_hash, city, state, discom, tier, max_margin_cap_per_kw,
+              status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, NOW(), NOW())
+            RETURNING id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name;
+          `;
 
-        const qRes = await query(sql, [
-          code,
-          firmName,
-          contactPerson,
-          cleanMobile,
-          cleanEmail,
-          passwordHash,
-          cleanCity,
-          cleanState,
-          cleanDiscom,
-          cleanTier,
-          cleanCap,
-          cleanStatus,
-          gstin || null,
-          pan || null,
-          assignedStaffId,
-          assignedStaffName,
-          pricingConfig
-        ]);
+          const qRes = await query(sql, [
+            code,
+            firmName,
+            contactPerson,
+            cleanMobile,
+            cleanEmail,
+            passwordHash,
+            cleanCity,
+            cleanState,
+            cleanDiscom,
+            cleanTier,
+            cleanCap,
+            cleanStatus,
+            assignedStaffId,
+            assignedStaffName,
+            JSON.stringify(pricingConfig)
+          ]);
+          newDealer = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct query failed, using Supabase Service client:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const { data: inserted, error: insertErr } = await supabase
+            .from('dealer_accounts')
+            .insert({
+              dealer_code: code,
+              firm_name: firmName,
+              contact_person: contactPerson,
+              mobile_number: cleanMobile,
+              email: cleanEmail,
+              password_hash: passwordHash,
+              city: cleanCity,
+              state: cleanState,
+              discom: cleanDiscom,
+              tier: cleanTier,
+              max_margin_cap_per_kw: cleanCap,
+              status: cleanStatus,
+              assigned_staff_id: assignedStaffId,
+              assigned_staff_name: assignedStaffName,
+              pricing_config: pricingConfig
+            })
+            .select('id, dealer_code, firm_name, contact_person, mobile_number, email, status, tier, max_margin_cap_per_kw, assigned_staff_id, assigned_staff_name')
+            .single();
+
+          if (insertErr) throw insertErr;
+          newDealer = inserted;
+        }
 
         return res.status(200).json({
           success: true,
           message: `Dealer ${firmName} onboarded successfully with secure credentials.`,
-          dealer: qRes.rows[0]
+          dealer: newDealer
         });
       }
 
       case 'update-dealer-credentials': {
-        const { id, dealerCode, mobile, password, email, firmName, contactPerson, status } = payload;
+        const { id, dealerCode, mobile, password, email, firmName, contactPerson, status, address, gstin, pan } = payload;
         const targetId = dealerCode || id;
 
         if (!targetId && !mobile) {
@@ -150,6 +205,7 @@ export default async function handler(req, res) {
         const updates = [];
         const params = [];
         let idx = 1;
+        let passwordHash = null;
 
         if (mobile) {
           const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
@@ -157,8 +213,12 @@ export default async function handler(req, res) {
           params.push(cleanMobile);
         }
 
-        if (password && String(password).trim().length >= 1) {
-          const passwordHash = hashBcrypt(String(password).trim(), 10);
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
+          }
+          passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
         }
@@ -197,13 +257,16 @@ export default async function handler(req, res) {
           params.push(payload.assignedStaffName);
         }
 
-        if (payload.pricingConfig || payload.category) {
-          const cfg = {
+        if (payload.pricingConfig || payload.category || address || gstin || pan) {
+          const mergedConfig = {
             ...(payload.pricingConfig || {}),
-            ...(payload.category ? { category: payload.category } : {})
+            ...(payload.category ? { category: payload.category } : {}),
+            ...(address ? { address } : {}),
+            ...(gstin ? { gstin } : {}),
+            ...(pan ? { pan } : {})
           };
           updates.push(`pricing_config = COALESCE(pricing_config, '{}'::jsonb) || $${idx++}::jsonb`);
-          params.push(JSON.stringify(cfg));
+          params.push(JSON.stringify(mergedConfig));
         }
 
         updates.push(`updated_at = NOW()`);
@@ -222,13 +285,56 @@ export default async function handler(req, res) {
           params.push(cleanMobile);
         }
 
-        const sql = `UPDATE dealer_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, dealer_code, firm_name, mobile_number, email, status, assigned_staff_id, assigned_staff_name;`;
-        const qRes = await query(sql, params);
+        let updatedDealer = null;
+        try {
+          const sql = `UPDATE dealer_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, dealer_code, firm_name, mobile_number, email, status, assigned_staff_id, assigned_staff_name;`;
+          const qRes = await query(sql, params);
+          updatedDealer = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct update failed, fallback to Supabase:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const sbUpdates = {};
+          if (mobile) sbUpdates.mobile_number = String(mobile).replace(/\D/g, '').slice(-10);
+          if (passwordHash) sbUpdates.password_hash = passwordHash;
+          if (email !== undefined) sbUpdates.email = (email && String(email).trim()) ? String(email).trim() : null;
+          if (firmName) sbUpdates.firm_name = firmName.trim();
+          if (contactPerson) sbUpdates.contact_person = contactPerson.trim();
+          if (status) sbUpdates.status = status.toLowerCase();
+          if (payload.assignedStaffId) {
+            sbUpdates.assigned_staff_id = payload.assignedStaffId;
+            sbUpdates.assigned_staff_name = payload.assignedStaffId === 'STF-DIRECT' ? 'Direct to Company (HQ Desk)' : (payload.assignedStaffName || 'Sunvine Sales Staff');
+          }
+          if (payload.pricingConfig || payload.category || address || gstin || pan) {
+            sbUpdates.pricing_config = {
+              ...(payload.pricingConfig || {}),
+              ...(payload.category ? { category: payload.category } : {}),
+              ...(address ? { address } : {}),
+              ...(gstin ? { gstin } : {}),
+              ...(pan ? { pan } : {})
+            };
+          }
+          sbUpdates.updated_at = new Date().toISOString();
+
+          let q = supabase.from('dealer_accounts').update(sbUpdates);
+          if (targetId) {
+            if (isUuid(targetId)) {
+              q = q.or(`dealer_code.eq.${targetId},id.eq.${targetId}`);
+            } else {
+              q = q.eq('dealer_code', targetId);
+            }
+          } else {
+            const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+            q = q.eq('mobile_number', cleanMobile);
+          }
+          const { data, error: sbErr } = await q.select('id, dealer_code, firm_name, contact_person, mobile_number, email, status, assigned_staff_id, assigned_staff_name').single();
+          if (sbErr) throw sbErr;
+          updatedDealer = data;
+        }
 
         return res.status(200).json({
           success: true,
           message: 'Dealer credentials updated successfully.',
-          dealer: qRes.rows[0]
+          dealer: updatedDealer
         });
       }
 
@@ -243,76 +349,57 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Staff name is required.' });
         }
 
-        const staffId = id || `STF-${String(Math.floor(100 + Math.random() * 899))}`;
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
+        }
+
+        // Duplicate check
+        let collisionFound = false;
+        try {
+          if (id) {
+            const collision = await query('SELECT id FROM staff_accounts WHERE id = $1 OR phone = $2 OR mobile_number = $2', [id, cleanPhone]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          } else {
+            const collision = await query('SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1', [cleanPhone]);
+            if (collision?.rows?.length > 0) collisionFound = true;
+          }
+        } catch (_) {
+          try {
+            const supabase = getSupabaseServiceClient();
+            let q = supabase.from('staff_accounts').select('id');
+            if (id) {
+              q = q.or(`id.eq.${id},phone.eq.${cleanPhone},mobile_number.eq.${cleanPhone}`);
+            } else {
+              q = q.or(`phone.eq.${cleanPhone},mobile_number.eq.${cleanPhone}`);
+            }
+            const { data } = await q.limit(1);
+            if (data && data.length > 0) collisionFound = true;
+          } catch (e) {
+            console.warn('[manage-credentials:create-staff] Duplicate check fallback failed:', e.message);
+          }
+        }
+
+        if (collisionFound) {
+          return res.status(409).json({ error: `Staff with ID "${id || ''}" or phone "${cleanPhone}" already exists.` });
+        }
+
+        const plainPassword = String(password).trim();
+        const passwordHash = hashBcrypt(plainPassword, 10);
+        const staffId = id || (await generateCollisionFreeStaffCode());
         const staffRole = role || 'Field Sales Executive';
         const isVerification = staffRole.toLowerCase().includes('verification') || String(department || '').toLowerCase().includes('verification');
         const finalDepartment = isVerification ? 'verification' : (String(department || 'sales').toLowerCase());
-        const plainPassword = String(password || 'Sunvine@2026').trim();
-        const passwordHash = hashBcrypt(plainPassword, 10);
         const cleanEmail = email || `${cleanPhone}@sunvine.in`;
         const cleanStatus = (status || 'active').toLowerCase();
 
-        // Check if an account already exists with this phone or ID
-        let existingId = null;
+        let newStaff = null;
         try {
-          const checkRes = await query(
-            'SELECT id FROM staff_accounts WHERE phone = $1 OR mobile_number = $1 OR id = $2 LIMIT 1',
-            [cleanPhone, staffId]
-          );
-          if (checkRes.rows && checkRes.rows.length > 0) {
-            existingId = checkRes.rows[0].id;
-          }
-        } catch (_) {}
-
-        let staffRecord = null;
-        if (existingId) {
-          const updateSql = `
-            UPDATE staff_accounts SET
-              name = $1,
-              phone = $2,
-              mobile_number = $2,
-              email = $3,
-              role = $4,
-              department = $5,
-              zone = $6,
-              city = $7,
-              status = $8,
-              password_hash = $9,
-              updated_at = NOW()
-            WHERE id = $10
-            RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
-          `;
-          const qRes = await query(updateSql, [
-            name.trim(),
-            cleanPhone,
-            cleanEmail,
-            staffRole,
-            finalDepartment,
-            zone || 'Gujarat',
-            city || 'Ahmedabad',
-            cleanStatus,
-            passwordHash,
-            existingId
-          ]);
-          staffRecord = qRes.rows?.[0];
-        } else {
           const insertSql = `
             INSERT INTO staff_accounts (
               id, name, phone, mobile_number, email, role, department, zone, city,
               status, password_hash, created_at, updated_at
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
-            ON CONFLICT (id) DO UPDATE SET
-              name = EXCLUDED.name,
-              phone = EXCLUDED.phone,
-              mobile_number = EXCLUDED.mobile_number,
-              email = EXCLUDED.email,
-              role = EXCLUDED.role,
-              department = EXCLUDED.department,
-              zone = EXCLUDED.zone,
-              city = EXCLUDED.city,
-              status = EXCLUDED.status,
-              password_hash = EXCLUDED.password_hash,
-              updated_at = NOW()
             RETURNING id, name, phone, mobile_number, email, role, department, zone, city, status;
           `;
           const qRes = await query(insertSql, [
@@ -328,13 +415,36 @@ export default async function handler(req, res) {
             cleanStatus,
             passwordHash
           ]);
-          staffRecord = qRes.rows?.[0];
+          newStaff = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct staff insert failed, fallback to Supabase:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const { data: inserted, error: insertErr } = await supabase
+            .from('staff_accounts')
+            .insert({
+              id: staffId,
+              name: name.trim(),
+              phone: cleanPhone,
+              mobile_number: cleanPhone,
+              email: cleanEmail,
+              role: staffRole,
+              department: finalDepartment,
+              zone: zone || 'Gujarat',
+              city: city || 'Ahmedabad',
+              status: cleanStatus,
+              password_hash: passwordHash
+            })
+            .select('id, name, phone, mobile_number, email, role, department, zone, city, status')
+            .single();
+
+          if (insertErr) throw insertErr;
+          newStaff = inserted;
         }
 
         return res.status(200).json({
           success: true,
           message: `${isVerification ? 'Verification Desk' : 'Staff'} account created successfully.`,
-          staff: staffRecord || { id: staffId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole }
+          staff: newStaff || { id: staffId, name: name.trim(), phone: cleanPhone, email: cleanEmail, role: staffRole }
         });
       }
 
@@ -349,6 +459,7 @@ export default async function handler(req, res) {
         const updates = [];
         const params = [];
         let idx = 1;
+        let passwordHash = null;
 
         if (name) {
           updates.push(`name = $${idx++}`);
@@ -395,8 +506,12 @@ export default async function handler(req, res) {
           params.push(String(status).toLowerCase());
         }
 
-        if (password && String(password).trim().length >= 1) {
-          const passwordHash = hashBcrypt(String(password).trim(), 10);
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
+          }
+          passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
         }
@@ -413,21 +528,70 @@ export default async function handler(req, res) {
           params.push(cleanPhone);
         }
 
-        const sql = `UPDATE staff_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, name, phone, mobile_number, email, role, department, status;`;
-        const qRes = await query(sql, params);
+        let updatedStaff = null;
+        try {
+          const sql = `UPDATE staff_accounts SET ${updates.join(', ')} WHERE ${whereClause} RETURNING id, name, phone, mobile_number, email, role, department, status;`;
+          const qRes = await query(sql, params);
+          updatedStaff = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct staff update failed, fallback to Supabase:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const sbUpdates = {};
+          if (name) sbUpdates.name = name.trim();
+          if (phone) {
+            const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+            sbUpdates.phone = cleanPhone;
+            sbUpdates.mobile_number = cleanPhone;
+          }
+          if (email !== undefined) sbUpdates.email = (email && String(email).trim()) ? String(email).trim() : null;
+          if (role) {
+            sbUpdates.role = role;
+            sbUpdates.department = role.toLowerCase().includes('verification') ? 'verification' : (String(department || 'sales').toLowerCase());
+          } else if (department) {
+            sbUpdates.department = String(department).toLowerCase();
+          }
+          if (zone) sbUpdates.zone = zone;
+          if (city) sbUpdates.city = city;
+          if (status) sbUpdates.status = String(status).toLowerCase();
+          if (passwordHash) sbUpdates.password_hash = passwordHash;
+          sbUpdates.updated_at = new Date().toISOString();
+
+          let q = supabase.from('staff_accounts').update(sbUpdates);
+          if (targetStaffId) {
+            q = q.eq('id', targetStaffId);
+          } else {
+            const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+            q = q.or(`phone.eq.${cleanPhone},mobile_number.eq.${cleanPhone}`);
+          }
+          const { data, error: sbErr } = await q.select('id, name, phone, mobile_number, email, role, department, status').single();
+          if (sbErr) throw sbErr;
+          updatedStaff = data;
+        }
 
         return res.status(200).json({
           success: true,
           message: 'Staff profile and credentials updated successfully.',
-          staff: qRes.rows[0]
+          staff: updatedStaff
         });
       }
 
       case 'delete-dealer': {
         const { id, dealerCode } = payload;
-        const target = dealerCode || id;
+        const rawTarget = dealerCode || id;
+        const target = String(rawTarget || '').replace(/^#/, '').trim();
         if (!target) return res.status(400).json({ error: 'Dealer identifier required.' });
-        await query('DELETE FROM dealer_accounts WHERE dealer_code = $1 OR id::text = $1', [target]);
+        try {
+          await query('DELETE FROM dealer_accounts WHERE dealer_code = $1 OR id::text = $1', [target]);
+        } catch (_) {
+          const supabase = getSupabaseServiceClient();
+          let q = supabase.from('dealer_accounts').delete();
+          if (isUuid(target)) {
+            q = q.or(`dealer_code.eq.${target},id.eq.${target}`);
+          } else {
+            q = q.eq('dealer_code', target);
+          }
+          await q;
+        }
         return res.status(200).json({ success: true, message: `Dealer ${target} removed.` });
       }
 
@@ -435,19 +599,55 @@ export default async function handler(req, res) {
         const { id, staffId } = payload;
         const target = id || staffId;
         if (!target) return res.status(400).json({ error: 'Staff ID required.' });
-        await query('DELETE FROM staff_accounts WHERE id = $1', [target]);
+        try {
+          await query('DELETE FROM staff_accounts WHERE id = $1', [target]);
+        } catch (_) {
+          const supabase = getSupabaseServiceClient();
+          await supabase.from('staff_accounts').delete().eq('id', target);
+        }
         return res.status(200).json({ success: true, message: `Staff ${target} removed.` });
       }
 
       case 'get-accounts': {
-        const adminsRes = await query('SELECT id, email, full_name, role, mobile_number, two_factor_enabled, last_login, created_at FROM admin_accounts ORDER BY created_at ASC');
-        const dealersRes = await query('SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at FROM dealer_accounts ORDER BY updated_at DESC');
-        const staffRes = await query('SELECT id, name, role, department, phone, email, status, onboarded_date, zone, city, created_at, updated_at FROM staff_accounts ORDER BY created_at ASC');
+        let admins = [];
+        let dealers = [];
+        let staff = [];
+
+        try {
+          const adminsRes = await query('SELECT id, email, full_name, role, mobile_number, two_factor_enabled, last_login, created_at FROM admin_accounts ORDER BY created_at ASC');
+          admins = adminsRes?.rows || [];
+        } catch (e) {
+          console.warn('[manage-credentials] Fallback get admins via Supabase:', e.message);
+          const supabase = getSupabaseServiceClient();
+          const { data } = await supabase.from('admin_accounts').select('id, email, full_name, role, mobile_number, two_factor_enabled, last_login, created_at').order('created_at', { ascending: true });
+          admins = data || [];
+        }
+
+        try {
+          const dealersRes = await query('SELECT id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at FROM dealer_accounts ORDER BY updated_at DESC');
+          dealers = dealersRes?.rows || [];
+        } catch (e) {
+          console.warn('[manage-credentials] Fallback get dealers via Supabase:', e.message);
+          const supabase = getSupabaseServiceClient();
+          const { data } = await supabase.from('dealer_accounts').select('id, dealer_code, firm_name, contact_person, mobile_number, email, city, state, discom, tier, max_margin_cap_per_kw, status, assigned_staff_id, assigned_staff_name, pricing_config, created_at, updated_at').order('updated_at', { ascending: false });
+          dealers = data || [];
+        }
+
+        try {
+          const staffRes = await query('SELECT id, name, role, department, phone, email, status, onboarded_date, zone, city, created_at, updated_at FROM staff_accounts ORDER BY created_at ASC');
+          staff = staffRes?.rows || [];
+        } catch (e) {
+          console.warn('[manage-credentials] Fallback get staff via Supabase:', e.message);
+          const supabase = getSupabaseServiceClient();
+          const { data } = await supabase.from('staff_accounts').select('id, name, role, department, phone, email, status, onboarded_date, zone, city, created_at, updated_at').order('created_at', { ascending: true });
+          staff = data || [];
+        }
+
         return res.status(200).json({
           success: true,
-          admins: adminsRes.rows,
-          dealers: dealersRes.rows,
-          staff: staffRes.rows
+          admins,
+          dealers,
+          staff
         });
       }
 
@@ -460,25 +660,49 @@ export default async function handler(req, res) {
         if (cleanMobile.length !== 10) {
           return res.status(400).json({ error: 'Valid 10-digit mobile number is required.' });
         }
-        // Require a strong password; no default (SEC-001)
-        if (!password || String(password).trim().length < 10) {
-          return res.status(422).json({ error: 'Password is required and must be at least 10 characters.' });
+        // Require a valid password (min 6 chars + 1 special char)
+        const passCheck = validatePasswordComplexity(password);
+        if (!passCheck.valid) {
+          return res.status(422).json({ error: passCheck.error });
         }
         const plainPassword = String(password).trim();
         const passwordHash = hashBcrypt(plainPassword, 10);
         const adminRole = role || 'admin';
 
-        const sql = `
-          INSERT INTO admin_accounts (
-            email, full_name, mobile_number, role, password_hash, two_factor_enabled, created_at
-          ) VALUES ($1, $2, $3, $4, $5, false, NOW())
-          RETURNING id, email, full_name, mobile_number, role, created_at;
-        `;
-        const qRes = await query(sql, [email.trim().toLowerCase(), fullName.trim(), cleanMobile, adminRole, passwordHash]);
+        let newAdmin = null;
+        try {
+          const sql = `
+            INSERT INTO admin_accounts (
+              email, full_name, mobile_number, role, password_hash, two_factor_enabled, created_at
+            ) VALUES ($1, $2, $3, $4, $5, false, NOW())
+            RETURNING id, email, full_name, mobile_number, role, created_at;
+          `;
+          const qRes = await query(sql, [email.trim().toLowerCase(), fullName.trim(), cleanMobile, adminRole, passwordHash]);
+          newAdmin = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct admin insert failed, fallback to Supabase:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const { data: inserted, error: insertErr } = await supabase
+            .from('admin_accounts')
+            .insert({
+              email: email.trim().toLowerCase(),
+              full_name: fullName.trim(),
+              mobile_number: cleanMobile,
+              role: adminRole,
+              password_hash: passwordHash,
+              two_factor_enabled: false
+            })
+            .select('id, email, full_name, mobile_number, role, created_at')
+            .single();
+
+          if (insertErr) throw insertErr;
+          newAdmin = inserted;
+        }
+
         return res.status(200).json({
           success: true,
           message: `Admin ${fullName} created successfully.`,
-          admin: qRes.rows[0]
+          admin: newAdmin
         });
       }
 
@@ -489,6 +713,7 @@ export default async function handler(req, res) {
         const updates = [];
         const params = [];
         let idx = 1;
+        let passwordHash = null;
 
         if (fullName) {
           updates.push(`full_name = $${idx++}`);
@@ -507,36 +732,73 @@ export default async function handler(req, res) {
           updates.push(`role = $${idx++}`);
           params.push(role);
         }
-        if (password && String(password).trim().length >= 10) {
-          const passwordHash = hashBcrypt(String(password).trim(), 10);
+        if (password !== undefined && password !== null && String(password).trim() !== '') {
+          const passCheck = validatePasswordComplexity(password);
+          if (!passCheck.valid) {
+            return res.status(422).json({ error: passCheck.error });
+          }
+          passwordHash = hashBcrypt(String(password).trim(), 10);
           updates.push(`password_hash = $${idx++}`);
           params.push(passwordHash);
-        } else if (password) {
-          return res.status(422).json({ error: 'Password must be at least 10 characters.' });
         }
 
         if (updates.length === 0) {
           return res.status(400).json({ error: 'No fields provided to update.' });
         }
 
-        params.push(id);
-        const sql = `UPDATE admin_accounts SET ${updates.join(', ')} WHERE id::text = $${idx} RETURNING id, email, full_name, mobile_number, role;`;
-        const qRes = await query(sql, params);
+        let updatedAdmin = null;
+        try {
+          params.push(id);
+          const sql = `UPDATE admin_accounts SET ${updates.join(', ')} WHERE id::text = $${idx} RETURNING id, email, full_name, mobile_number, role;`;
+          const qRes = await query(sql, params);
+          updatedAdmin = qRes.rows?.[0];
+        } catch (dbErr) {
+          console.warn('[manage-credentials] Direct admin update failed, fallback to Supabase:', dbErr.message);
+          const supabase = getSupabaseServiceClient();
+          const sbUpdates = {};
+          if (fullName) sbUpdates.full_name = fullName.trim();
+          if (email) sbUpdates.email = email.trim().toLowerCase();
+          if (mobileNumber) sbUpdates.mobile_number = String(mobileNumber).replace(/\D/g, '').slice(-10);
+          if (role) sbUpdates.role = role;
+          if (passwordHash) sbUpdates.password_hash = passwordHash;
+          sbUpdates.updated_at = new Date().toISOString();
+
+          const { data, error: sbErr } = await supabase.from('admin_accounts').update(sbUpdates).eq('id', id).select('id, email, full_name, mobile_number, role').single();
+          if (sbErr) throw sbErr;
+          updatedAdmin = data;
+        }
+
         return res.status(200).json({
           success: true,
           message: 'Admin updated successfully.',
-          admin: qRes.rows[0]
+          admin: updatedAdmin
         });
       }
 
       case 'delete-admin': {
         const { id } = payload;
         if (!id) return res.status(400).json({ error: 'Admin ID required.' });
-        const countRes = await query('SELECT count(*) FROM admin_accounts');
-        if (parseInt(countRes.rows[0].count, 10) <= 1) {
+        let count = 0;
+        try {
+          const countRes = await query('SELECT count(*) FROM admin_accounts');
+          count = parseInt(countRes.rows[0].count, 10);
+        } catch (_) {
+          const supabase = getSupabaseServiceClient();
+          const { count: sbCount } = await supabase.from('admin_accounts').select('*', { count: 'exact', head: true });
+          count = sbCount || 0;
+        }
+
+        if (count <= 1) {
           return res.status(400).json({ error: 'Cannot delete the only remaining admin account.' });
         }
-        await query('DELETE FROM admin_accounts WHERE id::text = $1', [id]);
+
+        try {
+          await query('DELETE FROM admin_accounts WHERE id::text = $1', [id]);
+        } catch (_) {
+          const supabase = getSupabaseServiceClient();
+          await supabase.from('admin_accounts').delete().eq('id', id);
+        }
+
         return res.status(200).json({ success: true, message: 'Admin account deleted.' });
       }
 

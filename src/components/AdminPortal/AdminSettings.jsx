@@ -8,6 +8,8 @@ export default function AdminSettings() {
   const { addToast } = useToast();
   const {
     currentAdmin,
+    dealers = [],
+    staffList = [],
     setStaffList,
     setDealers,
     masterDocRegistry,
@@ -19,6 +21,7 @@ export default function AdminSettings() {
     resetDocumentRulesToDefault,
     refreshMasterDocuments,
     applicationCategories,
+    tierMargins,
     applicationStages,
     addApplicationStage,
     updateApplicationStage,
@@ -291,8 +294,21 @@ export default function AdminSettings() {
   const [successToast, setSuccessToast] = useState('');
 
   const [adminsList, setAdminsList] = useState([]);
-  const [dealersList, setDealersList] = useState([]);
-  const [staffListState, setStaffListState] = useState([]);
+  const [dealersList, setDealersList] = useState(() => (Array.isArray(dealers) && dealers.length > 0 ? dealers : []));
+  const [staffListState, setStaffListState] = useState(() => (Array.isArray(staffList) && staffList.length > 0 ? staffList : []));
+
+  // Sync with AppContext data if loaded
+  useEffect(() => {
+    if (Array.isArray(dealers) && dealers.length > 0 && dealersList.length === 0) {
+      setDealersList(dealers);
+    }
+  }, [dealers]);
+
+  useEffect(() => {
+    if (Array.isArray(staffList) && staffList.length > 0 && staffListState.length === 0) {
+      setStaffListState(staffList);
+    }
+  }, [staffList]);
 
   // Filters & Search
   const [staffFilter, setStaffFilter] = useState('all'); // 'all' | 'sales' | 'verification'
@@ -323,7 +339,7 @@ export default function AdminSettings() {
     state: 'Gujarat',
     discom: 'UGVCL',
     tier: 'Gold EPC',
-    maxMarginCapPerKw: 6000,
+    maxMarginCapPerKw: 0,
     status: 'Active',
     password: '',
     assignedStaffId: 'STF-DIRECT',
@@ -648,7 +664,10 @@ export default function AdminSettings() {
       state: 'Gujarat',
       discom: 'UGVCL',
       tier: 'Gold EPC',
-      maxMarginCapPerKw: 6000,
+      maxMarginCapPerKw: tierMargins?.gold?.maxMarginCapPerKw || 0,
+      gstin: '',
+      pan: '',
+      address: '',
       status: 'Active',
       password: '',
       assignedStaffId: 'STF-DIRECT',
@@ -660,6 +679,8 @@ export default function AdminSettings() {
 
   const handleOpenEditDealer = (dealer) => {
     setEditingDealer(dealer);
+    const gVal = dealer.gstin || dealer.pricing_config?.gstin || dealer.pricingConfig?.gstin || '';
+    const pVal = dealer.pan || dealer.pricing_config?.pan || dealer.pricingConfig?.pan || '';
     setDealerForm({
       id: dealer.id || dealer.dealer_code,
       dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
@@ -672,7 +693,10 @@ export default function AdminSettings() {
       state: dealer.state || 'Gujarat',
       discom: dealer.discom || 'UGVCL',
       tier: dealer.tier || 'Gold EPC',
-      maxMarginCapPerKw: dealer.max_margin_cap_per_kw || dealer.maxMarginCapPerKw || 6000,
+      maxMarginCapPerKw: Number(dealer.max_margin_cap_per_kw ?? dealer.maxMarginCapPerKw ?? 0),
+      gstin: gVal,
+      pan: pVal,
+      address: dealer.address || dealer.pricing_config?.address || dealer.pricingConfig?.address || '',
       status: dealer.status || 'Active',
       password: '',
       assignedStaffId: dealer.assigned_staff_id || dealer.assignedStaffId || 'STF-DIRECT',
@@ -721,7 +745,10 @@ export default function AdminSettings() {
           state: dealerForm.state,
           discom: dealerForm.discom,
           tier: dealerForm.tier,
-          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password ? dealerForm.password.trim() : undefined,
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -741,7 +768,10 @@ export default function AdminSettings() {
           state: dealerForm.state,
           discom: dealerForm.discom,
           tier: dealerForm.tier,
-          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password.trim(),
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -2444,7 +2474,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingAdmin}
-                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
+                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={adminForm.password}
                     onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
@@ -2669,6 +2699,56 @@ export default function AdminSettings() {
                   />
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      GSTIN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={15}
+                      placeholder="24AAECB1234F1Z5"
+                      value={dealerForm.gstin}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setDealerForm(prev => ({
+                          ...prev,
+                          gstin: val,
+                          pan: val.length >= 12 ? val.slice(2, 12) : prev.pan
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      PAN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      placeholder="AAECB1234F"
+                      value={dealerForm.pan}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Registered Office Address <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Shop 12, Sunrise Complex, Rajkot"
+                    value={dealerForm.address}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
                 {/* Sales Channel & Salesman Alignment */}
                 <div className="space-y-2 pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between">
@@ -2701,10 +2781,11 @@ export default function AdminSettings() {
                     <button
                       type="button"
                       onClick={() => {
-                        const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                        const salesStaffList = (staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification'));
+                        const firstStaff = salesStaffList.find(s => (s.department || '').toLowerCase() === 'sales') || salesStaffList[0] || (staffListState || [])[0];
                         setDealerForm(prev => ({
                           ...prev,
-                          assignedStaffId: firstStaff?.id || 'STF-801',
+                          assignedStaffId: firstStaff?.id || '',
                           assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
                         }));
                       }}
@@ -2738,7 +2819,7 @@ export default function AdminSettings() {
                         }}
                         className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                       >
-                        {(staffListState || []).map(s => (
+                        {(staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).map(s => (
                           <option key={s.id} value={s.id}>
                             {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
                           </option>
@@ -2755,7 +2836,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingDealer}
-                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
+                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={dealerForm.password}
                     onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -2911,7 +2992,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingStaff}
-                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
+                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'e.g. Min 6 chars + special char (@, #, $)'}
                     value={staffForm.password}
                     onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"

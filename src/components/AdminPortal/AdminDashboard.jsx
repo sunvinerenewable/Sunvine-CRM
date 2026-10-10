@@ -1472,7 +1472,7 @@ export default function AdminDashboard() {
                   icon: 'add_circle',
                   iconColor: 'text-primary',
                   label: 'Quotation Created',
-                  detail: `Created by ${getDealerCellData(auditTargetQuote).name || 'Dealer'}`,
+                  detail: `Created by ${auditTargetQuote.dealerName || auditTargetQuote.dealer_name || 'Dealer'}`,
                   timestamp: auditTargetQuote.date || auditTargetQuote.displayDate || '—',
                 },
                 {

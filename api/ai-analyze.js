@@ -1,4 +1,4 @@
-import { verifyJwt } from './_lib/jwt.js';
+import { requireUser } from './_lib/requireAuth.js';
 import { checkDistributedRateLimit, getClientIp } from './_lib/rateLimiter.js';
 
 /**
@@ -31,9 +31,8 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   // ── Auth check ──────────────────────────────────────────────────────────
-  const cookies = parseCookies(req.headers.cookie);
-  const jwtResult = verifyJwt(cookies.sunvine_auth_token);
-  if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   // ── Distributed Rate limit: 20 AI calls / 10 min per IP (Upstash Redis) ─
   const ip = getClientIp(req);

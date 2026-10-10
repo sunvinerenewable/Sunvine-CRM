@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
 import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
-import { calculateSubsidy } from '../../shared/pricing/calculations';
+import { calculateSubsidy, DEFAULT_SPECIFIC_YIELD, DEFAULT_TARIFF_PER_UNIT } from '../../shared/pricing/calculations';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -11,7 +12,7 @@ const formatINR = (val) => {
 };
 
 // Resolves component manufacturer / brand name (Make)
-export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake = '') {
+function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake = '') {
   if (item?.make && typeof item.make === 'string' && item.make.trim()) {
     return item.make.trim();
   }
@@ -102,7 +103,8 @@ export function resolveItemMake(item, effectiveModuleMake = '', effectiveInverte
 }
 
 export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport = false }) {
-  if (!quotation) return null;
+  const appContext = useApp() || {};
+  const systemSettings = quotation?.systemSettings || appContext?.systemSettings || null;
 
   const {
     id = 'SV-2026-Q801',
@@ -121,7 +123,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     inverterCapacity,
     inverterCount = '1 NOS',
     inverterType = 'Sunvine Solaryaan 5.0G (1-Phase 2 MPPT)',
-    baseRatePerKW = 59800,
+    baseRatePerKW = 0,
     dealerMarginPerKW = 0,
     dealerName,
     isDirectCompanyQuote,
@@ -132,8 +134,20 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     selectedInverterMake = '',
     coverImage,
     customCoverUrl,
-    bomItems
-  } = quotation;
+    bomItems,
+    companyProfile: initialCompanyProfile = null
+  } = quotation || {};
+
+  const fallbackProfile = appContext?.systemSettings?.companyProfile || appContext?.systemSettings?.company_profile || appContext?.officialProfile || {};
+  const rawCompanyProfile = initialCompanyProfile || quotation?.companyProfile || quotation?.company_profile || {};
+  const companyProfile = {
+    ...fallbackProfile,
+    ...rawCompanyProfile,
+    bank: {
+      ...(fallbackProfile?.bank || fallbackProfile?.bankDetails || {}),
+      ...(rawCompanyProfile?.bank || rawCompanyProfile?.bankDetails || {})
+    }
+  };
 
   // Resolve numerical capacity and dimensions
   const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(3));
@@ -343,18 +357,42 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     : calculateSubsidy(resolvedCapKW, projectType);
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
-  // Line item breakdown
   const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : (extraTransportCharge || 1000);
-  const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2000);
-  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (quotation.ratePerWp || 18.00));
+  const installationCost = quotation.installationEstimatedCost || (quotation.installationPricingMode === 'fixed' ? Number(quotation.installationFixedAmount || 0) : (Number(quotation.installationRatePerKw) ? Math.round(resolvedCapKW * Number(quotation.installationRatePerKw)) : Math.round(resolvedCapKW * 2000)));
+  const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (Number(quotation.ratePerWp) || 18.00));
   const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
   const structureCost = quotation.structureEstimatedCost || Math.round(resolvedCount * 3200);
   const bosCost = quotation.bosEstimatedCost || Math.max(0, baseBeforeGst - (moduleCost + inverterCost + structureCost + transportCharge + installationCost));
 
   // Telemetry metrics
-  const annualGenUnits = quotation.annualGenerationUnits || Math.round(resolvedCapKW * 1440);
-  const annualSavings = quotation.annualSavings || Math.round(annualGenUnits * 6.67);
-  const paybackYears = quotation.paybackYears || (annualSavings > 0 ? (netPayable / annualSavings).toFixed(1) : '3.6');
+  const specificYield = Number(
+    quotation.specificYield ||
+    quotation.peakSunHours ||
+    systemSettings?.governance_settings?.default_specific_yield
+  ) || DEFAULT_SPECIFIC_YIELD;
+
+  const annualYieldMultiplier = specificYield > 100 ? specificYield : (specificYield > 0 ? specificYield * 365 : 1440);
+
+  const annualGenUnits = Number(quotation.annualGenerationUnits) > 0
+    ? Number(quotation.annualGenerationUnits)
+    : Number(quotation.annual_generation_kwh) > 0
+      ? Math.round(Number(quotation.annual_generation_kwh))
+      : Math.round(resolvedCapKW * annualYieldMultiplier);
+
+  const tariff = Number(
+    quotation.tariff ||
+    systemSettings?.governance_settings?.default_tariff
+  ) || DEFAULT_TARIFF_PER_UNIT;
+
+  const annualSavings = Number(quotation.annualSavings) > 0
+    ? Number(quotation.annualSavings)
+    : Math.round(annualGenUnits * tariff);
+
+  const paybackYears = (quotation.paybackYears && quotation.paybackYears !== '0.0' && quotation.paybackYears !== '0' && !isNaN(Number(quotation.paybackYears)))
+    ? String(quotation.paybackYears)
+    : annualSavings > 0
+      ? (netPayable / annualSavings).toFixed(1)
+      : '3.6';
 
   // Multi-brand comparative proposal packages
   const resolvedMultiBrandPackages = useMemo(() => {
@@ -386,9 +424,37 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     });
   }, [multiBrandComparison, multiBrandPackages, resolvedCapKW, customerRatePerKW, subsidyAmount]);
 
-  const resolvedCoverSrc = (customCoverUrl || coverImage || '/sunvine_quotation_cover.png').includes('?')
-    ? (customCoverUrl || coverImage || '/sunvine_quotation_cover.png')
-    : `${customCoverUrl || coverImage || '/sunvine_quotation_cover.png'}?v=20261010`;
+  if (!quotation) return null;
+
+  // Verify company billing completeness (GSTIN and Bank Account must be non-empty)
+  const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
+  const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
+  const hasBank = Boolean(bankAcc && String(bankAcc).trim());
+  const isBillingProfileComplete = hasGstin && hasBank;
+
+  if (!isBillingProfileComplete) {
+    return (
+      <div data-testid="pdf-blocking-message" className="pdf-document w-full max-w-2xl mx-auto my-12 p-8 bg-red-950/20 border-2 border-red-500/50 rounded-2xl text-center flex flex-col items-center gap-4 text-white">
+        <div className="w-16 h-16 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center">
+          <span className="material-symbols-outlined text-4xl">error_outline</span>
+        </div>
+        <h2 className="text-xl font-bold text-red-200">Quotation PDF Generation Blocked</h2>
+        <p className="text-sm text-red-300/90 max-w-md">
+          Company GSTIN and Bank Account details are required before generating, previewing, or exporting official quotation documents.
+        </p>
+        <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-lg text-xs font-mono text-red-300 text-left w-full max-w-xs">
+          <div>GSTIN: {hasGstin ? 'Configured' : 'MISSING (Empty)'}</div>
+          <div>Bank Account: {hasBank ? 'Configured' : 'MISSING (Empty)'}</div>
+        </div>
+        <p className="text-xs text-gray-400">
+          Please navigate to Admin Settings &gt; Company Profile to configure the official billing profile.
+        </p>
+      </div>
+    );
+  }
+
+  const rawCoverSrc = customCoverUrl || coverImage || '/sunvine_quotation_cover.png';
+  const resolvedCoverSrc = rawCoverSrc.includes('?') ? rawCoverSrc : `${rawCoverSrc}?v=20261010`;
 
   return (
     <div className="pdf-document font-sans text-[#0F1B2E] bg-white print:bg-white select-none">
@@ -1016,7 +1082,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
             <div>
               <strong className="block font-bold text-gray-900">Validity:</strong>
               <ul className="list-disc pl-4 text-gray-800">
-                <li>Our offer is valid for 15 days from the date of this offer</li>
+                <li>{companyProfile.validityText || 'Our offer is valid for 15 days from the date of this offer'}</li>
               </ul>
             </div>
 
@@ -1028,7 +1094,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
           {/* Large Centered Banner */}
           <div className="text-center my-2 p-2 bg-[#F0FDF4] border border-[#6CBF3D]/40 rounded-lg">
             <h3 className="text-xs font-black text-[#2E7D32] tracking-wide uppercase">
-              THANK YOU FOR CHOOSING SUNVINE RENEWABLE
+              THANK YOU FOR CHOOSING {companyProfile.name || 'SUNVINE RENEWABLE'}
             </h3>
             <p className="text-[10px] text-gray-600 mt-0.5">Committed to Green Energy Independence &amp; Sustainable Growth</p>
           </div>
@@ -1054,15 +1120,15 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider">
-                    For Sunvine Renewable Energy
+                    For {companyProfile.name || 'Sunvine Renewable Energy'}
                   </span>
                   <span className="text-[9px] text-[#2E7D32] font-bold">Authorized Seal</span>
                 </div>
                 <p className="text-[9.5px] text-gray-700 mt-0.5">
-                  G-705, Second Gate, Metoda GIDC, Rajkot - 360021 (Guj.)
+                  {companyProfile.address || 'Gujarat, India'}
                 </p>
                 <div className="text-[9.5px] text-gray-700 font-mono mt-0.5">
-                  +91 95865 33750 • sunvinerenewable@gmail.com
+                  {companyProfile.whatsapp || companyProfile.helpdesk || '+91 80000 50580'} • {companyProfile.email || 'support@sunvinerenewable.com'}
                 </div>
               </div>
               <div className="border-t border-dashed border-gray-400 pt-1 flex items-center justify-between text-[10px] text-gray-700 mt-4">

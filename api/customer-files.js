@@ -1,17 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { verifyJwt, extractAuthToken } from './_lib/jwt.js';
+import { S3Client, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { requireUser } from './_lib/requireAuth.js';
+import { applyCors } from './_lib/cors.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
+import { syncFile, computeThreadNotification } from './_lib/slackSync.js';
 
-function parseCookies(cookieHeader = '') {
-  const out = {};
-  cookieHeader.split(';').forEach(c => {
-    const [k, ...v] = c.split('=');
-    if (k) out[k.trim()] = decodeURIComponent(v.join('='));
-  });
-  return out;
-}
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp'
+]);
+const MAX_DOC_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -20,7 +22,7 @@ function getDb() {
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
-function extractAllDocPaths(documents) {
+export function extractAllDocPaths(documents) {
   if (!documents || typeof documents !== 'object') return [];
   const paths = [];
   for (const key of Object.keys(documents)) {
@@ -47,6 +49,56 @@ function extractAllDocPaths(documents) {
     }
   }
   return [...new Set(paths.map(p => p.replace(/^https?:\/\/[^\/]+\//, '').replace(/^\/+/, '')).filter(Boolean))];
+}
+
+export async function validateRegisteredDocuments(documents, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
+  const docPaths = extractAllDocPaths(documents);
+  if (!docPaths || docPaths.length === 0) return { valid: true };
+
+  const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
+  const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
+  if (!CF_ACCOUNT_ID || !R2_ACCESS_KEY || !R2_SECRET_KEY || CF_ACCOUNT_ID.includes('your_')) {
+    return { valid: true };
+  }
+
+  try {
+    const r2 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${CF_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY,
+        secretAccessKey: R2_SECRET_KEY
+      }
+    });
+
+    for (const key of docPaths) {
+      if (key.startsWith('http://') || key.startsWith('https://')) continue;
+      try {
+        const head = await r2.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        const size = head.ContentLength || 0;
+        const type = (head.ContentType || '').toLowerCase();
+
+        if (size > MAX_DOC_SIZE_BYTES) {
+          await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => null);
+          return { valid: false, error: `Document "${key}" exceeds maximum 2MB size limit (${Math.round(size / 1024)} KB).` };
+        }
+
+        if (type && !ALLOWED_MIME_TYPES.has(type)) {
+          await r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })).catch(() => null);
+          return { valid: false, error: `Document "${key}" has invalid MIME type "${type}". Only PDF and images are allowed.` };
+        }
+      } catch (headErr) {
+        if (headErr?.name !== 'NotFound' && headErr?.$metadata?.httpStatusCode !== 404) {
+          console.warn(`[customer-files] HeadObject check warning for ${key}:`, headErr.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[customer-files] Document HEAD validation error:', err?.message);
+  }
+
+  return { valid: true };
 }
 
 async function deleteR2Files(keys, bucket = process.env.R2_BUCKET_NAME || 'sunvine-documents') {
@@ -115,12 +167,15 @@ function mapDbToFrontend(f) {
 }
 
 export default async function handler(req, res) {
-  const token = extractAuthToken(req);
-  const jwt = verifyJwt(token);
+  applyCors(req, res);
 
-  if (!jwt.valid) {
-    return res.status(401).json({ error: 'Authentication required.' });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
+
+  // SEC-011: Require authenticated user
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   const clientIp = getClientIp(req);
   const rateLimit = await checkDistributedRateLimit(`cust_files_${clientIp}`, { maxAttempts: 100, windowMs: 60 * 1000 });
@@ -135,16 +190,28 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 
-  // ── GET: Fetch All Customer Files & Auto-Purge Expired Docs (> 14 days) ───
+  const isDealer = user.role === 'dealer';
+  const dealerId = user.dealer_id || user.id;
+
+  // ── GET: Fetch Customer Files (Scoped by dealer_id if dealer, Paginated) ───
   if (req.method === 'GET') {
     try {
+      const limit = Math.min(Math.max(parseInt(req.query?.limit, 10) || 100, 1), 100);
+      const offset = Math.max(parseInt(req.query?.offset, 10) || 0, 0);
+
       // 14-Day Retention Check: purge R2 documents for cancelled files older than 14 days
       const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: expiredFiles } = await db
+      let expQuery = db
         .from('customer_files')
         .select('id, documents, timeline')
         .eq('status', 'Cancelled')
         .lt('cancelled_at', fourteenDaysAgo);
+
+      if (isDealer) {
+        expQuery = expQuery.eq('dealer_id', dealerId);
+      }
+
+      const { data: expiredFiles } = await expQuery;
 
       if (Array.isArray(expiredFiles) && expiredFiles.length > 0) {
         for (const exp of expiredFiles) {
@@ -168,10 +235,20 @@ export default async function handler(req, res) {
         }
       }
 
-      const { data: rows, error } = await db
+      let queryBuilder = db
         .from('customer_files')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*', { count: 'exact' });
+
+      // Scope to dealer
+      if (isDealer) {
+        queryBuilder = queryBuilder.eq('dealer_id', dealerId);
+      }
+
+      queryBuilder = queryBuilder
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      const { data: rows, count, error } = await queryBuilder;
 
       if (error) {
         console.error('[api/customer-files] Supabase query error:', error);
@@ -179,20 +256,42 @@ export default async function handler(req, res) {
       }
 
       const formatted = (rows || []).map(mapDbToFrontend);
-      return res.status(200).json({ success: true, data: formatted });
+      return res.status(200).json({
+        success: true,
+        data: formatted,
+        total: count !== null && count !== undefined ? count : formatted.length,
+        limit,
+        offset
+      });
     } catch (err) {
       console.error('[api/customer-files] GET error:', err);
       return res.status(500).json({ error: 'Failed to fetch customer files.' });
     }
   }
 
-  // ── POST: Actions (save, update, delete) ───────────────────────────────────
+  // ── POST: Actions (save, update, cancel, restore, delete) ─────────────────
   if (req.method === 'POST') {
     const { action, file, fileId, updates } = req.body || {};
 
     if (action === 'save' && file) {
+      // Robust collision-free ID generation if id is omitted or temporary
+      let assignedId = file.id;
+      if (!assignedId || assignedId.trim() === '') {
+        const year = new Date().getFullYear();
+        const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+        assignedId = `FIL-${year}-${randPart}`;
+      }
+
+      // Prevent dealer from spoofing or overwriting another dealer's file
+      if (isDealer && assignedId) {
+        const { data: existingFile } = await db.from('customer_files').select('dealer_id').eq('id', assignedId).single();
+        if (existingFile && existingFile.dealer_id && existingFile.dealer_id !== dealerId) {
+          return res.status(403).json({ error: 'Forbidden: You cannot modify customer files belonging to another dealer.' });
+        }
+      }
+
       const payload = {
-        id: file.id,
+        id: assignedId,
         customer_name: file.customerName || file.customer_name || 'Customer',
         phone: file.phone || '',
         address: file.address || '',
@@ -202,22 +301,29 @@ export default async function handler(req, res) {
         sanctioned_load_kw: Number(file.sanctionedLoadKw || file.sanctioned_load_kw) || 6.0,
         solar_system_kw: Number(file.solarSystemKw || file.solar_system_kw) || 5.0,
         roof_type: file.roofType || file.roof_type || 'Flat RCC',
-        source_type: file.sourceType || file.source || file.source_type || 'DIRECT_STAFF',
-        dealer_id: file.dealerId || file.dealer_id || null,
-        dealer_name: file.dealerName || file.dealer_name || null,
-        staff_id: file.staffId || file.staff_id || (file.sourceType === 'DEALER' || file.source === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
-        staff_name: (file.staffId === 'STF-DIRECT' || file.staff_id === 'STF-DIRECT' || ((!file.staffId && !file.staff_id) && (file.sourceType === 'DEALER' || file.source === 'DEALER')))
+        source_type: isDealer ? 'DEALER' : (file.sourceType || file.source || file.source_type || 'DIRECT_STAFF'),
+        dealer_id: isDealer ? dealerId : (file.dealerId || file.dealer_id || null),
+        dealer_name: isDealer ? (user.firmName || user.name || 'Authorized Dealer') : (file.dealerName || file.dealer_name || null),
+        staff_id: file.staffId || file.staff_id || (isDealer || file.sourceType === 'DEALER' || file.source === 'DEALER' ? 'STF-DIRECT' : 'STF-801'),
+        staff_name: (file.staffId === 'STF-DIRECT' || file.staff_id === 'STF-DIRECT' || ((!file.staffId && !file.staff_id) && (isDealer || file.sourceType === 'DEALER' || file.source === 'DEALER')))
           ? 'Direct to Company (HQ Desk)'
           : ((file.staffName === 'Jayesh Patel' || file.staff_name === 'Jayesh Patel') ? 'Sunvine Sales Staff' : (file.staffName || file.staff_name || 'Sunvine Sales Staff')),
         finance_type: file.financeType || file.paymentMode || file.finance_type || 'CASH',
         loan_bank: file.loanBank || file.loan_bank || null,
-        loan_account_no: file.loanAccountNo || file.loanRefNo || file.loan_account_no || null,
         stage: file.stage || file.currentStage || 'LEAD_SOURCED',
         status: file.status || 'Sourced',
         documents: file.documents || {},
         timeline: Array.isArray(file.timeline) ? file.timeline : [],
         updated_at: new Date().toISOString()
       };
+
+      // ITEM-7: HEAD validate registered documents (size and MIME type verification)
+      if (file.documents) {
+        const docCheck = await validateRegisteredDocuments(file.documents);
+        if (!docCheck.valid) {
+          return res.status(422).json({ error: docCheck.error });
+        }
+      }
 
       try {
         const { data, error } = await db
@@ -232,6 +338,15 @@ export default async function handler(req, res) {
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: single main card creation (safe, never fails the HTTP response)
+        const callerActor = user.name || user.firmName || user.id || (isDealer ? 'Authorized Dealer' : 'Staff Desk');
+        try {
+          await syncFile(data.id, { actor: callerActor });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on save:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Save exception:', err);
@@ -240,6 +355,20 @@ export default async function handler(req, res) {
     }
 
     if (action === 'update' && fileId && updates) {
+      // SEC-011: Strip dealer_id from updates unless caller role is admin
+      if (user.role !== 'admin') {
+        delete updates.dealerId;
+        delete updates.dealer_id;
+      }
+
+      // ITEM-7: HEAD validate updated documents
+      if (updates.documents) {
+        const docCheck = await validateRegisteredDocuments(updates.documents);
+        if (!docCheck.valid) {
+          return res.status(422).json({ error: docCheck.error });
+        }
+      }
+
       const payload = {
         updated_at: new Date().toISOString()
       };
@@ -268,10 +397,10 @@ export default async function handler(req, res) {
       if (updates.sourceType !== undefined || updates.source !== undefined || updates.source_type !== undefined) {
         payload.source_type = updates.sourceType || updates.source || updates.source_type;
       }
-      if (updates.dealerId !== undefined || updates.dealer_id !== undefined) {
+      if (user.role === 'admin' && (updates.dealerId !== undefined || updates.dealer_id !== undefined)) {
         payload.dealer_id = updates.dealerId !== undefined ? updates.dealerId : updates.dealer_id;
       }
-      if (updates.dealerName !== undefined || updates.dealer_name !== undefined) {
+      if (user.role === 'admin' && (updates.dealerName !== undefined || updates.dealer_name !== undefined)) {
         payload.dealer_name = updates.dealerName !== undefined ? updates.dealerName : updates.dealer_name;
       }
       if (updates.staffId !== undefined || updates.staff_id !== undefined) {
@@ -289,35 +418,55 @@ export default async function handler(req, res) {
       if (updates.loanBank !== undefined || updates.loan_bank !== undefined) {
         payload.loan_bank = updates.loanBank !== undefined ? updates.loanBank : updates.loan_bank;
       }
-      if (updates.loanAccountNo !== undefined || updates.loanRefNo !== undefined || updates.loan_account_no !== undefined) {
-        payload.loan_account_no = updates.loanAccountNo || updates.loanRefNo || updates.loan_account_no;
-      }
       if (updates.financeType !== undefined || updates.paymentMode !== undefined || updates.finance_type !== undefined) {
         payload.finance_type = updates.financeType || updates.paymentMode || updates.finance_type;
       }
 
       try {
-        const { data, error } = await db
+        // Fetch existing row for diff calculation & thread notifications
+        let oldRowQuery = db.from('customer_files').select('*').eq('id', fileId);
+        if (isDealer) {
+          oldRowQuery = oldRowQuery.eq('dealer_id', dealerId);
+        }
+        const { data: oldRow } = await oldRowQuery.maybeSingle();
+
+        let updateQuery = db
           .from('customer_files')
           .update(payload)
-          .eq('id', fileId)
-          .select()
-          .single();
+          .eq('id', fileId);
 
-        if (error) {
+        // SEC-011: Scoped to dealer_id
+        if (isDealer) {
+          updateQuery = updateQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data, error } = await updateQuery.select().single();
+
+        if (error || !data) {
+          if (!data && !error) {
+            return res.status(403).json({ error: 'Customer file not found or unauthorized.' });
+          }
           console.error('[api/customer-files] Update DB error:', error);
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: error?.message || 'Update failed.' });
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: compute diff for thread comments & update main card
+        const callerActor = user.name || user.firmName || user.id || (isDealer ? 'Authorized Dealer' : 'Staff Desk');
+        const threadText = computeThreadNotification(oldRow, data, callerActor);
+        try {
+          await syncFile(data.id, { threadText, actor: callerActor });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on update:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Update exception:', err);
         return res.status(500).json({ error: 'Failed to update customer file.' });
       }
     }
-
-    const user = jwt.payload || jwt.user || {};
 
     if (action === 'cancel' && fileId) {
       const { reason, remarks, customRemarks, cancelledBy } = req.body || {};
@@ -330,7 +479,7 @@ export default async function handler(req, res) {
       }
       finalReason = finalReason || 'Cancelled by user';
 
-      const actor = cancelledBy || user.name || user.id || 'Admin Desk';
+      const actor = cancelledBy || user.name || user.id || (isDealer ? 'Dealer Desk' : 'Admin Desk');
       const cancelNote = {
         title: 'Customer File Cancelled',
         description: `File cancelled: ${finalReason}`,
@@ -341,8 +490,17 @@ export default async function handler(req, res) {
       };
 
       try {
-        // Fetch current timeline first
-        const { data: existing } = await db.from('customer_files').select('timeline').eq('id', fileId).single();
+        // Fetch current timeline first with dealer check
+        let selQuery = db.from('customer_files').select('timeline, dealer_id').eq('id', fileId);
+        if (isDealer) {
+          selQuery = selQuery.eq('dealer_id', dealerId);
+        }
+        const { data: existing, error: selErr } = await selQuery.single();
+
+        if (selErr || !existing) {
+          return res.status(403).json({ error: 'Customer file not found or unauthorized.' });
+        }
+
         const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, cancelNote] : [cancelNote];
 
         const payload = {
@@ -355,19 +513,32 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString()
         };
 
-        const { data, error } = await db
+        let cancelQuery = db
           .from('customer_files')
           .update(payload)
-          .eq('id', fileId)
-          .select()
-          .single();
+          .eq('id', fileId);
 
-        if (error) {
+        if (isDealer) {
+          cancelQuery = cancelQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data, error } = await cancelQuery.select().single();
+
+        if (error || !data) {
           console.error('[api/customer-files] Cancel DB error:', error);
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: error?.message || 'Cancel failed.' });
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: update main card status to Cancelled + post thread line
+        const threadText = `Application Cancelled: ${finalReason} (by ${actor})`;
+        try {
+          await syncFile(data.id, { threadText, actor, force: true });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on cancel:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Cancel exception:', err);
@@ -377,11 +548,20 @@ export default async function handler(req, res) {
 
     if (action === 'restore' && fileId) {
       try {
-        const { data: existing } = await db
+        let selQuery = db
           .from('customer_files')
-          .select('cancelled_at, timeline')
-          .eq('id', fileId)
-          .single();
+          .select('cancelled_at, timeline, dealer_id')
+          .eq('id', fileId);
+
+        if (isDealer) {
+          selQuery = selQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data: existing, error: selErr } = await selQuery.single();
+
+        if (selErr || !existing) {
+          return res.status(403).json({ error: 'Customer file not found or unauthorized.' });
+        }
 
         // 14-day restoration window enforcement
         if (existing?.cancelled_at) {
@@ -414,19 +594,33 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString()
         };
 
-        const { data, error } = await db
+        let restoreQuery = db
           .from('customer_files')
           .update(payload)
-          .eq('id', fileId)
-          .select()
-          .single();
+          .eq('id', fileId);
 
-        if (error) {
+        if (isDealer) {
+          restoreQuery = restoreQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data, error } = await restoreQuery.select().single();
+
+        if (error || !data) {
           console.error('[api/customer-files] Restore DB error:', error);
-          return res.status(400).json({ error: error.message });
+          return res.status(400).json({ error: error?.message || 'Restore failed.' });
         }
 
         await redisDel('customer_files:all');
+
+        // Slack thread sync: restore main card status to active + post thread line
+        const restoreActor = user.name || user.firmName || user.id || 'User';
+        const threadText = `Application Restored to active pipeline by ${restoreActor}`;
+        try {
+          await syncFile(data.id, { threadText, actor: restoreActor, force: true });
+        } catch (slackErr) {
+          console.warn('[api/customer-files] Slack sync notice on restore:', slackErr.message);
+        }
+
         return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
       } catch (err) {
         console.error('[api/customer-files] Restore exception:', err);
@@ -435,19 +629,23 @@ export default async function handler(req, res) {
     }
 
     if (action === 'delete' && fileId) {
-      const userRole = (user.role || '').toLowerCase();
       // Super Admin check for hard permanent purge
-      if (userRole && userRole !== 'admin' && userRole !== 'super_admin') {
+      if (user.role !== 'admin') {
         return res.status(403).json({ error: 'Permission denied. Only Super Admin can permanently delete files.' });
       }
 
       try {
         // Fetch file to purge all attached documents from Cloudflare R2 before removing row
-        const { data: fileToDelete } = await db
+        let selQuery = db
           .from('customer_files')
-          .select('documents')
-          .eq('id', fileId)
-          .single();
+          .select('documents, dealer_id')
+          .eq('id', fileId);
+
+        if (isDealer) {
+          selQuery = selQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data: fileToDelete } = await selQuery.single();
 
         if (fileToDelete?.documents) {
           const docKeys = extractAllDocPaths(fileToDelete.documents);
@@ -456,10 +654,16 @@ export default async function handler(req, res) {
           }
         }
 
-        const { error } = await db
+        let delQuery = db
           .from('customer_files')
           .delete()
           .eq('id', fileId);
+
+        if (isDealer) {
+          delQuery = delQuery.eq('dealer_id', dealerId);
+        }
+
+        const { error } = await delQuery;
 
         if (error) {
           console.error('[api/customer-files] Delete DB error:', error);

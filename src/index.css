@@ -78,6 +78,39 @@
   transform-origin: top right;
 }
 
+/* Staggered entrance animation for post-loading elements */
+@keyframes staggerFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-stagger-fade {
+  animation: staggerFadeUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.22s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-stagger-fade {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 /* Strict Print styling for 4-Page Quotation PDF (Guarantee EXACTLY 4 clean A4 sheets, zero blank pages) */
 @media print {
   @page {

@@ -1,4 +1,4 @@
-import { quotationService } from '../services/quotationService';
+import { quotationService } from '../services/quotationService.js';
 
 // Clean customer phone number to Indian 10-digit format with country code 91
 export function cleanCustomerPhone(phoneStr) {
@@ -10,7 +10,7 @@ export function cleanCustomerPhone(phoneStr) {
   return '919825012345';
 }
 
-// Encode compact quotation payload for portable instant URL loading
+// Encode safe compact quotation payload for portable instant URL loading (No sensitive dealer margins or customer phone)
 export function encodeQuotationPayload(quote) {
   if (!quote || typeof quote !== 'object') return '';
   try {
@@ -18,7 +18,6 @@ export function encodeQuotationPayload(quote) {
       id: quote.id,
       date: quote.date,
       customerName: quote.customerName,
-      customerPhone: quote.customerPhone,
       city: quote.city || quote.location,
       state: quote.state,
       discom: quote.discom,
@@ -30,8 +29,6 @@ export function encodeQuotationPayload(quote) {
       grandTotalCustomer: quote.grandTotalCustomer || quote.totalAmount,
       subsidyAmount: quote.subsidyAmount,
       netPayable: quote.netPayable,
-      baseRatePerKW: quote.baseRatePerKW,
-      dealerMarginPerKW: quote.dealerMarginPerKW,
       dealerName: quote.dealerName,
       isDirectCompanyQuote: quote.isDirectCompanyQuote,
       bomItems: quote.bomItems,
@@ -44,40 +41,73 @@ export function encodeQuotationPayload(quote) {
   }
 }
 
-// Generate online link for customer proposal with instant portable payload
+// Generate online link for customer proposal using share token when available
 export function getPublicProposalUrl(quoteOrId) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvinerenewable.com';
   if (typeof quoteOrId === 'object' && quoteOrId !== null) {
-    const id = quoteOrId.id || 'SV-2026-Q801';
-    const dataEncoded = encodeQuotationPayload(quoteOrId);
-    if (dataEncoded) {
-      return `${origin}/?view=quote&id=${encodeURIComponent(id)}&data=${encodeURIComponent(dataEncoded)}`;
+    const id = quoteOrId.id || quoteOrId.quoteId || quoteOrId.quotationNo || '';
+    const shareToken = quoteOrId.shareToken || quoteOrId.share_token;
+    if (shareToken) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(shareToken)}`;
+    }
+    // Check local cache for token if quotation has an ID
+    if (id && typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(id);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
     }
     return `${origin}/?view=quote&id=${encodeURIComponent(id)}`;
   }
-  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || 'SV-2026-Q801')}`;
+  if (typeof quoteOrId === 'string' && quoteOrId) {
+    // If quoteOrId is already a public token
+    if (quoteOrId.startsWith('tok_') || quoteOrId.startsWith('pub_') || /^[0-9a-f]{32,64}$/i.test(quoteOrId)) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(quoteOrId)}`;
+    }
+    // Check local cache for token by quote ID
+    if (typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(quoteOrId);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
+    }
+    return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId)}`;
+  }
+  return `${origin}/?view=quote`;
 }
 
 // Generate the official proposal WhatsApp message
-export function buildProposalWhatsAppMessage(quote) {
+export function buildProposalWhatsAppMessage(quote, customUrl = null, profile = null) {
   const customerName = quote.customerName || 'Valued Customer';
   const capacity = quote.systemCapacityKW 
     ? `${quote.systemCapacityKW} KW` 
-    : (quote.capacity || '280.20 kW');
-  const quoteId = quote.id || 'SV-2026-Q801';
+    : (quote.capacity || `${Number(quote.system_capacity_kw || 0)} kW`);
+  const quoteId = quote.id || quote.quotation_id || 'SV-QUOTATION';
   const amount = typeof quote.amount === 'string'
     ? quote.amount
-    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : '67,24,800');
-  const moduleInfo = quote.solarModule || quote.moduleType || '600 WP TOPCon Mono Bifacial Panel';
-  const invInfo = quote.inverterCapacity || '125 KW Grid-Tied Inverter';
+    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : (quote.totalAmount ? quote.totalAmount.toLocaleString('en-IN') : '0'));
+  const moduleInfo = quote.solarModule || quote.moduleType || quote.panelType || 'Tier-1 Certified PV Module';
+  const invInfo = quote.inverterCapacity || quote.inverterType || 'Grid-Tied Solar Inverter';
   const date = quote.date || new Date().toLocaleDateString('en-GB');
-  const publicUrl = getPublicProposalUrl(quote);
+  const publicUrl = customUrl || getPublicProposalUrl(quote);
 
-  return `*☀️ SUNVINE RENEWABLE ENERGY - SOLAR EPC PROPOSAL*
+  const companyProfile = profile || quote.companyProfile || quote.company_profile || {};
+  const compName = companyProfile.name || 'Sunvine Renewable Energy';
+  const helpline = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+  const email = companyProfile.email || 'support@sunvinerenewable.com';
+  const office = companyProfile.address || 'Gujarat, India';
+
+  return `*☀️ ${compName.toUpperCase()} - SOLAR EPC PROPOSAL*
 
 Dear *${customerName}*,
 
-Greetings from *Sunvine Renewable Energy*! We are pleased to share your customized official turnkey solar power proposal.
+Greetings from *${compName}*! We are pleased to share your customized official turnkey solar power proposal.
 
 📋 *QUOTATION SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━
@@ -96,9 +126,9 @@ Your official 4-page turnkey proposal document with Bill of Materials (BOM), Tec
 🔗 *View / Download Proposal Online:*
 ${publicUrl}
 
-📞 *Sunvine Helpline:* +91 80000 50580
-📧 *Email:* sunvinerenewable@gmail.com
-🏢 *Corporate Office:* G-705, Metoda GIDC, Rajkot, Gujarat.
+📞 *Helpline:* ${helpline}
+📧 *Email:* ${email}
+🏢 *Corporate Office:* ${office}
 
 _Empowering The Future with Solar Energy_`;
 }

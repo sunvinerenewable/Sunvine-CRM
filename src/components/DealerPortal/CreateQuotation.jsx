@@ -15,6 +15,10 @@ import {
 import {
   calculateSubsidy as calcSharedSubsidy,
   calcEMI as calcSharedEMI,
+  DEFAULT_SPECIFIC_YIELD,
+  DEFAULT_TARIFF_PER_UNIT,
+  DEFAULT_SOLAR_LOAN_RATE_PA,
+  DEFAULT_SUBSIDY_CAP,
   isPanelWattageCompatible,
   getPanelQuantityForCapacity,
   normalizeBrand
@@ -38,7 +42,7 @@ export const PRESET_MAKES = [
     watt: 555,
     priceKey: 'adaniBiFiPrice',
     badge: 'Tier-1 ALMM',
-    tech: '555W Bi-Fi'
+    tech: '550W Bi-Fi'
   },
   {
     id: 'aps_bifi',
@@ -52,8 +56,8 @@ export const PRESET_MAKES = [
   },
   {
     id: 'rayzone',
-    name: 'Rayzon 550W',
-    fullName: 'Rayzon 550W Mono PERC Bifacial',
+    name: 'Rayzone 550W',
+    fullName: 'Rayzon 550W Bi-Fi TOPCon High-Efficiency',
     brand: 'Rayzon',
     watt: 550,
     priceKey: 'rayzonePrice',
@@ -127,6 +131,7 @@ export default function CreateQuotation() {
     setPreviewQuotation,
     addNotification,
     pricingPresets,
+    systemSettings,
     tierMargins,
     modulesList,
     invertersList,
@@ -139,6 +144,7 @@ export default function CreateQuotation() {
     updateDealerPricing,
     bomCatalog,
     bomRates,
+    isHardwareDbSyncing,
     deletedBomItemIds,
     seenCatalogItemIds,
     pdfBosMatrix
@@ -196,7 +202,7 @@ export default function CreateQuotation() {
         (effectiveDealer?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
   const tierConfig = isDirectCompanyQuote
     ? { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 }
-    : (tierMargins?.[dealerTierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 });
+    : (tierMargins?.[dealerTierKey] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 });
 
   // Custom Negotiated Dealer Pricing Resolution
   const hasCustomDealerPricing = Boolean(!isDirectCompanyQuote && (bomPricingMode === 'custom' || effectiveDealer?.pricingConfig?.pricingMode === 'custom'));
@@ -212,6 +218,35 @@ export default function CreateQuotation() {
   const [financeType, setFinanceType] = useState(initialSource?.financeType || initialSource?.paymentMode || 'CASH');
   const [loanBank, setLoanBank] = useState(initialSource?.loanBank || 'State Bank of India (Surya Ghar Loan)');
   const [customCoverUrl, setCustomCoverUrl] = useState(initialSource?.customCoverUrl || initialSource?.coverImage || '');
+
+  const [panelBrand, setPanelBrand] = useState(() => {
+    if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
+    if (initialSource?.solarModule) {
+      const match = (modulesList || []).find(b => initialSource.solarModule.includes(b.brand));
+      if (match) return match.brand;
+    }
+    return (modulesList && modulesList[0]?.brand) || '';
+  });
+
+  const [panelWatt, setPanelWatt] = useState(() => {
+    if (initialSource?.moduleWattage) return Number(initialSource.moduleWattage);
+    const m = (initialSource?.solarModule || initialSource?.panelType || '').match(/(\d{3})\s*W/i);
+    return m ? Number(m[1]) : ((modulesList && modulesList[0]?.wattage) || 550);
+  });
+
+  const [panelQuantity, setPanelQuantity] = useState(() => {
+    if (initialSource?.moduleCount) return Number(initialSource.moduleCount);
+    const rawKw = parseFloat(initialSource?.systemCapacityKW || initialSource?.capacity || 3.3);
+    return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
+  });
+
+  const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
+    if (initialSource?.inverterCapacity) {
+      const parsed = parseFloat(initialSource.inverterCapacity);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 3.6;
+  });
 
   // 1. Dynamic Database Mapping for Solar Modules & Inverters
   const activeModules = useMemo(() => {
@@ -609,27 +644,6 @@ export default function CreateQuotation() {
     setCustomPresetBasePrice(null);
   };
 
-  const [panelBrand, setPanelBrand] = useState(() => {
-    if (initialSource?.selectedModuleMake) return initialSource.selectedModuleMake;
-    if (initialSource?.solarModule) {
-      const match = (modulesList || []).find(b => initialSource.solarModule.includes(b.brand));
-      if (match) return match.brand;
-    }
-    return (modulesList && modulesList[0]?.brand) || '';
-  });
-
-  const [panelWatt, setPanelWatt] = useState(() => {
-    if (initialSource?.moduleWattage) return Number(initialSource.moduleWattage);
-    const m = (initialSource?.solarModule || initialSource?.panelType || '').match(/(\d{3})\s*W/i);
-    return m ? Number(m[1]) : ((modulesList && modulesList[0]?.wattage) || 550);
-  });
-
-  const [panelQuantity, setPanelQuantity] = useState(() => {
-    if (initialSource?.moduleCount) return Number(initialSource.moduleCount);
-    const rawKw = parseFloat(initialSource?.systemCapacityKW || initialSource?.capacity || 3.3);
-    return Math.max(1, Math.round((rawKw * 1000) / 585)) || 6;
-  });
-
   // Auto-calculated System Capacity (kW)
   // Accurately aligned with Admin preset slab capacity
   const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
@@ -737,15 +751,6 @@ export default function CreateQuotation() {
       { kw: 10.0, label: '10.0 kW (Three Phase) — ₹54,000', phase: 'Three Phase', price: 54000 }
     ];
   }, [brandInverters, seenCatalogItemIds]);
-
-  const [inverterCapacityKw, setInverterCapacityKw] = useState(() => {
-    if (initialSource?.inverterCapacity) {
-      const parsed = parseFloat(initialSource.inverterCapacity);
-      if (!isNaN(parsed)) return parsed;
-    }
-    const initialMatched = getAutoInverterMatch(kw, inverterBrand);
-    return initialMatched.capacityKW;
-  });
 
   const [inverterQuantity, setInverterQuantity] = useState(() => {
     return Number(initialSource?.inverterQuantity || initialSource?.inverterQty) || 1;
@@ -948,7 +953,7 @@ export default function CreateQuotation() {
 
   // 4. Multi-Mode Margin Controls ('per_kw' | 'amount' | 'percent')
   const effectiveMarginPerKw = isDirectCompanyQuote ? 0 : (
-    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 4500)
+    customMarginKw !== null ? customMarginKw : (tierConfig?.defaultMarginPerKw || 0)
   );
 
   const [marginMode, setMarginMode] = useState(() => {
@@ -957,7 +962,7 @@ export default function CreateQuotation() {
   });
   const [marginRatePerKw, setMarginRatePerKw] = useState(() => {
     if (initialSource?.marginRatePerKw !== undefined) return Number(initialSource.marginRatePerKw);
-    return isDirectCompanyQuote ? 0 : (effectiveMarginPerKw || 4500);
+    return isDirectCompanyQuote ? 0 : (effectiveMarginPerKw || 0);
   });
   const [dealerMarginFixed, setDealerMarginFixed] = useState(() => {
     if (initialSource?.dealerTotalMargin !== undefined) return Number(initialSource.dealerTotalMargin);
@@ -1266,26 +1271,31 @@ export default function CreateQuotation() {
     : '0.0';
 
   // Tier Margin Cap & Audit Validation
-  const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 6000);
+  const maxMarginCapPerKw = isDirectCompanyQuote ? 0 : (effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw || 0);
   const currentMarginPerKw = (isDirectCompanyQuote || kw <= 0) ? 0 : Math.round(dealerMarginINR / kw);
-  const isMarginExceeded = isDirectCompanyQuote ? false : (currentMarginPerKw > maxMarginCapPerKw);
+  const isMarginExceeded = isDirectCompanyQuote ? false : (maxMarginCapPerKw > 0 && currentMarginPerKw > maxMarginCapPerKw);
 
   // PM Surya Ghar Central DBT Subsidy Formula (Canonical Shared Engine)
-  const subsidy = calcSharedSubsidy(kw, projectType, pricingPresets?.subsidyCap || 78000);
+  const subsidyCap = Number(pricingPresets?.subsidyCap) || Number(systemSettings?.statutory_taxes?.subsidy?.cap) || DEFAULT_SUBSIDY_CAP;
+  const subsidy = calcSharedSubsidy(kw, projectType, subsidyCap);
   const finalPayable = Math.max(0, totalCost - subsidy);
-  const annualGenerationUnits = Math.round(kw * 1440);
+  const specificYield = Number(systemSettings?.governance_settings?.default_specific_yield) || DEFAULT_SPECIFIC_YIELD;
+  const annualYieldMultiplier = specificYield > 100 ? specificYield : (specificYield > 0 ? specificYield * 365 : DEFAULT_SPECIFIC_YIELD);
+  const tariff = Number(systemSettings?.governance_settings?.default_tariff) || DEFAULT_TARIFF_PER_UNIT;
+  const loanRate = Number(systemSettings?.governance_settings?.default_loan_rate) || DEFAULT_SOLAR_LOAN_RATE_PA;
+  const annualGenerationUnits = Math.round(kw * annualYieldMultiplier);
   const monthlyGenerationUnits = Math.round(annualGenerationUnits / 12);
-  const annualSavings = Math.round(annualGenerationUnits * 6.67);
+  const annualSavings = Math.round(annualGenerationUnits * tariff);
   const monthlySavings = Math.round(annualSavings / 12);
-  const paybackYears = annualSavings > 0 ? (finalPayable / annualSavings).toFixed(1) : '3.8';
+  const paybackYears = annualSavings > 0 ? (finalPayable / annualSavings).toFixed(1) : '3.6';
   const paybackPercent = Math.min(100, Math.round((parseFloat(paybackYears) / 10) * 100));
   const breakEvenYear = new Date().getFullYear() + Math.ceil(parseFloat(paybackYears));
 
   // Solar Bank Loan Estimated Monthly EMI (Canonical Shared Engine - Issue SR-64)
   const estimatedMonthlyEmi = useMemo(() => {
     if (financeType !== 'LOAN') return 0;
-    return calcSharedEMI(finalPayable, 8.5, loanTenureYears);
-  }, [financeType, finalPayable, loanTenureYears]);
+    return calcSharedEMI(finalPayable, loanRate, loanTenureYears);
+  }, [financeType, finalPayable, loanRate, loanTenureYears]);
 
   // Multi-brand comparison package calculator
   const multiBrandPackages = useMemo(() => {
@@ -1389,7 +1399,7 @@ export default function CreateQuotation() {
     const baseWpRate = customWpRate || parseNumericPrice(defaultMod?.ratePerWp, 24.20);
     setRatePerWp(baseWpRate);
     setPerPanelPrice(Math.round(baseWpRate * defaultWatt));
-    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 59800);
+    setRatePerKw(customKwRate || pricingPresets?.baseRatePerKw || 0);
     setMarginMode('amount');
     if (isAdmin) {
       setQuoteChannel('direct');
@@ -1398,7 +1408,7 @@ export default function CreateQuotation() {
     } else {
       setQuoteChannel('dealer');
       setDealerMarginRate(8);
-      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 4500) * defaultKw));
+      setDealerMarginFixed(Math.round((tierConfig?.defaultMarginPerKw || 0) * defaultKw));
     }
     setBomPricingMode(isAdmin ? 'standard' : (effectiveDealer?.pricingConfig?.pricingMode === 'custom' ? 'custom' : 'standard'));
     setSelectedKitId('');
@@ -1478,14 +1488,14 @@ export default function CreateQuotation() {
   };
 
   // Helper to build standardized quote payload
-  const buildCurrentQuotePayload = (explicitStatus = null) => {
+  function buildCurrentQuotePayload(explicitStatus = null) {
     const isEdit = Boolean(editingQuotation?.id);
     const resolvedDealerCode = isDirectCompanyQuote ? 'SV-DIRECT' : (effectiveDealer?.id || currentDealer?.id || 'SV-DLR-0104');
     const resolvedDealerName = isDirectCompanyQuote ? 'Sunvine Renewable Energy (Head Office)' : (effectiveDealer?.firmName || currentDealer?.firmName || 'Rajesh Solar Solutions');
 
     // In margin-based quotations, dealer doesn't select an inverter; list all admin inverter brands
     const allInverterBrandNames = (activeInverters && activeInverters.length > 0)
-      ? Array.from(new Set(activeInverters.map((i) => i.brand?.trim()).filter(Boolean))).join(' / ')
+      ? Array.from(new Set(activeInverters.flatMap((i) => (i.brand || '').split('/')).map((b) => b.trim()).filter(Boolean))).slice(0, 5).join(' / ')
       : 'Solis / Growatt / Deye / Vsole / Sunvine';
 
     const fullPanelDescription = isMarginBased
@@ -1503,8 +1513,50 @@ export default function CreateQuotation() {
       ? (panelQuantity || Number(matchedSlab?.noOfModules) || 6)
       : panelQuantity;
 
+    const targetWatt = isMarginBased ? (Number(currentPresetMake?.watt) || panelWatt) : panelWatt;
+    const targetBrand = isMarginBased ? (currentPresetMake?.brand || panelBrand) : panelBrand;
+    const cleanBrand = (b = '') => String(b).toLowerCase().replace(/solar|energies|limited|bi-fi|dual glass|\s+/g, '');
+    const targetBrandClean = cleanBrand(targetBrand);
+
+    const resolvedPanelObj = (modulesList || []).find(m => 
+      Number(m.wattage) === Number(targetWatt) && m.brand?.toLowerCase() === targetBrand?.toLowerCase()
+    ) || (modulesList || []).find(m =>
+      Number(m.wattage) === Number(targetWatt) && (
+        cleanBrand(m.brand) === targetBrandClean ||
+        cleanBrand(m.brand).includes(targetBrandClean) ||
+        targetBrandClean.includes(cleanBrand(m.brand)) ||
+        (currentPresetMake?.name && cleanBrand(currentPresetMake.name).includes(cleanBrand(m.brand)))
+      )
+    ) || (modulesList || []).find(m => Number(m.wattage) === Number(targetWatt))
+      || currentModuleRecord 
+      || (modulesList && modulesList[0]) 
+      || null;
+
+    const targetInvCap = Number(matchedSlab?.inverterCapacityKW || matchedSlab?.inverter_capacity_kw || inverterCapacityKw || kw);
+    const resolvedInverterObj = (invertersList || []).find(i => 
+        Math.abs(Number(i.capacity_kw || i.capacityKW || 0) - targetInvCap) < 0.1 &&
+        (i.brand?.toLowerCase() === inverterBrand?.toLowerCase() || inverterBrand?.toLowerCase()?.includes(i.brand?.toLowerCase()))
+      )
+      || (invertersList || []).find(i => Math.abs(Number(i.capacity_kw || i.capacityKW || 0) - targetInvCap) < 0.1)
+      || (typeof currentInverterRecord !== 'undefined' ? currentInverterRecord : null)
+      || (invertersList || []).find(i => `${i.brand} ${i.model}` === inverterModel || i.brand?.toLowerCase() === inverterBrand?.toLowerCase())
+      || (invertersList && invertersList[0])
+      || null;
+
+    const resolvedShareToken = isEdit
+      ? (editingQuotation?.shareToken || editingQuotation?.share_token || null)
+      : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '') : null);
+
     return {
       id: isEdit ? editingQuotation.id : generateUniqueQuotationId(),
+      shareToken: resolvedShareToken,
+      share_token: resolvedShareToken,
+      isEdit,
+      is_edit: isEdit,
+      panelId: resolvedPanelObj?.id || null,
+      selectedPanelId: resolvedPanelObj?.id || null,
+      inverterId: resolvedInverterObj?.id || null,
+      selectedInverterId: resolvedInverterObj?.id || null,
       date: isEdit ? (editingQuotation.date || new Date().toLocaleDateString('en-GB')) : new Date().toLocaleDateString('en-GB'),
       customerName: custName,
       customerPhone: custPhone,
@@ -1602,7 +1654,8 @@ export default function CreateQuotation() {
       bomItems,
       bomTotals,
       pricingMode: isMarginBased ? 'margin_based' : bomPricingMode,
-      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based'
+      pricingCategory: isMarginBased ? 'Margin Based' : 'Kit Based',
+      companyProfile: systemSettings?.companyProfile || systemSettings?.company_profile || null
     };
   };
 
@@ -1669,15 +1722,18 @@ export default function CreateQuotation() {
     setSaveStatus('Generating quotation...');
     showLoader('Generating Quotation...');
     try {
+      let savedResult = null;
       if (isEdit && updateQuotation) {
-        await updateQuotation(quotePayload);
+        savedResult = await updateQuotation(quotePayload);
       } else if (addQuotation) {
-        await addQuotation(quotePayload);
+        savedResult = await addQuotation(quotePayload);
       }
+
+      const finalQuote = savedResult || quotePayload;
 
       if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
         saveDesignRecord({
-          quotationId: quotePayload.id,
+          quotationId: finalQuote.id || quotePayload.id,
           customerName: custName,
           capacityKw: kw,
           type: '2D_ROOF_CAD',
@@ -1689,12 +1745,12 @@ export default function CreateQuotation() {
 
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Quotation Generated',
-        message: `Quotation #${quotePayload.id} has been generated successfully.`,
+        message: `Quotation #${finalQuote.id || quotePayload.id} has been generated successfully.`,
         type: 'success'
       });
 
-      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
-      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      if (setPreviewQuotation) setPreviewQuotation(finalQuote);
+      if (setActiveDraftQuote) setActiveDraftQuote(finalQuote);
       if (typeof window !== 'undefined') {
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
         document.documentElement.scrollTop = 0;
@@ -1712,6 +1768,30 @@ export default function CreateQuotation() {
       hideLoader();
     }
   };
+
+  if (!isHardwareDbSyncing && !pricingPresets && (!modulesList || modulesList.length === 0)) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-surface-container-lowest rounded-2xl border border-surface-container-high shadow-sm my-8">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
+          <span className="material-symbols-outlined text-3xl">cloud_off</span>
+        </div>
+        <h2 className="text-lg font-bold text-on-surface mb-2">Pricing data temporarily unavailable. Please retry.</h2>
+        <p className="text-xs text-secondary max-w-md mb-6">
+          The system could not retrieve real-time pricing presets and catalogue data from the database. Please check your network connection and retry.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') window.location.reload();
+          }}
+          className="px-5 py-2.5 bg-primary text-on-primary rounded-xl font-semibold text-xs hover:bg-primary/90 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-base">refresh</span>
+          <span>Retry Loading Pricing</span>
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col w-full pb-8 min-w-0 overflow-x-hidden">
@@ -3956,7 +4036,17 @@ export default function CreateQuotation() {
                         ₹0/kW
                       </button>
                     )}
-                    {[3500, 4500, 5500, 6500, 8000].map((rate) => (
+                    {(tierMargins ? [
+                      tierMargins?.silver?.defaultMarginPerKw,
+                      tierMargins?.gold?.defaultMarginPerKw,
+                      tierMargins?.platinum?.defaultMarginPerKw,
+                      tierMargins?.diamond?.defaultMarginPerKw,
+                      effectiveDealer?.maxMarginCapPerKw || tierConfig?.maxMarginCapPerKw
+                    ] : [3500, 4500, 5500, 6500, 8000])
+                      .filter((r) => typeof r === 'number' && r > 0)
+                      .filter((val, idx, arr) => arr.indexOf(val) === idx)
+                      .sort((a, b) => a - b)
+                      .map((rate) => (
                       <button
                         key={rate}
                         type="button"
@@ -4220,25 +4310,28 @@ export default function CreateQuotation() {
               </button>
             </div>
 
-            <div className="py-4 space-y-3">
-              {availableInverters.map((inv, idx) => (
+            <div className="py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+              {(activeInverters || invertersList || []).map((inv, idx) => (
                 <div
-                  key={idx}
+                  key={inv.id || idx}
                   onClick={() => {
-                    setInverterModel(inv.name);
+                    if (inv.brand || inv.name) setInverterBrand(inv.brand || inv.name);
+                    if (inv.capacityKW || inv.capacity_kw) setInverterCapacityKw(Number(inv.capacityKW || inv.capacity_kw));
+                    if (inv.basePrice || inv.price) setInverterUnitPrice(Number(inv.basePrice || inv.price));
+                    setUserOverrodeInverter(true);
                     setShowInverterModal(false);
                   }}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${inverterModel === inv.name
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${inverterBrand === (inv.brand || inv.name)
                       ? 'border-primary-container bg-primary/5 ring-1 ring-primary-container'
                       : 'border-surface-container-high hover:border-primary/50'
                     }`}
                 >
                   <div>
-                    <h4 className="font-label-md text-sm font-bold text-on-surface">{inv.name}</h4>
-                    <p className="text-xs text-secondary mt-0.5">{inv.specs}</p>
+                    <h4 className="font-label-md text-sm font-bold text-on-surface">{inv.name || inv.brand} ({inv.capacityKW || inv.capacity_kw} kW)</h4>
+                    <p className="text-xs text-secondary mt-0.5">{inv.phase || 'Grid-Tied'} • {inv.specs || 'MNRE Approved'}</p>
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface-container text-primary shrink-0 ml-2">
-                    {inv.efficiency}
+                    {inv.efficiency || '98.5%'}
                   </span>
                 </div>
               ))}

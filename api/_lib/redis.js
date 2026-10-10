@@ -28,7 +28,14 @@ export function isRedisConfigured() {
  */
 export async function redisCommand(command, ...args) {
   const config = getRedisConfig();
-  if (!config) return null;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!config) {
+    if (isProd) {
+      throw new Error('[Redis FATAL] Upstash Redis credentials (UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN) missing in production.');
+    }
+    return null;
+  }
 
   try {
     const res = await fetch(`${config.url}`, {
@@ -38,17 +45,23 @@ export async function redisCommand(command, ...args) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify([command, ...args]),
-      signal: AbortSignal.timeout(200)
+      signal: AbortSignal.timeout(1000)
     });
 
     if (!res.ok) {
       console.warn(`[Redis] Command ${command} failed with status:`, res.status);
+      if (isProd) {
+        throw new Error(`[Redis FATAL] Upstash Redis command ${command} failed with status ${res.status} in production.`);
+      }
       return null;
     }
 
     const json = await res.json();
     return json?.result;
   } catch (err) {
+    if (isProd) {
+      throw new Error(`[Redis FATAL] Upstash Redis command ${command} error in production: ${err.message}`);
+    }
     if (err.name !== 'TimeoutError' && err.name !== 'AbortError') {
       console.warn(`[Redis] Exception on command ${command}:`, err.message);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { useLoading } from '../../context/LoadingContext';
@@ -19,6 +19,7 @@ import {
 import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 import { pushNotificationService } from '../../services/pushNotificationService';
+import { useRealtimeCustomerFiles } from '../../hooks/useRealtimeCustomerFiles';
 
 export default function MyApplications() {
   const {
@@ -29,6 +30,7 @@ export default function MyApplications() {
     updateCustomerFile,
     addCustomerFile,
     addCustomerFileTimelineEvent,
+    refreshCustomerFiles,
     requiredDocuments,
     setActiveTab,
     masterDocRegistry,
@@ -36,6 +38,13 @@ export default function MyApplications() {
     getFileDocuments,
     getFileDocsCompletion
   } = useApp();
+
+  // Scoped Supabase Realtime for this authorized dealer
+  useRealtimeCustomerFiles({
+    role: 'dealer',
+    dealerId: currentDealer?.id,
+    onRefresh: refreshCustomerFiles
+  });
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,10 +63,43 @@ export default function MyApplications() {
   const [quickStageFile, setQuickStageFile] = useState(null);
   const [quickStageVal, setQuickStageVal] = useState('');
   const [quickStageNotes, setQuickStageNotes] = useState('');
-
-  // New Application Modal & Form State
   const [showAddFileModal, setShowAddFileModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (cameraTargetDoc) {
+          setCameraTargetDoc(null);
+        } else if (previewDoc) {
+          setPreviewDoc(null);
+        } else if (showBankModal) {
+          setShowBankModal(false);
+        } else if (uploadTargetFile) {
+          setUploadTargetFile(null);
+        } else if (activeFileDetail) {
+          setActiveFileDetail(null);
+        } else if (quickStageFile) {
+          setQuickStageFile(null);
+        } else if (showAddFileModal) {
+          setShowAddFileModal(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    cameraTargetDoc,
+    previewDoc,
+    showBankModal,
+    uploadTargetFile,
+    activeFileDetail,
+    quickStageFile,
+    showAddFileModal
+  ]);
+
+  // New Application Modal & Form State
   const [newCustName, setNewCustName] = useState('');
   const [newCustPhone, setNewCustPhone] = useState('');
   const [newCustEmail, setNewCustEmail] = useState('');
@@ -234,7 +276,15 @@ export default function MyApplications() {
         }
 
         try {
-          const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey);
+          const existingSlot = uploadTargetFile.documents?.[docKey];
+          const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+          const currentFileIndex = (fileList.length > 1 || existingCount > 0)
+            ? existingCount + uploadedDocsList.length + 1
+            : null;
+
+          const uploadRes = await storageService.uploadCustomerDocument(file, uploadTargetFile.id, docKey, {
+            fileIndex: currentFileIndex
+          });
           if (uploadRes?.success) {
             uploadedDocsList.push({
               filename: uploadRes.filename || file.name,
@@ -358,7 +408,15 @@ export default function MyApplications() {
 
         if (stats.file) {
           try {
-            const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey);
+            const existingSlot = uploadTargetFile.documents?.[docKey];
+            const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+            const currentFileIndex = (items.length > 1 || existingCount > 0)
+              ? existingCount + uploadedDocsList.length + 1
+              : null;
+
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, uploadTargetFile.id, docKey, {
+              fileIndex: currentFileIndex
+            });
             if (uploadRes?.success) {
               fileUrl = uploadRes.publicUrl || uploadRes.url;
               filename = uploadRes.filename || stats.file.name;
@@ -445,7 +503,9 @@ export default function MyApplications() {
 
     showLoader('Registering new customer application...');
     try {
-      const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const year = new Date().getFullYear();
+      const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const newFileId = `FIL-${year}-${randPart}`;
       const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
       const cleanPhone = newCustPhone.trim();
       const cleanConsumerNo = newCustConsumerNo.trim() || `${newCustDiscom}-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -494,20 +554,11 @@ export default function MyApplications() {
         ]
       };
 
+      let savedFile = newFile;
       if (addCustomerFile) {
-        await addCustomerFile(newFile);
+        const res = await addCustomerFile(newFile);
+        if (res) savedFile = res;
       }
-
-      // Dispatch True OS-Level Web Push to Admin and Assigned Salesman (if not direct)
-      pushNotificationService.sendApplicationCreatedPush({
-        fileId: newFile.id,
-        customerName: newFile.customerName,
-        solarKw: newFile.solarSystemKw,
-        dealerId: newFile.dealerId,
-        dealerName: newFile.dealerName,
-        assignedStaffId: newFile.staffId,
-        assignedStaffName: newFile.staffName
-      });
 
       setShowAddFileModal(false);
       setNewCustName('');
@@ -520,9 +571,9 @@ export default function MyApplications() {
       setNewCustLoanRef('');
 
       // Auto-open Document Upload Vault for the newly created application
-      setUploadTargetFile(newFile);
+      setUploadTargetFile(savedFile);
 
-      addToast(`New application ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
+      addToast(`New application ${savedFile.id} created for ${savedFile.customerName}! You can upload documents now or skip.`, 'success');
     } catch (err) {
       console.error('[MyApplications] Create application error:', err);
       addToast(err.message || 'Failed to create application', 'error');

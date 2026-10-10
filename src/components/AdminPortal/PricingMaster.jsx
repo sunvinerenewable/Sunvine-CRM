@@ -33,6 +33,7 @@ export default function PricingMaster() {
     removeDealerProductRate,
     tierMargins,
     updateTierMargins,
+    pricingPresets,
     modulesList,
     setModulesList,
     invertersList,
@@ -73,6 +74,10 @@ export default function PricingMaster() {
   }, []);
 
   const [toastMessage, setToastMessage] = useState('');
+  const triggerToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
   const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
   const totalDealersCount = dealers?.length || 550;
 
@@ -226,10 +231,11 @@ export default function PricingMaster() {
     setDealerOverrideModal({ isOpen: false, product: null });
   };
 
-  // Form states initialized with pricingMaster or realistic defaults
-  const [rate1to3, setRate1to3] = useState(pricingMaster?.baseRates?.tier1to3kw || 62000);
-  const [rate3to10, setRate3to10] = useState(pricingMaster?.baseRates?.tier3to10kw || 58000);
-  const [rateCommercial, setRateCommercial] = useState(pricingMaster?.baseRates?.tier10to50kw || 24000);
+  // Form states initialized with pricingMaster or dynamic pricing presets
+  const baseRate = Number(pricingPresets?.baseRatePerKw || pricingMaster?.baseRates?.tier3to10kw || 0);
+  const [rate1to3, setRate1to3] = useState(pricingMaster?.baseRates?.tier1to3kw || (baseRate > 0 ? baseRate + 4000 : 0));
+  const [rate3to10, setRate3to10] = useState(pricingMaster?.baseRates?.tier3to10kw || baseRate);
+  const [rateCommercial, setRateCommercial] = useState(pricingMaster?.baseRates?.tier10to50kw || (baseRate > 0 ? Math.round(baseRate * 0.4) : 0));
 
   // Default Hardware selections
   const [selectedDefaultModule, setSelectedDefaultModule] = useState(
@@ -456,11 +462,6 @@ export default function PricingMaster() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-
-  const triggerToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3500);
-  };
 
   // WhatsApp Broadcast Engine (SR-23)
   const getBroadcastMessage = () => {
@@ -1034,9 +1035,10 @@ ${origin}/?tab=pricing_master
         <div className="flex flex-wrap items-center gap-2 sm:gap-3 self-start xl:self-center shrink-0">
           <button
             onClick={() => {
-              setRate1to3(62000);
-              setRate3to10(58000);
-              setRateCommercial(24000);
+              const base = pricingPresets?.baseRatePerKw || 0;
+              setRate1to3(base > 0 ? base + 2000 : 0);
+              setRate3to10(base);
+              setRateCommercial(base > 0 ? Math.round(base * 0.4) : 0);
               handleResetMatrixToDefault();
               triggerToast('Reset to default system presets');
             }}
@@ -2309,7 +2311,7 @@ ${origin}/?tab=pricing_master
                     { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
                     { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
                   ].map((tier) => {
-                    const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                    const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                     return (
                       <div key={tier.key} className="p-4 rounded-xl border border-surface-container-highest bg-surface-container-low/50 space-y-3">
                         <div className="flex items-center justify-between">
@@ -4693,7 +4695,7 @@ ${origin}/?tab=pricing_master
                 <div className="text-right">
                   <span className="text-secondary block text-[11px]">Benchmark Rate</span>
                   <span className="font-mono font-bold text-primary">
-                    ₹{dealerOverrideModal.product.benchmarkPrice.toLocaleString('en-IN')} {dealerOverrideModal.product.unit}
+                    ₹{Number(dealerOverrideModal.product.benchmarkPrice || 0).toLocaleString('en-IN')} {dealerOverrideModal.product.unit}
                   </span>
                 </div>
               </div>
