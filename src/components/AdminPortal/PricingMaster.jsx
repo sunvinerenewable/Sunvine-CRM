@@ -486,7 +486,7 @@ Please find the revised turnkey EPC benchmark rates and PM Surya Ghar DBT subsid
 ⚙️ *KEY HARDWARE SPECIFICATIONS*
 • Solar Modules: ${selectedDefaultModule}
 • Solar Inverter: ${selectedDefaultInverter}
-• Composite GST: 13.8% included in BoS matrix
+• Statutory GST: 18% included in BoS matrix
 • Portal Proposals: All new quotations will automatically apply these updated matrices.
 
 🔗 *Access Dealer Portal & Create Proposals:*
