@@ -27,7 +27,7 @@ const parseQuoteDateToMs = (dateStr) => {
 };
 
 export default function AllQuotations() {
-  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
+  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote, hydrateAllFromSupabase } = useApp();
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -74,6 +74,12 @@ export default function AllQuotations() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (hydrateAllFromSupabase) {
+      hydrateAllFromSupabase();
+    }
+  }, [hydrateAllFromSupabase]);
 
   const handleApplyPresetDate = (label, start, end) => {
     setDatePresetLabel(label);

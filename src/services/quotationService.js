@@ -72,14 +72,32 @@ export const quotationService = {
    * Fetch all quotations (scoped by role via server API)
    */
   async getAllQuotations(limit = 100) {
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+    const currentRole = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('sunvine_session_role') || sessionStorage.getItem('sunvine_role') || localStorage.getItem('sunvine_role'))
+      : null;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
     // 1. Try secure API gateway
     try {
       const res = await fetch(`/api/quotations?action=list&limit=${limit}`, {
+        headers,
         credentials: 'include'
       });
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.success && Array.isArray(data.quotations)) {
+          // If viewing as admin, ensure admin gets all quotes without dealer cookie narrowing
+          if (currentRole === 'admin') {
+            const { data: dbData } = await supabase
+              .from('quotations')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(limit);
+            if (Array.isArray(dbData) && dbData.length > data.quotations.length) {
+              return dbData.map(normalizeQuotationRow).filter(Boolean);
+            }
+          }
           return data.quotations.map(normalizeQuotationRow).filter(Boolean);
         }
       }
@@ -169,6 +187,7 @@ export const quotationService = {
   async saveQuotation(quote) {
     if (!quote) return { success: false, error: 'Quotation data required.' };
 
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
     const apiPayload = {
       action: 'save',
       quotation_id: quote.id,
@@ -193,6 +212,7 @@ export const quotationService = {
       loan_bank: quote.loanBank,
       loan_tenure_years: Number(quote.loanTenureYears) || 5,
       is_direct_company_quote: quote.isDirectCompanyQuote === true,
+      status: quote.status || 'Active / Sent',
       bom_items: quote.bomItems || []
     };
 
@@ -200,7 +220,10 @@ export const quotationService = {
     try {
       const res = await fetch('/api/quotations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         credentials: 'include',
         body: JSON.stringify(apiPayload)
       });
@@ -228,6 +251,9 @@ export const quotationService = {
     try {
       const fallbackPayload = {
         id: quote.id,
+        dealer_id: quote.dealer_id || quote.dealerId || apiPayload.dealer_id || null,
+        dealer_code: quote.dealer_code || quote.dealerCode || apiPayload.dealer_code || null,
+        dealer_name: quote.dealer_name || quote.dealerName || apiPayload.dealer_name || null,
         customer_name: apiPayload.customer_name,
         customer_phone: apiPayload.customer_phone,
         customer_city: apiPayload.customer_city,
@@ -241,7 +267,7 @@ export const quotationService = {
         total_amount: Number(quote.totalAmount || quote.grandTotalCustomer) || 0,
         subsidy_amount: Number(quote.subsidyAmount) || 0,
         net_payable: Number(quote.netPayable) || 0,
-        status: quote.status || 'Draft',
+        status: quote.status || 'Active / Sent',
         quote_payload: quote,
         updated_at: new Date().toISOString()
       };

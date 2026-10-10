@@ -260,7 +260,7 @@ async function handleSave(req, res, jwt, db) {
     subsidy_amount: subsidyAmount,
     net_payable: netPayable,
     annual_generation_kwh: Math.round(kw * peakSunHours),
-    ...(isNew && { status: 'Draft' }),
+    status: body.status || (isNew ? 'Active / Sent' : undefined),
     quote_payload: quotePayload,
     updated_at: new Date().toISOString()
   };
@@ -493,8 +493,8 @@ export default async function handler(req, res) {
   }
 
   // All other actions require JWT
-  const cookies = parseCookies(req.headers.cookie || '');
-  const token = cookies.sunvine_auth_token || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const authHeader = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = authHeader || cookies.sunvine_auth_token;
   const jwtResult = verifyJwt(token);
   if (!jwtResult.valid) return res.status(401).json({ error: 'Authentication required.' });
   const jwt = jwtResult.payload;

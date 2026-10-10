@@ -932,7 +932,7 @@ const safeSetItem = (key, value) => {
     } finally {
       setIsHardwareDbSyncing(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, role]);
 
   useEffect(() => {
     hydrateAllFromSupabase();

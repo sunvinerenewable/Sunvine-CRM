@@ -1465,7 +1465,7 @@ export default function CreateQuotation() {
       ? currentPresetMake.fullName
       : `${panelBrand} ${panelWatt}W TOPCon Bifacial (${panelWatt}Wp)`;
 
-    const defaultStatus = explicitStatus || (isEdit ? (editingQuotation.status || 'Active / Generated') : (isDirectCompanyQuote ? 'Approved / Direct' : 'Active / Generated'));
+    const defaultStatus = explicitStatus || (isEdit ? (editingQuotation.status || 'Active / Sent') : (isDirectCompanyQuote ? 'Approved / Direct' : 'Active / Sent'));
     const statusClass = defaultStatus === 'Draft'
       ? 'bg-secondary/15 text-secondary'
       : isMarginExceeded
@@ -1635,7 +1635,7 @@ export default function CreateQuotation() {
 
     const isEdit = Boolean(editingQuotation?.id);
     const quotePayload = buildCurrentQuotePayload(
-      isDirectCompanyQuote ? 'Approved / Direct' : (isMarginExceeded ? 'Audit Required' : 'Active / Generated')
+      isDirectCompanyQuote ? 'Approved / Direct' : (isMarginExceeded ? 'Audit Required' : 'Active / Sent')
     );
 
     setIsSubmitting(true);
