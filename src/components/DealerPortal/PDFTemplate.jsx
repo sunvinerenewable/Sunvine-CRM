@@ -136,7 +136,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   } = quotation;
 
   // Resolve numerical capacity and dimensions
-  const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(2));
+  const resolvedCapKW = Number(parseFloat(systemCapacityKW || capacityKW || capacity || 3.3).toFixed(3));
   const rawWattMatch = (solarModule || '').match(/(\d{3})\s*W/i);
   const resolvedWatt = Number(moduleWattage || (rawWattMatch ? rawWattMatch[1] : 585));
   const resolvedCount = Number(moduleCount || Math.ceil((resolvedCapKW * 1000) / resolvedWatt) || 6);
@@ -327,7 +327,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   // Commercial financial figures
   const customerRatePerKW = baseRatePerKW + (dealerMarginPerKW || 0);
-  const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || Math.round(customerRatePerKW * resolvedCapKW);
+  const extraTransportCharge = Number(quotation.extraTransportAmount || (quotation.hasExtraTransport ? quotation.transportCharge : 0)) || 0;
+  const grossTurnkey = quotation.grandTotalCustomer || quotation.totalAmount || (Math.round(customerRatePerKW * resolvedCapKW) + extraTransportCharge);
 
   const isInterState = quotation.isInterState || (String(quotation.customerState || quotation.state || 'Gujarat').trim().toLowerCase() !== 'gujarat');
   const bomTotals = quotation.bomTotals || quotation.quote_payload?.bomTotals;
@@ -343,7 +344,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   const netPayable = quotation.netPayable !== undefined ? quotation.netPayable : Math.max(0, grossTurnkey - subsidyAmount);
 
   // Line item breakdown
-  const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : 1000;
+  const transportCharge = quotation.transportCharge !== undefined ? quotation.transportCharge : (extraTransportCharge || 1000);
   const installationCost = quotation.installationEstimatedCost || Math.round(resolvedCapKW * 2000);
   const moduleCost = quotation.moduleEstimatedCost || Math.round(resolvedWatt * resolvedCount * (quotation.ratePerWp || 18.00));
   const inverterCost = quotation.inverterEstimatedCost || Math.round(resolvedCapKW <= 3 ? 29800 : resolvedCapKW <= 5.5 ? 42000 : resolvedCapKW <= 7 ? 48500 : 72000);
@@ -459,7 +460,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 {resolvedCapKW} kW On-Grid Solar PV Plant
               </div>
               <div className="text-[11px] text-gray-700 mt-0.5">
-                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({((resolvedCount * resolvedWatt) / 1000).toFixed(2)} kWp)
+                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({parseFloat(((resolvedCount * resolvedWatt) / 1000).toFixed(3))} kWp)
               </div>
               <div className="text-[10px] text-gray-600 mt-0.5">
                 Inverter: {inverterType.split('(')[0]?.trim() || inverterType} • Roof: ~{resolvedArea} Sq. Ft.
@@ -580,6 +581,25 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                       </td>
                     </tr>
                   </>
+                )}
+
+                {/* Extra Doorstep Transport & Logistics (if added by dealer) */}
+                {extraTransportCharge > 0 && (
+                  <tr className="bg-blue-50/40 border-t border-blue-200">
+                    <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500">•</td>
+                    <td className="py-2 px-3 border-r border-slate-200">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded uppercase font-bold">LOGISTICS</span>
+                        <span className="font-bold text-[#0B2545]">Doorstep Transport &amp; Freight</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500">
+                        Dedicated outstation site delivery, safe transit &amp; insurance
+                      </p>
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono font-bold text-sm text-blue-900">
+                      ₹ {formatINR(extraTransportCharge)}
+                    </td>
+                  </tr>
                 )}
 
                 {/* 3. Total Project Cost */}
