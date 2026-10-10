@@ -446,7 +446,7 @@ export const pricingService = {
 
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
-
+    try {
       let actualData = pricingData;
       let targetIdentifier = dealerCode || dealerId;
 
