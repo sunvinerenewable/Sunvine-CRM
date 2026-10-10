@@ -75,3 +75,24 @@ export function verifyPassword(password, storedHash) {
   console.warn('[security] verifyPassword: unrecognised hash format — returning false. Hash must be pbkdf2$... or $2a$...');
   return false;
 }
+
+/**
+ * Validate password requirements: Minimum 8 characters and at least 1 special character.
+ * @param {string} password 
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function validatePasswordComplexity(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'Password is required.' };
+  }
+  const trimmed = password.trim();
+  if (trimmed.length < 8) {
+    return { valid: false, error: 'Password must be at least 8 characters and contain at least one special character (!@#$%^&* etc.).' };
+  }
+  const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/\\`~;']/;
+  if (!specialCharRegex.test(trimmed)) {
+    return { valid: false, error: 'Password must contain at least one special character (!@#$%^&* etc.).' };
+  }
+  return { valid: true };
+}
+

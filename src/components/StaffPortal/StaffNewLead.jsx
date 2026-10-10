@@ -5,7 +5,7 @@ import { GROUPED_SOLAR_BANKS } from '../../data/solarBanksData';
 import SolarBankSelectorModal from '../Shared/SolarBankSelectorModal';
 
 export default function StaffNewLead() {
-  const { currentStaff, addCustomerFile, setActiveTab, dealers } = useApp();
+  const { currentStaff, addCustomerFile, setActiveTab, dealers, pricingPresets, showLoader, hideLoader } = useApp();
   const { addToast } = useToast();
 
   const [customerName, setCustomerName] = useState('');
@@ -41,11 +41,12 @@ export default function StaffNewLead() {
   }, [dealers, selectedDealerId]);
 
   const calculatedAmount = useMemo(() => {
-    const kw = parseFloat(solarSystemKw) || 3.3;
-    return Math.round(kw * 58000);
-  }, [solarSystemKw]);
+    const kw = parseFloat(solarSystemKw) || 0;
+    const baseRate = pricingPresets?.baseRatePerKw || 0;
+    return Math.round(kw * baseRate);
+  }, [solarSystemKw, pricingPresets]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!customerName.trim() || !phone.trim()) {
       addToast('Customer Name and Mobile Number are required', 'error');
@@ -57,7 +58,9 @@ export default function StaffNewLead() {
       return;
     }
 
-    const newFileId = `FIL-2026-${Math.floor(100 + Math.random() * 900)}`;
+    const year = new Date().getFullYear();
+    const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const newFileId = `FIL-${year}-${randPart}`;
     const newFile = {
       id: newFileId,
       customerName: customerName.trim(),
@@ -106,9 +109,21 @@ export default function StaffNewLead() {
       }
     };
 
-    addCustomerFile(newFile);
-    addToast(`Customer Lead "${newFile.customerName}" created with ${financeType} payment mode!`, 'success');
-    setActiveTab('staff_files');
+    try {
+      showLoader('Creating customer lead...');
+      let savedFile = newFile;
+      if (addCustomerFile) {
+        const res = await addCustomerFile(newFile);
+        if (res) savedFile = res;
+      }
+      addToast(`Customer Lead "${savedFile.customerName}" created with ${financeType} payment mode!`, 'success');
+      setActiveTab('staff_files');
+    } catch (err) {
+      console.error('[StaffNewLead] Create lead error:', err);
+      addToast(err.message || 'Failed to create customer lead', 'error');
+    } finally {
+      hideLoader();
+    }
   };
 
   return (

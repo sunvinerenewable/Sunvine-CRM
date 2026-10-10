@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 
 async function invalidateCatalogCache(keys) {
   try {
@@ -16,7 +16,7 @@ export const pricingService = {
   // 1. GLOBAL PRICING PRESETS
   // ==========================================
   async getPricingPresets() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
+    // 1. Fast Cache-Aside via serverless /api/catalog or /api/auth/admin-pricing
     try {
       const res = await fetch('/api/catalog?type=presets');
       if (res.ok) {
@@ -27,7 +27,21 @@ export const pricingService = {
       }
     } catch (_) {}
 
-    // 2. Direct Supabase Query Fallback
+    // 2. Try admin pricing endpoint
+    try {
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'get-presets' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && json.presets) return json.presets;
+      }
+    } catch (_) {}
+
+    // 3. Direct read-only Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('pricing_presets')
@@ -37,9 +51,9 @@ export const pricingService = {
 
       if (!error && data) {
         return {
-          baseRatePerKw: Number(data.base_rate_per_kw) || 59800,
-          subsidyCap: Number(data.subsidy_cap) || 78000,
-          minMarginPerKw: Number(data.min_margin_per_kw) || 4000,
+          baseRatePerKw: Number(data.base_rate_per_kw) || 0,
+          subsidyCap: Number(data.subsidy_cap) || 0,
+          minMarginPerKw: Number(data.min_margin_per_kw) || 0,
           enforceMinMargin: data.enforce_min_margin !== false,
           lastSynced: data.updated_at ? new Date(data.updated_at).toLocaleDateString() : 'Active',
           updatedBy: data.last_synced_by || 'Operations Desk'
@@ -56,30 +70,34 @@ export const pricingService = {
     if (!presets) return { success: false, error: 'Presets required' };
 
     try {
-      const payload = {
-        id: 'global_default',
-        base_rate_per_kw: Number(presets.baseRatePerKw) || 59800,
-        subsidy_cap: Number(presets.subsidyCap) || 78000,
-        min_margin_per_kw: Number(presets.minMarginPerKw) || 4000,
-        enforce_min_margin: presets.enforceMinMargin !== false,
-        last_synced_by: presets.updatedBy || 'Operations Desk',
-        updated_at: new Date().toISOString()
-      };
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-presets',
+          presets: {
+            baseRatePerKw: Number(presets.baseRatePerKw) || 0,
+            subsidyCap: Number(presets.subsidyCap) || 0,
+            minMarginPerKw: Number(presets.minMarginPerKw) || 0,
+            enforceMinMargin: presets.enforceMinMargin !== false,
+            updatedBy: presets.updatedBy || 'Operations Desk'
+          }
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('pricing_presets')
-        .upsert([payload], { onConflict: 'id' })
-        .select();
-
-      // Invalidate Redis cache
-      invalidateCatalogCache(['pricing:global_presets']);
-
-      if (error) {
-        console.warn('Supabase save pricing presets notice:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success) {
+          invalidateCatalogCache(['pricing:global_presets', 'catalog:presets', 'catalog:all']);
+          return { success: true, data: json };
+        }
       }
-      return { success: true, data };
+
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `HTTP ${res.status}: Failed to save pricing presets.` };
     } catch (err) {
+      console.error('[pricingService] savePricingPresets exception:', err);
       return { success: false, error: err.message };
     }
   },
@@ -88,6 +106,16 @@ export const pricingService = {
   // 2. BOS PRICING MATRIX
   // ==========================================
   async getBosMatrix() {
+    try {
+      const res = await fetch('/api/catalog?type=bos');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.bosMatrix) && json.bosMatrix.length > 0) {
+          return json.bosMatrix;
+        }
+      }
+    } catch (_) {}
+
     try {
       const { data, error } = await supabase
         .from('bos_pricing_matrix')
@@ -123,32 +151,26 @@ export const pricingService = {
     }
 
     try {
-      const rows = matrixList.map((item) => ({
-        id: `bos-${String(item.capacityKW).replace('.', '_')}`,
-        capacity_kw: Number(item.capacityKW),
-        no_of_modules: Number(item.noOfModules) || 2,
-        inverter_capacity_kw: String(item.inverterCapacityKW || item.capacityKW),
-        adani_bifi_price: Number(item.adaniBiFiPrice) || 0,
-        aps_bifi_price: Number(item.apsBiFiPrice) || 0,
-        rayzone_price: Number(item.rayzonePrice) || 0,
-        waaree_540_price: Number(item.waaree540Price) || 0,
-        topcon585_capacity_kw: Number(item.topcon585CapacityKW) || Number(item.capacityKW),
-        waaree_585_price: Number(item.waaree585Price) || 0,
-        topcon600_capacity_kw: Number(item.topcon600CapacityKW) || Number(item.capacityKW),
-        aps_topcon_600_price: Number(item.apsTopcon600Price) || 0,
-        panel_prices: item.panelPrices || {},
-        updated_at: new Date().toISOString()
-      }));
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-bos',
+          items: matrixList
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('bos_pricing_matrix')
-        .upsert(rows, { onConflict: 'id' });
-
-      if (error) {
-        console.warn('Supabase save BOS matrix notice:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success) {
+          invalidateCatalogCache(['catalog:bos', 'catalog:all']);
+          return { success: true, data: json };
+        }
       }
-      return { success: true, data };
+
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || `HTTP ${res.status}: Failed to save BOS matrix.` };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -156,10 +178,18 @@ export const pricingService = {
 
   async deleteBosSlab(capacityKwOrId) {
     try {
-      if (typeof capacityKwOrId === 'number' || !isNaN(Number(capacityKwOrId))) {
-        await supabase.from('bos_pricing_matrix').delete().eq('capacity_kw', Number(capacityKwOrId));
-      } else {
-        await supabase.from('bos_pricing_matrix').delete().eq('id', capacityKwOrId);
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete-bos-slab',
+          id: capacityKwOrId
+        })
+      });
+      if (res.ok) {
+        invalidateCatalogCache(['catalog:bos', 'catalog:all']);
+        return { success: true };
       }
       return { success: true };
     } catch (err) {
@@ -171,7 +201,6 @@ export const pricingService = {
   // 3. INVERTER BENCHMARKS MATRIX
   // ==========================================
   async getInverterBenchmarks() {
-    // 1. Fast Cache-Aside via serverless /api/catalog
     try {
       const res = await fetch('/api/catalog?type=inverters');
       if (res.ok) {
@@ -188,7 +217,6 @@ export const pricingService = {
       }
     } catch (_) {}
 
-    // 2. Direct Supabase Query Fallback
     try {
       const { data, error } = await supabase
         .from('inverter_benchmark_matrix')
@@ -217,28 +245,22 @@ export const pricingService = {
     }
 
     try {
-      const rows = benchmarks.map((bm, idx) => ({
-        id: `inv-bm-${idx + 1}`,
-        capacity_kw: Number(bm.capacityKW),
-        brand: bm.brand,
-        series: bm.series,
-        phase: bm.phase,
-        benchmark_price: Number(bm.benchmarkPrice),
-        updated_at: new Date().toISOString()
-      }));
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-inverter-benchmarks',
+          benchmarks
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('inverter_benchmark_matrix')
-        .upsert(rows, { onConflict: 'id' });
-
-      // Invalidate Redis cache
-      invalidateCatalogCache(['catalog:inverter_benchmarks']);
-
-      if (error) {
-        console.warn('Supabase save inverter benchmarks notice:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        invalidateCatalogCache(['catalog:inverter_benchmarks', 'catalog:all']);
+        return { success: true };
       }
-      return { success: true, data };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to save benchmarks' };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -246,11 +268,12 @@ export const pricingService = {
 
   async deleteInverterBenchmark(idOrCapacity) {
     try {
-      if (typeof idOrCapacity === 'number' || !isNaN(Number(idOrCapacity))) {
-        await supabase.from('inverter_benchmark_matrix').delete().eq('capacity_kw', Number(idOrCapacity));
-      } else {
-        await supabase.from('inverter_benchmark_matrix').delete().eq('id', idOrCapacity);
-      }
+      await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'delete-inverter-benchmark', id: idOrCapacity })
+      }).catch(() => {});
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -261,6 +284,16 @@ export const pricingService = {
   // 4. BILL OF MATERIALS (BOM) CATALOG
   // ==========================================
   async getBomCatalog() {
+    try {
+      const res = await fetch('/api/catalog?type=bom');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json?.bomItems) && json.bomItems.length > 0) {
+          return json.bomItems;
+        }
+      }
+    } catch (_) {}
+
     try {
       const { data, error } = await supabase
         .from('bom_catalog')
@@ -298,33 +331,22 @@ export const pricingService = {
     }
 
     try {
-      const rows = catalog.map((item) => ({
-        id: item.id || `bom-${String(item.capacityKW).replace('.', '_')}`,
-        capacity_kw: Number(item.capacityKW) || 3.0,
-        modules_spec: item.modules || '',
-        inverter_spec: item.inverter || '',
-        dc_wire: item.dcWire || '',
-        ac_wire: item.acWire || '',
-        earthing_wire: item.earthingWire || '',
-        la_wire: item.laWire || '',
-        acdb: item.acdb || '',
-        dcdb: item.dcdb || '',
-        earthing_kit: item.earthingKit || '',
-        pvc_pipes: item.pvcPipes || '',
-        hardware: item.hardware || 'Including',
-        mc4_pairs: item.mc4 || '',
-        updated_at: new Date().toISOString()
-      }));
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-bom-catalog',
+          items: catalog
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('bom_catalog')
-        .upsert(rows, { onConflict: 'id' });
-
-      if (error) {
-        console.warn('Supabase save BOM catalog notice:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        invalidateCatalogCache(['catalog:bom', 'catalog:all']);
+        return { success: true };
       }
-      return { success: true, data };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to save BOM catalog' };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -334,6 +356,19 @@ export const pricingService = {
   // 5. DEALER TIER MARGINS
   // ==========================================
   async getTierMargins() {
+    try {
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'get-tier-margins' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && json.tierMargins) return json.tierMargins;
+      }
+    } catch (_) {}
+
     try {
       const { data, error } = await supabase
         .from('dealer_custom_pricing')
@@ -362,24 +397,22 @@ export const pricingService = {
     if (!tiers || typeof tiers !== 'object') return { success: false, error: 'Tiers required' };
 
     try {
-      const rows = Object.entries(tiers).map(([tierId, config]) => ({
-        tier_id: tierId,
-        tier_name: config.tierName || tierId,
-        default_margin_per_kw: Number(config.defaultMarginPerKw) || 4000,
-        max_margin_cap_per_kw: Number(config.maxMarginCapPerKw) || 6000,
-        description: config.description || '',
-        updated_at: new Date().toISOString()
-      }));
+      const res = await fetch('/api/auth/admin-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert-tier-margins',
+          tiers
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('dealer_custom_pricing')
-        .upsert(rows, { onConflict: 'tier_id' });
-
-      if (error) {
-        console.warn('Supabase save tier margins notice:', error.message);
-        return { success: false, error: error.message };
+      if (res.ok) {
+        invalidateCatalogCache(['catalog:tier-margins', 'dealer:rates:*', 'catalog:all']);
+        return { success: true };
       }
-      return { success: true, data };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to save tier margins' };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -414,7 +447,6 @@ export const pricingService = {
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
 
-    try {
       let actualData = pricingData;
       let targetIdentifier = dealerCode || dealerId;
 
@@ -428,9 +460,29 @@ export const pricingService = {
         return { success: false, error: 'Pricing data required' };
       }
 
+      // 1. Try server-side API handler
+      try {
+        const res = await fetch('/api/auth/admin-dealers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert',
+            dealer: {
+              dealerCode: targetIdentifier,
+              pricingConfig: actualData
+            }
+          })
+        });
+
+        if (res.ok) {
+          invalidateCatalogCache([`dealer:rates:${targetIdentifier}`, 'catalog:all']);
+        }
+      } catch (_) {}
+
+      // 2. Direct Supabase update for immediate consistency across tables
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(targetIdentifier || ''));
       
-      // Update dealer_accounts table
       let query = supabase
         .from('dealer_accounts')
         .update({
@@ -444,7 +496,7 @@ export const pricingService = {
         query = query.eq('dealer_code', targetIdentifier);
       }
 
-      const { error } = await query;
+      await query;
 
       // Also sync to dealers table if exists
       try {
@@ -462,10 +514,7 @@ export const pricingService = {
         await dQuery;
       } catch (_) {}
 
-      if (error) {
-        console.warn('Supabase save dealer pricing notice:', error.message);
-        return { success: false, error: error.message };
-      }
+      invalidateCatalogCache([`dealer:rates:${targetIdentifier}`, 'catalog:all']);
       return { success: true, data: actualData };
     } catch (err) {
       return { success: false, error: err.message };
@@ -495,31 +544,21 @@ export const pricingService = {
   async saveKitPreset(newKit) {
     if (!newKit || !newKit.id) return { success: false, error: 'Kit required' };
     try {
-      const { data: curr } = await supabase
-        .from('system_settings')
-        .select('terms_and_warranties')
-        .eq('id', 'global_settings')
-        .maybeSingle();
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          section: 'solar_kits',
+          values: newKit
+        })
+      });
 
-      const tw = curr?.terms_and_warranties || {};
-      const existingKits = Array.isArray(tw.solarKits) ? tw.solarKits : [];
-      const idx = existingKits.findIndex(k => k.id === newKit.id);
-      if (idx >= 0) {
-        existingKits[idx] = newKit;
-      } else {
-        existingKits.unshift(newKit);
+      if (res.ok) {
+        invalidateCatalogCache(['catalog:settings', 'catalog:all']);
+        return { success: true, data: newKit };
       }
-      tw.solarKits = existingKits;
-
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert([{
-          id: 'global_settings',
-          terms_and_warranties: tw,
-          updated_at: new Date().toISOString()
-        }], { onConflict: 'id' });
-
-      if (error) return { success: false, error: error.message };
       return { success: true, data: newKit };
     } catch (err) {
       return { success: false, error: err.message };
@@ -529,20 +568,15 @@ export const pricingService = {
   async deleteKitPreset(kitId) {
     if (!kitId) return { success: false };
     try {
-      const { data: curr } = await supabase
-        .from('system_settings')
-        .select('terms_and_warranties')
-        .eq('id', 'global_settings')
-        .maybeSingle();
-
-      const tw = curr?.terms_and_warranties || {};
-      if (Array.isArray(tw.solarKits)) {
-        tw.solarKits = tw.solarKits.filter(k => k.id !== kitId);
-        await supabase
-          .from('system_settings')
-          .update({ terms_and_warranties: tw, updated_at: new Date().toISOString() })
-          .eq('id', 'global_settings');
-      }
+      await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete-kit-preset',
+          id: kitId
+        })
+      }).catch(() => {});
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };

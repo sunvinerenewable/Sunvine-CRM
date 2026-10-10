@@ -81,65 +81,65 @@ test('applyCors: empty ALLOWED_ORIGINS — no origin reflected', () => {
 
 // ── requireAdmin tests ──────────────────────────────────────────────────────
 
-test('requireAdmin: no token → 401', () => {
+test('requireAdmin: no token → 401', async () => {
   const req = mockReq();
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.equal(result, null, 'Must return null');
   assert.equal(res._status, 401);
 });
 
-test('requireAdmin: invalid/garbage token → 401', () => {
+test('requireAdmin: invalid/garbage token → 401', async () => {
   const req = mockReq({ cookie: 'sunvine_auth_token=not.a.valid.token' });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.equal(result, null);
   assert.equal(res._status, 401);
 });
 
-test('requireAdmin: valid dealer token → 403', () => {
+test('requireAdmin: valid dealer token → 403', async () => {
   const token = signJwt({ id: 'dealer-1', role: 'dealer', dealer_id: 'SV-DLR-001' });
   const req = mockReq({ cookie: `sunvine_auth_token=${token}` });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.equal(result, null);
   assert.equal(res._status, 403);
 });
 
-test('requireAdmin: valid staff token → 403', () => {
+test('requireAdmin: valid staff token → 403', async () => {
   const token = signJwt({ id: 'staff-1', role: 'staff' });
   const req = mockReq({ authorization: `Bearer ${token}` });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.equal(result, null);
   assert.equal(res._status, 403);
 });
 
-test('requireAdmin: valid admin cookie → returns payload', () => {
+test('requireAdmin: valid admin cookie → returns payload', async () => {
   const token = signJwt({ id: 'admin-1', role: 'admin' });
   const req = mockReq({ cookie: `sunvine_auth_token=${token}` });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.ok(result !== null, 'Must return payload for valid admin token');
   assert.equal(result.role, 'admin');
   assert.equal(result.id, 'admin-1');
 });
 
-test('requireAdmin: valid admin Bearer token → returns payload', () => {
+test('requireAdmin: valid admin Bearer token → returns payload', async () => {
   const token = signJwt({ id: 'admin-2', role: 'admin' });
   const req = mockReq({ authorization: `Bearer ${token}` });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.ok(result !== null);
   assert.equal(result.role, 'admin');
 });
 
-test('requireAdmin: expired token → 401', () => {
+test('requireAdmin: expired token → 401', async () => {
   // Sign a token that expired 1 second ago
   const token = signJwt({ id: 'admin-3', role: 'admin' }, -1);
   const req = mockReq({ cookie: `sunvine_auth_token=${token}` });
   const res = mockRes();
-  const result = requireAdmin(req, res);
+  const result = await requireAdmin(req, res);
   assert.equal(result, null);
   assert.equal(res._status, 401);
 });

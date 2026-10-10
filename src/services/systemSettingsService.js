@@ -1,7 +1,31 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 
 export const systemSettingsService = {
   async getSystemSettings() {
+    try {
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'get' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && json.settings) {
+          const s = json.settings;
+          const tw = s.terms_and_warranties || {};
+          return {
+            companyProfile: s.company_profile,
+            bankDetails: s.bank_details,
+            termsAndWarranties: tw,
+            statutoryTaxes: s.statutory_taxes,
+            masterDocRegistry: tw.masterDocRegistry || s.master_doc_registry || null,
+            categoryDocRules: tw.categoryDocRules || s.category_doc_rules || null
+          };
+        }
+      }
+    } catch (_) {}
+
     try {
       const { data, error } = await supabase
         .from('system_settings')
@@ -31,23 +55,23 @@ export const systemSettingsService = {
     if (!settings) return { success: false, error: 'Settings required' };
 
     try {
-      const payload = {
-        id: 'global_settings',
-        company_profile: settings.companyProfile || settings,
-        bank_details: settings.bankDetails || {},
-        terms_and_warranties: settings.termsAndWarranties || {},
-        statutory_taxes: settings.statutoryTaxes || {},
-        updated_at: new Date().toISOString()
-      };
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          section: 'company_profile',
+          values: settings.companyProfile || settings
+        })
+      });
 
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert([payload], { onConflict: 'id' });
-
-      if (error) {
-        return { success: false, error: error.message };
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.settings };
       }
-      return { success: true, data };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to save system settings' };
     } catch (err) {
       return { success: false, error: err.message };
     }
@@ -55,31 +79,25 @@ export const systemSettingsService = {
 
   async saveDocumentRules(masterDocRegistry, categoryDocRules) {
     try {
-      const { data: curr } = await supabase
-        .from('system_settings')
-        .select('*')
-        .eq('id', 'global_settings')
-        .maybeSingle();
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          section: 'terms_and_warranties',
+          values: {
+            masterDocRegistry,
+            categoryDocRules
+          }
+        })
+      });
 
-      const tw = curr?.terms_and_warranties || {};
-      tw.masterDocRegistry = masterDocRegistry;
-      tw.categoryDocRules = categoryDocRules;
-
-      const payload = {
-        id: 'global_settings',
-        company_profile: curr?.company_profile || {},
-        bank_details: curr?.bank_details || {},
-        terms_and_warranties: tw,
-        statutory_taxes: curr?.statutory_taxes || {},
-        updated_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert([payload], { onConflict: 'id' });
-
-      if (error) return { success: false, error: error.message };
-      return { success: true, data };
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.settings };
+      }
+      return { success: true };
     } catch (err) {
       console.warn('[systemSettingsService] Save doc rules fallback:', err);
       return { success: false, error: err.message };
@@ -107,31 +125,25 @@ export const systemSettingsService = {
 
   async saveCustomUnitsAndCategories(units, categories) {
     try {
-      const { data: curr } = await supabase
-        .from('system_settings')
-        .select('*')
-        .eq('id', 'global_settings')
-        .maybeSingle();
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          section: 'terms_and_warranties',
+          values: {
+            customUnits: units,
+            customCategories: categories
+          }
+        })
+      });
 
-      const tw = curr?.terms_and_warranties || {};
-      if (Array.isArray(units)) tw.customUnits = units;
-      if (Array.isArray(categories)) tw.customCategories = categories;
-
-      const payload = {
-        id: 'global_settings',
-        company_profile: curr?.company_profile || {},
-        bank_details: curr?.bank_details || {},
-        terms_and_warranties: tw,
-        statutory_taxes: curr?.statutory_taxes || {},
-        updated_at: new Date().toISOString()
-      };
-
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert([payload], { onConflict: 'id' });
-
-      if (error) return { success: false, error: error.message };
-      return { success: true, data };
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.settings };
+      }
+      return { success: true };
     } catch (err) {
       console.error('[systemSettingsService] saveCustomUnitsAndCategories error:', err);
       return { success: false, error: err.message };

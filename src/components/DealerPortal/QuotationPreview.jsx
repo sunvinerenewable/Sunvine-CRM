@@ -14,6 +14,7 @@ import { useToast } from '../Shared/Toast';
 export default function QuotationPreview({
   isPublicView = false,
   publicQuoteId = null,
+  shareToken = null,
   quotation: propQuotation = null,
   isLoadingProp = false
 }) {
@@ -51,65 +52,151 @@ export default function QuotationPreview({
   const isPinchingRef = useRef(false);
   const pinchStateRef = useRef({ startDist: 0, startZoom: 1, docX: 0, docY: 0, lastMidX: 0, lastMidY: 0 });
 
-  // Asynchronously hydrate quotation from Supabase only in portal view without props
+  // Resolve preview quotation ID from URL query or session storage fallback
+  const getUrlOrStoredQuoteId = () => {
+    if (typeof window === 'undefined') return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    return (
+      urlParams.get('id') ||
+      urlParams.get('quoteId') ||
+      urlParams.get('quotationId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id') ||
+      null
+    );
+  };
+
+  // Asynchronously hydrate quotation from Supabase / database on refresh or direct load
   useEffect(() => {
-    if (propQuotation || isLoadingProp !== undefined) return;
-    if (isPublicView && publicQuoteId && !remoteFetchedQuote) {
-      const cleanId = String(publicQuoteId).trim().toLowerCase();
-      const foundInLocal = (quotations || []).some(
-        q => String(q.id || '').trim().toLowerCase() === cleanId ||
-             String(q.quoteId || '').trim().toLowerCase() === cleanId
-      );
+    if (propQuotation || isLoadingProp) return;
 
-      if (!foundInLocal) {
-        let isMounted = true;
-        setIsLoadingRemote(true);
-        quotationService.getQuotationById(publicQuoteId).then(quote => {
-          if (isMounted && quote) {
-            setRemoteFetchedQuote(quote);
-          }
-        }).catch(err => {
-          console.warn('Failed to fetch remote quote:', err);
-        }).finally(() => {
-          if (isMounted) setIsLoadingRemote(false);
-        });
-        return () => { isMounted = false; };
-      }
+    // Handle token-based public links directly
+    const token = isPublicView ? (shareToken || (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('token') ||
+      new URLSearchParams(window.location.search).get('shareToken')
+    ) : null)) : null;
+
+    if (token) {
+      let isMounted = true;
+      setIsLoadingRemote(true);
+      quotationService.getPublicProposal(token).then(quote => {
+        if (isMounted && quote) {
+          setRemoteFetchedQuote(quote);
+        }
+      }).catch(err => {
+        console.warn('Failed to fetch remote public quote:', err);
+      }).finally(() => {
+        if (isMounted) setIsLoadingRemote(false);
+      });
+      return () => { isMounted = false; };
     }
-  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, propQuotation, isLoadingProp]);
 
-  // Resolve active quotation: priority to prop, remote fetched, publicQuoteId, then state
+    const targetQuoteId = isPublicView ? publicQuoteId : getUrlOrStoredQuoteId();
+    if (!targetQuoteId) {
+      // If portal mode and activeQuotation is still null and quotations list is loaded, fallback to newest quotation
+      if (!isPublicView && !remoteFetchedQuote && !previewQuotation && (quotations || []).length > 0) {
+        setRemoteFetchedQuote(quotations[0]);
+      }
+      return;
+    }
+
+    const cleanId = String(targetQuoteId).trim().toLowerCase();
+    const foundInLocal = (quotations || []).find(
+      q => String(q.id || '').trim().toLowerCase() === cleanId ||
+           String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+           String(q.quotationNo || '').trim().toLowerCase() === cleanId
+    );
+
+    if (foundInLocal) {
+      if (!remoteFetchedQuote || remoteFetchedQuote.id !== foundInLocal.id) {
+        setRemoteFetchedQuote(foundInLocal);
+      }
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingRemote(true);
+    quotationService.getQuotationById(targetQuoteId).then(quote => {
+      if (isMounted && quote) {
+        setRemoteFetchedQuote(quote);
+      }
+    }).catch(err => {
+      console.warn('Failed to fetch remote quote:', err);
+    }).finally(() => {
+      if (isMounted) setIsLoadingRemote(false);
+    });
+
+    return () => { isMounted = false; };
+  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, previewQuotation, propQuotation, isLoadingProp]);
+
+  // Resolve active quotation: priority to prop, remote fetched, previewQuotation, or local cache
   const activeQuotation = useMemo(() => {
     if (propQuotation) return propQuotation;
-    if (isPublicView) {
-      if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (previewQuotation) return previewQuotation;
 
-      if (publicQuoteId) {
-        const cleanId = String(publicQuoteId).trim().toLowerCase();
-        // 1. Search in current state / localStorage quotations
-        const foundInState = quotations?.find(
-          q => String(q.id || '').trim().toLowerCase() === cleanId ||
-               String(q.quoteId || '').trim().toLowerCase() === cleanId ||
-               String(q.quotationNo || '').trim().toLowerCase() === cleanId
-        );
-        if (foundInState) return foundInState;
+    // Check query param or stored quote ID
+    const targetQuoteId = isPublicView ? publicQuoteId : (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('id') ||
+      new URLSearchParams(window.location.search).get('quoteId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id')
+    ) : null);
 
-        // 2. Fallback to URL encoded data payload if provided
-        if (typeof window !== 'undefined') {
-          try {
-            const dataParam = new URLSearchParams(window.location.search).get('data');
-            if (dataParam) {
-              const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
-              if (decoded) return decoded;
-            }
-          } catch (_) {}
-        }
-        return null; // Explicit ID provided, waiting or not found
-      }
-      return previewQuotation || null;
+    if (targetQuoteId) {
+      const cleanId = String(targetQuoteId).trim().toLowerCase();
+      const foundInState = quotations?.find(
+        q => String(q.id || '').trim().toLowerCase() === cleanId ||
+             String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+             String(q.quotationNo || '').trim().toLowerCase() === cleanId
+      );
+      if (foundInState) return foundInState;
     }
-    return previewQuotation;
-  }, [propQuotation, isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
+
+    // Public view URL encoded data fallback
+    if (isPublicView && typeof window !== 'undefined') {
+      try {
+        const dataParam = new URLSearchParams(window.location.search).get('data');
+        if (dataParam) {
+          const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
+          if (decoded) return decoded;
+        }
+      } catch (_) {}
+    }
+
+    // Portal view fallback: if quotations are available, show the most recent quotation
+    if (!isPublicView && (quotations || []).length > 0) {
+      return quotations[0];
+    }
+
+    return null;
+  }, [propQuotation, remoteFetchedQuote, previewQuotation, isPublicView, publicQuoteId, quotations]);
+
+  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+  const quotationWithProfile = useMemo(() => {
+    if (!activeQuotation) return null;
+    return {
+      ...activeQuotation,
+      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
+    };
+  }, [activeQuotation, companyProfile]);
+
+  // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeQuotation?.id) return;
+    try {
+      sessionStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      localStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      if (!isPublicView && window.location.pathname.includes('preview-quotation')) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('id') !== activeQuotation.id) {
+          params.set('id', activeQuotation.id);
+          const newUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ ...window.history.state, id: activeQuotation.id }, '', newUrl);
+        }
+      }
+    } catch (_) {}
+  }, [activeQuotation?.id, isPublicView]);
 
   // Initialize phone when quotation changes
   useEffect(() => {
@@ -463,9 +550,16 @@ export default function QuotationPreview({
     }
   };
 
-  const handleCopyMessage = () => {
+  const handleCopyMessage = async () => {
     if (!activeQuotation) return;
-    const msg = buildProposalWhatsAppMessage(activeQuotation);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const msg = buildProposalWhatsAppMessage(quoteToShare);
     navigator.clipboard.writeText(msg);
     setCopiedFeedback(true);
     setTimeout(() => setCopiedFeedback(false), 2000);
@@ -473,8 +567,14 @@ export default function QuotationPreview({
 
   const handleCopyOnlineLink = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLinkFeedback(true);
@@ -489,14 +589,21 @@ export default function QuotationPreview({
     } catch (e) {}
   };
 
-  const handleOpenOnlineView = () => {
+  const handleOpenOnlineView = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     window.open(url, '_blank');
   };
 
   if (isLoadingRemote || isLoadingProp) {
+    const displayId = (isPublicView ? (publicQuoteId || shareToken) : getUrlOrStoredQuoteId()) || '';
     return (
       <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-high">
         <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
@@ -504,7 +611,7 @@ export default function QuotationPreview({
         </div>
         <h3 className="text-base font-bold text-on-surface mb-1">Loading Solar Proposal...</h3>
         <p className="text-xs text-secondary">
-          Retrieving verified proposal <span className="font-mono font-semibold text-on-surface">{publicQuoteId || ''}</span>
+          Retrieving verified proposal {displayId ? <span className="font-mono font-semibold text-on-surface">{displayId}</span> : 'from database...'}
         </p>
       </div>
     );
@@ -512,6 +619,10 @@ export default function QuotationPreview({
 
   if (!activeQuotation) {
     if (isPublicView) {
+      const supportPhone = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+      const cleanWaPhone = String(companyProfile.whatsapp || '918000050580').replace(/\D/g, '');
+      const compName = companyProfile.name || 'Sunvine';
+
       return (
         <div className="max-w-2xl mx-auto my-12 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-md border border-surface-container-high">
           <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto mb-4">
@@ -519,18 +630,18 @@ export default function QuotationPreview({
           </div>
           <h3 className="text-xl font-bold text-on-surface mb-2">Proposal Not Found or Expired</h3>
           <p className="text-sm text-secondary mb-6 max-w-md mx-auto leading-relaxed">
-            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || 'N/A'}</span>. The proposal link may have expired or is unavailable.
+            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || shareToken || 'N/A'}</span>. The proposal link may have expired or is unavailable.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <a
-              href="tel:+918000050580"
+              href={`tel:${supportPhone.replace(/\s+/g, '')}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-xs shadow-sm hover:opacity-90 transition-all"
             >
               <span className="material-symbols-outlined text-[18px]">call</span>
-              <span>Call Helpline: +91 80000 50580</span>
+              <span>Call Helpline: {supportPhone}</span>
             </a>
             <a
-              href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
+              href={`https://api.whatsapp.com/send?phone=${cleanWaPhone}&text=${encodeURIComponent(`Hello ${compName} Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-semibold text-xs shadow-sm hover:bg-[#1EBE5B] transition-all"
@@ -749,7 +860,7 @@ export default function QuotationPreview({
             }}
             className="print:!w-auto print:!transform-none print:!static"
           >
-            <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
+            <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
           </div>
         </div>
       </div>
@@ -767,7 +878,7 @@ export default function QuotationPreview({
         }}
       >
         <div ref={pdfExportRef} className="pdf-export-container">
-          <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
+          <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
         </div>
       </div>
 
@@ -818,7 +929,7 @@ export default function QuotationPreview({
                   </div>
                 </div>
                 <div className="text-[11px] font-mono text-blue-800 bg-white/90 p-2 rounded-lg border border-blue-200 truncate select-all">
-                  {getPublicProposalUrl(activeQuotation.id)}
+                  {getPublicProposalUrl(activeQuotation)}
                 </div>
               </div>
 

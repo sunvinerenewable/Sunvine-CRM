@@ -1,6 +1,10 @@
-﻿node_modules
+node_modules
 dist
-.git
+.git*
 .github
 *.log
 scratch
+.env*
+*.md
+supabase
+scripts

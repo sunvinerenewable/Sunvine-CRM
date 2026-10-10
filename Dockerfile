@@ -7,17 +7,17 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci || npm install
+RUN npm ci
 
 # Copy source code and build
 COPY . .
 RUN npm run build
 
-# Production stage with Nginx
-FROM nginx:alpine
+# Production stage with unprivileged Nginx
+FROM nginxinc/nginx-unprivileged:alpine
 
-ENV PORT=80
-EXPOSE 80
+ENV PORT=8080
+EXPOSE 8080
 
 # Copy built static files to Nginx web root
 COPY --from=build /app/dist /usr/share/nginx/html

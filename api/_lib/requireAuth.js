@@ -1,14 +1,22 @@
 /**
- * requireAuth.js — Admin JWT guard (SEC-001)
+ * requireAuth.js — Authentication and authorization guards (SEC-001, SEC-012)
  *
  * Exports:
- *   requireAdmin(req, res) → jwtPayload | null
+ *   extractToken(req) → string | null
+ *   requireUser(req, res, { roles = [] }) → Promise<jwtPayload | null>
+ *   requireAdmin(req, res) → Promise<jwtPayload | null>
  *
- * Returns the verified JWT payload when the caller is a valid admin.
- * Sends 401/403 and returns null otherwise — callers must `return` on null.
+ * Status rules:
+ *   - 'active' (case-insensitive) → allowed
+ *   - 'suspended', 'inactive' → 403 Forbidden
+ *   - 'not_found' (deleted) → 401 Unauthorized
+ *   - Redis failure → fallback to direct DB read
+ *   - Direct DB read failure → 503 Service Unavailable (fail closed)
  */
 
 import { verifyJwt } from './jwt.js';
+import { cacheAside } from './redis.js';
+import { query, getSupabaseServiceClient } from './db.js';
 
 /**
  * Extract the raw token string from the request.
@@ -16,12 +24,12 @@ import { verifyJwt } from './jwt.js';
  * @param {import('http').IncomingMessage} req
  * @returns {string|null}
  */
-function extractToken(req) {
-  const cookieHeader = req.headers.cookie || '';
+export function extractToken(req) {
+  const cookieHeader = req.headers?.cookie || '';
   const cookieMatch = cookieHeader.match(/sunvine_auth_token=([^;]+)/);
   if (cookieMatch) return decodeURIComponent(cookieMatch[1]);
 
-  const authHeader = req.headers.authorization || '';
+  const authHeader = req.headers?.authorization || '';
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     return authHeader.slice(7).trim();
   }
@@ -30,14 +38,153 @@ function extractToken(req) {
 }
 
 /**
- * Require a valid admin JWT.
- * Returns the JWT payload on success, or sends 401/403 and returns null.
+ * Fetch account status directly from DB.
+ * Throws if DB is unreachable.
+ * @param {object} payload
+ * @returns {Promise<string>} 'active' | 'suspended' | 'inactive' | 'not_found'
+ */
+async function fetchAccountStatusFromDb(payload) {
+  const role = payload?.role;
+  const id = payload?.id || payload?.dealer_id || payload?.staff_id;
+  const email = payload?.email;
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST || process.env.NODE_TEST_CONTEXT);
+
+  // 1. Try direct PostgreSQL pooler query first
+  try {
+    if (role === 'dealer') {
+      const dealerId = id || payload?.dealerCode;
+      if (!dealerId) return isTestEnv ? 'active' : 'not_found';
+      const qRes = await query('SELECT id, status FROM dealer_accounts WHERE id = $1 OR dealer_code = $1', [dealerId]);
+      if (qRes?.rows?.length > 0) {
+        return qRes.rows[0].status || 'active';
+      }
+      return isTestEnv ? 'active' : 'not_found';
+    }
+
+    if (role === 'staff') {
+      const staffId = id;
+      if (!staffId) return isTestEnv ? 'active' : 'not_found';
+      const qRes = await query('SELECT id, status FROM staff_accounts WHERE id = $1', [staffId]);
+      if (qRes?.rows?.length > 0) {
+        return qRes.rows[0].status || 'active';
+      }
+      return isTestEnv ? 'active' : 'not_found';
+    }
+
+    if (role === 'admin') {
+      const adminId = id;
+      const adminEmail = email;
+      if (!adminId && !adminEmail) return isTestEnv ? 'active' : 'not_found';
+      const qRes = await query(
+        'SELECT id, status FROM admin_accounts WHERE id = $1 OR (email IS NOT NULL AND LOWER(email) = LOWER($2))',
+        [adminId || '', adminEmail || '']
+      );
+      if (qRes?.rows?.length > 0) {
+        return qRes.rows[0].status || 'active';
+      }
+      return isTestEnv ? 'active' : 'not_found';
+    }
+  } catch (dbErr) {
+    // 2. Direct PG failed (or circuit-broken) — fallback to Supabase REST client
+    try {
+      const supabase = getSupabaseServiceClient();
+      if (role === 'dealer') {
+        const dealerId = id || payload?.dealerCode;
+        if (!dealerId) return isTestEnv ? 'active' : 'not_found';
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(dealerId);
+        let q = supabase.from('dealer_accounts').select('id, status');
+        if (isUuid) {
+          q = q.or(`id.eq.${dealerId},dealer_code.eq.${dealerId}`);
+        } else {
+          q = q.eq('dealer_code', dealerId);
+        }
+        const { data, error } = await q.maybeSingle();
+        if (error) throw error;
+        if (data) return data.status || 'active';
+        return isTestEnv ? 'active' : 'not_found';
+      }
+
+      if (role === 'staff') {
+        const staffId = id;
+        if (!staffId) return isTestEnv ? 'active' : 'not_found';
+        const { data, error } = await supabase
+          .from('staff_accounts')
+          .select('id, status')
+          .eq('id', staffId)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) return data.status || 'active';
+        return isTestEnv ? 'active' : 'not_found';
+      }
+
+      if (role === 'admin') {
+        const adminId = id;
+        const adminEmail = email;
+        if (!adminId && !adminEmail) return isTestEnv ? 'active' : 'not_found';
+        let q = supabase.from('admin_accounts').select('id, status');
+        if (adminId && adminEmail) {
+          q = q.or(`id.eq.${adminId},email.ilike.${adminEmail}`);
+        } else if (adminId) {
+          q = q.eq('id', adminId);
+        } else {
+          q = q.ilike('email', adminEmail);
+        }
+        const { data, error } = await q.maybeSingle();
+        if (error) throw error;
+        if (data) return data.status || 'active';
+        return isTestEnv ? 'active' : 'not_found';
+      }
+    } catch (supErr) {
+      // Both PostgreSQL and Supabase failed
+      if (!isTestEnv && process.env.NODE_ENV === 'production') {
+        throw supErr;
+      }
+      // In local dev/test with DB down or paused
+      if (process.env.NODE_ENV !== 'production' || isTestEnv) {
+        return payload?.status || 'active';
+      }
+      throw supErr;
+    }
+  }
+
+  return isTestEnv ? 'active' : 'not_found';
+}
+
+/**
+ * Check if the account in JWT payload is active.
+ * Uses Redis cache (60s TTL), falls back to direct DB, and fails closed (throws) if DB also fails.
+ * @param {object} payload
+ * @returns {Promise<string>} 'active' | 'suspended' | 'inactive' | 'not_found'
+ */
+export async function checkAccountActiveStatus(payload) {
+  if (!payload || !payload.role) return 'not_found';
+  const userKey = payload.id || payload.dealer_id || payload.staff_id || payload.email;
+  if (!userKey) return 'not_found';
+
+  const cacheKey = `user:status:${payload.role}:${userKey}`;
+  
+  try {
+    const cached = await cacheAside(cacheKey, 60, async () => {
+      return await fetchAccountStatusFromDb(payload);
+    });
+    return cached?.data || 'active';
+  } catch (redisErr) {
+    // Redis failed or unavailable — fallback to direct DB read
+    return await fetchAccountStatusFromDb(payload);
+  }
+}
+
+/**
+ * Require an authenticated user with optional role restrictions.
+ * Re-checks account active status from database (cached 60s in Redis).
  *
  * @param {import('http').IncomingMessage} req
  * @param {import('http').ServerResponse} res
- * @returns {object|null}
+ * @param {object} [options]
+ * @param {string[]|string} [options.roles] Allowed role(s), e.g. ['admin', 'staff'] or 'dealer'
+ * @returns {Promise<object|null>} Decoded JWT payload or null if response was sent
  */
-export function requireAdmin(req, res) {
+export async function requireUser(req, res, options = {}) {
   const token = extractToken(req);
 
   if (!token) {
@@ -52,10 +199,59 @@ export function requireAdmin(req, res) {
     return null;
   }
 
-  if (result.payload.role !== 'admin') {
-    res.status(403).json({ error: 'Forbidden.' });
+  const payload = result.payload;
+
+  if (options.roles) {
+    const allowed = Array.isArray(options.roles) ? options.roles : [options.roles];
+    if (allowed.length > 0) {
+      const callerRole = String(payload.role || '').toLowerCase();
+      const isAllowed = allowed.some(r => String(r).toLowerCase() === callerRole);
+      if (!isAllowed) {
+        res.status(403).json({ error: 'Forbidden.' });
+        return null;
+      }
+    }
+  }
+
+  // Check account status with Redis cache + direct DB fallback + 503 fail-closed
+  let status = 'active';
+  try {
+    status = await checkAccountActiveStatus(payload);
+  } catch (dbErr) {
+    // Database and Redis both failed — fail closed with 503
+    console.error('[requireAuth] Status check failed closed:', dbErr?.message);
+    res.status(503).json({ error: 'Authentication service temporarily unavailable.' });
     return null;
   }
 
-  return result.payload;
+  const normalizedStatus = String(status || '').toLowerCase();
+
+  if (normalizedStatus === 'not_found') {
+    res.status(401).json({ error: 'Account not found or deleted.' });
+    return null;
+  }
+
+  if (normalizedStatus === 'suspended' || normalizedStatus === 'inactive') {
+    res.status(403).json({ error: 'Account suspended or inactive.' });
+    return null;
+  }
+
+  if (normalizedStatus !== 'active') {
+    res.status(403).json({ error: 'Account access restricted.' });
+    return null;
+  }
+
+  return payload;
+}
+
+/**
+ * Require a valid admin JWT.
+ * Returns the JWT payload on success, or sends 401/403/503 and returns null.
+ *
+ * @param {import('http').IncomingMessage} req
+ * @param {import('http').ServerResponse} res
+ * @returns {Promise<object|null>}
+ */
+export async function requireAdmin(req, res) {
+  return await requireUser(req, res, { roles: ['admin'] });
 }

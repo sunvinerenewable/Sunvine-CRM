@@ -1,6 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
+import { requireUser } from './_lib/requireAuth.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
+import {
+  DEFAULT_SUBSIDY_SLAB_1_RATE,
+  DEFAULT_SUBSIDY_SLAB_2_RATE,
+  DEFAULT_SUBSIDY_CAP
+} from '../src/shared/pricing/calculations.js';
 
 function parseCookies(cookieHeader = '') {
   const out = {};
@@ -19,6 +25,65 @@ function getDb() {
 }
 
 // ── Fetchers ───────────────────────────────────────────────────────────────
+
+export async function getSettings(db) {
+  const { data } = await cacheAside('catalog:settings', 21600, async () => {
+    const { data: row } = await db
+      .from('system_settings')
+      .select('*')
+      .eq('id', 'global_settings')
+      .maybeSingle();
+
+    const governance = row?.governance_settings || {};
+    const statutory = row?.statutory_taxes || {};
+    const company = row?.company_profile || {};
+    const bankDetails = row?.bank_details || {};
+
+    return {
+      governance_settings: {
+        max_discount_pct: governance.max_discount_pct !== undefined ? Number(governance.max_discount_pct) : 5,
+        max_system_kw: governance.max_system_kw !== undefined ? Number(governance.max_system_kw) : 1000,
+        quote_prefix: governance.quote_prefix || 'SV',
+        validity_days: governance.validity_days !== undefined ? Number(governance.validity_days) : 15,
+        default_specific_yield: governance.default_specific_yield !== undefined && governance.default_specific_yield !== null ? Number(governance.default_specific_yield) : null,
+        default_tariff: governance.default_tariff !== undefined && governance.default_tariff !== null ? Number(governance.default_tariff) : null,
+        default_loan_rate: governance.default_loan_rate !== undefined && governance.default_loan_rate !== null ? Number(governance.default_loan_rate) : null,
+        upload_max_mb: governance.upload_max_mb !== undefined ? Number(governance.upload_max_mb) : 2,
+        allow_custom_bom_lines: Boolean(governance.allow_custom_bom_lines),
+        max_custom_bom_value: Number(governance.max_custom_bom_value || 0)
+      },
+      statutory_taxes: {
+        subsidy: {
+          slab1Rate: (statutory.subsidy?.slab1Rate !== undefined && statutory.subsidy?.slab1Rate !== null && Number(statutory.subsidy.slab1Rate) > 0) ? Number(statutory.subsidy.slab1Rate) : DEFAULT_SUBSIDY_SLAB_1_RATE,
+          slab2Rate: (statutory.subsidy?.slab2Rate !== undefined && statutory.subsidy?.slab2Rate !== null && Number(statutory.subsidy.slab2Rate) > 0) ? Number(statutory.subsidy.slab2Rate) : DEFAULT_SUBSIDY_SLAB_2_RATE,
+          cap: (statutory.subsidy?.cap !== undefined && statutory.subsidy?.cap !== null && Number(statutory.subsidy.cap) > 0) ? Number(statutory.subsidy.cap) : DEFAULT_SUBSIDY_CAP,
+          breakpointKw: statutory.subsidy?.breakpointKw !== undefined ? Number(statutory.subsidy.breakpointKw) : 3
+        },
+        gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
+      },
+      company_profile: {
+        name: company.name || '',
+        gstin: company.gstin || '',
+        address: company.address || '',
+        state: company.state || '',
+        whatsapp: company.whatsapp || '',
+        helpdesk: company.helpdesk || '',
+        website: company.website || '',
+        email: company.email || '',
+        bank: {
+          bankName: company.bank?.bankName || company.bank_name || bankDetails.bankName || bankDetails.bank_name || '',
+          accountNumber: company.bank?.accountNumber || company.bank_account_no || bankDetails.accountNumber || bankDetails.account_number || '',
+          ifsc: company.bank?.ifsc || company.bank_ifsc || bankDetails.ifsc || bankDetails.ifsc_code || '',
+          branch: company.bank?.branch || company.bank_branch || bankDetails.branch || '',
+          accountHolder: company.bank?.accountHolder || company.bank_account_holder || bankDetails.accountHolder || bankDetails.account_holder || ''
+        },
+        terms: company.terms || '',
+        validityText: company.validityText || ''
+      }
+    };
+  });
+  return data;
+}
 
 async function getHardwareCatalog(db) {
   const { data } = await cacheAside('catalog:hardware', 21600, async () => {
@@ -45,9 +110,9 @@ async function getPricingPresets(db) {
 
     if (!row) return null;
     return {
-      baseRatePerKw: Number(row.base_rate_per_kw) || 59800,
-      subsidyCap: Number(row.subsidy_cap) || 78000,
-      minMarginPerKw: Number(row.min_margin_per_kw) || 4000,
+      baseRatePerKw: Number(row.base_rate_per_kw) || 0,
+      subsidyCap: Number(row.subsidy_cap) || 0,
+      minMarginPerKw: Number(row.min_margin_per_kw) || 0,
       enforceMinMargin: row.enforce_min_margin !== false,
       lastSynced: row.updated_at ? new Date(row.updated_at).toLocaleDateString() : 'Active',
       updatedBy: row.last_synced_by || 'Operations Desk'
@@ -105,6 +170,20 @@ async function getSolarBanks(db) {
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed. Use GET or POST.' });
+  }
+
+  const type = req.query?.type || 'bootstrap';
+
+  // Protected catalog sections require authenticated user (any role: dealer, staff, admin)
+  // Check auth BEFORE getDb so unauthenticated requests get 401 even without DB configured (Issue 5 / ITEM-8)
+  const PROTECTED_CATALOG_TYPES = new Set(['bootstrap', 'settings', 'tier_margins', 'presets']);
+  if (req.method === 'GET' && PROTECTED_CATALOG_TYPES.has(type)) {
+    const user = await requireUser(req, res);
+    if (!user) return;
+  }
+
   let db;
   try {
     db = getDb();
@@ -128,37 +207,45 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, invalidated: keys });
     }
 
+    if (action === 'invalidate_settings') {
+      const defaultKeys = ['catalog:settings', 'catalog:all'];
+      await Promise.all(defaultKeys.map(k => redisDel(k).catch(() => {})));
+      return res.status(200).json({ success: true, invalidated: defaultKeys });
+    }
+
     return res.status(400).json({ error: 'Invalid action or keys array.' });
   }
 
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method Not Allowed. Use GET.' });
-  }
-
-  const type = req.query?.type || 'bootstrap';
-
   try {
     if (type === 'bootstrap') {
-      const [hardware, presets, tierMargins, inverterBenchmarks, bosMatrix, solarBanks] = await Promise.all([
+      const [hardware, presets, tierMargins, inverterBenchmarks, bosMatrix, solarBanks, settings] = await Promise.all([
         getHardwareCatalog(db),
         getPricingPresets(db),
         getTierMargins(db),
         getInverterBenchmarks(db),
         getBosMatrix(db),
-        getSolarBanks(db)
+        getSolarBanks(db),
+        getSettings(db)
       ]);
 
       return res.status(200).json({
         success: true,
+        settings,
         catalog: {
           hardware,
           presets,
           tierMargins,
           inverterBenchmarks,
           bosMatrix,
-          solarBanks
+          solarBanks,
+          settings
         }
       });
+    }
+
+    if (type === 'settings') {
+      const settings = await getSettings(db);
+      return res.status(200).json({ success: true, settings });
     }
 
     if (type === 'hardware') {
@@ -197,3 +284,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to retrieve catalog data.' });
   }
 }
+

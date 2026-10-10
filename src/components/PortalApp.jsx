@@ -248,17 +248,27 @@ function PortalContent() {
 
       {/* Main Content Area */}
       <main className={`md:pl-64 pt-16 pb-24 md:pb-8 transition-all w-full min-w-0 max-w-full ${activeTab === 'preview_quote' ? 'overflow-visible' : 'overflow-x-clip'}`}>
-        <Suspense fallback={<ViewSkeleton />}>
-          {activeTab === 'preview_quote' ? (
+        {activeTab === 'preview_quote' ? (
+          <Suspense fallback={<ViewSkeleton activeTab={activeTab} />}>
             <div className="w-full min-w-0">
-              {renderView()}
+              {typeof window !== 'undefined' && window.location.search.includes('skeleton=1') ? (
+                <ViewSkeleton activeTab={activeTab} />
+              ) : (
+                renderView()
+              )}
             </div>
-          ) : (
-            <div className="p-3 sm:p-4 lg:p-6 xl:p-8 w-full max-w-[1600px] mx-auto min-w-0">
-              {renderView()}
-            </div>
-          )}
-        </Suspense>
+          </Suspense>
+        ) : (
+          <div className="p-3 sm:p-4 lg:p-6 xl:p-8 w-full max-w-[1600px] mx-auto min-w-0">
+            <Suspense fallback={<ViewSkeleton activeTab={activeTab} />}>
+              {typeof window !== 'undefined' && window.location.search.includes('skeleton=1') ? (
+                <ViewSkeleton activeTab={activeTab} />
+              ) : (
+                renderView()
+              )}
+            </Suspense>
+          </div>
+        )}
       </main>
 
       {/* Real-time Network Offline / Restored Status Banner */}

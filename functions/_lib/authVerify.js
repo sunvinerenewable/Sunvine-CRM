@@ -1,0 +1,42 @@
+import { verifyJwt } from './jwt.js';
+import { redisGet } from './redis.js';
+
+function parseCookies(cookieHeader) {
+  const list = {};
+  if (!cookieHeader) return list;
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.split('=');
+    list[parts.shift().trim()] = decodeURI(parts.join('='));
+  });
+  return list;
+}
+
+export default async function verifyHandler(request, env) {
+  const cookies = parseCookies(request.headers.get('cookie') || '');
+  const token = cookies.sunvine_auth_token || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  if (!token) {
+    return Response.json({ authenticated: false, error: 'No active session token' }, { status: 401 });
+  }
+
+  const result = await verifyJwt(token, env);
+  if (!result.valid) {
+    return Response.json({ authenticated: false, error: result.error }, { status: 401 });
+  }
+
+  if (result.payload?.jti) {
+    try {
+      const isRevoked = await redisGet(env, `session:blacklist:${result.payload.jti}`);
+      if (isRevoked) {
+        return Response.json({ authenticated: false, error: 'Session has been revoked or logged out.' }, { status: 401 });
+      }
+    } catch (err) {
+      console.warn('[Verify] Redis blacklist check warning:', err.message);
+    }
+  }
+
+  return Response.json({
+    authenticated: true,
+    user: result.payload
+  }, { status: 200 });
+}

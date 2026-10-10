@@ -5,7 +5,6 @@ import {
   DEFAULT_INVERTERS,
   INITIAL_DEALERS,
   INITIAL_QUOTATIONS,
-  DEFAULT_NOTIFICATIONS,
   PDF_BOS_PRICE_MATRIX,
   PDF_BOM_SPECIFICATIONS,
   SUNVINE_OFFICIAL_PROFILE
@@ -17,8 +16,6 @@ import {
   resolveCapacityBom
 } from '../data/standardBomData';
 import {
-  DEFAULT_STAFF,
-  DEFAULT_CUSTOMER_FILES,
   getAssignedStaffForDealer
 } from '../data/staffData';
 import {
@@ -85,7 +82,32 @@ export const DEFAULT_GOVERNANCE_SETTINGS = {
   lastBackupTimestamp: 'Today, 01:15 AM'
 };
 
-const AppContext = createContext();
+const defaultContextValue = {
+  dealers: [],
+  staffList: [],
+  quotations: [],
+  customerFiles: [],
+  pricingPresets: [],
+  tierMargins: {},
+  systemSettings: {},
+  governanceSettings: DEFAULT_GOVERNANCE_SETTINGS,
+  modulesList: [],
+  invertersList: [],
+  solarBanks: [],
+  auditLogs: [],
+  designRecords: [],
+  currentUser: null,
+  currentDealer: null,
+  currentStaff: null,
+  isAuthenticated: false,
+  role: 'dealer',
+  activeTab: 'dashboard',
+  setActiveTab: () => {},
+  addNotification: () => {},
+  refreshDatabase: async () => {}
+};
+
+const AppContext = createContext(defaultContextValue);
 
 const TAB_TO_PATH = {
   // Dealer & Common
@@ -143,6 +165,32 @@ const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   '/admin/quotations': 'all_quotes'
 });
 
+// Safe storage parser and serializer
+const safeJsonParse = (key, fallback) => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const item = localStorage.getItem(key);
+    if (!item || item === 'undefined' || item === 'null') return fallback;
+    const parsed = JSON.parse(item);
+    return parsed ?? fallback;
+  } catch (err) {
+    console.warn(`[Sunvine Storage] Resetting corrupted key: ${key}`);
+    try {
+      localStorage.removeItem(key);
+    } catch (_) {}
+    return fallback;
+  }
+};
+
+const safeSetItem = (key, value) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  } catch (err) {
+    console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
+  }
+};
+
 const isPublicProposalRoute = () => {
   if (typeof window === 'undefined') return false;
   const search = window.location.search || '';
@@ -185,6 +233,7 @@ const getInitialTabFromUrl = () => {
 
 export const AppProvider = ({ children }) => {
   // Authentication & Session State (Tab-isolated via sessionStorage first, fallback to device localStorage)
+  const [currentUser, setCurrentUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== 'undefined') {
       const sessAuth = sessionStorage.getItem('sunvine_auth');
@@ -443,48 +492,6 @@ export const AppProvider = ({ children }) => {
       }
     }
   }, [isAuthenticated, activeTab, role]);
-  
-// Tab-isolated session keys set
-const SESSION_KEYS = new Set([
-  'sunvine_auth',
-  'sunvine_role',
-  'sunvine_tab',
-  'sunvine_current_dealer',
-  'sunvine_current_staff',
-  'sunvine_session_token'
-]);
-
-// Safe storage parser and serializer (sessionStorage takes priority for tab isolation)
-const safeJsonParse = (key, fallback) => {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    if (SESSION_KEYS.has(key)) {
-      const sessItem = sessionStorage.getItem(key);
-      if (sessItem && sessItem !== 'undefined' && sessItem !== 'null') {
-        return JSON.parse(sessItem) ?? fallback;
-      }
-    }
-    const item = localStorage.getItem(key);
-    if (!item || item === 'undefined' || item === 'null') return fallback;
-    const parsed = JSON.parse(item);
-    return parsed ?? fallback;
-  } catch (err) {
-    return fallback;
-  }
-};
-
-const safeSetItem = (key, value) => {
-  if (typeof window === 'undefined') return;
-  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-  try {
-    if (SESSION_KEYS.has(key)) {
-      sessionStorage.setItem(key, serialized);
-    }
-    localStorage.setItem(key, serialized);
-  } catch (err) {
-    console.warn(`[Sunvine Storage] Storage write suppressed for: ${key}`, err);
-  }
-};
 
   // Startup: One-time purge of legacy business entity keys from browser localStorage
   useEffect(() => {
@@ -534,14 +541,14 @@ const safeSetItem = (key, value) => {
     return safeJsonParse('sunvine_current_dealer', null) || null;
   });
 
-  // Master Pricing Presets (Configurable by Admin & synced with PDF)
-  const [pricingMaster, setPricingMaster] = useState(DEFAULT_PRICING_MASTER);
+  // Master Pricing Presets (Configurable by Admin & synced with database)
+  const [pricingMaster, setPricingMaster] = useState(null);
 
   // Benchmark Quotation Presets (Admin & Dealer Sync)
-  const [pricingPresets, setPricingPresets] = useState(() => cacheManager.get('pricing_presets', DEFAULT_PRICING_MASTER.quotationPresets));
+  const [pricingPresets, setPricingPresets] = useState(() => cacheManager.get('pricing_presets', null));
 
   // Commission Margins & Protective Caps by Dealer Tier
-  const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', DEFAULT_PRICING_MASTER.tierMargins));
+  const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', null));
 
   // Admin Master Governance & Policy Settings
   const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
@@ -625,7 +632,21 @@ const safeSetItem = (key, value) => {
   const [quotations, setQuotations] = useState(() => cacheManager.get('quotations_feed', []));
 
   // Active quotation loaded in 4-Page Preview
-  const [previewQuotation, setPreviewQuotation] = useState(null);
+  const [previewQuotationState, setPreviewQuotationState] = useState(null);
+  const previewQuotation = previewQuotationState;
+
+  const setPreviewQuotation = useCallback((quoteOrFn) => {
+    setPreviewQuotationState(prev => {
+      const next = typeof quoteOrFn === 'function' ? quoteOrFn(prev) : quoteOrFn;
+      if (typeof window !== 'undefined' && next?.id) {
+        try {
+          sessionStorage.setItem('sunvine_preview_quote_id', next.id);
+          localStorage.setItem('sunvine_preview_quote_id', next.id);
+        } catch (_) {}
+      }
+      return next;
+    });
+  }, []);
 
   // Active quotation loaded for Editing in CreateQuotation
   const [editingQuotation, setEditingQuotation] = useState(null);
@@ -638,7 +659,7 @@ const safeSetItem = (key, value) => {
 
   // Current Logged-in Staff Member
   const [currentStaff, setCurrentStaff] = useState(() => {
-    return safeJsonParse('sunvine_current_staff', DEFAULT_STAFF[0]) || DEFAULT_STAFF[0];
+    return safeJsonParse('sunvine_current_staff', null) || null;
   });
 
   // Dynamic user-scoped storage key so Admin acknowledging an item never clears the "NEW" badge for Dealers
@@ -705,7 +726,8 @@ const safeSetItem = (key, value) => {
       }
 
       const tierLower = (d.tier || '').toLowerCase();
-      const defaultTierMargin = tierLower.includes('diamond') ? 6500 : tierLower.includes('platinum') ? 5500 : tierLower.includes('silver') ? 3500 : 4500;
+      const tierKey = tierLower.includes('diamond') ? 'diamond' : tierLower.includes('platinum') ? 'platinum' : tierLower.includes('silver') ? 'silver' : 'gold';
+      const dynamicDefaultMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? (d.pricingConfig?.customMarginPerKw ?? 0);
       const category = d.category || d.pricingConfig?.category || 'Margin Based';
       return {
         ...d,
@@ -719,9 +741,9 @@ const safeSetItem = (key, value) => {
           assignedStaffId,
           assignedStaffName,
           pricingMode: d.pricingConfig?.pricingMode || 'standard',
-          customBaseRatePerWp: d.pricingConfig?.customBaseRatePerWp || 18.00,
-          customBaseRatePerKw: d.pricingConfig?.customBaseRatePerKw || 58000,
-          customMarginPerKw: d.pricingConfig?.customMarginPerKw || defaultTierMargin,
+          customBaseRatePerWp: d.pricingConfig?.customBaseRatePerWp ?? null,
+          customBaseRatePerKw: d.pricingConfig?.customBaseRatePerKw ?? null,
+          customMarginPerKw: d.pricingConfig?.customMarginPerKw !== undefined ? d.pricingConfig.customMarginPerKw : dynamicDefaultMargin,
           customDiscountPercent: d.pricingConfig?.customDiscountPercent || 0,
           customNotes: d.pricingConfig?.customNotes || ''
         }
@@ -938,175 +960,32 @@ const safeSetItem = (key, value) => {
     hydrateAllFromSupabase();
   }, [hydrateAllFromSupabase]);
 
-  // Real-time Supabase Database Subscriptions across all major tables
-  useEffect(() => {
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const formatted = normalizeQuotationRow(payload.new);
-          if (formatted) setQuotations(prev => [formatted, ...prev.filter(q => q.id !== formatted.id)]);
-        } else if (payload.eventType === 'UPDATE') {
-          const formatted = normalizeQuotationRow(payload.new);
-          if (formatted) setQuotations(prev => prev.map(q => q.id === formatted.id ? { ...q, ...formatted } : q));
-        } else if (payload.eventType === 'DELETE') {
-          setQuotations(prev => prev.filter(q => q.id !== payload.old?.id));
-        }
-      })
-
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_files' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const formatted = normalizeCustomerFileRow(payload.new);
-          if (formatted) {
-            setCustomerFiles(prev => {
-              const next = [formatted, ...prev.filter(f => f.id !== formatted.id)];
-              cacheManager.set('customer_files', next);
-              return next;
-            });
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          const formatted = normalizeCustomerFileRow(payload.new);
-          if (formatted) {
-            setCustomerFiles(prev => {
-              const next = prev.map(f => f.id === formatted.id ? { ...f, ...formatted } : f);
-              cacheManager.set('customer_files', next);
-              return next;
-            });
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setCustomerFiles(prev => {
-            const next = prev.filter(f => f.id !== payload.old?.id);
-            cacheManager.set('customer_files', next);
-            return next;
-          });
-        }
-
-        // Silent relational sync with database
-        customerFileService.getAllCustomerFiles().then(data => {
-          if (data && Array.isArray(data)) {
-            const attributed = ensureCustomerFileAttribution(data);
-            setCustomerFiles(attributed);
-            cacheManager.set('customer_files', attributed);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_modules' }, () => {
-        hardwareService.getAllModules().then(data => {
-          if (Array.isArray(data)) {
-            setModulesList(data);
-            cacheManager.set('modules_list', data);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'solar_inverters' }, () => {
-        hardwareService.getAllInverters().then(data => {
-          if (Array.isArray(data)) {
-            const canonicalInverters = data.map(inv => {
-              if (!inv.brand) return inv;
-              const cleanBrand = inv.brand.trim();
-              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
-            });
-            setInvertersList(canonicalInverters);
-            cacheManager.set('inverters_list', canonicalInverters);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pricing_presets' }, () => {
-        pricingService.getPricingPresets().then(data => { if (data) setPricingPresets(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bos_pricing_matrix' }, () => {
-        pricingService.getBosMatrix().then(data => { if (data) setPdfBosMatrix(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inverter_benchmark_matrix' }, () => {
-        pricingService.getInverterBenchmarks().then(data => { if (data) setInverterBenchmarkMatrix(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_custom_pricing' }, () => {
-        pricingService.getTierMargins().then(data => { if (data) setTierMargins(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'dealer_accounts' }, () => {
-        dealerService.getAllDealers().then(data => {
-          if (Array.isArray(data)) {
-            const attributed = ensureDealerAttribution(data);
-            setDealers(attributed);
-            cacheManager.set('dealers_list', attributed);
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_accounts' }, () => {
-        staffService.getAllStaff().then(data => {
-          if (Array.isArray(data)) setStaffList(data);
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog_items' }, () => {
-        hardwareService.getAllBomItems().then(data => {
-          if (Array.isArray(data)) {
-            setBomCatalog(data);
-            cacheManager.set('bom_catalog', data);
-            setBomRates(() => {
-              const next = {};
-              data.forEach(it => {
-                if (it.defaultRate !== undefined) {
-                  next[it.id] = it.defaultRate;
-                }
-              });
-              return next;
-            });
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'bom_catalog' }, () => {
-        hardwareService.getAllBomItems().then(data => {
-          if (Array.isArray(data)) {
-            setBomCatalog(data);
-            cacheManager.set('bom_catalog', data);
-            setBomRates(() => {
-              const next = {};
-              data.forEach(it => {
-                if (it.defaultRate !== undefined) {
-                  next[it.id] = it.defaultRate;
-                }
-              });
-              return next;
-            });
-          }
-        });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
-        auditLogService.getNotifications().then(data => { if (data) setNotifications(data); });
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'document_master' }, async () => {
-        try {
-          const freshDocs = await documentMasterService.fetchDocumentMaster();
-          if (freshDocs && Array.isArray(freshDocs.registry) && freshDocs.registry.length > 0) {
-            setMasterDocRegistry(freshDocs.registry);
-            if (freshDocs.rules) setCategoryDocRules(freshDocs.rules);
-          }
-        } catch (err) {
-          console.warn('[AppContext] Realtime document_master sync error:', err);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
   // Multi-Tab Focus & Periodic Auto-Sync (Instant update when user adds rows in Supabase Table Editor or other tabs)
   useEffect(() => {
-    const syncFreshData = async () => {
+    const syncFreshData = async (includeCatalog = false) => {
       try {
-        const [files, quotes, docMaster, freshStaff, freshDealers, freshModules, freshInverters, freshBom, freshNotifs] = await Promise.allSettled([
-          customerFileService.getAllCustomerFiles(),
+        const fetchTasks = [
+          customerFileService.getAllCustomerFiles({ throwOnError: false }),
           quotationService.getAllQuotations(100),
-          documentMasterService.fetchDocumentMaster(),
-          staffService.getAllStaff(),
-          dealerService.getAllDealers(),
-          hardwareService.getAllModules(),
-          hardwareService.getAllInverters(),
-          hardwareService.getAllBomItems(),
           auditLogService.getNotifications()
-        ]);
+        ];
+
+        if (includeCatalog) {
+          fetchTasks.push(
+            documentMasterService.fetchDocumentMaster(),
+            staffService.getAllStaff(),
+            dealerService.getAllDealers(),
+            hardwareService.getAllModules(),
+            hardwareService.getAllInverters(),
+            hardwareService.getAllBomItems()
+          );
+        }
+
+        const results = await Promise.allSettled(fetchTasks);
+        const files = results[0];
+        const quotes = results[1];
+        const freshNotifs = results[2];
+
         if (files.status === 'fulfilled' && Array.isArray(files.value) && files.value.length > 0) {
           const attributed = ensureCustomerFileAttribution(files.value);
           setCustomerFiles(prev => {
@@ -1130,40 +1009,49 @@ const safeSetItem = (key, value) => {
             return prev;
           });
         }
-        // Only update if DB returned actual rows; empty [] means network error — don't overwrite valid state
-        if (freshStaff.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
-          setStaffList(freshStaff.value);
-        }
-        if (freshDealers.status === 'fulfilled' && Array.isArray(freshDealers.value) && freshDealers.value.length > 0) {
-          const attributed = ensureDealerAttribution(freshDealers.value);
-          setDealers(attributed);
-          cacheManager.set('dealers_list', attributed);
-        }
-        if (docMaster.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
-          setMasterDocRegistry(docMaster.value.registry);
-          if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
-            setCategoryDocRules(docMaster.value.rules);
-          }
-        }
-        if (freshModules.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
-          setModulesList(freshModules.value);
-          cacheManager.set('modules_list', freshModules.value);
-        }
-        if (freshInverters.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
-          const canonicalInverters = freshInverters.value.map(inv => {
-            if (!inv.brand) return inv;
-            const cleanBrand = inv.brand.trim();
-            return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
-          });
-          setInvertersList(canonicalInverters);
-          cacheManager.set('inverters_list', canonicalInverters);
-        }
-        if (freshBom.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
-          setBomCatalog(freshBom.value);
-          cacheManager.set('bom_catalog', freshBom.value);
-        }
         if (freshNotifs.status === 'fulfilled' && Array.isArray(freshNotifs.value)) {
           setNotifications(freshNotifs.value);
+        }
+
+        if (includeCatalog && results.length >= 9) {
+          const docMaster = results[3];
+          const freshStaff = results[4];
+          const freshDealers = results[5];
+          const freshModules = results[6];
+          const freshInverters = results[7];
+          const freshBom = results[8];
+
+          if (docMaster?.status === 'fulfilled' && docMaster.value && Array.isArray(docMaster.value.registry) && docMaster.value.registry.length > 0) {
+            setMasterDocRegistry(docMaster.value.registry);
+            if (docMaster.value.rules && typeof docMaster.value.rules === 'object') {
+              setCategoryDocRules(docMaster.value.rules);
+            }
+          }
+          if (freshStaff?.status === 'fulfilled' && Array.isArray(freshStaff.value) && freshStaff.value.length > 0) {
+            setStaffList(freshStaff.value);
+          }
+          if (freshDealers?.status === 'fulfilled' && Array.isArray(freshDealers.value) && freshDealers.value.length > 0) {
+            const attributed = ensureDealerAttribution(freshDealers.value);
+            setDealers(attributed);
+            cacheManager.set('dealers_list', attributed);
+          }
+          if (freshModules?.status === 'fulfilled' && Array.isArray(freshModules.value) && freshModules.value.length > 0) {
+            setModulesList(freshModules.value);
+            cacheManager.set('modules_list', freshModules.value);
+          }
+          if (freshInverters?.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
+            const canonicalInverters = freshInverters.value.map(inv => {
+              if (!inv.brand) return inv;
+              const cleanBrand = inv.brand.trim();
+              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+            });
+            setInvertersList(canonicalInverters);
+            cacheManager.set('inverters_list', canonicalInverters);
+          }
+          if (freshBom?.status === 'fulfilled' && Array.isArray(freshBom.value) && freshBom.value.length > 0) {
+            setBomCatalog(freshBom.value);
+            cacheManager.set('bom_catalog', freshBom.value);
+          }
         }
       } catch (err) {
         // silent background sync
@@ -1171,20 +1059,31 @@ const safeSetItem = (key, value) => {
     };
 
     let lastSyncTime = 0;
-    const MIN_SYNC_INTERVAL_MS = 10000; // 10 seconds minimum cooldown between focus syncs
+    const MIN_SYNC_INTERVAL_MS = 60000; // 60 seconds minimum cooldown between focus syncs (prevents Redis quota burn)
 
     // Throttled sync to prevent request storms on rapid window/tab focus switches
     const throttledSync = () => {
       const now = Date.now();
       if (now - lastSyncTime < MIN_SYNC_INTERVAL_MS) return;
       lastSyncTime = now;
-      if (document.visibilityState !== 'hidden') {
-        syncFreshData();
+      if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+        syncFreshData(false);
       }
     };
 
-    window.addEventListener('focus', throttledSync);
-    document.addEventListener('visibilitychange', throttledSync);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', throttledSync);
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', throttledSync);
+    }
+
+    // 120-second periodic background polling interval (protects Upstash Redis quota)
+    const intervalTimer = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        syncFreshData(false);
+      }
+    }, 120000);
 
     // BroadcastChannel for instant intentional cross-tab updates (when user actively edits data)
     let broadcastChannel;
@@ -1192,11 +1091,11 @@ const safeSetItem = (key, value) => {
       if (typeof BroadcastChannel !== 'undefined') {
         broadcastChannel = new BroadcastChannel('sunvine_db_sync');
         broadcastChannel.onmessage = (msg) => {
-          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL' || msg?.data?.type === 'SYNC_FILES') {
+          if (msg?.data?.type === 'SYNC_STAFF' || msg?.data?.type === 'SYNC_DEALERS' || msg?.data?.type === 'SYNC_ALL' || msg?.data?.type === 'SYNC_FILES' || msg?.data?.type === 'SYNC_QUOTATIONS') {
             const now = Date.now();
             if (now - lastSyncTime >= 3000) {
               lastSyncTime = now;
-              syncFreshData();
+              syncFreshData(msg?.data?.type === 'SYNC_ALL');
             }
           }
         };
@@ -1204,8 +1103,13 @@ const safeSetItem = (key, value) => {
     } catch (_) {}
 
     return () => {
-      window.removeEventListener('focus', throttledSync);
-      document.removeEventListener('visibilitychange', throttledSync);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', throttledSync);
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', throttledSync);
+      }
+      clearInterval(intervalTimer);
       if (broadcastChannel) broadcastChannel.close();
     };
   }, []);
@@ -1351,7 +1255,7 @@ const safeSetItem = (key, value) => {
       name: (newItem.name || 'New Hardware Component').trim(),
       description: newItem.description || '',
       unit: newItem.unit || 'Nos',
-      defaultRate: Number(newItem.defaultRate || newItem.rate) || 100,
+      defaultRate: Number(newItem.defaultRate !== undefined ? newItem.defaultRate : (newItem.rate !== undefined ? newItem.rate : 0)) || 0,
       make: newItem.make || 'Approved Brand',
       specs: newItem.specs || '',
       gstRate: Number(newItem.gstRate !== undefined ? newItem.gstRate : 18),
@@ -1503,6 +1407,7 @@ const safeSetItem = (key, value) => {
     startTransition(() => {
       setIsAuthenticated(true);
       setRole(userRole);
+      setCurrentUser(userProfile ? { ...userProfile, role: userRole } : { role: userRole });
       safeSetItem('sunvine_auth', 'true');
       safeSetItem('sunvine_role', userRole);
       if (userRole === 'admin') {
@@ -1510,6 +1415,7 @@ const safeSetItem = (key, value) => {
         pushNotificationService.autoSyncIfPermitted({ userId: 'admin', role: 'admin' });
       } else if (userRole === 'staff') {
         const isVerification = Boolean(
+          userProfile?.is_verification ||
           String(userProfile?.department || '').toLowerCase() === 'verification' ||
           String(userProfile?.role || '').toLowerCase().includes('verification')
         );
@@ -1530,6 +1436,7 @@ const safeSetItem = (key, value) => {
   const logout = () => {
     startTransition(() => {
       setIsAuthenticated(false);
+      setCurrentUser(null);
       setAuthView('dealer_login', true);
     });
     try {
@@ -1542,22 +1449,50 @@ const safeSetItem = (key, value) => {
     } catch (_) {}
     localStorage.removeItem('sunvine_auth');
     localStorage.removeItem('sunvine_current_staff');
+    localStorage.removeItem('sunvine_current_dealer');
     if (typeof window !== 'undefined') {
       window.history.replaceState({ authView: 'dealer_login' }, '', '/login');
     }
     authService.logout().catch(() => {});
   };
 
-  // The UI flag can outlive the token. Validate on load using tab-isolated token header;
-  // only a definite 401 logs the user out.
+  // Enterprise Authentication & Server Verification (SEC-014)
+  // On mount, strictly verify session cookie with server. localStorage role is only a transient hint until verified.
   useEffect(() => {
-    if (!isAuthenticated) return;
-    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    fetch('/api/auth/verify', { headers, credentials: 'include' })
-      .then(res => { if (res.status === 401) logout(); })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let isMounted = true;
+    async function verifyAuthSession() {
+      try {
+        const res = await fetch('/api/auth/verify', { method: 'GET', credentials: 'include' });
+        if (!isMounted) return;
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data?.authenticated && data?.user) {
+            setIsAuthenticated(true);
+            setCurrentUser(data.user);
+            if (data.user.role) {
+              setRole(data.user.role);
+            }
+            if (data.user.role === 'dealer') {
+              setCurrentDealer(prev => ({ ...(prev || {}), ...data.user }));
+            } else if (data.user.role === 'staff') {
+              setCurrentStaff(prev => ({ ...(prev || {}), ...data.user }));
+            }
+            return;
+          }
+        }
+        if (res.status === 401 || !res.ok) {
+          setIsAuthenticated(false);
+          setCurrentUser(null);
+          localStorage.removeItem('sunvine_auth');
+          localStorage.removeItem('sunvine_current_staff');
+          localStorage.removeItem('sunvine_current_dealer');
+        }
+      } catch (err) {
+        console.warn('[AppContext] Session verification notice:', err);
+      }
+    }
+    verifyAuthSession();
+    return () => { isMounted = false; };
   }, []);
 
   // Staff and Customer File Actions
@@ -1690,41 +1625,55 @@ const safeSetItem = (key, value) => {
         staffId: assignedStaffId,
         staffName: assignedStaffName
       };
+    }
 
-      // 2. Dispatch OS-level Web Push notification + Slack notification to Admin & matching Salesman
+    // 2. Persist directly to DB first (Database Single Source of Truth)
+    const saveRes = await customerFileService.saveCustomerFile(fileToSave);
+    if (!saveRes || !saveRes.success) {
+      throw new Error(saveRes?.error || 'Database persistence failed. Customer application could not be saved.');
+    }
+
+    const savedCanonicalFile = saveRes.data || fileToSave;
+
+    // 3. Dispatch Push Notification only after verified DB persistence
+    if (isDealerSourced) {
       pushNotificationService.sendApplicationCreatedPush({
-        fileId: fileToSave.id,
-        customerName: fileToSave.customerName,
-        solarKw: fileToSave.solarSystemKw,
-        sanctionedLoadKw: fileToSave.sanctionedLoadKw,
-        dealerId: fileToSave.dealerId,
-        dealerName: fileToSave.dealerName,
-        assignedStaffId,
-        assignedStaffName,
-        city: fileToSave.city,
-        discom: fileToSave.discom || fileToSave.discomCircle,
-        financeType: fileToSave.financeType || fileToSave.paymentMode,
-        roofType: fileToSave.roofType
+        fileId: savedCanonicalFile.id,
+        customerName: savedCanonicalFile.customerName,
+        solarKw: savedCanonicalFile.solarSystemKw,
+        sanctionedLoadKw: savedCanonicalFile.sanctionedLoadKw,
+        dealerId: savedCanonicalFile.dealerId,
+        dealerName: savedCanonicalFile.dealerName,
+        assignedStaffId: savedCanonicalFile.staffId,
+        assignedStaffName: savedCanonicalFile.staffName,
+        city: savedCanonicalFile.city,
+        discom: savedCanonicalFile.discom || savedCanonicalFile.discomCircle,
+        financeType: savedCanonicalFile.financeType || savedCanonicalFile.paymentMode,
+        roofType: savedCanonicalFile.roofType
       });
     }
 
-    setCustomerFiles(prev => [fileToSave, ...prev]);
-    // Also update staff totalFiles and pipelineKw
-    if (fileToSave.staffId) {
-      setStaffList(prev => prev.map(s => s.id === fileToSave.staffId ? {
+    // 4. Update React state and staff stats with canonical persisted row
+    setCustomerFiles(prev => {
+      const filtered = (prev || []).filter(f => f.id !== savedCanonicalFile.id);
+      const nextList = [savedCanonicalFile, ...filtered];
+      cacheManager.set('customer_files', nextList);
+      return nextList;
+    });
+
+    if (savedCanonicalFile.staffId) {
+      setStaffList(prev => prev.map(s => s.id === savedCanonicalFile.staffId ? {
         ...s,
         totalFiles: (s.totalFiles || 0) + 1,
-        pipelineKw: Number(((s.pipelineKw || 0) + (fileToSave.solarSystemKw || 0)).toFixed(1))
+        pipelineKw: Number(((s.pipelineKw || 0) + (savedCanonicalFile.solarSystemKw || 0)).toFixed(1))
       } : s));
     }
-    try {
-      await customerFileService.saveCustomerFile(fileToSave);
-    } catch (e) {
-      console.warn('[AppContext] Failed to save customer file to DB:', e);
-    }
+
+    broadcastDbEvent('SYNC_FILES');
+    return savedCanonicalFile;
   };
 
-  const logActivity = (logEntry) => {
+  function logActivity(logEntry) {
     const newLog = {
       id: logEntry.id || `LOG-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       timestamp: new Date().toISOString(),
@@ -2128,26 +2077,63 @@ const safeSetItem = (key, value) => {
   };
 
   // Quotation Actions
-  const addQuotation = (newQuote) => {
-    const updated = [newQuote, ...quotations];
-    setQuotations(updated);
-    setPreviewQuotation(newQuote);
-    // Sync directly to Supabase DB
-    quotationService.saveQuotation(newQuote);
+  const addQuotation = async (newQuote) => {
+    try {
+      const res = await quotationService.saveQuotation(newQuote);
+      if (!res?.success) {
+        throw new Error(res?.error || 'Failed to save quotation to database.');
+      }
+      const savedRecord = res.data ? normalizeQuotationRow(res.data) : newQuote;
+      setQuotations(prev => {
+        const next = [savedRecord, ...(prev || []).filter(q => q.id !== savedRecord.id && q.id !== newQuote.id)];
+        cacheManager.set('quotations_feed', next);
+        return next;
+      });
+      setPreviewQuotation(savedRecord);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: savedRecord.id });
+          bc.close();
+        }
+      } catch (_) {}
+
+      return savedRecord;
+    } catch (err) {
+      console.error('[AppContext] Failed to save quotation:', err);
+      throw err;
+    }
   };
 
-  const updateQuotation = (updatedQuote) => {
-    setQuotations(prev => {
-      const exists = prev.some(q => q.id === updatedQuote.id);
-      if (exists) {
-        return prev.map(q => q.id === updatedQuote.id ? { ...q, ...updatedQuote } : q);
+  const updateQuotation = async (updatedQuote) => {
+    try {
+      const res = await quotationService.saveQuotation({ ...updatedQuote, isEdit: true });
+      if (!res?.success) {
+        throw new Error(res?.error || 'Failed to update quotation in database.');
       }
-      return [updatedQuote, ...prev];
-    });
-    setPreviewQuotation(updatedQuote);
-    setEditingQuotation(null);
-    // Sync directly to Supabase DB
-    quotationService.saveQuotation(updatedQuote);
+      const savedRecord = res.data ? normalizeQuotationRow(res.data) : updatedQuote;
+      setQuotations(prev => {
+        const next = (prev || []).map(q => q.id === savedRecord.id ? savedRecord : q);
+        cacheManager.set('quotations_feed', next);
+        return next;
+      });
+      setPreviewQuotation(savedRecord);
+      setEditingQuotation(null);
+
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: savedRecord.id });
+          bc.close();
+        }
+      } catch (_) {}
+
+      return savedRecord;
+    } catch (err) {
+      console.error('[AppContext] Failed to update quotation:', err);
+      throw err;
+    }
   };
 
   const startEditingQuotation = (quote) => {
@@ -2167,15 +2153,28 @@ const safeSetItem = (key, value) => {
     setEditingQuotation(null);
   };
 
-  const updateQuotationStatus = (id, newStatus) => {
-    setQuotations(prev => {
-      const updated = prev.map(q => q.id === id ? { ...q, status: newStatus } : q);
-      const target = updated.find(q => q.id === id);
-      if (target) {
-        quotationService.saveQuotation(target);
+  const updateQuotationStatus = async (id, newStatus) => {
+    try {
+      const res = await quotationService.updateQuotationStatus(id, newStatus);
+      if (!res?.success) {
+        throw new Error(res?.error || 'Status update failed.');
       }
-      return updated;
-    });
+      setQuotations(prev => {
+        const updated = (prev || []).map(q => q.id === id ? { ...q, status: newStatus } : q);
+        cacheManager.set('quotations_feed', updated);
+        return updated;
+      });
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('sunvine_db_sync');
+          bc.postMessage({ type: 'SYNC_QUOTATIONS', quotationId: id, status: newStatus });
+          bc.close();
+        }
+      } catch (_) {}
+    } catch (err) {
+      console.error('[AppContext] Failed to update quotation status:', err);
+      throw err;
+    }
   };
 
   const deleteQuotation = async (id) => {
@@ -2201,13 +2200,25 @@ const safeSetItem = (key, value) => {
         category: finalCategory
       }
     };
-    setDealers(prev => [finalNewDealer, ...prev]);
-    broadcastDbEvent('SYNC_DEALERS');
     try {
-      await dealerService.createDealer(finalNewDealer);
-      broadcastDbEvent('SYNC_DEALERS');
+      const res = await dealerService.createDealer(finalNewDealer);
+      if (res?.success) {
+        const savedDealer = res.dealer ? {
+          ...finalNewDealer,
+          id: res.dealer.dealer_code || res.dealer.id || finalNewDealer.id,
+          dealerCode: res.dealer.dealer_code || finalNewDealer.dealerCode,
+          uuid: res.dealer.id
+        } : finalNewDealer;
+        setDealers(prev => [savedDealer, ...prev.filter(d => (d.id !== savedDealer.id && d.dealerCode !== savedDealer.dealerCode))]);
+        broadcastDbEvent('SYNC_DEALERS');
+        return { success: true, dealer: savedDealer };
+      } else {
+        console.warn('[AppContext] Failed to create dealer in DB:', res?.error);
+        return { success: false, error: res?.error || 'Failed to create dealer in database.' };
+      }
     } catch (e) {
       console.warn('[AppContext] Failed to create dealer in DB:', e);
+      return { success: false, error: e.message || 'Database error occurred while creating dealer.' };
     }
   };
 
@@ -2246,14 +2257,22 @@ const safeSetItem = (key, value) => {
   };
 
   const toggleDealerStatus = async (id) => {
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
     let nextStatus = 'Active';
-    setDealers(prev => prev.map(d => {
-      if (d.id === id) {
-        nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
-        return { ...d, status: nextStatus };
-      }
-      return d;
-    }));
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          nextStatus = d.status === 'Active' ? 'Suspended' : 'Active';
+          return { ...d, status: nextStatus };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
+    });
     broadcastDbEvent('SYNC_DEALERS');
     try {
       await dealerService.updateDealer(id, { status: nextStatus });
@@ -2264,12 +2283,27 @@ const safeSetItem = (key, value) => {
   };
 
   const updateDealerMarginCap = async (id, newCap) => {
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
     const numericCap = Number(newCap);
     setDealers(prev => {
-      return prev.map(d => d.id === id ? { ...d, maxMarginCapPerKw: numericCap } : d);
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          return { ...d, maxMarginCapPerKw: numericCap };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
     });
-    if (currentDealer?.id === id) {
-      setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanId || curCode === cleanId) {
+        setCurrentDealer(prev => ({ ...prev, maxMarginCapPerKw: numericCap }));
+      }
     }
     broadcastDbEvent('SYNC_DEALERS');
     try {
@@ -2281,9 +2315,26 @@ const safeSetItem = (key, value) => {
   };
 
   const updateDealerPassword = async (id, newPassword) => {
-    setDealers(prev => prev.map(d => d.id === id ? { ...d, password: newPassword } : d));
-    if (currentDealer?.id === id) {
-      setCurrentDealer(prev => ({ ...prev, password: newPassword }));
+    const cleanId = String(id || '').replace(/^#/, '').trim().toLowerCase();
+    setDealers(prev => {
+      const updated = prev.map(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        if (dId === cleanId || dCode === cleanId || dUuid === cleanId) {
+          return { ...d, password: newPassword };
+        }
+        return d;
+      });
+      cacheManager.set('dealers_list', updated);
+      return updated;
+    });
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanId || curCode === cleanId) {
+        setCurrentDealer(prev => ({ ...prev, password: newPassword }));
+      }
     }
     broadcastDbEvent('SYNC_DEALERS');
     try {
@@ -2295,37 +2346,63 @@ const safeSetItem = (key, value) => {
   };
 
   const deleteDealer = async (id) => {
-    setDealers(prev => prev.filter(d => d.id !== id && d.dealerCode !== id));
-    if (currentDealer?.id === id || currentDealer?.dealerCode === id) {
-      setCurrentDealer(null);
-    }
-    // Convert attached customer files from DEALER to DIRECT_STAFF
-    setCustomerFiles(prev => prev.map(f => {
-      if (f.dealerId === id || f.dealer_id === id) {
-        customerFileService.updateCustomerFile(f.id, {
-          sourceType: 'DIRECT_STAFF',
-          source: 'DIRECT_STAFF',
-          dealerId: null,
-          dealerName: null
-        }).catch(() => {});
-        return {
-          ...f,
-          sourceType: 'DIRECT_STAFF',
-          source: 'DIRECT_STAFF',
-          dealerId: null,
-          dealerName: null
-        };
+    if (!id) return;
+    const cleanTargetId = String(id).replace(/^#/, '').trim().toLowerCase();
+
+    setDealers(prev => {
+      const filtered = prev.filter(d => {
+        const dId = String(d.id || '').replace(/^#/, '').trim().toLowerCase();
+        const dCode = String(d.dealerCode || d.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+        const dUuid = String(d.uuid || '').replace(/^#/, '').trim().toLowerCase();
+        return dId !== cleanTargetId && dCode !== cleanTargetId && dUuid !== cleanTargetId;
+      });
+      cacheManager.set('dealers_list', filtered);
+      return filtered;
+    });
+
+    if (currentDealer) {
+      const curId = String(currentDealer.id || '').replace(/^#/, '').trim().toLowerCase();
+      const curCode = String(currentDealer.dealerCode || currentDealer.dealer_code || '').replace(/^#/, '').trim().toLowerCase();
+      if (curId === cleanTargetId || curCode === cleanTargetId) {
+        setCurrentDealer(null);
       }
-      return f;
-    }));
+    }
+
+    // Convert attached customer files from DEALER to DIRECT_STAFF
+    setCustomerFiles(prev => {
+      const updated = prev.map(f => {
+        const fDealerId = String(f.dealerId || f.dealer_id || '').replace(/^#/, '').trim().toLowerCase();
+        if (fDealerId === cleanTargetId) {
+          customerFileService.updateCustomerFile(f.id, {
+            sourceType: 'DIRECT_STAFF',
+            source: 'DIRECT_STAFF',
+            dealerId: null,
+            dealerName: null
+          }).catch(() => {});
+          return {
+            ...f,
+            sourceType: 'DIRECT_STAFF',
+            source: 'DIRECT_STAFF',
+            dealerId: null,
+            dealerName: null
+          };
+        }
+        return f;
+      });
+      cacheManager.set('customer_files', updated);
+      return updated;
+    });
+
     broadcastDbEvent('SYNC_DEALERS');
     broadcastDbEvent('SYNC_FILES');
+
     try {
       await dealerService.deleteDealer(id);
       broadcastDbEvent('SYNC_DEALERS');
     } catch (e) {
       console.warn('[AppContext] Failed to delete dealer in DB:', e);
     }
+
     logActivity({
       action: 'DELETE_DEALER',
       module: 'DEALER_MANAGEMENT',
@@ -2883,7 +2960,7 @@ const safeSetItem = (key, value) => {
     setNotifications(prev => prev.filter(n => !visibleIds.includes(n.id)));
   };
 
-  const addNotification = (notif) => {
+  function addNotification(notif) {
     const newNotif = {
       id: notif.id || `notif-${Date.now()}`,
       createdAt: new Date().toISOString(),
@@ -3073,6 +3150,8 @@ const safeSetItem = (key, value) => {
   };
 
   const contextValue = useMemo(() => ({
+    currentUser,
+    setCurrentUser,
     isAuthenticated,
     authView,
     setAuthView,
@@ -3229,6 +3308,7 @@ const safeSetItem = (key, value) => {
     // Database Live Hydration
     refreshDatabase: hydrateAllFromSupabase
   }), [
+    currentUser,
     hydrateAllFromSupabase,
     isAuthenticated,
     authView,
@@ -3357,4 +3437,7 @@ const safeSetItem = (key, value) => {
   );
 };
 
-export const useApp = () => useContext(AppContext);
+export const useApp = () => {
+  const context = useContext(AppContext);
+  return context || defaultContextValue;
+};

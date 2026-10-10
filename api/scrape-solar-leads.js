@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { verifyJwt } from './_lib/jwt.js';
+import { requireUser } from './_lib/requireAuth.js';
 
 // Vercel Serverless Function to Scrape Live Solar Companies & Leads by Area/Keyword
 export default async function handler(req, res) {
@@ -30,15 +30,8 @@ export default async function handler(req, res) {
   }
 
   // ── Auth check ────────────────────────────────────────────────────────────
-  const cookies = (req.headers.cookie || '').split(';').reduce((acc, c) => {
-    const [k, ...v] = c.split('=');
-    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
-    return acc;
-  }, {});
-  const jwtResult = verifyJwt(cookies.sunvine_auth_token);
-  if (!jwtResult.valid) {
-    return res.status(401).json({ error: 'Authentication required.' });
-  }
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});

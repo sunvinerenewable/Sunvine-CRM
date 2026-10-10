@@ -1,13 +1,13 @@
 // Master Configuration for Sunvine Renewable Energy
 // All modules, inverters, dealers, BOM, and pricing are strictly fetched in real-time from Supabase database.
 
-import { APP_VERSION, CURRENT_RELEASE_CHANGELOG } from '../config/version';
+import { APP_VERSION, CURRENT_RELEASE_CHANGELOG } from '../config/version.js';
 
 export const SUNVINE_OFFICIAL_PROFILE = {
-  companyName: 'SUNVINE RENEWABLE',
-  gstin: '24AFPFS7402A1Z7',
-  address: 'G-705, near swaminarayan restaurant, Rajkot, Gujarat - 360021',
-  tagline: 'Empowering Gujarat with Clean Solar Energy',
+  companyName: 'Sunvine Renewable Energy',
+  gstin: '24AAAAA0000A1Z5',
+  address: 'Gujarat, India',
+  tagline: 'Empowering Solar Energy Solutions',
   state: 'Gujarat',
   notes: [
     'ALL PRICES ARE INCLUDING GST',
@@ -15,12 +15,12 @@ export const SUNVINE_OFFICIAL_PROFILE = {
     'LIST OF COMPULSORY REQUIRED DOCUMENTS: LIGHT BILL, BANK DETAIL, AADHAR CARD, MOBILE NO.'
   ],
   bankDetails: {
-    firmName: 'SUNVINE RENEWABLE',
-    bankName: 'HDFC BANK LTD.',
-    accountNumber: '99998000050580',
-    ifscCode: 'HDFC0002012',
-    branch: 'METODA BRANCH, RAJKOT',
-    email: 'sunvinerenewable@gmail.com'
+    firmName: 'Sunvine Renewable Energy',
+    bankName: 'Nationalized Bank',
+    accountNumber: '000000000000',
+    ifscCode: 'BANK0000000',
+    branch: 'Main Branch',
+    email: 'contact@sunvinerenewable.com'
   },
   terms: {
     modulePerformanceWarrantyYears: 30,
@@ -30,11 +30,38 @@ export const SUNVINE_OFFICIAL_PROFILE = {
     paymentTerms: '10% advance with purchase order, 90% before material dispatch.',
     deliveryDays: 15,
     validityDays: 15,
-    supportPhone: '+91 95865 33750',
+    supportPhone: '+91 80000 50580',
     helpline: '8000050580',
-    website: 'www.sunvinerenewable.com'
+    website: 'https://sunvinerenewable.com'
   }
 };
+
+/**
+ * Resolves active company profile merging dynamic system_settings with default structure.
+ */
+export function resolveCompanyProfile(settingsProfile = {}) {
+  if (!settingsProfile || Object.keys(settingsProfile).length === 0) {
+    return SUNVINE_OFFICIAL_PROFILE;
+  }
+  return {
+    ...SUNVINE_OFFICIAL_PROFILE,
+    companyName: settingsProfile.name || SUNVINE_OFFICIAL_PROFILE.companyName,
+    gstin: settingsProfile.gstin || SUNVINE_OFFICIAL_PROFILE.gstin,
+    address: settingsProfile.address || SUNVINE_OFFICIAL_PROFILE.address,
+    state: settingsProfile.state || SUNVINE_OFFICIAL_PROFILE.state,
+    bankDetails: {
+      ...SUNVINE_OFFICIAL_PROFILE.bankDetails,
+      ...(settingsProfile.bank || {})
+    },
+    terms: {
+      ...SUNVINE_OFFICIAL_PROFILE.terms,
+      supportPhone: settingsProfile.whatsapp || SUNVINE_OFFICIAL_PROFILE.terms.supportPhone,
+      helpline: settingsProfile.helpdesk || SUNVINE_OFFICIAL_PROFILE.terms.helpline,
+      website: settingsProfile.website || SUNVINE_OFFICIAL_PROFILE.terms.website,
+      validityText: settingsProfile.validityText
+    }
+  };
+}
 
 // Official Sunvine National Portal Rooftop Price List (Dated 27-08-2026 / 05-08-2026)
 export const PDF_BOS_PRICE_MATRIX = [

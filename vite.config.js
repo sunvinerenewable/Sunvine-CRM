@@ -1,7 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { VitePWA } from 'vite-plugin-pwa';
 import { ensureEnvLoaded } from './api/_lib/db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 ensureEnvLoaded();
 
@@ -84,6 +89,11 @@ function apiDevPlugin() {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
     'import.meta.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production')
@@ -96,10 +106,16 @@ export default defineConfig({
       workbox: {
         importScripts: ['/sw-push.js'],
         maximumFileSizeToCacheInBytes: 15 * 1024 * 1024,
-        globPatterns: ['**/*.{css,html,ico,png,webp,svg,woff,woff2}', '**/index*.js'],
+        globPatterns: ['**/*.{css,html,ico,webp,svg}', '**/index*.js'],
+        globIgnores: [
+          '**/*.{png,jpg,jpeg,woff2}',
+          '**/vendor-three*',
+          '**/vendor-pdf*'
+        ],
+        navigateFallbackDenylist: [/^\/api/],
         runtimeCaching: [
           {
-            urlPattern: /\.(?:js|mjs)$/i,
+            urlPattern: ({ url }) => !url.pathname.startsWith('/api') && /\.(?:js|mjs)$/i.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'sunvine-dynamic-chunks',

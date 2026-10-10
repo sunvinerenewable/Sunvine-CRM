@@ -59,12 +59,19 @@ export function signJwt(payload, expiresInSeconds = DEFAULT_EXPIRATION_SECONDS) 
   return `${encodedHeader}.${encodedPayload}.${signature}`;
 }
 
+const MAX_TOKEN_LENGTH = 4096;
+const EXPECTED_ISSUER = 'sunvine-solar-epc';
+const EXPECTED_ALGORITHM = 'HS256';
+
 /**
  * Verify a JWT and return the decoded payload if valid.
  * Throws if JWT_SECRET env var is missing.
  */
 export function verifyJwt(token) {
   if (!token || typeof token !== 'string') return { valid: false, error: 'Token missing' };
+  if (token.length > MAX_TOKEN_LENGTH) {
+    return { valid: false, error: `Token exceeds maximum length of ${MAX_TOKEN_LENGTH} characters` };
+  }
 
   let secret;
   try {
@@ -77,6 +84,19 @@ export function verifyJwt(token) {
   if (parts.length !== 3) return { valid: false, error: 'Malformed token structure' };
 
   const [encodedHeader, encodedPayload, signature] = parts;
+
+  // Verify header encoding and algorithm
+  let header;
+  try {
+    header = JSON.parse(base64UrlDecode(encodedHeader));
+  } catch {
+    return { valid: false, error: 'Invalid header encoding' };
+  }
+
+  if (!header || header.alg !== EXPECTED_ALGORITHM) {
+    return { valid: false, error: `Invalid algorithm. Expected ${EXPECTED_ALGORITHM}` };
+  }
+
   const expectedSignature = crypto
     .createHmac('sha256', secret)
     .update(`${encodedHeader}.${encodedPayload}`)
@@ -93,6 +113,9 @@ export function verifyJwt(token) {
 
   try {
     const payload = JSON.parse(base64UrlDecode(encodedPayload));
+    if (!payload || payload.iss !== EXPECTED_ISSUER) {
+      return { valid: false, error: `Invalid issuer. Expected ${EXPECTED_ISSUER}` };
+    }
     if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
       return { valid: false, error: 'Token has expired' };
     }
@@ -104,14 +127,18 @@ export function verifyJwt(token) {
 
 /** Generate secure Set-Cookie header for HTTP-only cookie */
 export function createAuthCookieHeader(token, maxAgeSeconds = DEFAULT_EXPIRATION_SECONDS) {
-  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  return `sunvine_auth_token=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`;
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
+  const isLocalhost = !process.env.VERCEL && (process.env.NODE_ENV !== 'production' || !process.env.PG_CA);
+  const isSecure = isVercelProd || (!isLocalhost && process.env.NODE_ENV === 'production');
+  return `sunvine_auth_token=${token}; Path=/; Max-Age=${maxAgeSeconds}; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`;
 }
 
 /** Generate clear Set-Cookie header for logout */
 export function createClearAuthCookieHeader() {
-  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
-  return `sunvine_auth_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${isProd ? '; Secure' : ''}`;
+  const isVercelProd = process.env.VERCEL_ENV === 'production';
+  const isLocalhost = !process.env.VERCEL && (process.env.NODE_ENV !== 'production' || !process.env.PG_CA);
+  const isSecure = isVercelProd || (!isLocalhost && process.env.NODE_ENV === 'production');
+  return `sunvine_auth_token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${isSecure ? '; Secure' : ''}`;
 }
 
 /** Safely parse Cookie header string into key-value map */

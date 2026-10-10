@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 import bcrypt from 'bcryptjs';
 
 async function invalidateCatalogCache(keys) {
@@ -14,9 +14,47 @@ async function invalidateCatalogCache(keys) {
 
 export const dealerService = {
   /**
-   * Fetch all registered dealers from Supabase PostgreSQL
+   * Fetch all registered dealers from Supabase PostgreSQL (or admin API)
    */
   async getAllDealers() {
+    // 1. Try secure admin API endpoint
+    try {
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'list', limit: 100, offset: 0 })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.dealers)) {
+          return json.dealers.map(d => ({
+            id: d.dealer_code || d.id,
+            uuid: d.id,
+            dealerCode: d.dealer_code,
+            firmName: d.firm_name,
+            contactPerson: d.contact_person,
+            mobile: d.mobile_number,
+            mobileNumber: d.mobile_number,
+            email: d.email,
+            city: d.city,
+            state: d.state,
+            discom: d.discom,
+            status: d.status ? (d.status.charAt(0).toUpperCase() + d.status.slice(1).toLowerCase()) : 'Active',
+            rating: Number(d.rating) || 4.9,
+            tier: d.tier || 'Gold EPC',
+            maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 0,
+            totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
+            assignedStaffId: d.assigned_staff_id || 'STF-DIRECT',
+            assignedStaffName: d.assigned_staff_name || 'Direct to Company (HQ Desk)',
+            pricingConfig: d.pricing_config || {},
+            createdAt: d.created_at
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct read-only query fallback
     try {
       const { data, error } = await supabase
         .from('dealer_accounts')
@@ -49,7 +87,7 @@ export const dealerService = {
           defaultCommissionPerKw: Number(d.default_commission_per_kw) || 4500,
           registrationFeeRate: Number(d.registration_fee_rate) || 2000,
           distanceFromRajkotKm: Number(d.distance_from_rajkot_km) || 0,
-          maxMarginCapPerKw: Number(d.max_margin_cap_per_kw) || 6000,
+          maxMarginCapPerKw: (d.max_margin_cap_per_kw !== undefined && d.max_margin_cap_per_kw !== null) ? Number(d.max_margin_cap_per_kw) : 0,
           totalCommissionedMw: Number(d.total_commissioned_mw) || 0,
           assignedStaffId: (() => {
             const rawId = d.assigned_staff_id || d.pricing_config?.assignedStaffId;
@@ -71,10 +109,10 @@ export const dealerService = {
             }
             return rawName || 'Direct to Company (HQ Desk)';
           })(),
-          bankName: d.bank_name || 'State Bank of India',
-          accountNumber: d.account_number || '394857201948',
-          ifscCode: d.ifsc_code || 'SBIN0001234',
-          branch: d.branch || `${d.city || 'Ahmedabad'} Main Branch`,
+          bankName: d.bank_name || '',
+          accountNumber: d.account_number || '',
+          ifscCode: d.ifsc_code || '',
+          branch: d.branch || '',
           pricingConfig: d.pricing_config || {},
           createdAt: d.created_at
         }));
@@ -87,7 +125,7 @@ export const dealerService = {
   },
 
   /**
-   * Create a new dealer securely with verified Bcrypt hashed credentials
+   * Create a new dealer securely via backend API
    */
   async createDealer(dealer) {
     if (!dealer) return { success: false, error: 'Dealer details required' };
@@ -98,8 +136,60 @@ export const dealerService = {
     const assignedStaffName = assignedStaffId === 'STF-DIRECT'
       ? 'Direct to Company (HQ Desk)'
       : (dealer.assignedStaffName || 'Sunvine Sales Staff');
+    const category = dealer.category || 'Margin Based';
 
-    // 1. Try server-side secure manage-credentials endpoint first
+    const dealerPayload = {
+      dealerCode,
+      firmName: dealer.firmName || '',
+      contactPerson: dealer.contactPerson || '',
+      mobile: cleanPhone,
+      email: (dealer.email && String(dealer.email).trim()) ? String(dealer.email).trim() : '',
+      city: dealer.city || '',
+      state: dealer.state || '',
+      discom: dealer.discom || '',
+      tier: dealer.tier || 'Gold EPC',
+      maxMarginCapPerKw: Number(dealer.maxMarginCapPerKw) || 0,
+      password: plainPassword,
+      status: (dealer.status || 'Active').toLowerCase(),
+      address: dealer.address || '',
+      gstin: dealer.gstin || '',
+      pan: dealer.pan || '',
+      assignedStaffId,
+      assignedStaffName,
+      category,
+      pricingConfig: {
+        ...(dealer.pricingConfig || {}),
+        category,
+        assignedStaffId,
+        assignedStaffName
+      }
+    };
+
+    // 1. Try /api/auth/admin-dealers
+    try {
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'create',
+          dealer: dealerPayload
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        invalidateCatalogCache([`dealer:rates:${dealerCode}`, 'directory:dealers:min', 'catalog:all']);
+        return { success: true, id: data.dealer?.dealer_code || dealerCode, dealer: data.dealer };
+      }
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+    } catch (apiErr) {
+      console.error('[dealerService] Create dealer exception:', apiErr);
+      return { success: false, error: apiErr.message || 'Dealer creation service unavailable.' };
+    }
+
+    // 2. Try manage-credentials endpoint as fallback
     try {
       const res = await fetch('/api/auth/manage-credentials', {
         method: 'POST',
@@ -111,58 +201,27 @@ export const dealerService = {
             ...dealer,
             dealerCode,
             mobile: cleanPhone,
-            category: dealer.category || 'Margin Based',
+            category,
             password: plainPassword,
             assignedStaffId,
-            assignedStaffName
+            assignedStaffName,
+            pricingConfig: dealerPayload.pricingConfig
           }
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.success) {
-          return { success: true, id: data.dealer?.dealer_code || dealerCode };
-        }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        invalidateCatalogCache([`dealer:rates:${dealerCode}`, 'directory:dealers:min', 'catalog:all']);
+        return { success: true, id: data.dealer?.dealer_code || dealerCode, dealer: data.dealer };
       }
-    } catch (apiErr) {
-      console.warn('[dealerService] Server credential creation failed, using client fallback:', apiErr.message);
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+    } catch (fallbackErr) {
+      console.error('[dealerService] Fallback create dealer error:', fallbackErr);
     }
 
-    // 2. Client fallback with Bcrypt hashing
-    try {
-      const passwordHash = bcrypt.hashSync(plainPassword, 10);
-      const payload = {
-        dealer_code: dealerCode,
-        firm_name: dealer.firmName || 'Gujarat Solar EPC',
-        contact_person: dealer.contactPerson || 'Authorized Partner',
-        mobile_number: cleanPhone,
-        email: (dealer.email && String(dealer.email).trim()) ? String(dealer.email).trim() : null,
-        password_hash: passwordHash,
-        city: dealer.city || 'Ahmedabad',
-        state: dealer.state || 'Gujarat',
-        discom: dealer.discom || 'UGVCL',
-        status: (dealer.status || 'active').toLowerCase(),
-        tier: dealer.tier || 'Gold EPC',
-        max_margin_cap_per_kw: Number(dealer.maxMarginCapPerKw) || 6000,
-        assigned_staff_id: assignedStaffId,
-        assigned_staff_name: assignedStaffName,
-        pricing_config: {
-          ...(dealer.pricingConfig || {}),
-          category: dealer.category || 'Margin Based',
-          assignedStaffId,
-          assignedStaffName
-        },
-        updated_at: new Date().toISOString()
-      };
-      const { data, error } = await supabase.from('dealer_accounts').upsert([payload], { onConflict: 'dealer_code' });
-      if (error) {
-        console.warn('[dealerService] Supabase upsert error:', error.message);
-      }
-      return { success: true, id: dealerCode };
-    } catch (err) {
-      console.error('[dealerService] Exception creating dealer:', err);
-      return { success: false, error: err.message };
-    }
+    return { success: false, error: 'Failed to create dealer account.' };
   },
 
   /**
@@ -175,13 +234,39 @@ export const dealerService = {
   },
 
   /**
-   * Update dealer details in Supabase
+   * Update dealer details via backend API
    */
   async updateDealer(dealerCodeOrId, fields) {
     if (!dealerCodeOrId) return { success: false, error: 'Dealer ID required' };
 
+    const cleanPhone = (fields.mobile !== undefined || fields.mobileNumber !== undefined)
+      ? String(fields.mobile || fields.mobileNumber).replace(/\D/g, '').slice(-10)
+      : undefined;
+
+    const finalStaffId = fields.assignedStaffId !== undefined ? fields.assignedStaffId : fields.pricingConfig?.assignedStaffId;
+    const finalStaffName = finalStaffId === 'STF-DIRECT'
+      ? 'Direct to Company (HQ Desk)'
+      : (fields.assignedStaffName !== undefined ? fields.assignedStaffName : fields.pricingConfig?.assignedStaffName);
+    const categoryVal = fields.category !== undefined ? fields.category : fields.pricingConfig?.category;
+
+    const pricingConfig = (fields.pricingConfig !== undefined || fields.assignedStaffId !== undefined || fields.category !== undefined)
+      ? {
+          ...(fields.pricingConfig || {}),
+          ...(categoryVal ? { category: categoryVal } : {}),
+          ...(finalStaffId ? { assignedStaffId: finalStaffId } : {}),
+          ...(finalStaffName ? { assignedStaffName: finalStaffName } : {})
+        }
+      : undefined;
+
     const updatePayload = {
-      updated_at: new Date().toISOString()
+      dealerCode: dealerCodeOrId,
+      id: dealerCodeOrId,
+      ...fields,
+      ...(cleanPhone ? { mobile: cleanPhone, mobile_number: cleanPhone } : {}),
+      ...(fields.category !== undefined ? { category: fields.category } : {}),
+      ...(pricingConfig ? { pricingConfig, pricing_config: pricingConfig } : {}),
+      ...(finalStaffId ? { assignedStaffId: finalStaffId, assigned_staff_id: finalStaffId } : {}),
+      ...(finalStaffName ? { assignedStaffName: finalStaffName, assigned_staff_name: finalStaffName } : {})
     };
 
     if (fields.firmName !== undefined) updatePayload.firm_name = fields.firmName;
@@ -268,67 +353,108 @@ export const dealerService = {
       } catch (_) {}
     }
 
+    // 1. Try /api/auth/admin-dealers
     try {
-      const targetCode = String(dealerCodeOrId || '').trim();
-      const cleanCode = targetCode.replace(/^#/, '');
-      const { data, error } = await supabase
-        .from('dealer_accounts')
-        .update(updatePayload)
-        .or(`dealer_code.eq.${targetCode},dealer_code.eq.${cleanCode},id.eq.${targetCode},id.eq.${cleanCode},dealer_code.eq.#${cleanCode}`);
-
-      if (error) {
-        console.warn('[dealerService] Update dealer warning:', error.message);
-        return { success: false, error: error.message };
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          dealer: updatePayload
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min', 'catalog:all']);
+          return { success: true, data: data.dealer };
+        }
       }
+    } catch (_) {}
 
-      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
-      return { success: true, data };
+    // 2. Try manage-credentials endpoint
+    try {
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'update-dealer-credentials',
+          payload: {
+            dealerCode: dealerCodeOrId,
+            id: dealerCodeOrId,
+            ...updatePayload,
+            category: categoryVal,
+            pricingConfig: pricingConfig || fields.pricingConfig
+          }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min', 'catalog:all']);
+          return { success: true, data: data.dealer };
+        }
+      }
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to update dealer.' };
     } catch (err) {
       console.error('[dealerService] Error updating dealer:', err);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Dealer update service unavailable.' };
     }
   },
 
   /**
-   * Delete dealer from database
+   * Delete dealer via backend API
    */
   async deleteDealer(dealerCodeOrId) {
-    if (!dealerCodeOrId) return { success: false, error: 'Dealer identifier is required.' };
+    const cleanId = String(dealerCodeOrId || '').replace(/^#/, '').trim();
+    if (!cleanId) return { success: false, error: 'Dealer identifier is required.' };
+
+    // 1. Try /api/auth/admin-dealers
     try {
-      // 1. Try server-side delete
-      try {
-        await fetch('/api/auth/manage-credentials', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            action: 'delete-dealer',
-            payload: { dealerCode: dealerCodeOrId }
-          })
-        });
-      } catch (_) {}
-
-      // 2. Direct Supabase delete
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(dealerCodeOrId || ''));
-      let query = supabase.from('dealer_accounts').delete();
-      if (isUuid) {
-        query = query.eq('id', dealerCodeOrId);
-      } else {
-        query = query.eq('dealer_code', dealerCodeOrId);
+      const res = await fetch('/api/auth/admin-dealers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete',
+          id: cleanId
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          invalidateCatalogCache([`dealer:rates:${cleanId}`, 'directory:dealers:min']);
+          return { success: true };
+        }
       }
+    } catch (_) {}
 
-      const { error } = await query;
-
-      invalidateCatalogCache([`dealer:rates:${dealerCodeOrId}`, 'directory:dealers:min']);
-
-      if (error) {
-        console.warn('[dealerService] Delete dealer warning:', error.message);
-        return { success: false, error: error.message };
+    // 2. Try manage-credentials endpoint
+    try {
+      const res = await fetch('/api/auth/manage-credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'delete-dealer',
+          payload: { dealerCode: cleanId, id: cleanId }
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success) {
+          invalidateCatalogCache([`dealer:rates:${cleanId}`, 'directory:dealers:min']);
+          return { success: true };
+        }
       }
-      return { success: true };
+      const errJson = await res.json().catch(() => ({}));
+      return { success: false, error: errJson.error || 'Failed to delete dealer.' };
     } catch (err) {
       console.error('[dealerService] Delete dealer exception:', err);
-      return { success: false, error: err.message };
+      return { success: false, error: err.message || 'Dealer deletion service unavailable.' };
     }
   }
 };
