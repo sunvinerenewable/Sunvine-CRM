@@ -2,19 +2,34 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { adminAccountService } from '../../services/adminAccountService';
+import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 
 export default function DealerAccountsManagement() {
   const { addToast } = useToast();
-  const { staffList, setDealers } = useApp();
+  const { customerFiles, quotations, staffList, setDealers, refreshCustomerFiles } = useApp();
 
+  // Navigation tab: 'files' (Dealer Project Files - default) or 'accounts' (Dealer Accounts & Access)
+  const [activeTab, setActiveTab] = useState('files');
+
+  // Live Dealer Accounts from DB
   const [dealersList, setDealersList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filters for Files View
+  const [selectedDealerFilter, setSelectedDealerFilter] = useState('all');
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [stageFilter, setStageFilter] = useState('all');
+
+  // Filters for Accounts View
+  const [accountsSearchQuery, setAccountsSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
-  // Modals
+  // File Detail Modal
+  const [selectedFileForDetail, setSelectedFileForDetail] = useState(null);
+
+  // Dealer Account Modals
   const [showDealerModal, setShowDealerModal] = useState(false);
   const [editingDealer, setEditingDealer] = useState(null);
   const [dealerForm, setDealerForm] = useState({
@@ -80,13 +95,184 @@ export default function DealerAccountsManagement() {
     loadAccounts();
   }, []);
 
+  // -------------------------------------------------------------
+  // ALL FILES CREATED BY DEALERS
+  // -------------------------------------------------------------
+  const allDealerFiles = useMemo(() => {
+    const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
+
+    // Filter files that belong to dealers or have sourceType === 'DEALER'
+    const dealerCreatedFiles = rawFiles.filter(f => {
+      if (!f) return false;
+      const isDealerSource = (f.sourceType || f.source || '').toUpperCase() === 'DEALER';
+      const hasDealerRef = Boolean(f.dealerId || f.dealer_id || f.dealerName || f.dealer_name);
+      return isDealerSource || hasDealerRef;
+    });
+
+    // Also match any converted quotations with 'Won / Order Booked' by dealers that don't already exist in customerFiles
+    const wonQuotes = (quotations || []).filter(q => {
+      const isWon = q.status === 'Won / Order Booked';
+      const isDealer = Boolean(q.dealerId || q.dealer_id || (q.dealerName && !q.dealerName.includes('Head Office')));
+      const alreadyHasFile = dealerCreatedFiles.some(f => f.quotationId === q.id || f.id === `FIL-${q.id}`);
+      return isWon && isDealer && !alreadyHasFile;
+    });
+
+    const synthesizedFromQuotes = wonQuotes.map(q => {
+      const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
+      return {
+        id: `FIL-${q.id || Date.now()}`,
+        quotationId: q.id,
+        customerName: q.customerName || 'Solar Consumer',
+        phone: q.customerPhone || q.phone || 'N/A',
+        address: q.customerAddress || q.address || q.location || 'Gujarat',
+        city: q.city || 'Rajkot',
+        discom: q.discom || 'PGVCL',
+        consumerNo: q.consumerNo || 'PENDING',
+        solarSystemKw: capKw,
+        roofType: 'RCC Flat',
+        sourceType: 'DEALER',
+        source: 'DEALER',
+        dealerId: q.dealerId || null,
+        dealerName: q.dealerName || 'Dealer Partner',
+        stage: 'DISCOM_APPLICATION',
+        currentStage: 'DISCOM_APPLICATION',
+        status: 'Verification',
+        financeType: q.financeType || 'CASH',
+        loanBank: q.loanBank || '',
+        createdAt: q.date || q.created_at || new Date().toISOString(),
+        documents: {},
+        timeline: [
+          {
+            stage: 'Quotation Approved',
+            date: q.date || new Date().toISOString().split('T')[0],
+            actor: q.dealerName || 'Dealer Partner',
+            notes: 'Converted to project application'
+          }
+        ]
+      };
+    });
+
+    return [...dealerCreatedFiles, ...synthesizedFromQuotes];
+  }, [customerFiles, quotations]);
+
+  // -------------------------------------------------------------
+  // FILTERED DEALER FILES (Based on Dealer selector, Customer search & Stage)
+  // -------------------------------------------------------------
+  const filteredDealerFiles = useMemo(() => {
+    return allDealerFiles.filter(file => {
+      // 1. Filter by specific Dealer
+      if (selectedDealerFilter !== 'all') {
+        const d = dealersList.find(item => item.id === selectedDealerFilter || item.dealer_code === selectedDealerFilter || item.dealerCode === selectedDealerFilter);
+        const cleanDId = String(selectedDealerFilter).replace(/^#/, '').toLowerCase();
+        const cleanFirm = d ? (d.firm_name || d.firmName || '').trim().toLowerCase() : '';
+        const fileDId = String(file.dealerId || file.dealer_id || '').replace(/^#/, '').toLowerCase();
+        const fileDFirm = (file.dealerName || file.dealer_name || '').trim().toLowerCase();
+
+        const matches = (
+          (cleanDId && (fileDId === cleanDId || fileDId.includes(cleanDId) || cleanDId.includes(fileDId))) ||
+          (cleanFirm && fileDFirm && (fileDFirm === cleanFirm || fileDFirm.includes(cleanFirm) || cleanFirm.includes(fileDFirm)))
+        );
+
+        if (!matches) return false;
+      }
+
+      // 2. Customer search query (Name, Phone, Consumer No, File ID, City)
+      if (customerSearchQuery.trim()) {
+        const q = customerSearchQuery.toLowerCase().trim();
+        const name = (file.customerName || file.customer_name || '').toLowerCase();
+        const phone = String(file.phone || '');
+        const consumer = String(file.consumerNo || file.consumer_no || '').toLowerCase();
+        const id = String(file.id || '').toLowerCase();
+        const city = String(file.city || '').toLowerCase();
+
+        if (!name.includes(q) && !phone.includes(q) && !consumer.includes(q) && !id.includes(q) && !city.includes(q)) {
+          return false;
+        }
+      }
+
+      // 3. Stage filter
+      if (stageFilter !== 'all') {
+        const currentStage = String(file.currentStage || file.stage || file.status || '').toLowerCase();
+        if (!currentStage.includes(stageFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allDealerFiles, selectedDealerFilter, dealersList, customerSearchQuery, stageFilter]);
+
+  // -------------------------------------------------------------
+  // DYNAMIC KPI CARDS CALCULATION
+  // Replaces "Active DB State" with TOTAL FILES of that dealer/selection
+  // Dynamically updates as filters change
+  // -------------------------------------------------------------
+  const kpiStats = useMemo(() => {
+    const isSpecificDealer = selectedDealerFilter !== 'all';
+    const targetDealer = isSpecificDealer
+      ? dealersList.find(d => d.id === selectedDealerFilter || d.dealer_code === selectedDealerFilter || d.dealerCode === selectedDealerFilter)
+      : null;
+
+    // Card 1: Total Dealers
+    const totalDealersCount = isSpecificDealer ? 1 : dealersList.length;
+    const totalDealersSub = isSpecificDealer
+      ? (targetDealer ? `${targetDealer.firm_name || targetDealer.firmName} (${targetDealer.city || 'Gujarat'})` : 'Selected Partner')
+      : '100% Gujarat Empanelled';
+
+    // Card 2: Margin Based
+    let marginBasedCount = 0;
+    let marginSub = '₹/kW Profit Model';
+    if (isSpecificDealer) {
+      const cat = targetDealer?.category || targetDealer?.pricing_config?.category || 'Margin Based';
+      marginBasedCount = cat === 'Margin Based' ? 1 : 0;
+      marginSub = targetDealer?.tier || 'Gold EPC Tier';
+    } else {
+      marginBasedCount = dealersList.filter(d => (d.category || d.pricing_config?.category || 'Margin Based') === 'Margin Based').length;
+    }
+
+    // Card 3: Kit Based
+    let kitBasedCount = 0;
+    let kitSub = 'Standard Package';
+    if (isSpecificDealer) {
+      const cat = targetDealer?.category || targetDealer?.pricing_config?.category;
+      kitBasedCount = cat === 'Kit Based' ? 1 : 0;
+      kitSub = cat === 'Kit Based' ? 'Standard Kit Package' : '0 Package Kit';
+    } else {
+      kitBasedCount = dealersList.filter(d => (d.category || d.pricing_config?.category) === 'Kit Based').length;
+    }
+
+    // Card 4: TOTAL FILES ("उस dealer की total कितनी files है?")
+    // Dynamic count of files belonging to that dealer (or across all dealers if 'all')
+    const totalFilesCount = filteredDealerFiles.length;
+    const totalCapacityKw = filteredDealerFiles.reduce((acc, f) => acc + (Number(f.solarSystemKw || f.solar_system_kw) || 0), 0);
+    const filesSub = isSpecificDealer
+      ? (targetDealer ? `${targetDealer.firm_name || targetDealer.firmName} Projects` : 'Dealer Files')
+      : `${totalCapacityKw.toFixed(1)} kW Solar Pipeline`;
+
+    return {
+      totalDealersCount,
+      totalDealersSub,
+      marginBasedCount,
+      marginSub,
+      kitBasedCount,
+      kitSub,
+      totalFilesCount,
+      filesSub,
+      isSpecificDealer,
+      targetDealer
+    };
+  }, [dealersList, selectedDealerFilter, filteredDealerFiles]);
+
+  // -------------------------------------------------------------
+  // FILTERED DEALER ACCOUNTS (For Accounts Tab)
+  // -------------------------------------------------------------
   const filteredDealers = useMemo(() => {
     return dealersList.filter(d => {
       const firm = (d.firm_name || d.firmName || '').toLowerCase();
       const contact = (d.contact_person || d.contactPerson || '').toLowerCase();
       const mobile = (d.mobile_number || d.mobile || '');
       const code = (d.dealer_code || d.dealerCode || d.id || '').toLowerCase();
-      const q = searchQuery.toLowerCase().trim();
+      const q = accountsSearchQuery.toLowerCase().trim();
 
       if (q && !firm.includes(q) && !contact.includes(q) && !mobile.includes(q) && !code.includes(q)) {
         return false;
@@ -104,8 +290,11 @@ export default function DealerAccountsManagement() {
 
       return true;
     });
-  }, [dealersList, searchQuery, categoryFilter, statusFilter]);
+  }, [dealersList, accountsSearchQuery, categoryFilter, statusFilter]);
 
+  // -------------------------------------------------------------
+  // DEALER ACCOUNT ACTIONS
+  // -------------------------------------------------------------
   const handleOpenAddDealer = () => {
     setEditingDealer(null);
     const rndCode = `SV-DLR-0${Math.floor(800 + Math.random() * 100)}`;
@@ -291,6 +480,36 @@ export default function DealerAccountsManagement() {
     }
   };
 
+  // Helper for stage styling
+  const getStageBadge = (stage = '', status = '') => {
+    const s = (stage || status || '').toLowerCase();
+    if (s.includes('lead') || s.includes('sourced')) {
+      return { label: 'Lead Sourced', bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: 'person_add' };
+    }
+    if (s.includes('survey') || s.includes('feasibility')) {
+      return { label: 'Feasibility Approved', bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20', icon: 'verified' };
+    }
+    if (s.includes('discom')) {
+      return { label: 'DISCOM Application', bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', icon: 'electric_meter' };
+    }
+    if (s.includes('install')) {
+      return { label: 'Solar Installation', bg: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20', icon: 'solar_power' };
+    }
+    if (s.includes('sync') || s.includes('meter')) {
+      return { label: 'Net-Meter Synced', bg: 'bg-teal-500/10 text-teal-400 border-teal-500/20', icon: 'sync_alt' };
+    }
+    if (s.includes('subsidy')) {
+      return { label: 'Subsidy Claim', bg: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: 'payments' };
+    }
+    if (s.includes('complete') || s.includes('commission')) {
+      return { label: 'Commissioned', bg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: 'check_circle' };
+    }
+    if (s.includes('cancel')) {
+      return { label: 'Cancelled', bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20', icon: 'cancel' };
+    }
+    return { label: stage || status || 'In Progress', bg: 'bg-slate-500/10 text-slate-400 border-slate-500/20', icon: 'pending' };
+  };
+
   return (
     <div className="flex flex-col w-full pb-16 space-y-6">
       {/* Top Header */}
@@ -299,24 +518,30 @@ export default function DealerAccountsManagement() {
           <div className="flex items-center gap-2 mb-1">
             <span className="material-symbols-outlined text-primary text-[28px]">handshake</span>
             <h1 className="font-headline-lg text-headline-lg font-bold text-on-surface">
-              Dealer Partner Accounts
+              Dealer Operations &amp; Consumer Files
             </h1>
           </div>
           <p className="font-body-md text-body-md text-secondary">
-            Manage authenticated dealer accounts, credentials, login access, commercial categories, and territory assignments.
+            Universal pipeline for all project files created by Authorized Gujarat Dealers, real-time stage tracking, and account management.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Refresh Button */}
           <button
-            onClick={() => loadAccounts(true)}
+            onClick={() => {
+              loadAccounts(true);
+              if (typeof refreshCustomerFiles === 'function') refreshCustomerFiles();
+            }}
             disabled={refreshing}
             className="h-10 px-3.5 bg-surface-container border border-surface-container-highest text-on-surface font-semibold rounded-lg hover:bg-surface-container-high transition-all flex items-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
-            title="Refresh from PostgreSQL"
+            title="Refresh from PostgreSQL Database"
           >
             <span className={`material-symbols-outlined text-[18px] ${refreshing ? 'animate-spin' : ''}`}>sync</span>
             <span>Refresh</span>
           </button>
+
+          {/* Onboard Dealer Button */}
           <button
             onClick={handleOpenAddDealer}
             className="h-10 px-4 bg-primary text-on-primary font-semibold rounded-lg hover:bg-primary-hover transition-all flex items-center gap-2 shadow-sm text-xs sm:text-sm cursor-pointer"
@@ -327,504 +552,719 @@ export default function DealerAccountsManagement() {
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
+      {/* DYNAMIC KPI STATS CARDS */}
+      {/* 4th card replaces 'Active DB State' with TOTAL FILES of that dealer/selection */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
-          <div className="text-secondary text-xs font-semibold uppercase">Total Dealers</div>
-          <div className="text-2xl font-bold font-mono text-on-surface mt-1">{dealersList.length}</div>
-          <div className="text-[11px] text-primary mt-1 font-semibold">100% Gujarat Empanelled</div>
+        {/* Card 1: Total Dealers / Selected Dealer */}
+        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 transition-all">
+          <div className="text-secondary text-xs font-semibold uppercase">
+            {kpiStats.isSpecificDealer ? 'Selected Dealer' : 'Total Dealers'}
+          </div>
+          <div className="text-2xl font-bold font-mono text-on-surface mt-1">
+            {kpiStats.totalDealersCount}
+          </div>
+          <div className="text-[11px] text-primary mt-1 font-semibold truncate" title={kpiStats.totalDealersSub}>
+            {kpiStats.totalDealersSub}
+          </div>
         </div>
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
+
+        {/* Card 2: Margin Based Model */}
+        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 transition-all">
           <div className="text-secondary text-xs font-semibold uppercase">Margin Based</div>
-          <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">
-            {dealersList.filter(d => (d.category || d.pricing_config?.category || 'Margin Based') === 'Margin Based').length}
+          <div className="text-2xl font-bold font-mono text-emerald-500 mt-1">
+            {kpiStats.marginBasedCount}
           </div>
-          <div className="text-[11px] text-secondary mt-1">₹/kW Profit Model</div>
+          <div className="text-[11px] text-secondary mt-1 truncate" title={kpiStats.marginSub}>
+            {kpiStats.marginSub}
+          </div>
         </div>
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
+
+        {/* Card 3: Kit Based Model */}
+        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 transition-all">
           <div className="text-secondary text-xs font-semibold uppercase">Kit Based</div>
-          <div className="text-2xl font-bold font-mono text-purple-600 mt-1">
-            {dealersList.filter(d => (d.category || d.pricing_config?.category) === 'Kit Based').length}
+          <div className="text-2xl font-bold font-mono text-purple-400 mt-1">
+            {kpiStats.kitBasedCount}
           </div>
-          <div className="text-[11px] text-secondary mt-1">Standard Package</div>
-        </div>
-        <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4">
-          <div className="text-secondary text-xs font-semibold uppercase">Active DB State</div>
-          <div className="text-2xl font-bold font-mono text-primary mt-1">
-            {dealersList.filter(d => (d.status || 'active').toLowerCase() === 'active').length}
-          </div>
-          <div className="text-[11px] text-emerald-500 mt-1 flex items-center gap-1 font-semibold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Live Credentials
+          <div className="text-[11px] text-secondary mt-1 truncate" title={kpiStats.kitSub}>
+            {kpiStats.kitSub}
           </div>
         </div>
-      </div>
 
-      {/* Search & Filter Toolbar */}
-      <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs">
-        <div className="relative flex-1">
-          <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-sm">search</span>
-          <input
-            type="text"
-            placeholder="Search by firm name, contact person, mobile, dealer code..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface placeholder-secondary focus:outline-none focus:border-primary transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-2">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
-          >
-            <option value="all">All Models</option>
-            <option value="Margin Based">Margin Based</option>
-            <option value="Kit Based">Kit Based</option>
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
-          >
-            <option value="all">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="suspended">Suspended</option>
-          </select>
+        {/* Card 4: TOTAL FILES OF THAT DEALER (Replaces Active DB State) */}
+        <div className="bg-surface-container-lowest border border-primary/40 rounded-xl p-4 bg-gradient-to-br from-surface-container-lowest to-emerald-950/20 transition-all">
+          <div className="text-emerald-400 text-xs font-semibold uppercase flex items-center justify-between">
+            <span>{kpiStats.isSpecificDealer ? 'Dealer Total Files' : 'Total Dealer Files'}</span>
+            <span className="material-symbols-outlined text-[16px] text-emerald-400">folder_open</span>
+          </div>
+          <div className="text-2xl font-bold font-mono text-emerald-400 mt-1 flex items-baseline gap-1.5">
+            <span>{kpiStats.totalFilesCount}</span>
+            <span className="text-xs font-sans font-normal text-secondary">Files</span>
+          </div>
+          <div className="text-[11px] text-emerald-300/80 mt-1 font-semibold flex items-center gap-1 truncate" title={kpiStats.filesSub}>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>{kpiStats.filesSub}</span>
+          </div>
         </div>
       </div>
 
-      {/* Dealers Accounts Table */}
-      <div className="bg-surface-container-lowest rounded-xl border border-surface-container-high overflow-hidden shadow-sm">
-        {loading ? (
-          <div className="p-12 text-center text-secondary flex flex-col items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-3xl animate-spin text-primary">sync</span>
-            <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
-          </div>
-        ) : filteredDealers.length === 0 ? (
-          <div className="p-12 text-center text-secondary">
-            <span className="material-symbols-outlined text-4xl text-secondary/40 mb-2">storefront</span>
-            <p className="text-sm font-medium">No dealer partners found matching your search.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead className="bg-surface-container text-secondary text-xs uppercase tracking-wider font-semibold border-b border-surface-container-highest">
-                <tr>
-                  <th className="py-3 px-4">Dealer Partner / Firm</th>
-                  <th className="py-3 px-4">Mobile Number</th>
-                  <th className="py-3 px-4">City / DISCOM</th>
-                  <th className="py-3 px-4">Partner Tier</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-container-high">
-                {filteredDealers.map((dealer) => {
-                  const firm = dealer.firm_name || dealer.firmName || 'Dealer Firm';
-                  const contact = dealer.contact_person || dealer.contactPerson || 'Authorized Person';
-                  const code = dealer.dealer_code || dealer.dealerCode || dealer.id;
-                  const mobile = dealer.mobile_number || dealer.mobile || '8000050580';
-                  const cat = dealer.category || dealer.pricing_config?.category || 'Margin Based';
-                  const isDirect = !dealer.assigned_staff_id || dealer.assigned_staff_id === 'STF-DIRECT' || dealer.assignedStaffId === 'STF-DIRECT';
+      {/* VIEW TABS: Dealer Consumer Files (Default) vs Dealer Accounts */}
+      <div className="flex items-center gap-2 border-b border-surface-container-high pb-2">
+        <button
+          onClick={() => setActiveTab('files')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            activeTab === 'files'
+              ? 'bg-primary text-on-primary shadow-sm'
+              : 'bg-surface-container text-secondary hover:text-on-surface hover:bg-surface-container-high'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">folder_shared</span>
+          <span>Dealer Project Files</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+            activeTab === 'files' ? 'bg-white/20 text-white' : 'bg-surface-container-highest text-secondary'
+          }`}>
+            {filteredDealerFiles.length}
+          </span>
+        </button>
 
-                  return (
-                    <tr key={dealer.id || code} className="hover:bg-surface-container/60 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-500 font-bold flex items-center justify-center text-sm border border-amber-500/30">
-                            {firm.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-on-surface">{firm}</div>
-                            <div className="text-[11px] text-secondary flex items-center gap-1.5 flex-wrap mt-0.5">
-                              <span>{contact}</span>
-                              <span>•</span>
-                              <span className="font-mono text-primary font-semibold">{code}</span>
-                              <span>•</span>
-                              {/* Category Pill */}
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold border shrink-0 ${
-                                cat === 'Kit Based'
-                                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/30'
-                                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                              }`}>
-                                <span className="material-symbols-outlined text-[11px]">
-                                  {cat === 'Kit Based' ? 'inventory_2' : 'percent'}
-                                </span>
-                                {cat}
+        <button
+          onClick={() => setActiveTab('accounts')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            activeTab === 'accounts'
+              ? 'bg-primary text-on-primary shadow-sm'
+              : 'bg-surface-container text-secondary hover:text-on-surface hover:bg-surface-container-high'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">badge</span>
+          <span>Dealer Accounts &amp; Access</span>
+          <span className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+            activeTab === 'accounts' ? 'bg-white/20 text-white' : 'bg-surface-container-highest text-secondary'
+          }`}>
+            {dealersList.length}
+          </span>
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 1: ALL FILES CREATED BY DEALERS (With Customer Search & Dealer Filter) */}
+      {/* ========================================================================= */}
+      {activeTab === 'files' && (
+        <div className="space-y-4">
+          {/* Filters Toolbar */}
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 shadow-xs">
+            {/* Search by Customer Name / Phone / Consumer No */}
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-sm">search</span>
+              <input
+                type="text"
+                placeholder="Search by customer name, mobile, consumer number, city, or file ID..."
+                value={customerSearchQuery}
+                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface placeholder-secondary focus:outline-none focus:border-primary transition-all"
+              />
+              {customerSearchQuery && (
+                <button
+                  onClick={() => setCustomerSearchQuery('')}
+                  className="absolute right-2.5 top-2 text-secondary hover:text-on-surface cursor-pointer"
+                  title="Clear search"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Dealer Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-surface-container border border-surface-container-highest rounded-lg px-2.5 py-1.5">
+                <span className="material-symbols-outlined text-secondary text-[16px]">storefront</span>
+                <select
+                  value={selectedDealerFilter}
+                  onChange={(e) => setSelectedDealerFilter(e.target.value)}
+                  className="bg-transparent text-xs text-on-surface font-semibold focus:outline-none cursor-pointer max-w-[200px] truncate"
+                >
+                  <option value="all" className="bg-[#070D18] text-white">All Dealers ({dealersList.length})</option>
+                  {dealersList.map((d) => {
+                    const dCode = d.dealer_code || d.dealerCode || d.id;
+                    const dFirm = d.firm_name || d.firmName || dCode;
+                    return (
+                      <option key={d.id || dCode} value={d.id || dCode} className="bg-[#070D18] text-white">
+                        {dFirm} ({d.city || 'Gujarat'})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Stage Filter Dropdown */}
+              <select
+                value={stageFilter}
+                onChange={(e) => setStageFilter(e.target.value)}
+                className="px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <option value="all" className="bg-[#070D18] text-white">All Project Stages</option>
+                <option value="lead" className="bg-[#070D18] text-white">Lead Sourced</option>
+                <option value="feasibility" className="bg-[#070D18] text-white">Feasibility Approved</option>
+                <option value="discom" className="bg-[#070D18] text-white">DISCOM Application</option>
+                <option value="install" className="bg-[#070D18] text-white">Installation</option>
+                <option value="sync" className="bg-[#070D18] text-white">Net-Meter Sync</option>
+                <option value="complete" className="bg-[#070D18] text-white">Completed</option>
+              </select>
+
+              {/* Reset Filters Button */}
+              {(selectedDealerFilter !== 'all' || customerSearchQuery || stageFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setSelectedDealerFilter('all');
+                    setCustomerSearchQuery('');
+                    setStageFilter('all');
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-surface-container-high hover:bg-surface-container-highest text-secondary hover:text-on-surface text-xs font-medium cursor-pointer transition-all flex items-center gap-1"
+                  title="Reset all filters"
+                >
+                  <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* DEALER FILES TABLE */}
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl overflow-hidden shadow-xs">
+            {filteredDealerFiles.length === 0 ? (
+              <div className="py-16 text-center text-secondary flex flex-col items-center justify-center gap-3">
+                <div className="w-14 h-14 rounded-full bg-surface-container-high flex items-center justify-center text-secondary">
+                  <span className="material-symbols-outlined text-[32px]">folder_off</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-on-surface">No Dealer Consumer Files Found</h3>
+                  <p className="text-xs text-secondary mt-1">
+                    {selectedDealerFilter !== 'all' || customerSearchQuery || stageFilter !== 'all'
+                      ? 'No files match the selected dealer or search criteria.'
+                      : 'Dealers have not created any customer project files yet.'}
+                  </p>
+                </div>
+                {(selectedDealerFilter !== 'all' || customerSearchQuery || stageFilter !== 'all') && (
+                  <button
+                    onClick={() => {
+                      setSelectedDealerFilter('all');
+                      setCustomerSearchQuery('');
+                      setStageFilter('all');
+                    }}
+                    className="mt-2 px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-semibold cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead className="bg-surface-container text-secondary text-xs uppercase tracking-wider font-semibold border-b border-surface-container-highest">
+                    <tr>
+                      <th className="py-3 px-4">File ID &amp; Date</th>
+                      <th className="py-3 px-4">Consumer / Customer</th>
+                      <th className="py-3 px-4">Dealer Partner</th>
+                      <th className="py-3 px-4">Solar Capacity</th>
+                      <th className="py-3 px-4">Payment &amp; Finance</th>
+                      <th className="py-3 px-4">Project Stage</th>
+                      <th className="py-3 px-4 text-center">Docs</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container-high">
+                    {filteredDealerFiles.map((file) => {
+                      const stageInfo = getStageBadge(file.currentStage || file.stage, file.status);
+                      const fileDate = file.createdAt ? new Date(file.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Recent';
+                      const docCount = file.documents && typeof file.documents === 'object' ? Object.keys(file.documents).length : 0;
+                      const capKw = Number(file.solarSystemKw || file.solar_system_kw) || 4.4;
+
+                      return (
+                        <tr
+                          key={file.id}
+                          className="hover:bg-surface-container-high/40 transition-colors group cursor-pointer"
+                          onClick={() => setSelectedFileForDetail(file)}
+                        >
+                          {/* File ID & Date */}
+                          <td className="py-3.5 px-4 font-mono font-medium">
+                            <div className="text-primary font-bold text-xs flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[14px]">description</span>
+                              <span>{file.id}</span>
+                            </div>
+                            <div className="text-[11px] text-secondary mt-0.5">{fileDate}</div>
+                          </td>
+
+                          {/* Customer Details */}
+                          <td className="py-3.5 px-4">
+                            <div className="font-semibold text-on-surface text-sm">
+                              {file.customerName || file.customer_name || 'Solar Consumer'}
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] text-secondary mt-0.5">
+                              <span className="flex items-center gap-0.5 font-mono">
+                                <span className="material-symbols-outlined text-[13px]">phone</span>
+                                <span>{file.phone || 'N/A'}</span>
                               </span>
                               <span>•</span>
-                              <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-semibold ${
-                                isDirect
-                                  ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'
-                                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                              }`}>
-                                {isDirect
-                                  ? 'Direct to Company'
-                                  : `Sales: ${dealer.assigned_staff_name || dealer.assignedStaffName || 'Sales Staff'}`}
+                              <span>{file.city || file.discom || 'Gujarat'}</span>
+                            </div>
+                            {file.consumerNo && (
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Consumer No: {file.consumerNo}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Dealer Partner */}
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-emerald-400 text-[16px]">storefront</span>
+                              <span className="font-semibold text-on-surface">
+                                {file.dealerName || file.dealer_name || 'Dealer Partner'}
                               </span>
                             </div>
-                          </div>
-                        </div>
-                      </td>
+                            {file.dealerId && (
+                              <div className="text-[10px] text-secondary font-mono mt-0.5">
+                                ID: {String(file.dealerId).slice(0, 16)}
+                              </div>
+                            )}
+                          </td>
 
-                      <td className="py-3.5 px-4 font-mono font-medium text-on-surface">
-                        <div className="flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-secondary text-sm">phone_iphone</span>
-                          <span>{mobile}</span>
-                        </div>
-                      </td>
+                          {/* Solar System Capacity */}
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold font-mono text-emerald-400 text-sm">
+                              {capKw} kW
+                            </div>
+                            <div className="text-[11px] text-secondary mt-0.5">
+                              {file.roofType || 'RCC Flat'}
+                            </div>
+                          </td>
 
-                      <td className="py-3.5 px-4">
-                        <div className="text-on-surface font-medium">{dealer.city || 'Rajkot'}</div>
-                        <div className="text-[11px] text-secondary font-mono">{dealer.discom || 'PGVCL'} Circle</div>
-                      </td>
+                          {/* Finance */}
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                              String(file.financeType).toUpperCase() === 'LOAN'
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            }`}>
+                              <span className="material-symbols-outlined text-[12px]">
+                                {String(file.financeType).toUpperCase() === 'LOAN' ? 'account_balance' : 'payments'}
+                              </span>
+                              <span>{file.financeType || 'CASH'}</span>
+                            </span>
+                            {file.loanBank && (
+                              <div className="text-[10px] text-secondary truncate max-w-[130px] mt-0.5" title={file.loanBank}>
+                                {file.loanBank}
+                              </div>
+                            )}
+                          </td>
 
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                          <span className="material-symbols-outlined text-xs">workspace_premium</span>
-                          <span>{dealer.tier || 'Gold EPC'}</span>
-                        </span>
-                      </td>
+                          {/* Project Stage */}
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${stageInfo.bg}`}>
+                              <span className="material-symbols-outlined text-[13px]">{stageInfo.icon}</span>
+                              <span>{stageInfo.label}</span>
+                            </span>
+                          </td>
 
-                      <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 text-xs text-primary font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                          <span>Active in DB</span>
-                        </span>
-                      </td>
+                          {/* Documents */}
+                          <td className="py-3.5 px-4 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-semibold ${
+                              docCount > 0 ? 'bg-teal-500/10 text-teal-400' : 'bg-surface-container-high text-secondary'
+                            }`}>
+                              <span className="material-symbols-outlined text-[12px]">attach_file</span>
+                              <span>{docCount}</span>
+                            </span>
+                          </td>
 
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenPasswordModal(dealer)}
-                            className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition-all cursor-pointer"
-                            title="Change Dealer Password"
-                          >
-                            <span className="material-symbols-outlined text-sm">key</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditDealer(dealer)}
-                            className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface border border-surface-container-highest transition-all cursor-pointer"
-                            title="Edit Dealer Profile"
-                          >
-                            <span className="material-symbols-outlined text-sm">edit</span>
-                          </button>
-                          <button
-                            onClick={() => handleOpenDelete(dealer)}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all cursor-pointer"
-                            title="Delete Dealer"
-                          >
-                            <span className="material-symbols-outlined text-sm">delete</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {/* Actions */}
+                          <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setSelectedFileForDetail(file)}
+                              className="px-3 py-1.5 rounded-lg bg-surface-container-high hover:bg-primary hover:text-on-primary text-secondary text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto"
+                              title="Open File Timeline &amp; Documents"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
+                              <span>Details</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Onboard / Edit Dealer Modal */}
+      {/* ========================================================================= */}
+      {/* TAB 2: DEALER ACCOUNTS & CREDENTIALS MANAGEMENT */}
+      {/* ========================================================================= */}
+      {activeTab === 'accounts' && (
+        <div className="space-y-4">
+          {/* Search & Filter Toolbar */}
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs">
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-sm">search</span>
+              <input
+                type="text"
+                placeholder="Search by firm name, contact person, mobile, dealer code..."
+                value={accountsSearchQuery}
+                onChange={(e) => setAccountsSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface placeholder-secondary focus:outline-none focus:border-primary transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <option value="all" className="bg-[#070D18] text-white">All Models</option>
+                <option value="Margin Based" className="bg-[#070D18] text-white">Margin Based</option>
+                <option value="Kit Based" className="bg-[#070D18] text-white">Kit Based</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <option value="all" className="bg-[#070D18] text-white">All Statuses</option>
+                <option value="active" className="bg-[#070D18] text-white">Active</option>
+                <option value="suspended" className="bg-[#070D18] text-white">Suspended</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Accounts Table */}
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-xl overflow-hidden shadow-xs">
+            {loading ? (
+              <div className="p-12 text-center text-secondary flex flex-col items-center justify-center gap-2">
+                <span className="material-symbols-outlined text-3xl animate-spin text-primary">sync</span>
+                <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+              </div>
+            ) : filteredDealers.length === 0 ? (
+              <div className="p-12 text-center text-secondary">
+                <span className="material-symbols-outlined text-4xl text-secondary mb-2">person_off</span>
+                <p className="text-sm font-medium">No dealer accounts found matching filter.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs sm:text-sm">
+                  <thead className="bg-surface-container text-secondary text-xs uppercase tracking-wider font-semibold border-b border-surface-container-highest">
+                    <tr>
+                      <th className="py-3 px-4">Dealer Partner / Firm</th>
+                      <th className="py-3 px-4">Mobile Number</th>
+                      <th className="py-3 px-4">City / DISCOM</th>
+                      <th className="py-3 px-4">Partner Tier</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-container-high">
+                    {filteredDealers.map((dealer) => {
+                      const code = dealer.dealer_code || dealer.dealerCode || dealer.id;
+                      const firm = dealer.firm_name || dealer.firmName || 'Gujarat Solar Dealer';
+                      const contact = dealer.contact_person || dealer.contactPerson || 'Authorized Partner';
+                      const mobile = dealer.mobile_number || dealer.mobile || '9876543210';
+                      const category = dealer.category || dealer.pricing_config?.category || 'Margin Based';
+                      const isMargin = category === 'Margin Based';
+                      const assignedStaff = dealer.assigned_staff_name || dealer.assignedStaffName || 'Sales Team';
+
+                      return (
+                        <tr key={dealer.id || code} className="hover:bg-surface-container-high/40 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary font-bold flex items-center justify-center text-sm border border-primary/20">
+                                {firm.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-on-surface">{firm}</div>
+                                <div className="flex items-center gap-2 text-[11px] text-secondary mt-0.5">
+                                  <span>{contact}</span>
+                                  <span>•</span>
+                                  <span className="font-mono text-primary font-bold">{code}</span>
+                                  <span>•</span>
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-semibold ${
+                                    isMargin
+                                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                      : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                  }`}>
+                                    <span className="material-symbols-outlined text-[10px]">{isMargin ? 'percent' : 'inventory_2'}</span>
+                                    <span>{category}</span>
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-secondary mt-1">
+                                  <span className="px-1.5 py-0.5 rounded bg-surface-container border border-surface-container-highest text-secondary">
+                                    {assignedStaff.includes('Direct') ? assignedStaff : `Sales: ${assignedStaff}`}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4 font-mono font-medium text-on-surface">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-secondary text-sm">phone_iphone</span>
+                              <span>{mobile}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <div className="font-medium text-on-surface">{dealer.city || 'Gujarat'}</div>
+                            <div className="text-xs text-secondary mt-0.5 font-mono">
+                              {(dealer.discom || 'PGVCL').includes('Circle') ? dealer.discom : `${dealer.discom || 'PGVCL'} Circle`}
+                            </div>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              <span className="material-symbols-outlined text-xs">workspace_premium</span>
+                              <span>{dealer.tier || 'Gold EPC'}</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4">
+                            <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>Active in DB</span>
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenPasswordModal(dealer)}
+                                className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-all cursor-pointer"
+                                title="Change Dealer Password"
+                              >
+                                <span className="material-symbols-outlined text-sm">key</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenEditDealer(dealer)}
+                                className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface border border-surface-container-highest transition-all cursor-pointer"
+                                title="Edit Dealer Profile"
+                              >
+                                <span className="material-symbols-outlined text-sm">edit</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenDelete(dealer)}
+                                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
+                                title="Delete Dealer Account"
+                              >
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DETAIL MODAL FOR CUSTOMER FILE */}
+      {selectedFileForDetail && (
+        <CustomerFileDetailModal
+          file={selectedFileForDetail}
+          onClose={() => setSelectedFileForDetail(null)}
+        />
+      )}
+
+      {/* MODAL: ADD / EDIT DEALER ACCOUNT */}
       {showDealerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-lg shadow-2xl border border-surface-container-high flex flex-col max-h-[90vh] overflow-hidden my-auto animate-scaleIn">
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-container-high bg-surface-container shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-surface-container-high flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500">apartment</span>
+                <span className="material-symbols-outlined text-primary text-xl">
+                  {editingDealer ? 'manage_accounts' : 'person_add'}
+                </span>
                 <h3 className="font-bold text-on-surface text-base">
-                  {editingDealer ? 'Edit Dealer Partner Profile' : 'Onboard New Dealer Partner'}
+                  {editingDealer ? 'Edit Dealer Profile' : 'Onboard New Dealer Partner'}
                 </h3>
               </div>
               <button
-                type="button"
                 onClick={() => setShowDealerModal(false)}
-                className="text-secondary hover:text-on-surface cursor-pointer p-1 rounded-lg hover:bg-surface-container-high transition-colors"
+                className="text-secondary hover:text-on-surface cursor-pointer"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>
 
-            <form onSubmit={handleSaveDealer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Dealer Code</label>
-                    <input
-                      type="text"
-                      required
-                      disabled={Boolean(editingDealer)}
-                      value={dealerForm.dealerCode}
-                      onChange={(e) => setDealerForm(prev => ({ ...prev, dealerCode: e.target.value.toUpperCase() }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary disabled:opacity-60"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Partner Tier</label>
-                    <select
-                      value={dealerForm.tier}
-                      onChange={(e) => setDealerForm(prev => ({ ...prev, tier: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                    >
-                      <option value="Diamond EPC">Diamond EPC</option>
-                      <option value="Platinum EPC">Platinum EPC</option>
-                      <option value="Gold EPC">Gold EPC</option>
-                      <option value="Silver Installer">Silver Installer</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Operating Model / Category */}
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-secondary flex items-center justify-between">
-                    <span>Operating Model / Category <span className="text-rose-500">*</span></span>
-                    <span className="text-[11px] font-semibold text-secondary">
-                      Selected: <strong className={dealerForm.category === 'Kit Based' ? 'text-purple-400 font-bold' : 'text-emerald-400 font-bold'}>{dealerForm.category || 'Margin Based'}</strong>
-                    </span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Margin Based' }))}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                        (dealerForm.category || 'Margin Based') === 'Margin Based'
-                          ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400 font-semibold shadow-xs ring-1 ring-emerald-500/30'
-                          : 'border-surface-container-highest bg-surface-container text-secondary hover:border-surface-container-high'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        (dealerForm.category || 'Margin Based') === 'Margin Based'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-surface-container-highest text-secondary'
-                      }`}>
-                        <span className="material-symbols-outlined text-[16px]">percent</span>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold leading-tight">Margin Based</div>
-                        <div className="text-[10px] text-secondary mt-0.5 font-normal">Custom ₹/kW margin</div>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDealerForm(prev => ({ ...prev, category: 'Kit Based' }))}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                        dealerForm.category === 'Kit Based'
-                          ? 'border-purple-500 bg-purple-500/10 text-purple-400 font-semibold shadow-xs ring-1 ring-purple-500/30'
-                          : 'border-surface-container-highest bg-surface-container text-secondary hover:border-surface-container-high'
-                      }`}
-                    >
-                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                        dealerForm.category === 'Kit Based'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-surface-container-highest text-secondary'
-                      }`}>
-                        <span className="material-symbols-outlined text-[16px]">inventory_2</span>
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold leading-tight">Kit Based</div>
-                        <div className="text-[10px] text-secondary mt-0.5 font-normal">Fixed package kit</div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-
+            <form onSubmit={handleSaveDealer} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">Firm / Agency Trade Name</label>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Dealer Code / ID</label>
                   <input
                     type="text"
+                    value={dealerForm.dealerCode}
+                    onChange={(e) => setDealerForm({ ...dealerForm, dealerCode: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-mono text-on-surface"
                     required
-                    placeholder="e.g. Saur Urja Solutions"
-                    value={dealerForm.firmName}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, firmName: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Contact Person</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Nilesh Shah"
-                      value={dealerForm.contactPerson}
-                      onChange={(e) => setDealerForm(prev => ({ ...prev, contactPerson: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">Mobile Number (10 Digits)</label>
-                    <div className="relative flex items-center">
-                      <span className="absolute left-3 font-mono text-xs font-bold text-secondary select-none pointer-events-none flex items-center gap-1 z-10">
-                        <span>+91</span>
-                        <span className="text-secondary/40 font-normal">|</span>
-                      </span>
-                      <input
-                        type="tel"
-                        required
-                        maxLength={10}
-                        placeholder="8000050580"
-                        value={dealerForm.mobile}
-                        onChange={(e) => setDealerForm(prev => ({ ...prev, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
-                        className="w-full pl-12 pr-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
-                        autoComplete="off"
-                      />
-                    </div>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Pricing Model / Category</label>
+                  <select
+                    value={dealerForm.category}
+                    onChange={(e) => setDealerForm({ ...dealerForm, category: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface cursor-pointer"
+                  >
+                    <option value="Margin Based" className="bg-[#070D18]">Margin Based (₹/kW profit)</option>
+                    <option value="Kit Based" className="bg-[#070D18]">Kit Based (Fixed Package)</option>
+                  </select>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">City</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Rajkot"
-                      value={dealerForm.city}
-                      onChange={(e) => setDealerForm(prev => ({ ...prev, city: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-secondary mb-1">DISCOM</label>
-                    <select
-                      value={dealerForm.discom}
-                      onChange={(e) => setDealerForm(prev => ({ ...prev, discom: e.target.value }))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                    >
-                      <option value="PGVCL">PGVCL (Paschim Gujarat)</option>
-                      <option value="UGVCL">UGVCL (Uttar Gujarat)</option>
-                      <option value="DGVCL">DGVCL (Dakshin Gujarat)</option>
-                      <option value="MGVCL">MGVCL (Madhya Gujarat)</option>
-                      <option value="Torrent Power">Torrent Power</option>
-                    </select>
-                  </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-secondary mb-1">Dealer Firm Name *</label>
+                  <input
+                    type="text"
+                    value={dealerForm.firmName}
+                    onChange={(e) => setDealerForm({ ...dealerForm, firmName: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface font-semibold"
+                    placeholder="e.g. Somnath Solar Enterprises"
+                    required
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">
-                    Official Business Email <span className="text-xs text-secondary/60 font-normal">(Optional)</span>
-                  </label>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Contact Person *</label>
+                  <input
+                    type="text"
+                    value={dealerForm.contactPerson}
+                    onChange={(e) => setDealerForm({ ...dealerForm, contactPerson: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface"
+                    placeholder="e.g. Ramesh Patel"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Mobile Number (10 digits) *</label>
+                  <input
+                    type="tel"
+                    value={dealerForm.mobile}
+                    onChange={(e) => setDealerForm({ ...dealerForm, mobile: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-mono text-on-surface"
+                    placeholder="9876543210"
+                    maxLength={10}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Email Address</label>
                   <input
                     type="email"
-                    placeholder="partner@sunvinedealer.in"
                     value={dealerForm.email}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
+                    onChange={(e) => setDealerForm({ ...dealerForm, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface"
+                    placeholder="dealer@example.com"
                   />
-                </div>
-
-                {/* Sales Alignment */}
-                <div className="space-y-2 pt-2 border-t border-surface-container-highest">
-                  <label className="block text-xs font-semibold text-secondary">Sales Channel Alignment</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setDealerForm(prev => ({
-                        ...prev,
-                        assignedStaffId: 'STF-DIRECT',
-                        assignedStaffName: 'Direct to Company (HQ Desk)'
-                      }))}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                        dealerForm.assignedStaffId === 'STF-DIRECT'
-                          ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/20 text-indigo-400'
-                          : 'bg-surface-container border-surface-container-highest hover:border-surface-container-high text-secondary'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-lg text-indigo-400 mt-0.5">bolt</span>
-                      <div>
-                        <div className="text-xs font-bold">Direct to Company</div>
-                        <div className="text-[10px] text-secondary mt-0.5">Deals with Sunvine HQ directly</div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const firstStaff = (staffList || []).find(s => s.department === 'Sales') || (staffList || [])[0];
-                        setDealerForm(prev => ({
-                          ...prev,
-                          assignedStaffId: firstStaff?.id || 'STF-801',
-                          assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
-                        }));
-                      }}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-2.5 cursor-pointer transition-all ${
-                        dealerForm.assignedStaffId !== 'STF-DIRECT'
-                          ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/20 text-emerald-400'
-                          : 'bg-surface-container border-surface-container-highest hover:border-surface-container-high text-secondary'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-lg text-emerald-400 mt-0.5">person</span>
-                      <div>
-                        <div className="text-xs font-bold">Field Sales Representative</div>
-                        <div className="text-[10px] text-secondary mt-0.5">Managed by field team</div>
-                      </div>
-                    </button>
-                  </div>
-
-                  {dealerForm.assignedStaffId !== 'STF-DIRECT' && (
-                    <div className="pt-1.5">
-                      <select
-                        value={dealerForm.assignedStaffId}
-                        onChange={(e) => {
-                          const sId = e.target.value;
-                          const match = (staffList || []).find(s => s.id === sId);
-                          setDealerForm(prev => ({
-                            ...prev,
-                            assignedStaffId: sId,
-                            assignedStaffName: match?.name || 'Sunvine Sales Staff'
-                          }));
-                        }}
-                        className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm text-on-surface focus:outline-none focus:border-primary cursor-pointer"
-                      >
-                        {(staffList || []).map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-secondary mb-1">
-                    {editingDealer ? 'New Password (Optional)' : 'Initial Portal Password'}
-                  </label>
+                  <label className="block text-xs font-semibold text-secondary mb-1">City / Region (Gujarat)</label>
                   <input
                     type="text"
-                    required={!editingDealer}
-                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
-                    value={dealerForm.password}
-                    onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface placeholder-secondary focus:outline-none focus:border-primary"
+                    value={dealerForm.city}
+                    onChange={(e) => setDealerForm({ ...dealerForm, city: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface"
+                    placeholder="e.g. Rajkot"
                   />
-                  <p className="text-[11px] text-secondary mt-1">Hashed with bcrypt before saving to PostgreSQL.</p>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">DISCOM Circle</label>
+                  <select
+                    value={dealerForm.discom}
+                    onChange={(e) => setDealerForm({ ...dealerForm, discom: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface cursor-pointer"
+                  >
+                    <option value="PGVCL" className="bg-[#070D18]">PGVCL Circle</option>
+                    <option value="UGVCL" className="bg-[#070D18]">UGVCL Circle</option>
+                    <option value="DGVCL" className="bg-[#070D18]">DGVCL Circle</option>
+                    <option value="MGVCL" className="bg-[#070D18]">MGVCL Circle</option>
+                    <option value="Torrent Power" className="bg-[#070D18]">Torrent Power</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Partner Tier</label>
+                  <select
+                    value={dealerForm.tier}
+                    onChange={(e) => setDealerForm({ ...dealerForm, tier: e.target.value })}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface cursor-pointer"
+                  >
+                    <option value="Gold EPC" className="bg-[#070D18]">Gold EPC Partner</option>
+                    <option value="Diamond" className="bg-[#070D18]">Diamond Partner</option>
+                    <option value="Platinum" className="bg-[#070D18]">Platinum Partner</option>
+                    <option value="Silver Installer" className="bg-[#070D18]">Silver Installer</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-secondary mb-1">Assigned Sales Executive</label>
+                  <select
+                    value={dealerForm.assignedStaffId}
+                    onChange={(e) => {
+                      const staff = (staffList || []).find(s => s.id === e.target.value);
+                      setDealerForm({
+                        ...dealerForm,
+                        assignedStaffId: e.target.value,
+                        assignedStaffName: staff ? staff.name : 'Direct to Company (HQ Desk)'
+                      });
+                    }}
+                    className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs text-on-surface cursor-pointer"
+                  >
+                    <option value="STF-DIRECT" className="bg-[#070D18]">Direct to Company (HQ Desk)</option>
+                    {(staffList || []).map(s => (
+                      <option key={s.id} value={s.id} className="bg-[#070D18]">
+                        {s.name} ({s.id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {!editingDealer && (
+                  <div>
+                    <label className="block text-xs font-semibold text-secondary mb-1">Login Password *</label>
+                    <input
+                      type="text"
+                      value={dealerForm.password}
+                      onChange={(e) => setDealerForm({ ...dealerForm, password: e.target.value })}
+                      className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-mono text-on-surface"
+                      placeholder="Minimum 4 characters"
+                      required
+                    />
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-surface-container-high bg-surface-container shrink-0">
+              <div className="pt-3 border-t border-surface-container-high flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowDealerModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
+                  className="px-4 py-2 bg-surface-container hover:bg-surface-container-high text-secondary rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex items-center gap-1.5 px-5 py-2.5 bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
+                  className="px-5 py-2 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {submitting && <span className="material-symbols-outlined text-sm animate-spin">sync</span>}
-                  <span>{editingDealer ? 'Save Changes' : 'Onboard Dealer'}</span>
+                  {submitting && <span className="material-symbols-outlined text-xs animate-spin">sync</span>}
+                  <span>{editingDealer ? 'Save Changes' : 'Complete Onboarding'}</span>
                 </button>
               </div>
             </form>
@@ -832,38 +1272,37 @@ export default function DealerAccountsManagement() {
         </div>
       )}
 
-      {/* Password Reset Modal */}
+      {/* MODAL: RESET PASSWORD */}
       {passwordModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-md shadow-2xl border border-surface-container-high p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container-highest">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500">key</span>
-                <h3 className="font-bold text-on-surface text-base">Reset Dealer Password</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-surface-container-high rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-surface-container-high flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-400">
+                <span className="material-symbols-outlined text-lg">key</span>
+                <h3 className="font-bold text-on-surface text-sm">Change Dealer Password</h3>
               </div>
               <button
-                type="button"
                 onClick={() => setPasswordModal({ isOpen: false, dealer: null, newPassword: '', confirmPassword: '', showPass: false })}
                 className="text-secondary hover:text-on-surface cursor-pointer"
               >
-                <span className="material-symbols-outlined">close</span>
+                <span className="material-symbols-outlined text-base">close</span>
               </button>
             </div>
 
-            <p className="text-xs text-secondary">
-              Updating password for <strong className="text-on-surface">{passwordModal.dealer?.firm_name || passwordModal.dealer?.firmName}</strong> ({passwordModal.dealer?.dealer_code || passwordModal.dealer?.dealerCode || passwordModal.dealer?.id}).
-            </p>
+            <form onSubmit={handleSavePassword} className="p-4 space-y-3">
+              <div className="text-xs text-secondary">
+                Changing password for <span className="font-bold text-on-surface">{passwordModal.dealer?.firm_name || passwordModal.dealer?.firmName}</span>.
+              </div>
 
-            <form onSubmit={handleSavePassword} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-secondary mb-1">New Password</label>
                 <input
                   type={passwordModal.showPass ? 'text' : 'password'}
-                  required
                   value={passwordModal.newPassword}
-                  onChange={(e) => setPasswordModal(prev => ({ ...prev, newPassword: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary"
-                  placeholder="Enter new secure password"
+                  onChange={(e) => setPasswordModal({ ...passwordModal, newPassword: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-mono text-on-surface"
+                  placeholder="Min 4 characters"
+                  required
                 />
               </div>
 
@@ -871,40 +1310,42 @@ export default function DealerAccountsManagement() {
                 <label className="block text-xs font-semibold text-secondary mb-1">Confirm New Password</label>
                 <input
                   type={passwordModal.showPass ? 'text' : 'password'}
-                  required
                   value={passwordModal.confirmPassword}
-                  onChange={(e) => setPasswordModal(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                  className="w-full px-3.5 py-2.5 bg-surface-container border border-surface-container-highest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:border-primary"
+                  onChange={(e) => setPasswordModal({ ...passwordModal, confirmPassword: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-container border border-surface-container-highest rounded-lg text-xs font-mono text-on-surface"
                   placeholder="Re-enter password"
+                  required
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <label className="flex items-center gap-2 text-xs text-secondary cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={passwordModal.showPass}
-                    onChange={(e) => setPasswordModal(prev => ({ ...prev, showPass: e.target.checked }))}
-                    className="rounded text-primary focus:ring-primary"
-                  />
-                  <span>Show password</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="dealerShowPass"
+                  checked={passwordModal.showPass}
+                  onChange={(e) => setPasswordModal({ ...passwordModal, showPass: e.target.checked })}
+                  className="rounded text-primary focus:ring-0 cursor-pointer"
+                />
+                <label htmlFor="dealerShowPass" className="text-xs text-secondary cursor-pointer">
+                  Show password
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-surface-container-highest">
+              <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setPasswordModal({ isOpen: false, dealer: null, newPassword: '', confirmPassword: '', showPass: false })}
-                  className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
+                  className="px-3 py-1.5 bg-surface-container text-secondary rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-5 py-2.5 bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all disabled:opacity-50"
+                  className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs cursor-pointer disabled:opacity-50 flex items-center gap-1"
                 >
-                  {submitting ? 'Updating...' : 'Save Password'}
+                  {submitting && <span className="material-symbols-outlined text-xs animate-spin">sync</span>}
+                  <span>Update Password</span>
                 </button>
               </div>
             </form>
@@ -912,33 +1353,33 @@ export default function DealerAccountsManagement() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* MODAL: DELETE CONFIRMATION */}
       {deleteModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-md shadow-2xl border border-surface-container-high p-5 sm:p-6 space-y-4">
-            <div className="flex items-center gap-3 text-rose-500">
-              <span className="material-symbols-outlined text-3xl">warning</span>
-              <h3 className="font-bold text-on-surface text-base">Delete Dealer Partner?</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest border border-rose-500/30 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+            <div className="p-4 border-b border-surface-container-high flex items-center gap-2 text-rose-400">
+              <span className="material-symbols-outlined text-xl">warning</span>
+              <h3 className="font-bold text-on-surface text-sm">Delete Dealer Account</h3>
             </div>
-            <p className="text-xs text-secondary leading-relaxed">
-              Are you sure you want to permanently delete <strong className="text-on-surface">{deleteModal.dealer?.firm_name || deleteModal.dealer?.firmName}</strong> ({deleteModal.dealer?.dealer_code || deleteModal.dealer?.dealerCode}) from the live database? This action cannot be undone.
-            </p>
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-surface-container-highest">
-              <button
-                type="button"
-                onClick={() => setDeleteModal({ isOpen: false, dealer: null })}
-                className="px-4 py-2 text-xs font-semibold text-secondary hover:text-on-surface cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={submitting}
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm transition-all disabled:opacity-50"
-              >
-                {submitting ? 'Deleting...' : 'Permanently Delete'}
-              </button>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-secondary">
+                Are you sure you want to delete dealer <span className="font-bold text-on-surface">{deleteModal.dealer?.firm_name || deleteModal.dealer?.firmName}</span>? This action is permanent in the database.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setDeleteModal({ isOpen: false, dealer: null })}
+                  className="px-3 py-1.5 bg-surface-container text-secondary rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={submitting}
+                  className="px-4 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? 'Deleting...' : 'Delete Permanently'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
