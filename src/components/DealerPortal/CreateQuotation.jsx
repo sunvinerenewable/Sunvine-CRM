@@ -303,7 +303,11 @@ export default function CreateQuotation() {
   // Helper to match inverter capacity accurately
   const getAutoInverterMatch = (plantKw, brandName) => {
     const targetInvs = activeInverters.filter(i => i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName);
-    const sorted = [...targetInvs].sort((a, b) => Number(a.capacityKW || 0) - Number(b.capacityKW || 0));
+    const sorted = [...targetInvs].sort((a, b) => {
+      const capA = Number(a.capacityKW ?? a.capacity_kw ?? 0);
+      const capB = Number(b.capacityKW ?? b.capacity_kw ?? 0);
+      return capA - capB;
+    });
     if (sorted.length === 0) {
       let cap = 3.6;
       let price = 15500;
@@ -316,9 +320,10 @@ export default function CreateQuotation() {
       else { cap = plantKw; price = 75000; }
       return { capacityKW: cap, price, inverter: null };
     }
-    const matching = sorted.find(i => Number(i.capacityKW) >= plantKw) || sorted[sorted.length - 1];
+    const matching = sorted.find(i => Number(i.capacityKW ?? i.capacity_kw ?? 0) >= plantKw) || sorted[sorted.length - 1];
+    const resolvedCap = Number(matching.capacityKW ?? matching.capacity_kw) || plantKw;
     return {
-      capacityKW: Number(matching.capacityKW) || plantKw,
+      capacityKW: resolvedCap,
       price: parseNumericPrice(matching.basePrice, 15500),
       inverter: matching
     };
@@ -327,7 +332,7 @@ export default function CreateQuotation() {
   const getInverterBenchmarkRate = (brandName, capKw) => {
     const match = activeInverters.find(i =>
       (i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName) &&
-      Math.abs(Number(i.capacityKW) - Number(capKw)) < 0.05
+      Math.abs(Number(i.capacityKW ?? i.capacity_kw ?? 0) - Number(capKw)) < 0.05
     );
     if (match) {
       return parseNumericPrice(match.basePrice, 15500);
@@ -723,7 +728,11 @@ export default function CreateQuotation() {
   const brandInverters = useMemo(() => {
     return activeInverters
       .filter(i => i.brand?.toLowerCase() === inverterBrand?.toLowerCase() || i.brand === inverterBrand)
-      .sort((a, b) => Number(a.capacityKW || 0) - Number(b.capacityKW || 0));
+      .sort((a, b) => {
+        const capA = Number(a.capacityKW ?? a.capacity_kw ?? parseFloat(String(a.capacity || '').replace(/[^0-9.]/g, '')) ?? 0);
+        const capB = Number(b.capacityKW ?? b.capacity_kw ?? parseFloat(String(b.capacity || '').replace(/[^0-9.]/g, '')) ?? 0);
+        return capA - capB;
+      });
   }, [activeInverters, inverterBrand]);
 
   const availableInverterCapacities = useMemo(() => {
@@ -731,9 +740,10 @@ export default function CreateQuotation() {
       return brandInverters.map(inv => {
         const numPrice = parseNumericPrice(inv.basePrice, 15500);
         const isNew = isCatalogItemNew(inv);
+        const invCap = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 3.3;
         return {
-          kw: Number(inv.capacityKW) || 3.3,
-          label: `${inv.capacityKW} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}${isNew ? ' 🟢 NEW' : ''}`,
+          kw: invCap,
+          label: `${invCap} kW (${inv.phase || 'Single Phase'}) — ₹${numPrice.toLocaleString('en-IN')}${isNew ? ' 🟢 NEW' : ''}`,
           phase: inv.phase || 'Single Phase',
           price: numPrice,
           inverter: inv,
@@ -765,7 +775,7 @@ export default function CreateQuotation() {
 
   // Auto-derived model string for display & PDF compatibility
   const currentInverterRecord = useMemo(() => {
-    return brandInverters.find(i => Math.abs(Number(i.capacityKW) - Number(inverterCapacityKw)) < 0.05) || brandInverters[0] || null;
+    return brandInverters.find(i => Math.abs(Number(i.capacityKW ?? i.capacity_kw ?? 0) - Number(inverterCapacityKw)) < 0.05) || brandInverters[0] || null;
   }, [brandInverters, inverterCapacityKw]);
 
   const inverterModel = `${inverterBrand} ${inverterCapacityKw}kW (${inverterQuantity > 1 ? `${inverterQuantity} Units` : (currentInverterRecord?.phase || 'Grid-Tied')})`;
@@ -2801,7 +2811,7 @@ export default function CreateQuotation() {
                           const newCap = Number(e.target.value);
                           setInverterCapacityKw(newCap);
                           setUserOverrodeInverter(true);
-                          const targetInv = brandInverters.find(i => Math.abs(Number(i.capacityKW) - newCap) < 0.05);
+                          const targetInv = brandInverters.find(i => Math.abs(Number(i.capacityKW ?? i.capacity_kw ?? 0) - newCap) < 0.05);
                           if (targetInv?.id && markCatalogItemSeen) markCatalogItemSeen(targetInv.id);
                           const newPrice = targetInv ? parseNumericPrice(targetInv.basePrice, 15500) : getInverterBenchmarkRate(inverterBrand, newCap);
                           setInverterUnitPrice(newPrice);

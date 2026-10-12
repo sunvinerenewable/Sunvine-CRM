@@ -863,9 +863,17 @@ export const AppProvider = ({ children }) => {
       }
       if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
         const canonicalInverters = dbInverters.value.map(inv => {
-          if (!inv.brand) return inv;
-          const cleanBrand = inv.brand.trim();
-          return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+          if (!inv) return inv;
+          const cleanBrand = inv.brand ? inv.brand.trim() : '';
+          const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
+          const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+          return {
+            ...inv,
+            brand,
+            capacityKW: capKW,
+            capacity_kw: capKW,
+            capacity: inv.capacity || `${capKW} kW`
+          };
         });
         setInvertersList(canonicalInverters);
         cacheManager.set('inverters_list', canonicalInverters);
@@ -1041,9 +1049,17 @@ export const AppProvider = ({ children }) => {
           }
           if (freshInverters?.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
             const canonicalInverters = freshInverters.value.map(inv => {
-              if (!inv.brand) return inv;
-              const cleanBrand = inv.brand.trim();
-              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+              if (!inv) return inv;
+              const cleanBrand = inv.brand ? inv.brand.trim() : '';
+              const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
+              const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+              return {
+                ...inv,
+                brand,
+                capacityKW: capKW,
+                capacity_kw: capKW,
+                capacity: inv.capacity || `${capKW} kW`
+              };
             });
             setInvertersList(canonicalInverters);
             cacheManager.set('inverters_list', canonicalInverters);
