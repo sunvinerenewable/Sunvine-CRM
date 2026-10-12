@@ -525,8 +525,22 @@ export default function QuotationPreview({
       );
       if (res?.method === 'native_file_share') {
         setStatusNotice('PDF shared to WhatsApp!');
+        if (addToast) {
+          addToast({
+            title: 'WhatsApp Share',
+            message: 'Proposal PDF ready to share!',
+            type: 'success'
+          });
+        }
       } else if (res?.method === 'download_and_chat') {
-        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp Web opened.`);
+        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp opened.`);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded & WhatsApp Opened',
+            message: `Proposal PDF downloaded (${res.fileName}). Please attach it in WhatsApp!`,
+            type: 'success'
+          });
+        }
       }
     } catch (err) {
       console.error(err);

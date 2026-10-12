@@ -176,7 +176,24 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
   }
 }
 
-// Share actual PDF file to WhatsApp (Web Share API on mobile, auto-download + chat on desktop)
+// Check whether native Web Share API supports file sharing in current context
+export function canShareFilesDirectly() {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+    return false;
+  }
+  // Web Share API requires a secure context (HTTPS or localhost)
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return false;
+  }
+  try {
+    const dummyFile = new File([''], 'test.pdf', { type: 'application/pdf' });
+    return navigator.canShare({ files: [dummyFile] });
+  } catch (e) {
+    return false;
+  }
+}
+
+// Share actual PDF file to WhatsApp (Web Share API on mobile HTTPS, auto-download + chat on desktop / HTTP LAN)
 export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
   const phone = customPhone ? cleanCustomerPhone(customPhone) : null;
   const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -186,8 +203,12 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
     : `https://api.whatsapp.com/send`;
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const canDirectShare = canShareFilesDirectly();
+
+  // If native file sharing is NOT supported, pre-open a blank tab synchronously on desktop
+  // to avoid browser popup blockers after the async PDF generation
   let preOpenedTab = null;
-  if (!isMobile) {
+  if (!canDirectShare && !isMobile) {
     try {
       preOpenedTab = window.open('about:blank', '_blank');
     } catch (e) {
@@ -204,47 +225,55 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
     }
   }
 
-  // 1. If Mobile device supports native File Sharing via Web Share API
-  if (isMobile && pdfBlob && typeof navigator !== 'undefined' && navigator.canShare) {
+  // 1. If device & browser support native File Sharing via Web Share API
+  if (canDirectShare && pdfBlob) {
     try {
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      if (navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({
-          title: `Sunvine Proposal - ${quote.customerName || 'Solar Proposal'}`,
-          files: [pdfFile]
-        });
-        return { success: true, method: 'native_file_share' };
-      }
+      await navigator.share({
+        title: `Sunvine Proposal - ${quote.customerName || 'Solar Proposal'}`,
+        files: [pdfFile]
+      });
+      return { success: true, method: 'native_file_share' };
     } catch (shareErr) {
       if (shareErr.name === 'AbortError') {
+        // User intentionally cancelled the native share sheet
         return { success: false, aborted: true };
       }
-      console.warn('Native share failed, falling back:', shareErr);
+      console.warn('Native share failed, falling back to download & chat:', shareErr);
     }
   }
 
-  // If user aborted on mobile, do not proceed to auto-open WhatsApp
-  if (isMobile) {
-    return { success: false, aborted: true };
-  }
-
-  // 2. Fallback / Desktop: Download actual PDF directly to user's device
+  // 2. Fallback (Desktop, DevTools, HTTP LAN origins, or browsers without Web Share API Level 2):
+  // Download actual PDF directly to user's device
   if (pdfBlob) {
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    try {
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (downloadErr) {
+      console.warn('Failed to auto-download PDF blob:', downloadErr);
+    }
   }
 
-  // 3. Navigate pre-opened tab to WhatsApp (bypassing popup blocker)
+  // 3. Open WhatsApp (bypassing popup blocker via pre-opened tab or direct window)
   if (preOpenedTab && !preOpenedTab.closed) {
     preOpenedTab.location.href = waUrl;
   } else {
-    window.open(waUrl, '_blank') || (window.location.href = waUrl);
+    try {
+      const opened = window.open(waUrl, '_blank');
+      if (!opened && isMobile) {
+        window.location.href = waUrl;
+      }
+    } catch (e) {
+      if (isMobile) {
+        window.location.href = waUrl;
+      }
+    }
   }
 
   return { success: true, method: 'download_and_chat', fileName, waUrl };
