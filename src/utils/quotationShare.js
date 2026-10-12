@@ -195,18 +195,25 @@ export function canShareFilesDirectly() {
 
 // Share actual PDF file to WhatsApp (Web Share API on mobile HTTPS, auto-download + chat on desktop / HTTP LAN)
 export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
-  const phone = customPhone ? cleanCustomerPhone(customPhone) : null;
-  const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
-  const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
-  const waUrl = phone 
-    ? `https://api.whatsapp.com/send?phone=${phone}` 
-    : `https://api.whatsapp.com/send`;
-
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   const canDirectShare = canShareFilesDirectly();
 
-  // If native file sharing is NOT supported, pre-open a blank tab synchronously on desktop
-  // to avoid browser popup blockers after the async PDF generation
+  // Only pre-target phone if customPhone is explicitly provided; otherwise open contact chooser
+  const targetPhone = customPhone ? cleanCustomerPhone(customPhone) : null;
+  let waUrl = '';
+  if (targetPhone) {
+    waUrl = `https://api.whatsapp.com/send?phone=${targetPhone}`;
+  } else if (isMobile) {
+    waUrl = 'whatsapp://send';
+  } else {
+    waUrl = 'https://web.whatsapp.com';
+  }
+
+  const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
+  const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
+
+  // Pre-open a blank tab ONLY on desktop when direct share is not supported
+  // (NEVER open about:blank on mobile devices)
   let preOpenedTab = null;
   if (!canDirectShare && !isMobile) {
     try {
@@ -260,7 +267,7 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
     }
   }
 
-  // 3. Open WhatsApp (bypassing popup blocker via pre-opened tab or direct window)
+  // 3. Open WhatsApp (bypassing popup blocker via pre-opened tab on desktop or direct open)
   if (preOpenedTab && !preOpenedTab.closed) {
     preOpenedTab.location.href = waUrl;
   } else {

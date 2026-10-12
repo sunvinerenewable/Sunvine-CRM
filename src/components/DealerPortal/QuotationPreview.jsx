@@ -7,7 +7,8 @@ import {
   shareQuotationPdfViaWhatsApp, 
   buildProposalWhatsAppMessage, 
   cleanCustomerPhone,
-  getPublicProposalUrl
+  getPublicProposalUrl,
+  generateQuotationPdfBlob
 } from '../../utils/quotationShare';
 import { useToast } from '../Shared/Toast';
 
@@ -31,6 +32,7 @@ export default function QuotationPreview({
   const [isPinching, setIsPinching] = useState(false);
   const [copiedLinkFeedback, setCopiedLinkFeedback] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [remoteFetchedQuote, setRemoteFetchedQuote] = useState(null);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
@@ -513,6 +515,40 @@ export default function QuotationPreview({
     window.print();
   };
 
+  const handleDownloadPdf = async () => {
+    if (!activeQuotation || !pdfExportRef.current) return;
+    setIsDownloadingPdf(true);
+    try {
+      const quoteId = (activeQuotation.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
+      const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
+      const blob = await generateQuotationPdfBlob(pdfExportRef.current, quoteId);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded',
+            message: `Proposal saved: ${fileName}`,
+            type: 'success'
+          });
+        }
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.warn('PDF download fallback to print:', err);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
+
   const handleShareWhatsAppWithPDF = async () => {
     if (!activeQuotation) return;
     setIsGeneratingPdf(true);
@@ -778,14 +814,23 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">PDF</span>
-                    <span className="hidden sm:inline">Print / Save PDF</span>
+                    {isDownloadingPdf ? (
+                      'Downloading...'
+                    ) : (
+                      <>
+                        <span className="sm:hidden">Download</span>
+                        <span className="hidden sm:inline">Download PDF</span>
+                      </>
+                    )}
                   </span>
                 </button>
               </>
@@ -803,14 +848,16 @@ export default function QuotationPreview({
                 </a>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">Download PDF</span>
-                    <span className="hidden sm:inline">Download Official PDF</span>
+                    {isDownloadingPdf ? 'Downloading...' : 'Download PDF'}
                   </span>
                 </button>
               </>
