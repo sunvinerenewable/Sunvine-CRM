@@ -184,15 +184,13 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
   if (quote && quote.id) {
     quotationService.saveQuotation(quote).catch(() => {});
   }
-  const phone = customPhone 
-    ? cleanCustomerPhone(customPhone) 
-    : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
-  const text = buildProposalWhatsAppMessage(quote);
+  const phone = customPhone ? cleanCustomerPhone(customPhone) : null;
   const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
   const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
-  const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+  const waUrl = phone 
+    ? `https://api.whatsapp.com/send?phone=${phone}` 
+    : `https://api.whatsapp.com/send`;
 
-  // On desktop browser, pre-open window synchronously to prevent Chrome popup blocker
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
   let preOpenedTab = null;
   if (!isMobile) {
@@ -218,8 +216,7 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
       if (navigator.canShare({ files: [pdfFile] })) {
         await navigator.share({
-          title: `Sunvine Proposal - ${quote.customerName}`,
-          text: text,
+          title: `Sunvine Proposal - ${quote.customerName || 'Solar Proposal'}`,
           files: [pdfFile]
         });
         return { success: true, method: 'native_file_share' };
@@ -230,6 +227,11 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
       }
       console.warn('Native share failed, falling back:', shareErr);
     }
+  }
+
+  // If user aborted on mobile, do not proceed to auto-open WhatsApp
+  if (isMobile) {
+    return { success: false, aborted: true };
   }
 
   // 2. Fallback / Desktop: Download actual PDF directly to user's device
@@ -248,7 +250,6 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
   if (preOpenedTab && !preOpenedTab.closed) {
     preOpenedTab.location.href = waUrl;
   } else {
-    // Fallback if tab was not pre-opened
     window.open(waUrl, '_blank') || (window.location.href = waUrl);
   }
 
