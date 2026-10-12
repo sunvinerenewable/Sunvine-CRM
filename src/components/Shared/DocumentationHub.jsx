@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from './Toast';
-import DesignSystemShowcase from './DesignSystemShowcase';
 
 export const MASTER_DOCUMENTATION_POLICIES = {
   aboutUs: {
@@ -200,18 +199,7 @@ export default function DocumentationHub() {
   const { systemSettings } = useApp();
   const { addToast } = useToast();
 
-  const [activePolicyKey, setActivePolicyKey] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const sp = new URLSearchParams(window.location.search || '');
-      if (sp.get('policy') === 'design_system' || sp.get('view') === 'design_system') {
-        return 'design_system';
-      }
-      if (window.location.hash.includes('design-system')) {
-        return 'design_system';
-      }
-    }
-    return 'aboutUs';
-  });
+  const [activePolicyKey, setActivePolicyKey] = useState('aboutUs');
   const [searchTerm, setSearchTerm] = useState('');
 
   const policyMenu = [
@@ -223,8 +211,7 @@ export default function DocumentationHub() {
     { key: 'quotationTerms', label: '6. Quotation & Pricing Terms', icon: 'receipt_long' },
     { key: 'cancellationPolicy', label: '7. Cancellation & Refunds', icon: 'event_busy' },
     { key: 'legalDisclaimer', label: '8. Legal & Subsidy Disclaimers', icon: 'warning' },
-    { key: 'versionInfo', label: '9. System Architecture & Versions', icon: 'terminal' },
-    { key: 'design_system', label: '10. UI Design System Showcase', icon: 'palette' }
+    { key: 'versionInfo', label: '9. System Architecture & Versions', icon: 'terminal' }
   ];
 
   // Resolve policy: prefer rich MASTER_DOCUMENTATION_POLICIES, fallback to dynamic settings if populated
@@ -332,52 +319,46 @@ export default function DocumentationHub() {
           </div>
         </div>
 
-        {/* Right Side: Active Policy Reader / Component Showcase */}
+        {/* Right Side: Active Policy Reader */}
         <div className="lg:col-span-8 p-6 sm:p-8 rounded-2xl bg-surface-container-lowest border border-surface-container-high shadow-xs space-y-6">
-          {activePolicyKey === 'design_system' ? (
-            <DesignSystemShowcase />
-          ) : (
-            <>
-              {/* Policy Title Banner */}
-              <div className="pb-4 border-b border-surface-container-high">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="font-mono text-[11px] font-semibold text-secondary uppercase">
-                    Section Ref: {activePolicyKey.toUpperCase()}
-                  </span>
-                  <span className="text-[11px] font-mono text-secondary">
-                    Last Reviewed: {currentPolicy.lastUpdated || 'September 2026'}
-                  </span>
-                </div>
-                <h2 className="font-heading text-xl sm:text-2xl font-bold text-on-surface mt-2">
-                  {currentPolicy.title}
-                </h2>
-              </div>
+          {/* Policy Title Banner */}
+          <div className="pb-4 border-b border-surface-container-high">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="font-mono text-[11px] font-semibold text-secondary uppercase">
+                Section Ref: {activePolicyKey.toUpperCase()}
+              </span>
+              <span className="text-[11px] font-mono text-secondary">
+                Last Reviewed: {currentPolicy.lastUpdated || 'September 2026'}
+              </span>
+            </div>
+            <h2 className="font-heading text-xl sm:text-2xl font-bold text-on-surface mt-2">
+              {currentPolicy.title}
+            </h2>
+          </div>
 
-              {/* Policy Sections */}
-              <div className="space-y-6 text-xs sm:text-sm">
-                {(currentPolicy.sections || []).map((sec, idx) => (
-                  <div key={idx} className="space-y-2 p-4 rounded-xl bg-surface-container-low/40 border border-surface-container-high/60">
-                    <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
-                      <span className="w-1.5 h-4 bg-primary rounded-full"></span>
-                      <span>{sec.heading}</span>
-                    </h3>
-                    <p className="text-secondary leading-relaxed whitespace-pre-line pl-3.5">
-                      {sec.content}
-                    </p>
-                  </div>
-                ))}
+          {/* Policy Sections */}
+          <div className="space-y-6 text-xs sm:text-sm">
+            {(currentPolicy.sections || []).map((sec, idx) => (
+              <div key={idx} className="space-y-2 p-4 rounded-xl bg-surface-container-low/40 border border-surface-container-high/60">
+                <h3 className="font-heading font-bold text-base text-on-surface flex items-center gap-2">
+                  <span className="w-1.5 h-4 bg-primary rounded-full"></span>
+                  <span>{sec.heading}</span>
+                </h3>
+                <p className="text-secondary leading-relaxed whitespace-pre-line pl-3.5">
+                  {sec.content}
+                </p>
               </div>
+            ))}
+          </div>
 
-              {/* Compliance Footer Note */}
-              <div className="pt-6 border-t border-surface-container-high flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-secondary">
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-primary text-[16px]">verified</span>
-                  <span>Enforced across all 550+ Gujarat Authorized Dealers &bull; DISCOM Aligned</span>
-                </div>
-                <span className="font-mono text-[11px]">Sunvine Renewable Energy &bull; Reg. No. GUJ/SOL/2026</span>
-              </div>
-            </>
-          )}
+          {/* Compliance Footer Note */}
+          <div className="pt-6 border-t border-surface-container-high flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-secondary">
+            <div className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-primary text-[16px]">verified</span>
+              <span>Enforced across all 550+ Gujarat Authorized Dealers &bull; DISCOM Aligned</span>
+            </div>
+            <span className="font-mono text-[11px]">Sunvine Renewable Energy &bull; Reg. No. GUJ/SOL/2026</span>
+          </div>
         </div>
       </div>
     </div>
