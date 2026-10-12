@@ -10,7 +10,7 @@ export function Card({ children, className = '', ...props }) {
     <div
       className={`
         bg-[#0D1527] border border-slate-800/80 rounded-2xl shadow-xl shadow-black/20
-        backdrop-blur-sm overflow-hidden flex flex-col
+        backdrop-blur-sm flex flex-col relative
         ${className}
       `}
       {...props}
@@ -24,7 +24,7 @@ export function CardHeader({ children, className = '', ...props }) {
   return (
     <div
       className={`
-        p-5 sm:p-6 border-b border-slate-800/60 flex items-center justify-between gap-4
+        p-5 sm:p-6 border-b border-slate-800/60 rounded-t-2xl flex items-center justify-between gap-4
         ${className}
       `}
       {...props}
@@ -68,7 +68,7 @@ export function CardFooter({ children, className = '', ...props }) {
   return (
     <div
       className={`
-        p-4 sm:p-5 bg-slate-900/40 border-t border-slate-800/60 flex items-center justify-between gap-4
+        p-4 sm:p-5 bg-slate-900/40 border-t border-slate-800/60 rounded-b-2xl flex items-center justify-between gap-4
         ${className}
       `}
       {...props}
