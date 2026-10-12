@@ -7,7 +7,8 @@ import {
   shareQuotationPdfViaWhatsApp, 
   buildProposalWhatsAppMessage, 
   cleanCustomerPhone,
-  getPublicProposalUrl
+  getPublicProposalUrl,
+  generateQuotationPdfBlob
 } from '../../utils/quotationShare';
 import { useToast } from '../Shared/Toast';
 
@@ -29,11 +30,9 @@ export default function QuotationPreview({
   const [baseScale, setBaseScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const [isPinching, setIsPinching] = useState(false);
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
-  const [targetPhone, setTargetPhone] = useState('');
-  const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [copiedLinkFeedback, setCopiedLinkFeedback] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [remoteFetchedQuote, setRemoteFetchedQuote] = useState(null);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
@@ -198,12 +197,7 @@ export default function QuotationPreview({
     } catch (_) {}
   }, [activeQuotation?.id, isPublicView]);
 
-  // Initialize phone when quotation changes
-  useEffect(() => {
-    if (activeQuotation) {
-      setTargetPhone(activeQuotation.customerPhone || activeQuotation.mobile || '+91 98250 12345');
-    }
-  }, [activeQuotation]);
+
 
   // Guarantee view always starts at the absolute top of the proposal on all devices (mobile, tablet, desktop)
   useEffect(() => {
@@ -521,48 +515,82 @@ export default function QuotationPreview({
     window.print();
   };
 
-  const handleDirectWhatsAppFast = () => {
-    if (!activeQuotation) return;
-    openWhatsAppChat(activeQuotation, targetPhone);
+  const handleDownloadPdf = async () => {
+    if (!activeQuotation || !pdfExportRef.current) return;
+    setIsDownloadingPdf(true);
+    try {
+      const quoteId = (activeQuotation.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
+      const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
+      const blob = await generateQuotationPdfBlob(pdfExportRef.current, quoteId);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded',
+            message: `Proposal saved: ${fileName}`,
+            type: 'success'
+          });
+        }
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.warn('PDF download fallback to print:', err);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   const handleShareWhatsAppWithPDF = async () => {
     if (!activeQuotation) return;
     setIsGeneratingPdf(true);
-    setStatusNotice('Generating official 4-Page PDF proposal...');
+    setStatusNotice('Generating proposal PDF...');
     try {
       const res = await shareQuotationPdfViaWhatsApp(
         activeQuotation,
         pdfExportRef.current,
-        targetPhone
+        null
       );
       if (res?.method === 'native_file_share') {
-        setStatusNotice('Official PDF shared to WhatsApp!');
+        setStatusNotice('PDF shared to WhatsApp!');
+        if (addToast) {
+          addToast({
+            title: 'WhatsApp Share',
+            message: 'Proposal PDF ready to share!',
+            type: 'success'
+          });
+        }
       } else if (res?.method === 'download_and_chat') {
-        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp Web opened. Attach using the 📎 paperclip or drag-and-drop into chat.`);
+        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp opened.`);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded & WhatsApp Opened',
+            message: `Proposal PDF downloaded (${res.fileName}). Please attach it in WhatsApp!`,
+            type: 'success'
+          });
+        }
       }
     } catch (err) {
       console.error(err);
-      openWhatsAppChat(activeQuotation, targetPhone);
+      if (addToast) {
+        addToast({
+          title: 'PDF Share Error',
+          message: 'Could not generate or share PDF. Please try again.',
+          type: 'error'
+        });
+      }
     } finally {
       setIsGeneratingPdf(false);
       setTimeout(() => setStatusNotice(''), 6000);
     }
-  };
-
-  const handleCopyMessage = async () => {
-    if (!activeQuotation) return;
-    let quoteToShare = activeQuotation;
-    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
-      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
-      if (saveRes?.data) {
-        quoteToShare = saveRes.data;
-      }
-    }
-    const msg = buildProposalWhatsAppMessage(quoteToShare);
-    navigator.clipboard.writeText(msg);
-    setCopiedFeedback(true);
-    setTimeout(() => setCopiedFeedback(false), 2000);
   };
 
   const handleCopyOnlineLink = async () => {
@@ -767,16 +795,16 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={() => setShowWhatsAppModal(true)}
+                  onClick={handleShareWhatsAppWithPDF}
                   disabled={isGeneratingPdf}
                   className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
-                  title="Share proposal on WhatsApp (sends actual PDF file + online link)"
+                  title="Share proposal on WhatsApp (sends actual PDF file)"
                 >
                   <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGeneratingPdf ? 'animate-spin' : ''}`}>
                     {isGeneratingPdf ? 'sync' : 'chat'}
                   </span>
                   <span className="truncate">
-                    {isGeneratingPdf ? 'PDF...' : (
+                    {isGeneratingPdf ? 'Generating PDF...' : (
                       <>
                         <span className="sm:hidden">WhatsApp</span>
                         <span className="hidden sm:inline">Share WhatsApp</span>
@@ -786,14 +814,23 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">PDF</span>
-                    <span className="hidden sm:inline">Print / Save PDF</span>
+                    {isDownloadingPdf ? (
+                      'Downloading...'
+                    ) : (
+                      <>
+                        <span className="sm:hidden">Download</span>
+                        <span className="hidden sm:inline">Download PDF</span>
+                      </>
+                    )}
                   </span>
                 </button>
               </>
@@ -811,14 +848,16 @@ export default function QuotationPreview({
                 </a>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">Download PDF</span>
-                    <span className="hidden sm:inline">Download Official PDF</span>
+                    {isDownloadingPdf ? 'Downloading...' : 'Download PDF'}
                   </span>
                 </button>
               </>
@@ -882,138 +921,7 @@ export default function QuotationPreview({
         </div>
       </div>
 
-      {/* WhatsApp Share Modal */}
-      {showWhatsAppModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-surface-container-lowest rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-surface-container-high relative">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
-              <div className="flex items-center gap-2 text-[#25D366]">
-                <span className="material-symbols-outlined text-[26px]">chat</span>
-                <h3 className="font-headline-sm text-base font-bold text-on-surface">Share Proposal with PDF on WhatsApp</h3>
-              </div>
-              <button
-                onClick={() => setShowWhatsAppModal(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
 
-            <div className="py-4 space-y-4">
-              {/* Direct Customer Proposal URL Box */}
-              <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">link</span>
-                    Online Proposal Link (Portable)
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyOnlineLink}
-                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copiedLinkFeedback ? 'check' : 'content_copy'}
-                      </span>
-                      <span>{copiedLinkFeedback ? 'Copied!' : 'Copy Link'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenOnlineView}
-                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                      <span>Open</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="text-[11px] font-mono text-blue-800 bg-white/90 p-2 rounded-lg border border-blue-200 truncate select-all">
-                  {getPublicProposalUrl(activeQuotation)}
-                </div>
-              </div>
-
-              {/* Customer Phone Input */}
-              <div>
-                <label className="block text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">
-                  Customer WhatsApp Mobile Number
-                </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3 font-semibold text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                    +91
-                  </span>
-                  <input
-                    type="text"
-                    value={targetPhone}
-                    onChange={(e) => setTargetPhone(e.target.value)}
-                    placeholder="Enter 10-digit mobile number"
-                    className="w-full h-11 pl-14 pr-4 bg-surface-container-low border border-surface-container-high rounded-xl text-sm font-semibold text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
-                  />
-                </div>
-                <p className="text-[11px] text-secondary mt-1">
-                  On mobile: WhatsApp will open with the official PDF file attached! On desktop: PDF is downloaded automatically and chat opens with message pre-filled.
-                </p>
-              </div>
-
-              {/* Message Preview Box */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
-                    Message Preview
-                  </label>
-                  <button
-                    onClick={handleCopyMessage}
-                    className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">
-                      {copiedFeedback ? 'check' : 'content_copy'}
-                    </span>
-                    <span>{copiedFeedback ? 'Copied!' : 'Copy Text'}</span>
-                  </button>
-                </div>
-                <div className="bg-[#EFEAE2] p-3 rounded-xl border border-[#D1D7DB] text-xs font-sans text-[#111B21] max-h-48 overflow-y-auto whitespace-pre-line leading-relaxed shadow-inner">
-                  {buildProposalWhatsAppMessage(activeQuotation)}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="pt-3 border-t border-surface-container flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-              <button
-                onClick={() => {
-                  handleDirectWhatsAppFast();
-                  setShowWhatsAppModal(false);
-                }}
-                className="text-xs font-semibold text-secondary hover:text-on-surface px-2 py-1 text-left sm:text-center"
-              >
-                Fast Link (Text Only)
-              </button>
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setShowWhatsAppModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-secondary hover:bg-surface-container-high"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    handleShareWhatsAppWithPDF();
-                    setShowWhatsAppModal(false);
-                  }}
-                  disabled={isGeneratingPdf}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white font-label-md text-xs font-bold shadow-md active:scale-95 transition-all disabled:opacity-50"
-                >
-                  <span className={`material-symbols-outlined text-[18px] ${isGeneratingPdf ? 'animate-spin' : ''}`}>
-                    {isGeneratingPdf ? 'sync' : 'send'}
-                  </span>
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Share PDF & Message'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Floating 2-Finger Pinch Zoom Indicator & Controller */}
       <div className="no-print fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 text-xs font-semibold select-none transition-all">
