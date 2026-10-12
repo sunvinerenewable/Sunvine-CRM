@@ -112,13 +112,32 @@ export const quotationService = {
    * Fetch all quotations (scoped by role via server API)
    */
   async getAllQuotations(limit = 100) {
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+    const currentRole = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('sunvine_session_role') || sessionStorage.getItem('sunvine_role') || localStorage.getItem('sunvine_role'))
+      : null;
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // 1. Try secure API gateway
     try {
       const res = await fetch(`/api/quotations?action=list&limit=${limit}`, {
+        headers,
         credentials: 'include'
       });
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.success && Array.isArray(data.quotations)) {
+          // If viewing as admin, ensure admin gets all quotes without dealer cookie narrowing
+          if (currentRole === 'admin') {
+            const { data: dbData } = await supabase
+              .from('quotations')
+              .select('*')
+              .order('created_at', { ascending: false })
+              .limit(limit);
+            if (Array.isArray(dbData) && dbData.length > data.quotations.length) {
+              return dbData.map(normalizeQuotationRow).filter(Boolean);
+            }
+          }
           return data.quotations.map(normalizeQuotationRow).filter(Boolean);
         }
       }
@@ -220,11 +239,11 @@ export const quotationService = {
   async saveQuotation(quote) {
     if (!quote) return { success: false, error: 'Quotation data required.' };
 
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
     const isEdit = Boolean(quote.isEdit || quote.is_edit);
     const requestId = quote.requestId || quote.request_id || ((typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
-
     const apiPayload = {
       action: 'save',
       request_id: requestId,
@@ -252,6 +271,7 @@ export const quotationService = {
       loan_bank: quote.loanBank,
       loan_tenure_years: Number(quote.loanTenureYears) || 5,
       is_direct_company_quote: quote.isDirectCompanyQuote === true || quote.dealerId === 'SV-DIRECT' || quote.dealer_id === 'SV-DIRECT',
+      status: quote.status || 'Active / Sent',
       share_token: quote.shareToken || quote.share_token,
       share_expires_at: quote.shareExpiresAt || quote.share_expires_at,
       bom_items: quote.bomItems || [],
@@ -261,7 +281,10 @@ export const quotationService = {
     try {
       const res = await fetch('/api/quotations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         credentials: 'include',
         body: JSON.stringify(apiPayload)
       });
@@ -274,8 +297,55 @@ export const quotationService = {
         }
       }
 
+      if (res.status === 422) {
+        const errJson = await res.json().catch(() => ({}));
+        return { success: false, error: errJson.error || 'Quotation failed validation.' };
+      }
       const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || `HTTP ${res.status}: Failed to save quotation.` };
+      if (errJson?.error) {
+        return { success: false, error: errJson.error };
+      }
+    } catch (_) {
+      // API server not responding (local dev mode without api server)
+    }
+
+    // 2. Local dev fallback (NEVER in production — bypasses server-side money recompute)
+    if (import.meta.env?.PROD) {
+      return { success: false, error: 'Quotation service temporarily unavailable. Please try again.' };
+    }
+    try {
+      const fallbackPayload = {
+        id: quote.id,
+        dealer_id: quote.dealer_id || quote.dealerId || apiPayload.dealer_id || null,
+        dealer_code: quote.dealer_code || quote.dealerCode || apiPayload.dealer_code || null,
+        dealer_name: quote.dealer_name || quote.dealerName || apiPayload.dealer_name || null,
+        customer_name: apiPayload.customer_name,
+        customer_phone: apiPayload.customer_phone,
+        customer_city: apiPayload.customer_city,
+        customer_state: apiPayload.customer_state,
+        system_capacity_kw: apiPayload.system_capacity_kw,
+        panel_type: apiPayload.panel_type,
+        inverter_type: apiPayload.inverter_type,
+        structure_type: apiPayload.structure_type,
+        base_cost: Number(quote.baseCost) || 0,
+        dealer_margin: Number(quote.dealerMargin || quote.dealerTotalMargin) || 0,
+        total_amount: Number(quote.totalAmount || quote.grandTotalCustomer) || 0,
+        subsidy_amount: Number(quote.subsidyAmount) || 0,
+        net_payable: Number(quote.netPayable) || 0,
+        status: quote.status || 'Active / Sent',
+        quote_payload: quote,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('quotations')
+        .upsert([fallbackPayload], { onConflict: 'id' })
+        .select();
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, data: data?.[0] || quote };
     } catch (err) {
       console.error('[quotationService] Save exception:', err);
       return { success: false, error: err.message || 'Quotation service temporarily unavailable.' };

@@ -135,9 +135,6 @@ _Empowering The Future with Solar Energy_`;
 
 // Open WhatsApp chat directly with pre-filled message (fast link)
 export function openWhatsAppChat(quote, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
-  }
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
     : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
@@ -179,23 +176,46 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
   }
 }
 
-// Share actual PDF file to WhatsApp (Web Share API on mobile, auto-download + chat on desktop)
-export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
+// Check whether native Web Share API supports file sharing in current context
+export function canShareFilesDirectly() {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+    return false;
   }
-  const phone = customPhone 
-    ? cleanCustomerPhone(customPhone) 
-    : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
-  const text = buildProposalWhatsAppMessage(quote);
+  // Web Share API requires a secure context (HTTPS or localhost)
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return false;
+  }
+  try {
+    const dummyFile = new File([''], 'test.pdf', { type: 'application/pdf' });
+    return navigator.canShare({ files: [dummyFile] });
+  } catch (e) {
+    return false;
+  }
+}
+
+// Share actual PDF file to WhatsApp (Web Share API on mobile HTTPS, auto-download + chat on desktop / HTTP LAN)
+export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const canDirectShare = canShareFilesDirectly();
+
+  // Only pre-target phone if customPhone is explicitly provided; otherwise open contact chooser
+  const targetPhone = customPhone ? cleanCustomerPhone(customPhone) : null;
+  let waUrl = '';
+  if (targetPhone) {
+    waUrl = `https://api.whatsapp.com/send?phone=${targetPhone}`;
+  } else if (isMobile) {
+    waUrl = 'whatsapp://send';
+  } else {
+    waUrl = 'https://web.whatsapp.com';
+  }
+
   const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
   const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
-  const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
 
-  // On desktop browser, pre-open window synchronously to prevent Chrome popup blocker
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  // Pre-open a blank tab ONLY on desktop when direct share is not supported
+  // (NEVER open about:blank on mobile devices)
   let preOpenedTab = null;
-  if (!isMobile) {
+  if (!canDirectShare && !isMobile) {
     try {
       preOpenedTab = window.open('about:blank', '_blank');
     } catch (e) {
@@ -212,44 +232,55 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
     }
   }
 
-  // 1. If Mobile device supports native File Sharing via Web Share API
-  if (isMobile && pdfBlob && typeof navigator !== 'undefined' && navigator.canShare) {
+  // 1. If device & browser support native File Sharing via Web Share API
+  if (canDirectShare && pdfBlob) {
     try {
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      if (navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({
-          title: `Sunvine Proposal - ${quote.customerName}`,
-          text: text,
-          files: [pdfFile]
-        });
-        return { success: true, method: 'native_file_share' };
-      }
+      await navigator.share({
+        title: `Sunvine Proposal - ${quote.customerName || 'Solar Proposal'}`,
+        files: [pdfFile]
+      });
+      return { success: true, method: 'native_file_share' };
     } catch (shareErr) {
       if (shareErr.name === 'AbortError') {
+        // User intentionally cancelled the native share sheet
         return { success: false, aborted: true };
       }
-      console.warn('Native share failed, falling back:', shareErr);
+      console.warn('Native share failed, falling back to download & chat:', shareErr);
     }
   }
 
-  // 2. Fallback / Desktop: Download actual PDF directly to user's device
+  // 2. Fallback (Desktop, DevTools, HTTP LAN origins, or browsers without Web Share API Level 2):
+  // Download actual PDF directly to user's device
   if (pdfBlob) {
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    try {
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (downloadErr) {
+      console.warn('Failed to auto-download PDF blob:', downloadErr);
+    }
   }
 
-  // 3. Navigate pre-opened tab to WhatsApp (bypassing popup blocker)
+  // 3. Open WhatsApp (bypassing popup blocker via pre-opened tab on desktop or direct open)
   if (preOpenedTab && !preOpenedTab.closed) {
     preOpenedTab.location.href = waUrl;
   } else {
-    // Fallback if tab was not pre-opened
-    window.open(waUrl, '_blank') || (window.location.href = waUrl);
+    try {
+      const opened = window.open(waUrl, '_blank');
+      if (!opened && isMobile) {
+        window.location.href = waUrl;
+      }
+    } catch (e) {
+      if (isMobile) {
+        window.location.href = waUrl;
+      }
+    }
   }
 
   return { success: true, method: 'download_and_chat', fileName, waUrl };

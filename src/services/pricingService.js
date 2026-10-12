@@ -446,28 +446,76 @@ export const pricingService = {
 
   async saveDealerPricing(dealerId, dealerCode, salespersonId, pricingData) {
     if (!dealerId) return { success: false, error: 'Dealer ID required' };
-
     try {
-      const targetIdentifier = dealerCode || dealerId;
-      const res = await fetch('/api/auth/admin-dealers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          op: 'upsert',
-          dealer: {
-            dealerCode: targetIdentifier,
-            pricingConfig: pricingData
-          }
-        })
-      });
+      let actualData = pricingData;
+      let targetIdentifier = dealerCode || dealerId;
 
-      if (res.ok) {
-        invalidateCatalogCache([`dealer:rates:${targetIdentifier}`, 'catalog:all']);
-        return { success: true, data: pricingData };
+      // Handle 2-argument signature: saveDealerPricing(dealerId, pricingConfig)
+      if (typeof dealerCode === 'object' && dealerCode !== null && !pricingData) {
+        actualData = dealerCode;
+        targetIdentifier = dealerId;
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || 'Failed to update dealer pricing' };
+
+      if (!actualData) {
+        return { success: false, error: 'Pricing data required' };
+      }
+
+      // 1. Try server-side API handler
+      try {
+        const res = await fetch('/api/auth/admin-dealers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            op: 'upsert',
+            dealer: {
+              dealerCode: targetIdentifier,
+              pricingConfig: actualData
+            }
+          })
+        });
+
+        if (res.ok) {
+          invalidateCatalogCache([`dealer:rates:${targetIdentifier}`, 'catalog:all']);
+        }
+      } catch (_) {}
+
+      // 2. Direct Supabase update for immediate consistency across tables
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(targetIdentifier || ''));
+      
+      let query = supabase
+        .from('dealer_accounts')
+        .update({
+          pricing_config: actualData,
+          updated_at: new Date().toISOString()
+        });
+
+      if (isUuid) {
+        query = query.eq('id', targetIdentifier);
+      } else {
+        query = query.eq('dealer_code', targetIdentifier);
+      }
+
+      await query;
+
+      // Also sync to dealers table if exists
+      try {
+        let dQuery = supabase
+          .from('dealers')
+          .update({
+            pricing_config: actualData,
+            updated_at: new Date().toISOString()
+          });
+        if (isUuid) {
+          dQuery = dQuery.eq('id', targetIdentifier);
+        } else {
+          dQuery = dQuery.eq('dealer_code', targetIdentifier);
+        }
+        await dQuery;
+      } catch (_) {}
+
+      invalidateCatalogCache([`dealer:rates:${targetIdentifier}`, 'catalog:all']);
+      return { success: true, data: actualData };
     } catch (err) {
       return { success: false, error: err.message };
     }

@@ -863,9 +863,17 @@ export const AppProvider = ({ children }) => {
       }
       if (dbInverters.status === 'fulfilled' && Array.isArray(dbInverters.value)) {
         const canonicalInverters = dbInverters.value.map(inv => {
-          if (!inv.brand) return inv;
-          const cleanBrand = inv.brand.trim();
-          return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+          if (!inv) return inv;
+          const cleanBrand = inv.brand ? inv.brand.trim() : '';
+          const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
+          const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+          return {
+            ...inv,
+            brand,
+            capacityKW: capKW,
+            capacity_kw: capKW,
+            capacity: inv.capacity || `${capKW} kW`
+          };
         });
         setInvertersList(canonicalInverters);
         cacheManager.set('inverters_list', canonicalInverters);
@@ -954,7 +962,7 @@ export const AppProvider = ({ children }) => {
     } finally {
       setIsHardwareDbSyncing(false);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, role]);
 
   useEffect(() => {
     hydrateAllFromSupabase();
@@ -1041,9 +1049,17 @@ export const AppProvider = ({ children }) => {
           }
           if (freshInverters?.status === 'fulfilled' && Array.isArray(freshInverters.value) && freshInverters.value.length > 0) {
             const canonicalInverters = freshInverters.value.map(inv => {
-              if (!inv.brand) return inv;
-              const cleanBrand = inv.brand.trim();
-              return cleanBrand.toLowerCase() === 'deye' ? { ...inv, brand: 'Deye' } : { ...inv, brand: cleanBrand };
+              if (!inv) return inv;
+              const cleanBrand = inv.brand ? inv.brand.trim() : '';
+              const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
+              const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+              return {
+                ...inv,
+                brand,
+                capacityKW: capKW,
+                capacity_kw: capKW,
+                capacity: inv.capacity || `${capKW} kW`
+              };
             });
             setInvertersList(canonicalInverters);
             cacheManager.set('inverters_list', canonicalInverters);
@@ -2544,6 +2560,7 @@ export const AppProvider = ({ children }) => {
         const currentCfg = d.pricingConfig || {};
         const currentProductRates = { ...(currentCfg.customProductRates || {}) };
         const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const currentSystemRates = { ...(currentCfg.customSystemRates || {}) };
         const productDetails = { ...(currentCfg.productDetails || {}) };
 
         // Clean up legacy duplicate name key if it was previously set
@@ -2557,6 +2574,17 @@ export const AppProvider = ({ children }) => {
           currentBomRates[productId] = numRate;
         }
 
+        if (productMeta.category === 'system_preset' || productMeta.category === 'system') {
+          if (productMeta.capacityKW) {
+            const capKey = String(Number(productMeta.capacityKW));
+            currentSystemRates[capKey] = numRate;
+            if (productMeta.makeKey || productMeta.makeId) {
+              const mKey = productMeta.makeKey || productMeta.makeId;
+              currentSystemRates[`${capKey}_${mKey}`] = numRate;
+            }
+          }
+        }
+
         productDetails[productId] = {
           id: productId,
           name: productMeta.name || productId,
@@ -2564,6 +2592,8 @@ export const AppProvider = ({ children }) => {
           benchmarkPrice: productMeta.benchmarkPrice || 0,
           customPrice: numRate,
           unit: productMeta.unit || '₹',
+          capacityKW: productMeta.capacityKW,
+          makeKey: productMeta.makeKey || productMeta.makeId,
           updatedAt: new Date().toISOString()
         };
 
@@ -2572,6 +2602,7 @@ export const AppProvider = ({ children }) => {
           pricingMode: 'custom',
           customProductRates: currentProductRates,
           customBomRates: currentBomRates,
+          customSystemRates: currentSystemRates,
           productDetails
         };
 
@@ -2612,20 +2643,30 @@ export const AppProvider = ({ children }) => {
         const currentCfg = d.pricingConfig || {};
         const currentProductRates = { ...(currentCfg.customProductRates || {}) };
         const currentBomRates = { ...(currentCfg.customBomRates || {}) };
+        const currentSystemRates = { ...(currentCfg.customSystemRates || {}) };
         const productDetails = { ...(currentCfg.productDetails || {}) };
 
-        const removedName = productDetails[productId]?.name;
+        const removedItem = productDetails[productId];
+        const removedName = removedItem?.name;
         delete currentProductRates[productId];
         if (removedName) {
           delete currentProductRates[removedName];
         }
         delete currentBomRates[productId];
+        if (removedItem?.capacityKW) {
+          const capKey = String(Number(removedItem.capacityKW));
+          delete currentSystemRates[capKey];
+          if (removedItem.makeKey || removedItem.makeId) {
+            delete currentSystemRates[`${capKey}_${removedItem.makeKey || removedItem.makeId}`];
+          }
+        }
         delete productDetails[productId];
 
         updatedConfig = {
           ...currentCfg,
           customProductRates: currentProductRates,
           customBomRates: currentBomRates,
+          customSystemRates: currentSystemRates,
           productDetails
         };
         return {

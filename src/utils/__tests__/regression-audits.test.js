@@ -640,9 +640,21 @@ test('PUBLIC PROPOSAL AUDIT: handleSave automatically generates unguessable shar
   const mockDb = {
     from: (table) => {
       if (table === 'system_settings') {
+        const result = {
+          data: {
+            governance_settings: { quote_prefix: 'SV', validity_days: 15 },
+            statutory_taxes: {},
+            company_profile: {},
+            bank_details: {}
+          },
+          error: null
+        };
         return {
           select: () => ({
-            maybeSingle: async () => ({ data: { key: 'governance', value: { quote_prefix: 'SV', validity_days: 15 } }, error: null })
+            eq: () => ({
+              maybeSingle: async () => result
+            }),
+            maybeSingle: async () => result
           })
         };
       }

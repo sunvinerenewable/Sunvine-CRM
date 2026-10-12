@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
+import { STANDARD_BOM_CATALOG } from '../../data/standardBomData';
 
 // Helper to safely resolve dealer display name, firm name and avatar initial
 const getDealerName = (d) => {
@@ -21,6 +23,7 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
   const {
     dealers,
     pricingMaster,
+    pdfBosMatrix,
     role,
     currentStaff,
     getAccessibleDealers,
@@ -30,6 +33,7 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
     modulesList,
     invertersList,
     bomCatalog,
+    inverterBenchmarkMatrix: globalInverterBenchmarks,
     addNotification,
     logActivity
   } = useApp();
@@ -54,11 +58,11 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
     }
     return initialDealerId || accessibleDealers[0]?.id || '';
   });
-  const [productCategory, setProductCategory] = useState(initialCategory || 'module'); // 'module' | 'inverter' | 'bom'
+  const [productCategory, setProductCategory] = useState(initialCategory || 'system_preset'); // 'system_preset' | 'module' | 'inverter' | 'bom'
   const [selectedProductId, setSelectedProductId] = useState('');
   const [customProductRateInput, setCustomProductRateInput] = useState('');
   const [productLedgerFilter, setProductLedgerFilter] = useState('current'); // 'current' | 'all'
-  const [productLedgerCategory, setProductLedgerCategory] = useState(initialCategory || 'all'); // 'all' | 'module' | 'inverter' | 'bom'
+  const [productLedgerCategory, setProductLedgerCategory] = useState(initialCategory || 'all'); // 'all' | 'system_preset' | 'module' | 'inverter' | 'bom'
   const [productLedgerSearch, setProductLedgerSearch] = useState('');
 
   // Current target dealer object
@@ -66,9 +70,115 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
     return accessibleDealers.find(d => d.id === productTargetDealerId) || accessibleDealers[0] || null;
   }, [accessibleDealers, productTargetDealerId]);
 
-  // Master available hardware products catalog
+  // Active BOS matrix from global state or fallback
+  const activeSlabs = useMemo(() => {
+    return Array.isArray(pdfBosMatrix) && pdfBosMatrix.length > 0 ? pdfBosMatrix : PDF_BOS_PRICE_MATRIX;
+  }, [pdfBosMatrix]);
+
+  // Master available hardware & turnkey products catalog
   const availableProducts = useMemo(() => {
     const list = [];
+
+    // 0. Full System Capacity Packages (Turnkey / BOS Slabs)
+    (activeSlabs || []).forEach(slab => {
+      const cap = Number(slab.capacityKW || slab.capacity_kw);
+      if (!cap) return;
+      const mods = Number(slab.noOfModules || slab.no_of_modules) || Math.round(cap * 1000 / 550);
+      const invCap = slab.inverterCapacityKW || `${cap}KW`;
+
+      // 0a. Flat / Baseline Turnkey System Package
+      const baseTurnkeyBenchmark = Number(slab.apsBiFiPrice || slab.adaniBiFiPrice || slab.waaree540Price || (cap * 52000));
+      list.push({
+        id: `sys-pkg-${cap}`,
+        name: `${cap} kW Complete Turnkey System Package (${mods} Modules, ${invCap} Inverter, Complete BOS)`,
+        category: 'system_preset',
+        categoryLabel: 'Full System Package',
+        benchmarkPrice: baseTurnkeyBenchmark,
+        unit: '₹/system',
+        capacityKW: cap,
+        keyIdentifier: `sys-pkg-${cap}`
+      });
+
+      // 0b. Brand-Specific Turnkey Packages for this capacity
+      if (slab.adaniBiFiPrice) {
+        list.push({
+          id: `sys-pkg-${cap}-adaniBiFiPrice`,
+          name: `${cap} kW System Package — Adani 555W Bi-Fi (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.adaniBiFiPrice),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'adaniBiFiPrice',
+          keyIdentifier: `sys-pkg-${cap}-adaniBiFiPrice`
+        });
+      }
+      if (slab.apsBiFiPrice) {
+        list.push({
+          id: `sys-pkg-${cap}-apsBiFiPrice`,
+          name: `${cap} kW System Package — APS 550W Bi-Fi (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.apsBiFiPrice),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'apsBiFiPrice',
+          keyIdentifier: `sys-pkg-${cap}-apsBiFiPrice`
+        });
+      }
+      if (slab.waaree585Price) {
+        list.push({
+          id: `sys-pkg-${cap}-waaree585Price`,
+          name: `${cap} kW System Package — Waaree 585W TOPCon (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.waaree585Price),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'waaree585Price',
+          keyIdentifier: `sys-pkg-${cap}-waaree585Price`
+        });
+      }
+      if (slab.waaree540Price) {
+        list.push({
+          id: `sys-pkg-${cap}-waaree540Price`,
+          name: `${cap} kW System Package — Waaree 540W Mono PERC (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.waaree540Price),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'waaree540Price',
+          keyIdentifier: `sys-pkg-${cap}-waaree540Price`
+        });
+      }
+      if (slab.rayzonePrice) {
+        list.push({
+          id: `sys-pkg-${cap}-rayzonePrice`,
+          name: `${cap} kW System Package — Rayzon 550W Bi-Fi (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.rayzonePrice),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'rayzonePrice',
+          keyIdentifier: `sys-pkg-${cap}-rayzonePrice`
+        });
+      }
+      if (slab.apsTopcon600Price) {
+        list.push({
+          id: `sys-pkg-${cap}-apsTopcon600Price`,
+          name: `${cap} kW System Package — APS 600W TOPCon (${mods} Modules)`,
+          category: 'system_preset',
+          categoryLabel: 'Full System Package',
+          benchmarkPrice: Number(slab.apsTopcon600Price),
+          unit: '₹/system',
+          capacityKW: cap,
+          makeKey: 'apsTopcon600Price',
+          keyIdentifier: `sys-pkg-${cap}-apsTopcon600Price`
+        });
+      }
+    });
 
     // 1. Solar Modules (Panels)
     const mods = (modulesList && modulesList.length > 0) ? modulesList : [
@@ -94,20 +204,22 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
     });
 
     // 2. Solar Inverters
-    const invs = (invertersList && invertersList.length > 0) ? invertersList : [
-      { id: 'inv-solis-2_2', brand: 'Solis / Solaryaan', model: '2.2 KW Single Phase Grid-Tied Inverter', capacityKW: 2.2, benchmarkPrice: 24500 },
-      { id: 'inv-sunvine-3', brand: 'Sunvine Smart Series', model: '3.0 KW 1-Phase Smart MPPT On-Grid', capacityKW: 3.0, benchmarkPrice: 29800 },
-      { id: 'inv-solis-3_6', brand: 'Solis / Vsole', model: '3.6 KW Single Phase Dual MPPT On-Grid', capacityKW: 3.6, benchmarkPrice: 33500 },
-      { id: 'inv-sunvine-5', brand: 'Sunvine Smart Series', model: '5.0 KW 3-Phase Smart MPPT On-Grid', capacityKW: 5.0, benchmarkPrice: 42000 },
-      { id: 'inv-sunvine-6', brand: 'Sunvine Smart Series', model: '6.0 KW 3-Phase Smart MPPT On-Grid', capacityKW: 6.0, benchmarkPrice: 48500 },
-      { id: 'inv-growatt-10', brand: 'Growatt / Deye', model: '10.0 KW 3-Phase Multi-MPPT On-Grid', capacityKW: 10.0, benchmarkPrice: 72000 }
-    ];
+    const invs = (invertersList && invertersList.length > 0) ? invertersList : (
+      (globalInverterBenchmarks && globalInverterBenchmarks.length > 0) ? globalInverterBenchmarks : [
+        { id: 'inv-solis-2_2', brand: 'Solis / Solaryaan', model: '2.2 KW Single Phase Grid-Tied Inverter', capacityKW: 2.2, benchmarkPrice: 24500 },
+        { id: 'inv-sunvine-3', brand: 'Sunvine Smart Series', model: '3.0 KW 1-Phase Smart MPPT On-Grid', capacityKW: 3.0, benchmarkPrice: 29800 },
+        { id: 'inv-solis-3_6', brand: 'Solis / Vsole', model: '3.6 KW Single Phase Dual MPPT On-Grid', capacityKW: 3.6, benchmarkPrice: 33500 },
+        { id: 'inv-sunvine-5', brand: 'Sunvine Smart Series', model: '5.0 KW 3-Phase Smart MPPT On-Grid', capacityKW: 5.0, benchmarkPrice: 42000 },
+        { id: 'inv-sunvine-6', brand: 'Sunvine Smart Series', model: '6.0 KW 3-Phase Smart MPPT On-Grid', capacityKW: 6.0, benchmarkPrice: 48500 },
+        { id: 'inv-growatt-10', brand: 'Growatt / Deye', model: '10.0 KW 3-Phase Multi-MPPT On-Grid', capacityKW: 10.0, benchmarkPrice: 72000 }
+      ]
+    );
 
     invs.forEach(inv => {
-      const benchmarkPrice = inv.benchmarkPrice || (inv.capacityKW <= 3 ? 28000 : inv.capacityKW <= 5 ? 42000 : 70000);
+      const benchmarkPrice = Number(inv.benchmarkPrice || inv.basePrice || (inv.capacityKW <= 3 ? 28000 : inv.capacityKW <= 5 ? 42000 : 70000));
       list.push({
         id: inv.id || `inv-${inv.brand}-${inv.capacityKW || inv.capacity}`,
-        name: `${inv.brand} ${inv.capacityKW ? `${inv.capacityKW} kW` : (inv.capacity || '')} ${inv.model || ''}`.trim(),
+        name: `${inv.brand} ${inv.capacityKW ? `${inv.capacityKW} kW` : (inv.capacity || '')} ${inv.model || inv.series || ''}`.trim(),
         category: 'inverter',
         categoryLabel: 'Solar Inverter',
         benchmarkPrice,
@@ -116,35 +228,31 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
       });
     });
 
-    // 3. BOM & BoS Components
-    const standardBomItems = [
-      { id: 'bom-gi-pipe-40x40', name: 'Mounting Structure: 40x40 GI Pipe (2mm HDG)', category: 'bom', benchmarkPrice: 750, unit: '₹/pipe' },
-      { id: 'bom-gi-pipe-60x40', name: 'Mounting Structure: 60x40 GI Pipe (2mm HDG)', category: 'bom', benchmarkPrice: 980, unit: '₹/pipe' },
-      { id: 'bom-mid-clamp', name: 'Structure Hardware: Aluminium Mid Clamps with SS Bolt', category: 'bom', benchmarkPrice: 45, unit: '₹/pc' },
-      { id: 'bom-end-clamp', name: 'Structure Hardware: Aluminium End Clamps with SS Bolt', category: 'bom', benchmarkPrice: 45, unit: '₹/pc' },
-      { id: 'bom-anchor-fastener', name: 'Structure Hardware: M10 Anchor Fasteners (SS304)', category: 'bom', benchmarkPrice: 55, unit: '₹/pc' },
-      { id: 'bom-acdb-dcdb', name: 'Electrical: ACDB + DCDB Dual Protection Box with SPD', category: 'bom', benchmarkPrice: 4800, unit: '₹/set' },
-      { id: 'bom-dc-cable-4mm', name: 'Cables: 4 sq mm TUV Solar DC Cable (Copper)', category: 'bom', benchmarkPrice: 48, unit: '₹/m' },
-      { id: 'bom-ac-cable', name: 'Cables: 3-Core Flexible Copper AC Armoured Cable', category: 'bom', benchmarkPrice: 165, unit: '₹/m' },
-      { id: 'bom-earthing-kit', name: 'Earthing: Chemical Earthing Electrode + Bentonite Compound', category: 'bom', benchmarkPrice: 2400, unit: '₹/set' },
-      { id: 'bom-lightning-arrester', name: 'Protection: Copper Lightning Arrester (107kA Spike Safe)', category: 'bom', benchmarkPrice: 1800, unit: '₹/set' },
-      { id: 'bom-pvc-conduit', name: 'Conduits: 25mm Heavy Duty UV Protected PVC Conduit Pipe', category: 'bom', benchmarkPrice: 120, unit: '₹/pipe' }
+    // 3. BOM & BOE Components (Merge dynamic bomCatalog + standard FIELD_BOM_MASTER_CATALOG)
+    const seenBomIds = new Set();
+    const allBomSource = [
+      ...(Array.isArray(bomCatalog) && bomCatalog.length > 0 ? bomCatalog : []),
+      ...STANDARD_BOM_CATALOG
     ];
 
-    standardBomItems.forEach(b => {
+    allBomSource.forEach(b => {
+      if (!b || !b.id || seenBomIds.has(b.id)) return;
+      seenBomIds.add(b.id);
+      const rawPrice = Number(b.defaultRate ?? b.rate ?? b.benchmarkPrice ?? 50);
+      const unit = b.unit ? `₹/${b.unit}` : '₹/pc';
       list.push({
         id: b.id,
-        name: b.name,
+        name: `${b.name} (${b.specs || b.description || b.make || 'BOM'})`,
         category: 'bom',
-        categoryLabel: 'BOM / BoS Hardware',
-        benchmarkPrice: b.benchmarkPrice,
-        unit: b.unit,
+        categoryLabel: 'BOM / BOE Item',
+        benchmarkPrice: rawPrice,
+        unit,
         keyIdentifier: b.id
       });
     });
 
     return list;
-  }, [modulesList, invertersList]);
+  }, [activeSlabs, modulesList, invertersList, globalInverterBenchmarks, bomCatalog]);
 
   // Current category filtered products
   const categoryProducts = useMemo(() => {
@@ -205,6 +313,14 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
         const rate = Number(customProductRates[prodKey]);
         const unit = detail.unit || matchedProd?.unit || '₹';
 
+        const categoryLabel = category === 'system_preset'
+          ? 'Full System Package'
+          : category === 'module'
+          ? 'Solar Module'
+          : category === 'inverter'
+          ? 'Solar Inverter'
+          : 'BOM / BOE Item';
+
         records.push({
           dealerId: dealer.id,
           dealerName: getDealerName(dealer),
@@ -213,7 +329,7 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
           productId: canonicalId,
           productName: prodName,
           category,
-          categoryLabel: category === 'module' ? 'Solar Module' : category === 'inverter' ? 'Solar Inverter' : 'BOM Hardware',
+          categoryLabel,
           benchmarkPrice,
           customPrice: rate,
           unit,
@@ -268,7 +384,9 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
         name: currentChosenProduct.name,
         category: currentChosenProduct.category,
         benchmarkPrice: currentChosenProduct.benchmarkPrice,
-        unit: currentChosenProduct.unit
+        unit: currentChosenProduct.unit,
+        capacityKW: currentChosenProduct.capacityKW,
+        makeKey: currentChosenProduct.makeKey
       });
     }
 
@@ -291,22 +409,22 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
 
   return (
     <div className="flex flex-col gap-6 w-full text-on-surface">
-      {/* 2.5 Product & Material-Wise Dealer Negotiated Rates Engine (Panels, Inverters & BOM) */}
+      {/* 2.5 Product & Material-Wise Dealer Negotiated Rates Engine (Panels, Inverters, System Packages & BOM) */}
       <div className="bg-surface-container-lowest border border-surface-container-highest rounded-xl p-6 shadow-sm flex flex-col gap-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-surface-container gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-lg border border-primary/20 shrink-0">
-              <span className="material-symbols-outlined text-[22px]">category</span>
+              <span className="material-symbols-outlined text-[22px]">tune</span>
             </div>
             <div>
               <h3 className="font-headline-md text-base font-bold text-inverse-surface flex items-center gap-2">
-                Product &amp; Material-Wise Dealer Negotiated Rates
+                Full System &amp; Hardware Dealer Negotiated Rates
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-mono font-bold">
                   {allProductOverrides.length} Active Overrides
                 </span>
               </h3>
               <p className="font-body-sm text-xs text-secondary mt-0.5">
-                Configure dealer-specific prices for solar modules, string inverters, and individual BOM components. Select any dealer from the dropdown to set customized prices.
+                Configure dealer-specific prices for complete system capacity packages (2.2 kW, 3.3 kW, 5 kW, 10 kW...), individual solar modules, inverters, and BOM / BOE components. Auto-applied in Quotation Engine.
               </p>
             </div>
           </div>
@@ -330,7 +448,7 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
               <select
                 value={productTargetDealerId}
                 onChange={(e) => setProductTargetDealerId(e.target.value)}
-                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary truncate"
+                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary truncate cursor-pointer"
               >
                 {accessibleDealers.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -341,30 +459,31 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
             </div>
 
             {/* 2. Category Selector */}
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-3">
               <label className="block text-[11px] font-semibold text-secondary mb-1">
                 2. Category
               </label>
               <select
                 value={productCategory}
                 onChange={(e) => setProductCategory(e.target.value)}
-                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary"
+                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-semibold text-on-surface focus:outline-none focus:border-primary cursor-pointer"
               >
-                <option value="module">Solar Modules</option>
-                <option value="inverter">Solar Inverters</option>
-                <option value="bom">BOM Hardware</option>
+                <option value="system_preset">⚡ Full System Packages (2.2 kW, 3.3 kW, 5 kW...)</option>
+                <option value="module">☀️ Solar Modules (Panels)</option>
+                <option value="inverter">⚡ Solar Inverters</option>
+                <option value="bom">📦 BOM / BOE Components (Structure, Cable, ACDB, Earthing)</option>
               </select>
             </div>
 
             {/* 3. Product Dropdown */}
-            <div className="lg:col-span-4">
+            <div className="lg:col-span-3">
               <label className="block text-[11px] font-semibold text-secondary mb-1">
                 3. Select Product / Hardware Item
               </label>
               <select
                 value={selectedProductId}
                 onChange={(e) => setSelectedProductId(e.target.value)}
-                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-medium text-on-surface focus:outline-none focus:border-primary truncate"
+                className="w-full h-9 px-3 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-xs font-medium text-on-surface focus:outline-none focus:border-primary truncate cursor-pointer"
               >
                 {categoryProducts.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -464,12 +583,13 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
               <select
                 value={productLedgerCategory}
                 onChange={(e) => setProductLedgerCategory(e.target.value)}
-                className="h-8 px-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-[11px] font-medium text-secondary focus:outline-none focus:border-primary"
+                className="h-8 px-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-[11px] font-medium text-secondary focus:outline-none focus:border-primary cursor-pointer"
               >
                 <option value="all">All Categories</option>
+                <option value="system_preset">Full System Packages</option>
                 <option value="module">Modules Only</option>
                 <option value="inverter">Inverters Only</option>
-                <option value="bom">BOM Hardware Only</option>
+                <option value="bom">BOM / BOE Only</option>
               </select>
 
               {/* Quick Search */}
@@ -510,7 +630,9 @@ export default function DealerCustomPricingMatrix({ onShowToast, initialCategory
                       </td>
                       <td className="py-2.5 px-3">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          row.category === 'module'
+                          row.category === 'system_preset'
+                            ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25'
+                            : row.category === 'module'
                             ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             : row.category === 'inverter'
                             ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'

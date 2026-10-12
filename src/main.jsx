@@ -7,8 +7,13 @@ import { initCrashReporter } from './services/crashReporter.js';
 
 // Initialize Slack Crash Reporter for unhandled runtime exceptions & unhandled promises
 initCrashReporter();
-// Register Service Worker after initial load to avoid competing with critical path
+// Auto-recover from outdated chunks on new deployment without error boundary popup
 if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    console.warn('[Vite] Preload chunk error caught. Auto-reloading application...');
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
     registerSW({ immediate: true });
   });
