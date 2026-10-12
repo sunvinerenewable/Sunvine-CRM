@@ -23,7 +23,7 @@ import {
   getPanelQuantityForCapacity,
   normalizeBrand
 } from '../../shared/pricing/calculations';
-import { PDF_BOS_PRICE_MATRIX } from '../../data/gujaratDatabase';
+import { PDF_BOS_PRICE_MATRIX } from '../../data/defaultPresets';
 
 const formatINR = (val) => {
   if (val === undefined || val === null || isNaN(val)) return '₹\u00A00';
