@@ -135,9 +135,6 @@ _Empowering The Future with Solar Energy_`;
 
 // Open WhatsApp chat directly with pre-filled message (fast link)
 export function openWhatsAppChat(quote, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
-  }
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
     : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
@@ -181,9 +178,6 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
 
 // Share actual PDF file to WhatsApp (Web Share API on mobile, auto-download + chat on desktop)
 export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
-  }
   const phone = customPhone ? cleanCustomerPhone(customPhone) : null;
   const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
   const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
