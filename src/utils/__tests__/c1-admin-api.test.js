@@ -144,9 +144,9 @@ test('Admin Auth Guard: staff role tokens return 403 Forbidden on admin-*', asyn
   }
 });
 
-// ── 2. Password Length & Complexity Validation (Enforces >= 6 Chars + Special Char) ──
+// ── 2. Password Length Validation (Enforces >= 6 Chars; allows alphanumeric like admin123) ──
 
-test('Password Enforcement: admin-dealers upsert rejects weak password (< 6 chars or no special char) with 422', async () => {
+test('Password Enforcement: admin-dealers upsert rejects weak password (< 6 chars) with 422', async () => {
   const req = mockReq({
     action: 'admin-dealers',
     token: adminToken,
@@ -164,10 +164,10 @@ test('Password Enforcement: admin-dealers upsert rejects weak password (< 6 char
   const res = mockRes();
   await authActionHandler(req, res);
   assert.equal(res._status, 422, 'Password < 6 chars must return 422 Unprocessable Entity');
-  assert.match(res._body?.error, /at least 6 characters|special character/i);
+  assert.match(res._body?.error, /at least 6 characters/i);
 });
 
-test('Password Enforcement: admin-staff upsert rejects weak password (< 6 chars or no special char) with 422', async () => {
+test('Password Enforcement: admin-staff upsert rejects weak password (< 6 chars) with 422', async () => {
   const req = mockReq({
     action: 'admin-staff',
     token: adminToken,
@@ -183,7 +183,7 @@ test('Password Enforcement: admin-staff upsert rejects weak password (< 6 chars 
   const res = mockRes();
   await authActionHandler(req, res);
   assert.equal(res._status, 422, 'Staff password < 6 chars must return 422');
-  assert.match(res._body?.error, /at least 6 characters|special character/i);
+  assert.match(res._body?.error, /at least 6 characters/i);
 });
 
 test('Password Enforcement: manage-credentials create-dealer rejects password < 6 chars with 422', async () => {
@@ -203,7 +203,7 @@ test('Password Enforcement: manage-credentials create-dealer rejects password < 
   const res = mockRes();
   await manageCredentialsHandler(req, res);
   assert.equal(res._status, 422);
-  assert.match(res._body?.error, /at least 6 characters|special character/i);
+  assert.match(res._body?.error, /at least 6 characters/i);
 });
 
 test('Password Enforcement: manage-credentials create-staff rejects password < 6 chars with 422', async () => {
@@ -222,7 +222,27 @@ test('Password Enforcement: manage-credentials create-staff rejects password < 6
   const res = mockRes();
   await manageCredentialsHandler(req, res);
   assert.equal(res._status, 422);
-  assert.match(res._body?.error, /at least 6 characters|special character/i);
+  assert.match(res._body?.error, /at least 6 characters/i);
+});
+
+test('Password Enforcement: accepts alphanumeric password like admin123 without requiring special characters', async () => {
+  const req = mockReq({
+    action: 'admin-dealers',
+    token: adminToken,
+    body: {
+      op: 'upsert',
+      dealer: {
+        dealerCode: 'SV-DLR-998',
+        firmName: 'Test EPC Solar Valid',
+        contactPerson: 'Ramesh Patel',
+        mobile: '9876543219',
+        password: 'admin123'
+      }
+    }
+  });
+  const res = mockRes();
+  await authActionHandler(req, res);
+  assert.notEqual(res._status, 422, 'Password admin123 must NOT be rejected for complexity');
 });
 
 // ── 3. Credential Sanitization: No password_hash or access_code ─────────────

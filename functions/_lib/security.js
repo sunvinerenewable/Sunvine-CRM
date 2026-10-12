@@ -103,12 +103,8 @@ export function validatePasswordComplexity(password) {
     return { valid: false, error: 'Password is required.' };
   }
   const trimmed = password.trim();
-  if (trimmed.length < 8) {
-    return { valid: false, error: 'Password must be at least 8 characters and contain at least one special character (!@#$%^&* etc.).' };
-  }
-  const specialCharRegex = /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\/\\`~;']/;
-  if (!specialCharRegex.test(trimmed)) {
-    return { valid: false, error: 'Password must contain at least one special character (!@#$%^&* etc.).' };
+  if (trimmed.length < 6) {
+    return { valid: false, error: 'Password must be at least 6 characters.' };
   }
   return { valid: true };
 }

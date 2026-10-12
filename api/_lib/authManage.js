@@ -660,7 +660,7 @@ export default async function handler(req, res) {
         if (cleanMobile.length !== 10) {
           return res.status(400).json({ error: 'Valid 10-digit mobile number is required.' });
         }
-        // Require a valid password (min 6 chars + 1 special char)
+        // Require a valid password (min 6 chars)
         const passCheck = validatePasswordComplexity(password);
         if (!passCheck.valid) {
           return res.status(422).json({ error: passCheck.error });

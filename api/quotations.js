@@ -888,6 +888,7 @@ export async function handleSave(req, res, jwt, db) {
     dealer_margin: effectiveMargin,
     total_amount: totalAmount,
     subsidy_amount: subsidyAmount,
+    net_payable: netPayable,
     annual_generation_kwh: Math.round(serverValidatedKw * (peakSunHours > 100 ? peakSunHours : (peakSunHours > 0 ? Math.round(peakSunHours * 365) : 1440))),
     status: body.status ? String(body.status).trim().slice(0, 50) : (statusToSave ? String(statusToSave).trim().slice(0, 50) : (isNew ? 'Active / Sent' : undefined)),
     request_id: toValidUuid(body.request_id),

@@ -673,7 +673,7 @@ export default async function handler(request, env) {
         if (cleanMobile.length !== 10) {
           return Response.json({ error: 'Valid 10-digit mobile number is required.' }, { status: 400, headers: corsHeaders });
         }
-        // Require a valid password (min 6 chars + 1 special char)
+        // Require a valid password (min 6 chars)
         const passCheck = validatePasswordComplexity(password);
         if (!passCheck.valid) {
           return Response.json({ error: passCheck.error }, { status: 422, headers: corsHeaders });
