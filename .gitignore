@@ -60,3 +60,4 @@ supabase/config.toml
 .wrangler/
 
 .vercel
+.agents/*

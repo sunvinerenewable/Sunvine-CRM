@@ -7,7 +7,8 @@ import {
   INITIAL_QUOTATIONS,
   PDF_BOS_PRICE_MATRIX,
   PDF_BOM_SPECIFICATIONS,
-  SUNVINE_OFFICIAL_PROFILE
+  SUNVINE_OFFICIAL_PROFILE,
+  normalizeCompanyProfile
 } from '../data/defaultPresets';
 import {
   STANDARD_BOM_CATALOG,
@@ -689,6 +690,7 @@ export const AppProvider = ({ children }) => {
 
   // Master Dynamic System Settings
   const [systemSettings, setSystemSettings] = useState(DEFAULT_SYSTEM_SETTINGS);
+  const [isSettingsLoaded, setIsSettingsLoaded] = useState(false);
 
   // Dynamic Required Documents Management (Categorized: Residential, Commercial, Common Meter)
   const [requiredDocuments, setRequiredDocuments] = useState(DEFAULT_REQUIRED_DOCUMENTS);
@@ -921,11 +923,21 @@ export const AppProvider = ({ children }) => {
         });
       }
       if (dbSettings.status === 'fulfilled' && dbSettings.value) {
-        setSystemSettings(prev => ({ ...(prev || {}), ...dbSettings.value }));
-        if (dbSettings.value.governanceSettings) {
-          setGovernanceSettings(dbSettings.value.governanceSettings);
+        const s = dbSettings.value;
+        const normalizedComp = normalizeCompanyProfile(s.companyProfile || s.company_profile);
+        setSystemSettings(prev => ({
+          ...(prev || {}),
+          ...s,
+          companyProfile: normalizedComp || s.companyProfile || s.company_profile,
+          company_profile: normalizedComp || s.company_profile || s.companyProfile,
+          bankDetails: s.bankDetails || s.bank_details,
+          bank_details: s.bank_details || s.bankDetails
+        }));
+        if (s.governanceSettings) {
+          setGovernanceSettings(s.governanceSettings);
         }
       }
+      setIsSettingsLoaded(true);
       if (dbDocMaster.status === 'fulfilled' && dbDocMaster.value) {
         if (Array.isArray(dbDocMaster.value.registry) && dbDocMaster.value.registry.length > 0) {
           setMasterDocRegistry(dbDocMaster.value.registry);
@@ -961,6 +973,7 @@ export const AppProvider = ({ children }) => {
       console.warn('[AppContext] Supabase live hydration notice:', err);
     } finally {
       setIsHardwareDbSyncing(false);
+      setIsSettingsLoaded(true);
     }
   }, [isAuthenticated, role]);
 
@@ -1736,14 +1749,6 @@ export const AppProvider = ({ children }) => {
       details: `Updated settings configuration for section: ${section}`,
       newValue: updates
     });
-
-    addNotification({
-      type: 'info',
-      icon: 'tune',
-      title: 'System Settings Updated',
-      description: `Configuration changes saved for ${section}.`,
-      audience: 'admin'
-    });
   };
 
   const saveDesignRecord = (designData) => {
@@ -1851,6 +1856,19 @@ export const AppProvider = ({ children }) => {
   };
 
   const editCustomerFile = async (fileId, updatedFields) => {
+    const existingFile = (customerFiles || []).find(f => f.id === fileId);
+    const isFileVerified = Boolean(
+      existingFile?.isVerified ||
+      existingFile?.is_verified ||
+      existingFile?.status === 'Verified' ||
+      existingFile?.status === 'DISCOM Registered' ||
+      (existingFile?.stage && existingFile.stage !== 'LEAD_SOURCED' && existingFile.stage !== 'SITE_SURVEY')
+    );
+
+    if (isFileVerified) {
+      throw new Error('This customer file has been verified and is locked. Core customer specifications cannot be modified.');
+    }
+
     const timestamp = new Date().toISOString();
     const editMilestone = {
       id: `TL-${Date.now()}`,
@@ -1879,9 +1897,11 @@ export const AppProvider = ({ children }) => {
 
     if (targetUpdatedFile) {
       try {
-        await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+        const res = await customerFileService.updateCustomerFile(fileId, targetUpdatedFile);
+        if (!res.success && res.error) throw new Error(res.error);
       } catch (e) {
         console.warn('[AppContext] Failed to save updated customer file in DB:', e);
+        throw e;
       }
     }
 
@@ -1897,6 +1917,11 @@ export const AppProvider = ({ children }) => {
   };
 
   const cancelCustomerFile = async (fileId, reason = 'Cancelled by user') => {
+    const cleanReason = (reason || '').trim();
+    if (!cleanReason || cleanReason.length < 5) {
+      throw new Error('A specific cancellation reason of at least 5 characters is required.');
+    }
+
     const timestamp = new Date().toISOString();
     const actorName = role === 'admin' ? 'Admin Desk' : currentStaff?.name || currentDealer?.contactPerson || 'Authorized User';
     const cancelMilestone = {
@@ -1908,7 +1933,7 @@ export const AppProvider = ({ children }) => {
       status: 'Cancelled',
       action: 'CANCEL_FILE',
       actor: actorName,
-      notes: `Cancellation reason: ${reason}`
+      notes: `Cancellation reason: ${cleanReason}`
     };
 
     let targetCancelledFile = null;
@@ -1919,7 +1944,7 @@ export const AppProvider = ({ children }) => {
         ...f,
         status: 'Cancelled',
         stage: 'CANCELLED',
-        cancellationReason: reason,
+        cancellationReason: cleanReason,
         cancelledAt: timestamp,
         cancelledBy: actorName,
         timeline: updatedTimeline,
@@ -1929,16 +1954,18 @@ export const AppProvider = ({ children }) => {
     }));
 
     try {
-      await customerFileService.cancelCustomerFile(fileId, reason, actorName);
+      const res = await customerFileService.cancelCustomerFile(fileId, cleanReason, actorName);
+      if (!res.success && res.error) throw new Error(res.error);
     } catch (e) {
       console.warn('[AppContext] Failed to cancel customer file in DB:', e);
+      throw e;
     }
 
     if (targetCancelledFile) {
       pushNotificationService.sendFileCancelledNotification({
         fileId,
         customerName: targetCancelledFile.customerName,
-        reason,
+        reason: cleanReason,
         cancelledBy: actorName
       });
     }
@@ -1947,7 +1974,7 @@ export const AppProvider = ({ children }) => {
       action: 'CANCEL_CUSTOMER_FILE',
       module: 'CUSTOMER_FILE',
       recordId: fileId,
-      details: `Cancelled customer file ${fileId}. Reason: ${reason}`
+      details: `Cancelled customer file ${fileId}. Reason: ${cleanReason}`
     });
 
     broadcastDbEvent('SYNC_FILES');
@@ -1995,7 +2022,8 @@ export const AppProvider = ({ children }) => {
     }));
 
     try {
-      await customerFileService.restoreCustomerFile(fileId, targetFile);
+      const res = await customerFileService.restoreCustomerFile(fileId, targetFile);
+      if (!res.success && res.error) throw new Error(res.error);
     } catch (e) {
       console.warn('[AppContext] Failed to restore customer file in DB:', e);
       throw e;
@@ -2020,13 +2048,86 @@ export const AppProvider = ({ children }) => {
     return targetRestoredFile;
   };
 
+  const softDeleteCustomerFile = async (fileId) => {
+    const targetFile = (customerFiles || []).find(f => f.id === fileId);
+    const isFileVerified = Boolean(
+      targetFile?.isVerified ||
+      targetFile?.is_verified ||
+      targetFile?.status === 'Verified' ||
+      targetFile?.status === 'DISCOM Registered' ||
+      (targetFile?.stage && targetFile.stage !== 'LEAD_SOURCED' && targetFile.stage !== 'SITE_SURVEY')
+    );
+
+    if (isFileVerified) {
+      throw new Error('Verified applications cannot be deleted. If this project cannot proceed, please cancel the file with a specific reason.');
+    }
+
+    const actorName = role === 'admin' ? 'Admin Desk' : currentStaff?.name || currentDealer?.contactPerson || 'Authorized User';
+    setCustomerFiles(prev => prev.filter(f => f.id !== fileId));
+
+    try {
+      const res = await customerFileService.softDeleteCustomerFile(fileId, actorName);
+      if (!res.success) throw new Error(res.error || 'Failed to soft-delete customer file');
+    } catch (e) {
+      console.warn('[AppContext] Failed to soft-delete customer file in DB:', e);
+      throw e;
+    }
+
+    logActivity({
+      action: 'SOFT_DELETE_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Moved customer file ${fileId} to Trash (14-day permanent purge countdown started).`
+    });
+
+    broadcastDbEvent('SYNC_FILES');
+  };
+
+  const restoreCustomerFileFromTrash = async (fileId) => {
+    if (role !== 'admin') {
+      throw new Error('Permission denied. Only Administrator can restore files from Trash.');
+    }
+
+    try {
+      const res = await customerFileService.restoreCustomerFileFromTrash(fileId);
+      if (!res.success) throw new Error(res.error || 'Failed to restore customer file from trash');
+      await refreshCustomerFiles();
+    } catch (e) {
+      console.warn('[AppContext] Failed to restore customer file from trash:', e);
+      throw e;
+    }
+
+    logActivity({
+      action: 'RESTORE_CUSTOMER_FILE_FROM_TRASH',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `Restored customer file ${fileId} from Trash back to active pipeline.`
+    });
+
+    broadcastDbEvent('SYNC_FILES');
+  };
+
   const deleteCustomerFile = async (fileId) => {
     const targetFile = (customerFiles || []).find(f => f.id === fileId);
+    const isFileVerified = Boolean(
+      targetFile?.isVerified ||
+      targetFile?.is_verified ||
+      targetFile?.status === 'Verified' ||
+      targetFile?.status === 'DISCOM Registered' ||
+      (targetFile?.stage && targetFile.stage !== 'LEAD_SOURCED' && targetFile.stage !== 'SITE_SURVEY')
+    );
+
+    if (isFileVerified) {
+      throw new Error('Verified applications cannot be deleted. If this project cannot proceed, please cancel the file with a specific reason.');
+    }
+
     setCustomerFiles(prev => prev.filter(f => f.id !== fileId));
     try {
-      await customerFileService.deleteCustomerFile(fileId, targetFile);
+      const res = await customerFileService.deleteCustomerFile(fileId, targetFile);
+      if (res && !res.success && res.error) throw new Error(res.error);
     } catch (e) {
       console.warn('[AppContext] Failed to delete customer file in DB:', e);
+      throw e;
     }
     logActivity({
       action: 'DELETE_CUSTOMER_FILE',
@@ -2034,6 +2135,37 @@ export const AppProvider = ({ children }) => {
       recordId: fileId,
       details: `Permanently purged customer file ${fileId} and all attached documents from storage.`
     });
+    broadcastDbEvent('SYNC_FILES');
+  };
+
+  const setFileVerificationStatus = async (fileId, isVerified = true) => {
+    const actorName = role === 'admin' ? 'Super Admin Desk' : currentStaff?.name || 'Verification Desk';
+    const timestamp = new Date().toISOString();
+    setCustomerFiles(prev => prev.map(f => {
+      if (f.id !== fileId) return f;
+      return {
+        ...f,
+        isVerified,
+        verifiedAt: isVerified ? timestamp : null,
+        verifiedBy: isVerified ? actorName : null
+      };
+    }));
+
+    try {
+      const res = await customerFileService.setFileVerificationStatus(fileId, isVerified, actorName);
+      if (!res.success && res.error) throw new Error(res.error);
+    } catch (e) {
+      console.warn('[AppContext] Failed to update file verification status:', e);
+      throw e;
+    }
+
+    logActivity({
+      action: isVerified ? 'VERIFY_CUSTOMER_FILE' : 'UNVERIFY_CUSTOMER_FILE',
+      module: 'CUSTOMER_FILE',
+      recordId: fileId,
+      details: `${isVerified ? 'Marked' : 'Unmarked'} customer file ${fileId} as verified by ${actorName}.`
+    });
+
     broadcastDbEvent('SYNC_FILES');
   };
 
@@ -3200,7 +3332,10 @@ export const AppProvider = ({ children }) => {
     editCustomerFile,
     cancelCustomerFile,
     restoreCustomerFile,
+    softDeleteCustomerFile,
+    restoreCustomerFileFromTrash,
     deleteCustomerFile,
+    setFileVerificationStatus,
     updateFileStatus,
     pricingMaster,
     updatePricingMaster,
@@ -3290,6 +3425,7 @@ export const AppProvider = ({ children }) => {
     isCatalogItemNew,
     // Master System Settings & Policies
     systemSettings,
+    isSettingsLoaded,
     updateSystemSettings,
     // Dynamic Required Documents Management
     requiredDocuments: DEFAULT_REQUIRED_DOCUMENTS,
@@ -3366,6 +3502,7 @@ export const AppProvider = ({ children }) => {
     capacityBomMatrix,
     seenCatalogItemIds,
     systemSettings,
+    isSettingsLoaded,
     masterDocRegistry,
     categoryDocRules,
     applicationStages,
@@ -3384,7 +3521,10 @@ export const AppProvider = ({ children }) => {
     editCustomerFile,
     cancelCustomerFile,
     restoreCustomerFile,
+    softDeleteCustomerFile,
+    restoreCustomerFileFromTrash,
     deleteCustomerFile,
+    setFileVerificationStatus,
     updateFileStatus,
     updatePricingMaster,
     updatePricingPresets,

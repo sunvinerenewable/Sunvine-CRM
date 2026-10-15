@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import { adminAccountService } from '../../services/adminAccountService';
 import { pushNotificationService } from '../../services/pushNotificationService';
+import { settingsService } from '../../services/settingsService';
+import { normalizeCompanyProfile } from '../../data/defaultPresets';
 
 export default function AdminSettings() {
   const { addToast } = useToast();
@@ -26,13 +28,16 @@ export default function AdminSettings() {
     addApplicationStage,
     updateApplicationStage,
     deleteApplicationStage,
-    resetApplicationStages
+    resetApplicationStages,
+    systemSettings,
+    updateSystemSettings,
+    isSettingsLoaded
   } = useApp();
 
-  const VALID_SETTINGS_TABS = ['account_center', 'document_rules', 'pipeline_stages', 'security', 'system'];
+  const VALID_SETTINGS_TABS = ['account_center', 'company_profile', 'document_rules', 'pipeline_stages', 'security', 'system'];
   const VALID_CATEGORIES = ['RESIDENTIAL', 'BANK_LOAN', 'NBFC_LOAN', 'COMMERCIAL', 'HOUSING_SOCIETY'];
 
-  // Primary Settings Page Tabs: 'account_center' | 'document_rules' | 'security' | 'system'
+  // Primary Settings Page Tabs: 'account_center' | 'company_profile' | 'document_rules' | 'security' | 'system'
   const [settingsTab, setSettingsTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -43,6 +48,191 @@ export default function AdminSettings() {
     }
     return 'account_center';
   });
+
+  // Company Profile & Bank Settlement State (Synchronized directly with PostgreSQL system_settings)
+  const [companyForm, setCompanyForm] = useState({
+    companyName: '',
+    gstin: '',
+    pan: '',
+    address: '',
+    state: 'Gujarat',
+    email: '',
+    website: '',
+    whatsapp: '',
+    helpdesk: '',
+    terms: '',
+    validityText: '',
+    bankName: '',
+    accountNumber: '',
+    ifsc: '',
+    branch: '',
+    accountHolder: ''
+  });
+  const [isCompanySaving, setIsCompanySaving] = useState(false);
+  const [isCompanyRefreshing, setIsCompanyRefreshing] = useState(false);
+  const [companyFormDirty, setCompanyFormDirty] = useState(false);
+
+  // Sync Company & Bank details directly when systemSettings loads or updates
+  useEffect(() => {
+    if (systemSettings) {
+      const comp = systemSettings.companyProfile || {};
+      const bank = systemSettings.bankDetails || comp.bank || comp.bankDetails || {};
+      const norm = normalizeCompanyProfile(comp, { bank });
+      if (norm) {
+        setCompanyForm({
+          companyName: norm.companyName || '',
+          gstin: norm.gstin || '',
+          pan: norm.pan || '',
+          address: norm.address || '',
+          state: norm.state || 'Gujarat',
+          email: norm.email || '',
+          website: norm.website || '',
+          whatsapp: norm.whatsapp || '',
+          helpdesk: norm.helpdesk || '',
+          terms: norm.terms || '',
+          validityText: norm.validityText || '',
+          bankName: norm.bank?.bankName || '',
+          accountNumber: norm.bank?.accountNumber || '',
+          ifsc: norm.bank?.ifsc || '',
+          branch: norm.bank?.branch || '',
+          accountHolder: norm.bank?.accountHolder || ''
+        });
+      }
+    }
+  }, [systemSettings, isSettingsLoaded]);
+
+  const handleCompanyFieldChange = (field, value) => {
+    setCompanyFormDirty(true);
+    setCompanyForm(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === 'gstin') {
+        const upper = value.toUpperCase();
+        next.gstin = upper;
+        if (upper.length >= 12 && !prev.pan) {
+          next.pan = upper.slice(2, 12);
+        }
+      } else if (field === 'pan' || field === 'ifsc') {
+        next[field] = value.toUpperCase();
+      }
+      return next;
+    });
+  };
+
+  const handleSaveCompanyProfile = async (e) => {
+    if (e) e.preventDefault();
+    setIsCompanySaving(true);
+    try {
+      const gstinVal = companyForm.gstin.trim().toUpperCase();
+      const panVal = companyForm.pan.trim().toUpperCase();
+      const ifscVal = companyForm.ifsc.trim().toUpperCase();
+
+      if (gstinVal && gstinVal.length !== 15) {
+        throw new Error('GSTIN must be exactly 15 alphanumeric characters (e.g., 24AFPFS7402A1Z7).');
+      }
+      if (panVal && panVal.length !== 10) {
+        throw new Error('PAN must be exactly 10 alphanumeric characters (e.g., AFPFS7402A).');
+      }
+      if (ifscVal && ifscVal.length !== 11) {
+        throw new Error('Bank IFSC code must be exactly 11 characters (e.g., ICIC0000104).');
+      }
+
+      const bankPayload = {
+        bankName: companyForm.bankName.trim(),
+        bank_name: companyForm.bankName.trim(),
+        accountNumber: companyForm.accountNumber.trim(),
+        account_number: companyForm.accountNumber.trim(),
+        ifsc: ifscVal,
+        ifsc_code: ifscVal,
+        ifscCode: ifscVal,
+        branch: companyForm.branch.trim(),
+        branch_name: companyForm.branch.trim(),
+        accountHolder: companyForm.accountHolder.trim(),
+        account_holder: companyForm.accountHolder.trim(),
+        email: companyForm.email.trim()
+      };
+
+      const companyPayload = {
+        name: companyForm.companyName.trim(),
+        companyName: companyForm.companyName.trim(),
+        company_name: companyForm.companyName.trim(),
+        gstin: gstinVal,
+        company_gstin: gstinVal,
+        pan: panVal,
+        pan_number: panVal,
+        address: companyForm.address.trim(),
+        state: companyForm.state.trim() || 'Gujarat',
+        email: companyForm.email.trim(),
+        website: companyForm.website.trim(),
+        whatsapp: companyForm.whatsapp.trim(),
+        helpdesk: companyForm.helpdesk.trim(),
+        terms: companyForm.terms.trim(),
+        validityText: companyForm.validityText.trim(),
+        bank: bankPayload,
+        bankDetails: bankPayload,
+        bank_details: bankPayload
+      };
+
+      // 1. Direct Database Persistence via settingsService
+      const compRes = await settingsService.saveSystemSettings('companyProfile', companyPayload);
+      if (!compRes.success) throw new Error(compRes.error || 'Failed to save company profile to database');
+
+      const bankRes = await settingsService.saveSystemSettings('bankDetails', bankPayload);
+      if (!bankRes.success) throw new Error(bankRes.error || 'Failed to save bank details to database');
+
+      // 2. Sync with in-memory AppContext
+      if (updateSystemSettings) {
+        await updateSystemSettings('companyProfile', companyPayload);
+        await updateSystemSettings('bankDetails', bankPayload);
+      }
+
+      setCompanyFormDirty(false);
+      addToast('Company Profile and Bank details saved directly to database!', 'success');
+    } catch (err) {
+      console.error('[AdminSettings] Save Company Profile Error:', err);
+      addToast(err.message || 'Error saving company profile to database', 'error');
+    } finally {
+      setIsCompanySaving(false);
+    }
+  };
+
+  const handleRefreshCompanyProfile = async () => {
+    setIsCompanyRefreshing(true);
+    try {
+      const fresh = await settingsService.getSystemSettings();
+      if (fresh) {
+        const comp = fresh.companyProfile || {};
+        const bank = fresh.bankDetails || comp.bank || comp.bankDetails || {};
+        const norm = normalizeCompanyProfile(comp, { bank });
+        if (norm) {
+          setCompanyForm({
+            companyName: norm.companyName || '',
+            gstin: norm.gstin || '',
+            pan: norm.pan || '',
+            address: norm.address || '',
+            state: norm.state || 'Gujarat',
+            email: norm.email || '',
+            website: norm.website || '',
+            whatsapp: norm.whatsapp || '',
+            helpdesk: norm.helpdesk || '',
+            terms: norm.terms || '',
+            validityText: norm.validityText || '',
+            bankName: norm.bank?.bankName || '',
+            accountNumber: norm.bank?.accountNumber || '',
+            ifsc: norm.bank?.ifsc || '',
+            branch: norm.bank?.branch || '',
+            accountHolder: norm.bank?.accountHolder || ''
+          });
+          setCompanyFormDirty(false);
+          addToast('Synced latest company & bank profile from database', 'info');
+        }
+      }
+    } catch (err) {
+      addToast('Failed to refresh from database: ' + err.message, 'error');
+    } finally {
+      setIsCompanyRefreshing(false);
+    }
+  };
+
 
   // Account Center Sub-Tabs: 'admins' | 'dealers' | 'staff'
   const [accountSubTab, setAccountSubTab] = useState(() => {
@@ -1140,10 +1330,10 @@ export default function AdminSettings() {
             <span className="text-slate-900 font-semibold">Settings</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold font-heading text-slate-900 tracking-tight">
-            Settings &amp; Governance
+            Settings &amp; Preferences
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Configure system settings, dynamic document requirements, security, and live database credentials.
+            Manage company details, team accounts, required documents, and quotation settings.
           </p>
         </div>
 
@@ -1151,19 +1341,19 @@ export default function AdminSettings() {
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-semibold text-emerald-800">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>PostgreSQL Live Sync</span>
+            <span>Live Connected</span>
           </div>
 
           <button
             onClick={() => loadAccounts(true)}
             disabled={refreshing || loading}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold cursor-pointer shadow-sm transition-all active:scale-95 disabled:opacity-50"
-            title="Reload live records from database"
+            title="Refresh latest settings"
           >
             <span className={`material-symbols-outlined text-sm text-slate-500 ${refreshing ? 'animate-spin' : ''}`}>
               sync
             </span>
-            <span>{refreshing ? 'Syncing...' : 'Sync Live DB'}</span>
+            <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
           </button>
         </div>
       </div>
@@ -1198,6 +1388,23 @@ export default function AdminSettings() {
           <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 font-bold ml-1">
             {adminsList.length + dealersList.length + staffListState.length}
           </span>
+        </button>
+
+        <button
+          onClick={() => startTransition(() => setSettingsTab('company_profile'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'company_profile'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">corporate_fare</span>
+          <span>Company &amp; Bank Profile</span>
+          {Boolean(companyForm.gstin && companyForm.accountNumber) ? (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 ml-0.5" title="Configured & Validated" />
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse ml-0.5" title="Action required: Complete GSTIN & Bank info" />
+          )}
         </button>
 
         <button
@@ -1426,7 +1633,7 @@ export default function AdminSettings() {
               {loading ? (
                 <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
                   <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
-                  <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                  <p className="text-xs font-medium">Loading accounts...</p>
                 </div>
               ) : filteredAdmins.length === 0 ? (
                 <div className="p-12 text-center text-slate-500">
@@ -1547,7 +1754,7 @@ export default function AdminSettings() {
               {loading ? (
                 <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
                   <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
-                  <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                  <p className="text-xs font-medium">Loading accounts...</p>
                 </div>
               ) : filteredDealers.length === 0 ? (
                 <div className="p-12 text-center text-slate-500">
@@ -1709,7 +1916,7 @@ export default function AdminSettings() {
                 {loading ? (
                   <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
                     <span className="material-symbols-outlined text-3xl animate-spin text-emerald-600">sync</span>
-                    <p className="text-xs font-medium">Connecting to live PostgreSQL database...</p>
+                    <p className="text-xs font-medium">Loading accounts...</p>
                   </div>
                 ) : filteredStaff.length === 0 ? (
                   <div className="p-12 text-center text-slate-500">
@@ -2287,14 +2494,458 @@ export default function AdminSettings() {
           </p>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
             <span className="material-symbols-outlined text-sm">lock</span>
-            Bcrypt Hashing &amp; JWT HTTP-Only Cookies Active
+            Secure Login &amp; Protected Sessions Active
           </div>
         </div>
       )}
 
       {/* ========================================================
-          TAB CONTENT: 3. SYSTEM & PRESETS (Future Tab Placeholder)
+          TAB CONTENT: 2. COMPANY PROFILE & BANK SETTLEMENT
           ======================================================== */}
+      {settingsTab === 'company_profile' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Header Card with Diagnostic Badges & Live Status */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-2xl">corporate_fare</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="font-bold text-slate-900 text-lg">
+                      Company Profile &amp; Bank Details
+                    </h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">check_circle</span>
+                      Live Connected
+                    </span>
+                    {companyFormDirty && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1 animate-pulse">
+                        <span className="material-symbols-outlined text-xs">edit_note</span>
+                        Unsaved Changes
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                    Official company name, GSTIN, and bank account shown on quotation PDFs, client proposals, and billing receipts.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRefreshCompanyProfile}
+                  disabled={isCompanyRefreshing || isCompanySaving}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition-all cursor-pointer disabled:opacity-50"
+                  title="Reload latest saved details"
+                >
+                  <span className={`material-symbols-outlined text-base ${isCompanyRefreshing ? 'animate-spin' : ''}`}>
+                    sync
+                  </span>
+                  <span>{isCompanyRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveCompanyProfile}
+                  disabled={isCompanySaving}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <span className={`material-symbols-outlined text-base ${isCompanySaving ? 'animate-spin' : ''}`}>
+                    {isCompanySaving ? 'hourglass_top' : 'save'}
+                  </span>
+                  <span>{isCompanySaving ? 'Saving...' : 'Save Profile'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Document Readiness Banner */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-6">
+              <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                companyForm.gstin
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                  : 'bg-amber-50/70 border-amber-200 text-amber-900'
+              }`}>
+                <span className={`material-symbols-outlined text-2xl ${companyForm.gstin ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {companyForm.gstin ? 'verified' : 'error'}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Official GSTIN</div>
+                  <div className="text-xs font-bold font-mono truncate">
+                    {companyForm.gstin || 'MISSING (Action Required)'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Required for legal solar quotation PDFs</div>
+                </div>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                companyForm.accountNumber
+                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                  : 'bg-amber-50/70 border-amber-200 text-amber-900'
+              }`}>
+                <span className={`material-symbols-outlined text-2xl ${companyForm.accountNumber ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {companyForm.accountNumber ? 'account_balance' : 'account_balance_wallet'}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Settlement Bank</div>
+                  <div className="text-xs font-bold truncate">
+                    {companyForm.bankName ? `${companyForm.bankName}` : 'Configured'}
+                    {companyForm.accountNumber ? ` • ${companyForm.accountNumber.slice(-4)}` : ' (Missing)'}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{companyForm.ifsc ? `IFSC: ${companyForm.ifsc}` : 'Required for customer payments'}</div>
+                </div>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border flex items-center gap-3 ${
+                (companyForm.gstin && companyForm.accountNumber)
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  : 'bg-rose-50 border-rose-200 text-rose-900'
+              }`}>
+                <span className={`material-symbols-outlined text-2xl ${(companyForm.gstin && companyForm.accountNumber) ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {(companyForm.gstin && companyForm.accountNumber) ? 'task_alt' : 'block'}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Quotation Document Readiness</div>
+                  <div className="text-xs font-bold truncate">
+                    {(companyForm.gstin && companyForm.accountNumber) ? 'Ready for Official PDF Generation' : 'Generation Blocked'}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {(companyForm.gstin && companyForm.accountNumber) ? 'All mandatory billing fields present' : 'Both GSTIN & Bank required'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveCompanyProfile} className="space-y-6">
+            {/* Card 1: Statutory & Corporate Identity */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+              <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100 mb-6">
+                <span className="material-symbols-outlined text-emerald-600">badge</span>
+                <h4 className="font-bold text-slate-900 text-base">Corporate &amp; Statutory Profile</h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Company / Firm Legal Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={companyForm.companyName}
+                    onChange={(e) => handleCompanyFieldChange('companyName', e.target.value)}
+                    placeholder="Sunvine Energy Private Limited"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Displayed on document headers and legal footer</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Official GSTIN Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={15}
+                    value={companyForm.gstin}
+                    onChange={(e) => handleCompanyFieldChange('gstin', e.target.value)}
+                    placeholder="24AFPFS7402A1Z7"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono uppercase font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 tracking-wider"
+                  />
+                  <div className="flex items-center justify-between mt-1 text-[10px]">
+                    <span className={companyForm.gstin?.length === 15 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}>
+                      {companyForm.gstin?.length || 0} / 15 chars
+                    </span>
+                    {companyForm.gstin?.startsWith('24') && <span className="text-emerald-700 font-medium">State: Gujarat (24)</span>}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Company PAN Number
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={companyForm.pan}
+                    onChange={(e) => handleCompanyFieldChange('pan', e.target.value)}
+                    placeholder="AFPFS7402A"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono uppercase font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 tracking-wider"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">10-digit income tax permanent account number</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Official Operations Email
+                  </label>
+                  <input
+                    type="email"
+                    value={companyForm.email}
+                    onChange={(e) => handleCompanyFieldChange('email', e.target.value)}
+                    placeholder="info@sunvineenergy.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Official Phone / WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.whatsapp}
+                    onChange={(e) => handleCompanyFieldChange('whatsapp', e.target.value)}
+                    placeholder="+91 94294 65600"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Customer Helpdesk / Toll Free
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.helpdesk}
+                    onChange={(e) => handleCompanyFieldChange('helpdesk', e.target.value)}
+                    placeholder="1800 123 4567 / 9429465600"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Official Website URL
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.website}
+                    onChange={(e) => handleCompanyFieldChange('website', e.target.value)}
+                    placeholder="https://sunvineenergy.com"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    State of Registration
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.state}
+                    onChange={(e) => handleCompanyFieldChange('state', e.target.value)}
+                    placeholder="Gujarat"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Registered Corporate Address <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    value={companyForm.address}
+                    onChange={(e) => handleCompanyFieldChange('address', e.target.value)}
+                    placeholder="401-404, 4th Floor, City Center, 150 Feet Ring Road, Rajkot, Gujarat - 360005"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Official Bank & Settlement Details */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-emerald-600">account_balance</span>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-base">Settlement Banking Credentials</h4>
+                    <p className="text-[11px] text-slate-500">Stamping account details for customer RTGS / NEFT / IMPS transfers</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Select Popular Banks */}
+              <div className="mb-5">
+                <span className="text-[11px] font-semibold text-slate-500 block mb-2">Quick Select Bank:</span>
+                <div className="flex flex-wrap gap-2">
+                  {['ICICI Bank', 'State Bank of India', 'HDFC Bank', 'Axis Bank', 'Bank of Baroda', 'Kotak Mahindra Bank'].map(b => (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => handleCompanyFieldChange('bankName', b)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                        companyForm.bankName === b
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Bank Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={companyForm.bankName}
+                    onChange={(e) => handleCompanyFieldChange('bankName', e.target.value)}
+                    placeholder="ICICI Bank"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Account Holder Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={companyForm.accountHolder}
+                    onChange={(e) => handleCompanyFieldChange('accountHolder', e.target.value)}
+                    placeholder="Sunvine Energy Private Limited"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Account Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={companyForm.accountNumber}
+                    onChange={(e) => handleCompanyFieldChange('accountNumber', e.target.value)}
+                    placeholder="99998000050580"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 tracking-wider"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Full settlement account number</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Bank IFSC Code <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={11}
+                    value={companyForm.ifsc}
+                    onChange={(e) => handleCompanyFieldChange('ifsc', e.target.value)}
+                    placeholder="ICIC0000104"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono uppercase font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 tracking-wider"
+                  />
+                  <div className="flex items-center justify-between mt-1 text-[10px]">
+                    <span className={companyForm.ifsc?.length === 11 ? 'text-emerald-600 font-semibold' : 'text-slate-400'}>
+                      {companyForm.ifsc?.length || 0} / 11 chars
+                    </span>
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Branch Name &amp; Location
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.branch}
+                    onChange={(e) => handleCompanyFieldChange('branch', e.target.value)}
+                    placeholder="150 Feet Ring Road Branch, Rajkot"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Quotation Document Policy & Disclaimers */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+              <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100 mb-6">
+                <span className="material-symbols-outlined text-emerald-600">gavel</span>
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base">Quotation Footers, Terms &amp; Policies</h4>
+                  <p className="text-[11px] text-slate-500">Legal clauses and validity printed on customer quotations</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Quotation Validity Notice
+                  </label>
+                  <input
+                    type="text"
+                    value={companyForm.validityText}
+                    onChange={(e) => handleCompanyFieldChange('validityText', e.target.value)}
+                    placeholder="This quotation is strictly valid for 15 days from the date of issuance."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Standard Terms &amp; Conditions
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={companyForm.terms}
+                    onChange={(e) => handleCompanyFieldChange('terms', e.target.value)}
+                    placeholder="1. Net-metering approval is subject to DISCOM guidelines. 2. Subsidy is processed directly through the National PM Surya Ghar Portal. 3. Warranty as per manufacturer terms."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Sticky Save Action Bar */}
+            <div className="flex items-center justify-between p-4 bg-slate-900 text-white rounded-2xl shadow-xl border border-slate-800">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="material-symbols-outlined text-emerald-400">cloud_done</span>
+                <span className="font-medium text-slate-300">
+                  {companyFormDirty ? 'You have unsaved changes' : 'Database profile is up to date'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleRefreshCompanyProfile}
+                  disabled={isCompanyRefreshing || isCompanySaving}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  Discard &amp; Reset
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCompanySaving}
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                >
+                  <span className={`material-symbols-outlined text-sm ${isCompanySaving ? 'animate-spin' : ''}`}>
+                    {isCompanySaving ? 'hourglass_top' : 'save'}
+                  </span>
+                  <span>{isCompanySaving ? 'Saving...' : 'Save All Changes'}</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* ========================================================
           TAB CONTENT: 3. SYSTEM & OS PUSH NOTIFICATIONS
           ======================================================== */}
@@ -2364,9 +3015,9 @@ export default function AdminSettings() {
             {/* Diagnostic Badges & Details */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-6">
               <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Standard &amp; Engine</span>
-                <span className="text-xs font-bold text-slate-800 mt-1 block">W3C Web Push &bull; RFC 8292 (VAPID)</span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Service Worker: Active (sw-push.js)</span>
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Alert Service</span>
+                <span className="text-xs font-bold text-slate-800 mt-1 block">Instant Mobile &amp; Desktop Alerts</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Background Service: Active</span>
               </div>
               <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Browser OS Permission</span>
@@ -2375,7 +3026,7 @@ export default function AdminSettings() {
                 }`}>
                   {permissionState === 'granted' ? 'Granted (Ready to Receive)' : permissionState === 'denied' ? 'Blocked in Browser Settings' : 'Prompt on Activation'}
                 </span>
-                <span className="text-[10px] text-slate-400 mt-0.5 block">Notification.permission API</span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Device Notification Access</span>
               </div>
               <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">Target Recipient Rule</span>
@@ -2402,7 +3053,14 @@ export default function AdminSettings() {
           {/* Quick System Links */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <h4 className="font-bold text-slate-900 text-sm mb-3">Master Configuration Quick Consoles</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('company_profile'))}>
+                <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
+                  <span className="material-symbols-outlined text-sm text-emerald-600">corporate_fare</span>
+                  <span>Company &amp; Bank Profile</span>
+                </div>
+                <p className="text-[11px] text-slate-500">Configure legal name, GSTIN, PAN, and settlement bank accounts for quotations.</p>
+              </div>
               <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer" onClick={() => startTransition(() => setSettingsTab('account_center'))}>
                 <div className="flex items-center gap-2 font-bold text-xs text-slate-800 mb-1">
                   <span className="material-symbols-outlined text-sm text-primary">badge</span>
@@ -2527,7 +3185,7 @@ export default function AdminSettings() {
                     onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Password is securely encrypted.</p>
                 </div>
               </div>
 
@@ -2907,7 +3565,7 @@ export default function AdminSettings() {
                     onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Password is securely encrypted.</p>
                 </div>
               </div>
 
@@ -3081,7 +3739,7 @@ export default function AdminSettings() {
                     onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">Saved directly to live PostgreSQL with Bcrypt encryption.</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Password is securely encrypted.</p>
                 </div>
               </div>
 
@@ -3152,7 +3810,7 @@ export default function AdminSettings() {
                 <strong className="font-semibold text-slate-900">
                   {passwordModal.account?.full_name || passwordModal.account?.firm_name || passwordModal.account?.firmName || passwordModal.account?.name}
                 </strong>
-                . Changes are encrypted via Bcrypt and written directly to PostgreSQL.
+                . Changes are saved and encrypted securely.
               </div>
 
               <div>
@@ -3229,7 +3887,7 @@ export default function AdminSettings() {
                 <strong className="text-slate-900">
                   {deleteModal.account?.full_name || deleteModal.account?.firm_name || deleteModal.account?.firmName || deleteModal.account?.name}
                 </strong>{' '}
-                from the live PostgreSQL database? This action cannot be undone.
+                from the system? This action cannot be undone.
               </p>
             </div>
 

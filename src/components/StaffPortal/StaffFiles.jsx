@@ -30,6 +30,7 @@ export default function StaffFiles() {
     updateCustomerFile,
     editCustomerFile,
     cancelCustomerFile,
+    softDeleteCustomerFile,
     restoreCustomerFile,
     addCustomerFile,
     isHardwareDbSyncing,
@@ -1533,6 +1534,9 @@ export default function StaffFiles() {
           onClose={() => setFileToCancel(null)}
           onCancelFile={async (fileId, reason) => {
             await cancelCustomerFile(fileId, reason);
+          }}
+          onSoftDelete={async (fileId) => {
+            await softDeleteCustomerFile(fileId);
           }}
         />
       )}

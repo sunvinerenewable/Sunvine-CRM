@@ -95,6 +95,17 @@ export const customerFileService = {
           cancellationReason: f.cancellation_reason || null,
           cancelledAt: f.cancelled_at || null,
           cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : null,
+          isVerified: Boolean(
+            f.is_verified ||
+            f.status === 'Verified' ||
+            f.status === 'DISCOM Registered' ||
+            (f.stage && f.stage !== 'LEAD_SOURCED' && f.stage !== 'SITE_SURVEY')
+          ),
+          verifiedAt: f.verified_at || null,
+          verifiedBy: f.verified_by || null,
+          isDeleted: Boolean(f.is_deleted),
+          deletedAt: f.deleted_at || null,
+          deletedBy: f.deleted_by || null,
           createdAt: f.created_at,
           updatedAt: f.updated_at
         }));
@@ -242,5 +253,84 @@ export const customerFileService = {
       console.error('[customerFileService] API delete error:', apiErr);
       return { success: false, error: apiErr.message || 'Failed to delete customer file.' };
     }
+  },
+
+  /**
+   * Soft delete customer file (moves to Trash, eligible for 14-day permanent purge)
+   */
+  async softDeleteCustomerFile(fileId, deletedBy = 'User') {
+    if (!fileId) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'soft_delete', fileId, deletedBy })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) return json;
+      return { success: false, error: json.error || `HTTP ${res.status}: Failed to soft-delete customer file.` };
+    } catch (apiErr) {
+      console.error('[customerFileService] API soft delete error:', apiErr);
+      return { success: false, error: apiErr.message || 'Failed to soft-delete customer file.' };
+    }
+  },
+
+  /**
+   * Restore a soft-deleted customer file from Trash (Admin only, within 14 days)
+   */
+  async restoreCustomerFileFromTrash(fileId) {
+    if (!fileId) return { success: false, error: 'File ID required' };
+
+    try {
+      const res = await fetch('/api/customer-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'restore_trash', fileId })
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) return json;
+      return { success: false, error: json.error || `HTTP ${res.status}: Failed to restore file from trash.` };
+    } catch (apiErr) {
+      console.error('[customerFileService] API restore trash error:', apiErr);
+      return { success: false, error: apiErr.message || 'Failed to restore file from trash.' };
+    }
+  },
+
+  /**
+   * Fetch all soft-deleted files currently in Trash (Admin only)
+   */
+  async getTrashCustomerFiles() {
+    try {
+      const res = await fetch('/api/customer-files?trash=true', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include'
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) return json.data;
+      }
+      return [];
+    } catch (apiErr) {
+      console.error('[customerFileService] API fetch trash error:', apiErr);
+      return [];
+    }
+  },
+
+  /**
+   * Explicitly mark file as verified (or unverified) by Verification Desk / Admin
+   */
+  async setFileVerificationStatus(fileId, isVerified = true, actorName = 'Verification Desk') {
+    return this.updateCustomerFile(fileId, {
+      isVerified,
+      verifiedBy: isVerified ? actorName : null,
+      verifiedAt: isVerified ? new Date().toISOString() : null
+    });
   }
 };

@@ -113,11 +113,23 @@ export const settingsService = {
         const json = await res.json();
         return { success: true, data: json?.settings };
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || 'Failed to update settings' };
     } catch (err) {
-      console.error('[settingsService] Update error:', err);
-      return { success: false, error: err.message };
+      console.warn('[settingsService] API update failed, attempting direct Supabase fallback:', err?.message);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert({ id: 'global_settings', [section]: sectionData, updated_at: new Date().toISOString() })
+        .select()
+        .single();
+      invalidateCatalogCache(['settings:global', 'catalog:settings', 'catalog:all']);
+      if (!error && data) {
+        return { success: true, data };
+      }
+      return { success: false, error: error?.message || 'Failed to update settings' };
+    } catch (sbErr) {
+      return { success: false, error: sbErr?.message || 'Failed to update settings' };
     }
   },
 

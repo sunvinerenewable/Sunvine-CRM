@@ -70,10 +70,26 @@ export const systemSettingsService = {
         const json = await res.json();
         return { success: true, data: json?.settings };
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || 'Failed to save system settings' };
     } catch (err) {
-      return { success: false, error: err.message };
+      console.warn('[systemSettingsService] API save failed, attempting Supabase fallback:', err?.message);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert({
+          id: 'global_settings',
+          company_profile: settings.companyProfile || settings,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      if (!error && data) {
+        return { success: true, data };
+      }
+      return { success: false, error: error?.message || 'Failed to save system settings' };
+    } catch (sbErr) {
+      return { success: false, error: sbErr?.message || 'Failed to save system settings' };
     }
   },
 
