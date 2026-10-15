@@ -959,6 +959,89 @@ export async function onRequest(context) {
     rawRequest: request
   };
 
+  if (query?.action === 'purge-trash' || body?.action === 'purge-trash') {
+    const authHeader = reqObj.headers?.authorization || '';
+    const cronSecret = env?.CRON_SECRET || process.env?.CRON_SECRET;
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}` && reqObj.headers?.['x-cron-secret'] !== cronSecret) {
+      return resObj.status(401).json({ error: 'Unauthorized cron invocation.' });
+    }
+
+    let db;
+    try {
+      db = getDb(env);
+    } catch (err) {
+      return resObj.status(500).json({ error: err.message });
+    }
+
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    let purgedTrashCount = 0;
+    let purgedCancelledDocCount = 0;
+
+    try {
+      const { data: expiredTrash, error: trashErr } = await db
+        .from('customer_files')
+        .select('id, documents')
+        .eq('is_deleted', true)
+        .lt('deleted_at', fourteenDaysAgo);
+
+      if (trashErr) console.error('[cron/purge-trash] Trash query error:', trashErr);
+
+      if (Array.isArray(expiredTrash) && expiredTrash.length > 0) {
+        for (const item of expiredTrash) {
+          const docKeys = extractAllDocPaths(item.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+          }
+          await db.from('customer_files').delete().eq('id', item.id);
+          purgedTrashCount++;
+        }
+      }
+
+      const { data: expiredCancelled, error: cancelErr } = await db
+        .from('customer_files')
+        .select('id, documents, timeline')
+        .eq('status', 'Cancelled')
+        .lt('cancelled_at', fourteenDaysAgo);
+
+      if (cancelErr) console.error('[cron/purge-trash] Cancelled query error:', cancelErr);
+
+      if (Array.isArray(expiredCancelled) && expiredCancelled.length > 0) {
+        for (const item of expiredCancelled) {
+          const docKeys = extractAllDocPaths(item.documents);
+          if (docKeys.length > 0) {
+            await deleteR2Files(docKeys);
+            const purgeEntry = {
+              title: 'Uploaded Documents Removed',
+              description: 'Uploaded customer documents were permanently deleted after the 14-day recovery period ended.',
+              timestamp: new Date().toISOString(),
+              stage: 'CANCELLED',
+              author: 'System'
+            };
+            const updatedTimeline = Array.isArray(item.timeline) ? [...item.timeline, purgeEntry] : [purgeEntry];
+            await db.from('customer_files').update({
+              documents: {},
+              timeline: updatedTimeline,
+              updated_at: new Date().toISOString()
+            }).eq('id', item.id);
+            purgedCancelledDocCount++;
+          }
+        }
+      }
+
+      await redisDel(_env, 'customer_files:all');
+
+      return resObj.status(200).json({
+        success: true,
+        message: 'Purge sweep completed successfully.',
+        purgedTrashCount,
+        purgedCancelledDocCount
+      });
+    } catch (err) {
+      console.error('[cron/purge-trash] Execution exception:', err);
+      return resObj.status(500).json({ error: 'Purge sweep failed.' });
+    }
+  }
+
   const { payload: user, errorResponse } = await requireUser(request, env);
   if (errorResponse) {
     for (const [k, v] of corsHeaders.entries()) errorResponse.headers.set(k, v);
