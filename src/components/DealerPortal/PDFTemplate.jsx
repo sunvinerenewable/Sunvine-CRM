@@ -502,7 +502,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               </div>
             </div>
             <div className="text-right">
-              <div className="inline-flex items-center justify-center bg-[#0B2545] text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded leading-normal">
+              <div className="inline-flex items-center justify-center bg-[#0B2545] text-white text-[11px] font-bold px-3 py-1.5 rounded min-h-[22px] leading-tight">
                 REF: {id}
               </div>
               <p className="text-[10px] text-gray-600 font-medium mt-0.5">
@@ -623,34 +623,36 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 ) : (
                   <>
                     <tr className="bg-slate-50/40">
-                      <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">2</td>
-                      <td className="py-1.5 px-3 border-r border-slate-200">
+                      <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500 align-middle">2</td>
+                      <td className="py-2 px-3 border-r border-slate-200 align-middle">
                         <span className="font-semibold text-gray-700">Central GST (CGST - {(gstRate / 2)}%)</span>
                         <span className="text-[10px] text-gray-500 ml-1.5">(Central Share)</span>
                       </td>
-                      <td className="py-1.5 px-3 text-right font-mono font-semibold text-xs text-gray-800">
+                      <td className="py-2 px-3 text-right font-mono font-semibold text-xs text-gray-800 align-middle">
                         {formatINR(cgstAmount)}
                       </td>
                     </tr>
                     <tr className="bg-slate-50/40">
-                      <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-gray-500">3</td>
-                      <td className="py-1.5 px-3 border-r border-slate-200">
+                      <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500 align-middle">3</td>
+                      <td className="py-2 px-3 border-r border-slate-200 align-middle">
                         <span className="font-semibold text-gray-700">State GST (SGST - {(gstRate / 2)}% / Gujarat)</span>
                         <span className="text-[10px] text-gray-500 ml-1.5">(State Share)</span>
                       </td>
-                      <td className="py-1.5 px-3 text-right font-mono font-semibold text-xs text-gray-800">
+                      <td className="py-2 px-3 text-right font-mono font-semibold text-xs text-gray-800 align-middle">
                         {formatINR(sgstAmount)}
                       </td>
                     </tr>
-                    <tr className="bg-emerald-50/40 border-t border-emerald-200 font-bold">
-                      <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-emerald-800">•</td>
-                      <td className="py-1.5 px-3 border-r border-slate-200 text-emerald-950">
-                        <div className="flex items-center gap-1.5">
-                          <span className="bg-emerald-700 text-white text-[8.5px] px-2 py-0.5 rounded uppercase font-bold inline-flex items-center leading-normal">GST Included</span>
+                    <tr className="bg-emerald-50/40 border-t border-emerald-300 font-bold">
+                      <td className="py-2.5 px-3 text-center border-r border-slate-200 font-mono text-emerald-800 align-middle">•</td>
+                      <td className="py-2.5 px-3 border-r border-slate-200 text-emerald-950 align-middle">
+                        <div className="flex items-center gap-2">
+                          <div className="bg-emerald-700 text-white text-[9px] px-2.5 pt-1 pb-1.5 rounded uppercase font-extrabold inline-flex items-center justify-center leading-none tracking-wide">
+                            GST INCLUDED
+                          </div>
                           <span>Total Statutory GST ({gstRate}%)</span>
                         </div>
                       </td>
-                      <td className="py-1.5 px-3 text-right font-mono font-bold text-xs text-emerald-900">
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-xs text-emerald-900 align-middle">
                         {formatINR(gstAmount)}
                       </td>
                     </tr>
@@ -660,17 +662,19 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 {/* Extra Doorstep Transport & Logistics (if added by dealer) */}
                 {extraTransportCharge > 0 && (
                   <tr className="bg-blue-50/40 border-t border-blue-200">
-                    <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500">•</td>
-                    <td className="py-2 px-3 border-r border-slate-200">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-blue-600 text-white text-[8.5px] px-2 py-0.5 rounded uppercase font-bold inline-flex items-center leading-normal">LOGISTICS</span>
+                    <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500 align-middle">•</td>
+                    <td className="py-2 px-3 border-r border-slate-200 align-middle">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-blue-600 text-white text-[9px] px-2.5 pt-1 pb-1.5 rounded uppercase font-extrabold inline-flex items-center justify-center leading-none tracking-wide">
+                          LOGISTICS
+                        </div>
                         <span className="font-bold text-[#0B2545]">Doorstep Transport &amp; Freight</span>
                       </div>
                       <p className="text-[10px] text-gray-500">
                         Dedicated outstation site delivery, safe transit &amp; insurance
                       </p>
                     </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-sm text-blue-900">
+                    <td className="py-2 px-3 text-right font-mono font-bold text-sm text-blue-900 align-middle">
                       ₹ {formatINR(extraTransportCharge)}
                     </td>
                   </tr>
@@ -678,29 +682,31 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
                 {/* 3. Total Project Cost */}
                 <tr className="bg-[#0B2545] text-white font-black">
-                  <td className="py-2.5 px-3 text-center border-r border-slate-700 font-mono">•</td>
-                  <td className="py-2.5 px-3 uppercase tracking-wider text-xs border-r border-slate-700">
+                  <td className="py-2.5 px-3 text-center border-r border-slate-700 font-mono align-middle">•</td>
+                  <td className="py-2.5 px-3 uppercase tracking-wider text-xs border-r border-slate-700 align-middle">
                     TOTAL PROJECT COST (INCLUSIVE OF ALL TAXES)
                   </td>
-                  <td className="py-2.5 px-3 text-right font-mono text-base font-black text-amber-300">
+                  <td className="py-2.5 px-3 text-right font-mono text-base font-black text-amber-300 align-middle">
                     ₹ {formatINR(grossTurnkey)}
                   </td>
                 </tr>
 
                 {/* 4. PM Surya Ghar Central Subsidy */}
                 {subsidyAmount > 0 && (
-                  <tr className="bg-emerald-100/90 text-emerald-950 font-bold">
-                    <td className="py-2 px-3 text-center border-r border-emerald-300 font-mono">•</td>
-                    <td className="py-2 px-3 border-r border-emerald-300">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-emerald-700 text-white text-[8.5px] px-2 py-0.5 rounded font-extrabold inline-flex items-center leading-normal">CENTRAL SUBSIDY</span>
+                  <tr className="bg-emerald-100/90 text-emerald-950 font-bold border-t border-emerald-300">
+                    <td className="py-2.5 px-3 text-center border-r border-emerald-300 font-mono align-middle">•</td>
+                    <td className="py-2.5 px-3 border-r border-emerald-300 align-middle">
+                      <div className="flex items-center gap-2">
+                        <div className="bg-emerald-700 text-white text-[9px] px-2.5 pt-1 pb-1.5 rounded uppercase font-extrabold inline-flex items-center justify-center leading-none tracking-wide">
+                          CENTRAL SUBSIDY
+                        </div>
                         <span>Less: PM Surya Ghar Muft Bijli Yojana Central Subsidy</span>
                       </div>
-                      <p className="text-[10px] text-emerald-800 font-normal">
+                      <p className="text-[10px] text-emerald-800 font-normal mt-0.5">
                         Direct-to-bank account reimbursement by Central Government
                       </p>
                     </td>
-                    <td className="py-2 px-3 text-right font-mono font-bold text-sm text-emerald-900">
+                    <td className="py-2.5 px-3 text-right font-mono font-bold text-sm text-emerald-900 align-middle">
                       - ₹ {formatINR(subsidyAmount)}
                     </td>
                   </tr>
@@ -723,9 +729,9 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               <span className="text-xl font-black font-mono tracking-tight text-white">
                 ₹ {formatINR(netPayable)}
               </span>
-              <span className="bg-amber-400 text-slate-950 font-extrabold text-[9px] uppercase px-2 py-0.5 rounded shadow-xs">
+              <div className="bg-amber-400 text-slate-950 text-[9px] px-2.5 pt-1 pb-1.5 rounded uppercase font-black inline-flex items-center justify-center tracking-wide leading-none">
                 Net Cost
-              </span>
+              </div>
             </div>
           </div>
 
