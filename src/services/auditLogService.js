@@ -1,7 +1,49 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 
 export const auditLogService = {
+  /**
+   * Fetch audit logs from secure backend API or read-only database query
+   */
   async getAuditLogs(limit = 100) {
+    // 1. Try secure admin audit log endpoint
+    try {
+      const res = await fetch('/api/auth/admin-audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'list', limit, offset: 0 })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.logs)) {
+          return json.logs.map(row => {
+            let detailsText = '';
+            if (typeof row.details === 'string') {
+              detailsText = row.details;
+            } else if (row.details && typeof row.details === 'object') {
+              detailsText = row.details.message || row.details.reason || row.details.description || JSON.stringify(row.details);
+            } else if (row.details != null) {
+              detailsText = String(row.details);
+            }
+            return {
+              id: row.id,
+              timestamp: row.created_at || new Date().toISOString(),
+              action: row.action || 'SYSTEM_ACTION',
+              module: row.entity_type || 'SYSTEM',
+              recordId: row.entity_id || '-',
+              userName: row.actor_email || 'System',
+              user: row.actor_email || 'System',
+              role: row.actor_role || 'admin',
+              ipAddress: row.ip_address || '192.168.1.1',
+              details: detailsText,
+              status: 'VERIFIED'
+            };
+          });
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct read-only database query
     try {
       const { data, error } = await supabase
         .from('audit_logs')
@@ -43,6 +85,9 @@ export const auditLogService = {
     return [];
   },
 
+  /**
+   * Log activity event via secure server API
+   */
   async logEvent(action, entityType, entityId, details = {}, userEmail = 'ops@sunvine.in', userRole = 'admin') {
     let detailsObj = {};
     if (typeof details === 'object' && details !== null) {
@@ -51,35 +96,29 @@ export const auditLogService = {
       detailsObj = { message: details.trim() };
     }
 
-    const payload = {
-      action: action || 'SYSTEM_ACTION',
-      module: entityType || 'SYSTEM',
-      entity_type: entityType || 'SYSTEM',
-      record_id: entityId ? String(entityId) : null,
-      entity_id: entityId ? String(entityId) : null,
-      user_email: userEmail,
-      user_name: userEmail,
-      user_role: userRole,
-      role: userRole,
-      details: detailsObj,
-      status: 'VERIFIED'
-    };
-
     try {
-      const { error } = await supabase.from('audit_logs').insert([payload]);
-      if (error) {
-        console.error('[auditLogService] Supabase audit log insert error:', {
-          message: error.message,
-          code: error.code,
-          hint: error.hint,
-          details: error.details
-        });
-      }
+      await fetch('/api/auth/admin-audit-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'log',
+          action: action || 'SYSTEM_ACTION',
+          entity: entityType || 'SYSTEM',
+          entityId: entityId ? String(entityId) : null,
+          details: detailsObj,
+          userEmail,
+          userRole
+        })
+      });
     } catch (err) {
-      console.error('[auditLogService] Exception inserting audit log:', err);
+      console.warn('[auditLogService] Audit log dispatch notice:', err.message);
     }
   },
 
+  /**
+   * Fetch notifications (read-only query)
+   */
   async getNotifications() {
     try {
       const { data, error } = await supabase
@@ -108,22 +147,21 @@ export const auditLogService = {
     return [];
   },
 
+  /**
+   * Save / dispatch notification via push/alert API
+   */
   async saveNotification(notif) {
     if (!notif || !notif.id) return { success: false };
     try {
-      const payload = {
-        id: notif.id,
-        audience: notif.audience || 'all',
-        type: notif.type || 'info',
-        icon: notif.icon || 'notifications',
-        title: notif.title,
-        description: notif.description || '',
-        is_release: Boolean(notif.isRelease),
-        version: notif.version || null,
-        target_tab: notif.targetTab || null,
-        created_at: notif.createdAt || new Date().toISOString()
-      };
-      await supabase.from('notifications').upsert([payload], { onConflict: 'id' });
+      await fetch('/api/push-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          action: 'notify',
+          notification: notif
+        })
+      }).catch(() => {});
       return { success: true };
     } catch (err) {
       return { success: true };

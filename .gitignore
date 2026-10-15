@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.local/
 .env
 .env.*
 !.env.example
@@ -33,9 +34,16 @@ extracted_image*.jpg
 # Lighthouse audits
 lighthouse-report*
 
-# Audit reports (contain security findings)
-AUDIT_REPORT_V3.md
+# Audit reports and legacy rollout notes
+AUDIT_REPORT.md
 AUDIT_REPORT_V2.md
+AUDIT_REPORT_V3.md
+Sunvine_Merged_Audit_Report.md
+HARDWARE_AUDIT_REPORT.md
+PRICING_AND_DB_AUDIT_REPORT.md
+HANDOVER_SR66_EMPTY_STATE_ISSUE.md
+GIT_COMMITS_REPORT.md
+docs/ROLLOUT.md
 
 # Secrets
 .env
@@ -47,3 +55,7 @@ DATABASE_URL
 rollout-run/
 backups/
 scratch/
+PRE_LAUNCH_CHANGES_AND_TESTING_GUIDE.md
+supabase/config.toml
+.wrangler/
+

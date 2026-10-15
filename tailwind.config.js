@@ -54,7 +54,9 @@ export default {
         "surface-bright": "#f7f9ff",
         "outline": "#707a67",
         "tertiary": "#256676",
-        "on-background": "#181c20"
+        "on-background": "#181c20",
+        "muted": "#e2e8f0",
+        "muted-foreground": "#64748b"
       },
       borderRadius: {
         "DEFAULT": "0.25rem",

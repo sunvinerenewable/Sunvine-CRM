@@ -75,3 +75,20 @@ export function verifyPassword(password, storedHash) {
   console.warn('[security] verifyPassword: unrecognised hash format — returning false. Hash must be pbkdf2$... or $2a$...');
   return false;
 }
+
+/**
+ * Validate password requirements: Minimum 6 characters.
+ * @param {string} password 
+ * @returns {{ valid: boolean, error?: string }}
+ */
+export function validatePasswordComplexity(password) {
+  if (!password || typeof password !== 'string') {
+    return { valid: false, error: 'Password is required.' };
+  }
+  const trimmed = password.trim();
+  if (trimmed.length < 6) {
+    return { valid: false, error: 'Password must be at least 6 characters.' };
+  }
+  return { valid: true };
+}
+

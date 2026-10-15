@@ -100,13 +100,9 @@
         user-select: none;
       }
 
-      /* Hide icons until font has initialized to guarantee zero raw text flash */
-      html:not(.fonts-loaded) .material-symbols-outlined {
-        color: transparent !important;
-      }
-      html.fonts-loaded .material-symbols-outlined {
+      /* Icons render cleanly with font-display: block */
+      .material-symbols-outlined {
         color: inherit;
-        transition: color 0.1s ease-in;
       }
 
       /* Local Typography Fallback Definitions */

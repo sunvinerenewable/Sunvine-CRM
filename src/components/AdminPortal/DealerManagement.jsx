@@ -2,9 +2,37 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DealerTableSkeletonRows,
+  DealerCardGridSkeleton,
+  DealerDashboardSkeleton
+} from './DealerSkeletons';
+import {
+  DEFAULT_PAGE_SIZE,
+  DealerTableHeader
+} from './DealerPageParts';
 
 export default function DealerManagement() {
-  const { dealers, addDealer, updateDealer, deleteDealer, toggleDealerStatus, updateDealerPassword, updateDealerPricing, tierMargins, updateTierMargins, addNotification, setActiveTab, staffList, quotations, customerFiles } = useApp();
+  const {
+    dealers = [],
+    isHardwareDbSyncing = false,
+    refreshDatabase = () => {},
+    addDealer = () => {},
+    updateDealer = () => {},
+    deleteDealer = () => {},
+    toggleDealerStatus = () => {},
+    updateDealerPassword = () => {},
+    updateDealerPricing = () => {},
+    pricingPresets = [],
+    tierMargins = {},
+    updateTierMargins = () => {},
+    addNotification = () => {},
+    setActiveTab = () => {},
+    staffList = [],
+    quotations = [],
+    customerFiles = []
+  } = useApp() || {};
   const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
@@ -13,56 +41,61 @@ export default function DealerManagement() {
   const [salesmanFilter, setSalesmanFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const pageSize = DEFAULT_PAGE_SIZE;
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDealer, setEditingDealer] = useState(null);
   const [showTierModal, setShowTierModal] = useState(false);
+  const [credModalDealer, setCredModalDealer] = useState(null);
   const [viewMode, setViewMode] = useTableViewMode('admin_dealer_mgmt');
   const [dealerToDelete, setDealerToDelete] = useState(null);
 
   // Filter out Verification desk officers to only show Sales Team members
   const salesStaffList = useMemo(() => {
     const list = (staffList || []).filter(s => {
-      const dept = (s.department || '').toLowerCase();
-      const role = (s.role || '').toLowerCase();
-      return !dept.includes('verification') && !role.includes('verification');
+      const isVerification = Boolean(
+        s.is_verification ||
+        (s.department || '').toLowerCase().includes('verification') ||
+        (s.role || '').toLowerCase().includes('verification')
+      );
+      return !isVerification;
     });
-    return list.length > 0 ? list : [
-      { id: 'STF-801', name: 'Sunvine Sales Staff', role: 'Senior Solar Field Executive', city: 'Ahmedabad', zone: 'Gujarat Sales Desk', phone: '8000050580' }
-    ];
+    return list;
   }, [staffList]);
 
-  const handleConfirmDeleteDealer = () => {
+  const handleConfirmDeleteDealer = async () => {
     if (!dealerToDelete) return;
+    const targetDealer = dealerToDelete;
+    const targetId = targetDealer.dealerCode || targetDealer.id || targetDealer.uuid;
+    setDealerToDelete(null);
+    if (credModalDealer?.id === targetDealer.id) {
+      setCredModalDealer(null);
+    }
+    if (editingDealer?.id === targetDealer.id) {
+      setEditingDealer(null);
+      setShowAddModal(false);
+    }
     if (deleteDealer) {
-      deleteDealer(dealerToDelete.id || dealerToDelete.dealerCode);
+      await deleteDealer(targetId);
     }
     if (addToast) {
       addToast({
         title: 'Dealer Partner Deleted',
-        message: `${dealerToDelete.firmName} (${dealerToDelete.id}) was permanently removed.`,
+        message: `${targetDealer.firmName} (${targetDealer.id || targetDealer.dealerCode}) was permanently removed.`,
         type: 'info'
       });
     }
-    setDealerToDelete(null);
-    if (credModalDealer?.id === dealerToDelete.id) {
-      setCredModalDealer(null);
-    }
-    if (editingDealer?.id === dealerToDelete.id) {
-      setEditingDealer(null);
-      setShowAddModal(false);
-    }
   };
 
-  // Dealer Commercial Model & Pricing Modal States
   const [pricingModalDealer, setPricingModalDealer] = useState(null);
   const [pricingMode, setPricingMode] = useState('standard');
+  const baseKw = pricingPresets?.baseRatePerKw || 58000;
+  const baseWp = baseKw > 0 ? Number((baseKw / 1000).toFixed(2)) : 18.00;
   const [dealerCommercialType, setDealerCommercialType] = useState('margin_based');
   const [dealerCommissionPerKw, setDealerCommissionPerKw] = useState(4500);
   const [dealerRegistrationFee, setDealerRegistrationFee] = useState(2000);
   const [dealerDistanceKm, setDealerDistanceKm] = useState(0);
-  const [customWpRate, setCustomWpRate] = useState(18.00);
-  const [customKwRate, setCustomKwRate] = useState(58000);
+  const [customWpRate, setCustomWpRate] = useState(baseWp);
+  const [customKwRate, setCustomKwRate] = useState(baseKw);
   const [customMarginKw, setCustomMarginKw] = useState(4500);
   const [customDiscount, setCustomDiscount] = useState(0);
   const [customNotes, setCustomNotes] = useState('');
@@ -70,20 +103,28 @@ export default function DealerManagement() {
   const openPricingModal = (d) => {
     setPricingModalDealer(d);
     const cfg = d.pricingConfig || {};
+    const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     setPricingMode(cfg.pricingMode || 'standard');
     setDealerCommercialType(d.dealerType || cfg.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'));
-    setDealerCommissionPerKw(d.defaultCommissionPerKw || cfg.default_commission_per_kw || cfg.customMarginPerKw || 4500);
+    setDealerCommissionPerKw(d.defaultCommissionPerKw || cfg.default_commission_per_kw || cfg.customMarginPerKw || dynMargin || 4500);
     setDealerRegistrationFee(d.registrationFeeRate || cfg.registration_fee_rate || 2000);
     setDealerDistanceKm(d.distanceFromRajkotKm || cfg.distance_from_rajkot_km || 0);
-    setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : 18.00);
-    setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : 58000);
-    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : 4500);
+    setCustomWpRate(cfg.customBaseRatePerWp !== undefined ? cfg.customBaseRatePerWp : baseWp);
+    setCustomKwRate(cfg.customBaseRatePerKw !== undefined ? cfg.customBaseRatePerKw : baseKw);
+    setCustomMarginKw(cfg.customMarginPerKw !== undefined ? cfg.customMarginPerKw : (dynMargin || 4500));
     setCustomDiscount(cfg.customDiscountPercent || 0);
     setCustomNotes(cfg.customNotes || '');
   };
 
   const handleSaveDealerPricing = async () => {
     if (!pricingModalDealer) return;
+    const tierKey = (pricingModalDealer.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (pricingModalDealer.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (pricingModalDealer.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    const dynMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
     const newCfg = {
       ...pricingModalDealer.pricingConfig,
       pricingMode,
@@ -91,9 +132,9 @@ export default function DealerManagement() {
       default_commission_per_kw: Number(dealerCommissionPerKw) || 4500,
       registration_fee_rate: Number(dealerRegistrationFee) || 2000,
       distance_from_rajkot_km: Number(dealerDistanceKm) || 0,
-      customBaseRatePerWp: Number(customWpRate) || 18.00,
-      customBaseRatePerKw: Number(customKwRate) || 58000,
-      customMarginPerKw: Number(dealerCommissionPerKw) || Number(customMarginKw) || 4500,
+      customBaseRatePerWp: Number(customWpRate) || baseWp,
+      customBaseRatePerKw: Number(customKwRate) || baseKw,
+      customMarginPerKw: Number(dealerCommissionPerKw) || Number(customMarginKw) || dynMargin || 4500,
       customDiscountPercent: Number(customDiscount) || 0,
       customNotes: customNotes.trim()
     };
@@ -156,7 +197,6 @@ export default function DealerManagement() {
   const [formError, setFormError] = useState('');
 
   // Password / Credentials Modal for Existing Dealers
-  const [credModalDealer, setCredModalDealer] = useState(null);
   const [editMobile, setEditMobile] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
@@ -357,9 +397,9 @@ export default function DealerManagement() {
       const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                       (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                       (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-      const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
-      const defaultMargin = conf.defaultMarginPerKw || 4500;
-      const marginCap = d.maxMarginCapPerKw || conf.maxMarginCapPerKw || 6000;
+      const conf = tierMargins?.[tierKey] || {};
+      const defaultMargin = conf.defaultMarginPerKw || 0;
+      const marginCap = d.maxMarginCapPerKw || conf.maxMarginCapPerKw || 0;
 
       const row = [
         escapeCsv(d.id),
@@ -442,7 +482,7 @@ export default function DealerManagement() {
                     (dealer.tier || '').toLowerCase().includes('silver') ? 'Silver Installer (Quarterly Cap: 500 kW)' :
                     'Gold EPC Partner (Quarterly Cap: 1.5 MW)';
     setNewTier(tierStr);
-    setNewCap(dealer.maxMarginCapPerKw ? dealer.maxMarginCapPerKw.toLocaleString('en-IN') : '5,000');
+    setNewCap(dealer.maxMarginCapPerKw ? Number(dealer.maxMarginCapPerKw).toLocaleString('en-IN') : '5,000');
     setNewPassword(dealer.password || 'Sunvine@2026');
     setFormError('');
     setShowAddModal(true);
@@ -465,7 +505,7 @@ export default function DealerManagement() {
     setShowAddModal(false);
   };
 
-  const handleSaveDealer = (e) => {
+  const handleSaveDealer = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     const cleanMobile = (newMobile || '').replace(/\D/g, '').slice(0, 10);
     if (!newFirm.trim() || !newContact.trim() || cleanMobile.length !== 10) {
@@ -539,8 +579,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim() || editingDealer.address,
-        gstin: newGstin.trim() || editingDealer.gstin || '24AAECB1234F1Z5',
-        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || 'AAECB1234F'),
+        gstin: newGstin.trim() || editingDealer.gstin || '',
+        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : editingDealer.pan || ''),
         discomLicense: newDiscomCode.trim() || editingDealer.discomLicense || editingDealer.gedaLicenseNo,
         password: newPassword.trim() || editingDealer.password || '',
         pricingConfig: {
@@ -618,8 +658,8 @@ export default function DealerManagement() {
         tier: tierClean,
         maxMarginCapPerKw: cleanCap,
         address: newAddress.trim(),
-        gstin: newGstin.trim() || '24AAECB1234F1Z5',
-        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : 'AAECB1234F'),
+        gstin: newGstin.trim() || '',
+        pan: newPan.trim() || (newGstin.trim() ? newGstin.trim().slice(2, 12) : ''),
         discomLicense: newDiscomCode.trim(),
         totalQuotes: 0,
         totalCapacityKw: 0,
@@ -634,7 +674,19 @@ export default function DealerManagement() {
       };
 
       if (addDealer) {
-        addDealer(newDealerObj);
+        const createRes = await addDealer(newDealerObj);
+        if (createRes && createRes.success === false) {
+          const errMsg = createRes.error || 'Failed to save dealer account to database.';
+          setFormError(errMsg);
+          if (addToast) {
+            addToast({
+              title: 'Onboarding Failed',
+              message: errMsg,
+              type: 'error'
+            });
+          }
+          return;
+        }
       }
       if (addNotification) {
         addNotification({
@@ -643,6 +695,13 @@ export default function DealerManagement() {
           type: 'success',
           icon: 'person_add',
           audience: 'admin'
+        });
+      }
+      if (addToast) {
+        addToast({
+          title: 'Dealer Onboarded',
+          message: `${newFirm.trim()} (${finalDealerId}) onboarded and synced to database.`,
+          type: 'success'
         });
       }
     }
@@ -949,8 +1008,39 @@ export default function DealerManagement() {
                   <textarea
                     className="w-full px-3.5 py-2 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
                     rows={2}
+                    placeholder="e.g. Shop 12, Sunrise Complex, Near Ring Road, Rajkot, Gujarat - 360005"
                     value={newAddress}
                     onChange={(e) => setNewAddress(e.target.value)}
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                    <span>GSTIN Number <span className="text-xs text-secondary font-normal">(Optional)</span></span>
+                    <span className="font-label-xs text-label-xs text-secondary">15-Digit GST</span>
+                  </label>
+                  <input
+                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-mono uppercase focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
+                    type="text"
+                    maxLength={15}
+                    placeholder="e.g. 24AAECB1234F1Z5"
+                    value={newGstin}
+                    onChange={(e) => setNewGstin(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="col-span-1">
+                  <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1.5 flex items-center justify-between">
+                    <span>PAN Number <span className="text-xs text-secondary font-normal">(Optional)</span></span>
+                    <span className="font-label-xs text-label-xs text-secondary">10-Digit PAN</span>
+                  </label>
+                  <input
+                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface font-mono uppercase focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
+                    type="text"
+                    maxLength={10}
+                    placeholder="e.g. AAECB1234F"
+                    value={newPan}
+                    onChange={(e) => setNewPan(e.target.value.toUpperCase())}
+                    autoComplete="off"
                   />
                 </div>
               </div>
@@ -1244,11 +1334,17 @@ export default function DealerManagement() {
     );
   }
 
+  // Dev-only skeleton testing harness
+  const isMockSkeleton = typeof window !== 'undefined' && window.location.search.includes('skeleton=1');
+  if (isMockSkeleton) {
+    return <DealerDashboardSkeleton viewMode={viewMode} />;
+  }
+
   // Otherwise, render Exact Dealer Management Directory
   return (
     <div className="flex flex-col gap-6 w-full pb-16">
       {/* Page Header & Action Clusters */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 animate-stagger-fade">
         <div>
           <nav className="flex items-center gap-1.5 text-xs font-label-xs text-secondary mb-2">
             <button
@@ -1318,7 +1414,7 @@ export default function DealerManagement() {
       {/* 4 METRIC CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         {/* Card 1 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:60ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Total Registered Dealers</span>
@@ -1327,7 +1423,11 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{totalDealersCount}</span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-14 my-0.5 rounded-md" />
+              ) : (
+                <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{totalDealersCount}</span>
+              )}
               <span className="inline-flex items-center gap-0.5 text-label-xs font-semibold text-[#2E7D32] bg-[#6CBF3D]/15 px-2 py-0.5 rounded-full">
                 <span className="material-symbols-outlined text-[14px]">verified</span> 100% Gujarat
               </span>
@@ -1340,7 +1440,7 @@ export default function DealerManagement() {
         </div>
 
         {/* Card 2 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:120ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Active &amp; Quoting</span>
@@ -1349,23 +1449,35 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{activeDealersCount}</span>
-              <span className="text-label-sm font-semibold text-secondary">
-                ({totalDealersCount > 0 ? ((activeDealersCount / totalDealersCount) * 100).toFixed(0) : 0}% activation)
-              </span>
-              <span className="ml-auto inline-flex items-center text-label-xs font-semibold text-[#2E7D32]">
-                <span className="material-symbols-outlined text-[14px]">trending_up</span> Live
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-14 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{activeDealersCount}</span>
+                  <span className="text-label-sm font-semibold text-secondary">
+                    ({totalDealersCount > 0 ? ((activeDealersCount / totalDealersCount) * 100).toFixed(0) : 0}% activation)
+                  </span>
+                  <span className="ml-auto inline-flex items-center text-label-xs font-semibold text-[#2E7D32]">
+                    <span className="material-symbols-outlined text-[14px]">trending_up</span> Live
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] flex items-center justify-between text-body-sm text-secondary">
             <span>Cumulative Capacity</span>
-            <span className="font-semibold text-[#2E7D32]">{totalCapacityMw} MW</span>
+            <span className="font-semibold text-[#2E7D32]">
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-4 w-16 rounded inline-block" />
+              ) : (
+                `${totalCapacityMw} MW`
+              )}
+            </span>
           </div>
         </div>
 
         {/* Card 3 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:180ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Pending Verification / KYC</span>
@@ -1374,10 +1486,16 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{pendingDealersCount}</span>
-              <span className="inline-flex items-center text-label-xs font-semibold text-[#B27204] bg-[#F9A825]/15 px-2 py-0.5 rounded-full">
-                Requires Audit
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-10 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{pendingDealersCount}</span>
+                  <span className="inline-flex items-center text-label-xs font-semibold text-[#B27204] bg-[#F9A825]/15 px-2 py-0.5 rounded-full">
+                    Requires Audit
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] flex items-center justify-between text-body-sm text-secondary">
@@ -1387,7 +1505,7 @@ export default function DealerManagement() {
         </div>
 
         {/* Card 4 */}
-        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between">
+        <div className="kpi-card bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-sm relative overflow-hidden group flex flex-col justify-between animate-stagger-fade [animation-delay:240ms]">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-secondary font-label-sm uppercase tracking-wider text-[11px] group-hover:text-primary transition-colors">Suspended / Inactive</span>
@@ -1396,10 +1514,16 @@ export default function DealerManagement() {
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{suspendedDealersCount}</span>
-              <span className="inline-flex items-center text-label-xs font-medium text-secondary bg-surface-container px-2 py-0.5 rounded-full">
-                {totalDealersCount > 0 ? ((suspendedDealersCount / totalDealersCount) * 100).toFixed(1) : 0}%
-              </span>
+              {dealers.length === 0 && isHardwareDbSyncing ? (
+                <Skeleton className="h-8 w-10 my-0.5 rounded-md" />
+              ) : (
+                <>
+                  <span className="text-headline-xl font-poppins font-bold text-[#0F1B2E]">{suspendedDealersCount}</span>
+                  <span className="inline-flex items-center text-label-xs font-medium text-secondary bg-surface-container px-2 py-0.5 rounded-full">
+                    {totalDealersCount > 0 ? ((suspendedDealersCount / totalDealersCount) * 100).toFixed(1) : 0}%
+                  </span>
+                </>
+              )}
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-[#F1F4F9] text-body-sm text-secondary truncate">
@@ -1409,7 +1533,7 @@ export default function DealerManagement() {
       </div>
 
       {/* FILTER & CONTROL BAR */}
-      <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] space-y-3">
+      <div className="bg-white rounded-xl border border-[#E4E7EB] p-4 shadow-[0px_2px_8px_rgba(0,0,0,0.06)] space-y-3 animate-stagger-fade [animation-delay:300ms]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex-1 min-w-[280px] max-w-md relative">
             <span className="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-[18px]">filter_list</span>
@@ -1529,17 +1653,19 @@ export default function DealerManagement() {
       </div>
 
       {/* DATA PRESENTATION: CARDS OR TABLE */}
-      <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
+      <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-[0px_2px_8px_rgba(0,0,0,0.06)] overflow-hidden animate-stagger-fade [animation-delay:360ms]">
         {viewMode === 'card' ? (
-          <div className="p-4 sm:p-5">
-            {paginatedDealers.length === 0 ? (
+          <div>
+            {dealers.length === 0 && isHardwareDbSyncing ? (
+              <DealerCardGridSkeleton count={6} />
+            ) : paginatedDealers.length === 0 ? (
               <div className="py-12 text-center text-secondary">
                 <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
                 No Gujarat dealers match your current filter criteria.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {paginatedDealers.map((d) => {
+                {paginatedDealers.map((d, idx) => {
                   const isGold = d.tier.includes('Gold');
                   const isPlat = d.tier.includes('Platinum');
                   const isDiam = d.tier.includes('Diamond');
@@ -1555,10 +1681,14 @@ export default function DealerManagement() {
                   const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                   (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                                   (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-                  const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                  const conf = tierMargins?.[tierKey] || {};
 
                   return (
-                    <div key={d.id} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
+                    <div
+                      key={d.id}
+                      className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all animate-stagger-fade"
+                      style={{ animationDelay: `${360 + Math.min(idx * 30, 240)}ms` }}
+                    >
                       {/* Header */}
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-mono text-xs font-bold text-[#0F1B2E] bg-surface-container px-2 py-0.5 rounded">
@@ -1618,9 +1748,9 @@ export default function DealerManagement() {
                         </div>
                         <div className="text-right">
                           <div className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor}`}>
-                            <span className="material-symbols-outlined text-[12px]">military_tech</span> {d.tier || conf.tierName}
+                            <span className="material-symbols-outlined text-[12px]">military_tech</span> {d.tier || conf?.tierName || 'Gold Partner'}
                           </div>
-                          <div className="text-[10px] text-secondary mt-0.5">Cap: ₹{(d.maxMarginCapPerKw || conf.maxMarginCapPerKw).toLocaleString('en-IN')}/kW</div>
+                          <div className="text-[10px] text-secondary mt-0.5">Cap: ₹{Number(d.maxMarginCapPerKw || conf?.maxMarginCapPerKw || 0).toLocaleString('en-IN')}/kW</div>
                         </div>
                       </div>
 
@@ -1723,22 +1853,11 @@ export default function DealerManagement() {
         ) : (
           <div className="w-full overflow-x-auto xl:overflow-x-visible">
             <table className="w-full text-left border-collapse table-auto">
-            <thead>
-              <tr className="bg-[#0F1B2E] text-white text-label-xs uppercase tracking-wider h-11 select-none">
-                <th className="py-3 px-2.5 font-semibold text-left whitespace-nowrap w-[110px]">Dealer ID</th>
-                <th className="py-3 px-2.5 font-semibold text-left min-w-[170px]">Dealer / Firm Name</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[125px]">Region &amp; DISCOM</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[130px]">Assigned Salesman</th>
-                <th className="py-3 px-2.5 font-semibold text-left w-[120px]">Pricing &amp; Margin</th>
-                <th className="py-3 px-2 font-semibold text-right w-[85px]">Quotes</th>
-                <th className="py-3 px-2 font-semibold text-right w-[85px]">Files</th>
-                <th className="py-3 px-2.5 font-semibold text-right w-[95px]">Capacity Sold</th>
-                <th className="py-3 px-2 font-semibold text-center w-[80px]">Status</th>
-                <th className="py-3 px-2 font-semibold text-center w-[90px]">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
-              {paginatedDealers.length === 0 ? (
+              <DealerTableHeader />
+              <tbody className="divide-y divide-[#E4E7EB] text-body-sm">
+                {dealers.length === 0 && isHardwareDbSyncing ? (
+                  <DealerTableSkeletonRows rows={DEFAULT_PAGE_SIZE} />
+              ) : paginatedDealers.length === 0 ? (
                 <tr>
                   <td colSpan="10" className="py-12 text-center text-secondary">
                     <span className="material-symbols-outlined text-4xl text-secondary/40 block mb-2">search_off</span>
@@ -1746,7 +1865,7 @@ export default function DealerManagement() {
                   </td>
                 </tr>
               ) : (
-                paginatedDealers.map((d) => {
+                paginatedDealers.map((d, idx) => {
                   const isGold = d.tier.includes('Gold');
                   const isPlat = d.tier.includes('Platinum');
                   const isDiam = d.tier.includes('Diamond');
@@ -1760,7 +1879,11 @@ export default function DealerManagement() {
                   const discomText = (d.discom || '').includes('Circle') ? d.discom : `${d.discom || 'PGVCL'} Circle`;
 
                   return (
-                    <tr key={d.id} className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group">
+                    <tr
+                      key={d.id}
+                      className="bg-white hover:bg-[#F0F4F2] transition-colors duration-150 group animate-stagger-fade"
+                      style={{ animationDelay: `${360 + Math.min(idx * 20, 220)}ms` }}
+                    >
                       <td className="py-3.5 px-2.5 align-top whitespace-nowrap">
                         <span className="font-mono text-label-xs font-semibold text-[#0F1B2E] bg-surface-container px-2 py-1 rounded inline-block whitespace-nowrap">
                           #{d.id}
@@ -1834,7 +1957,7 @@ export default function DealerManagement() {
                           const tierKey = (d.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
                                           (d.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
                                           (d.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
-                          const conf = tierMargins?.[tierKey] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                          const conf = tierMargins?.[tierKey] || {};
                           return (
                             <>
                               <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${tierColor} whitespace-nowrap`}>
@@ -1849,10 +1972,10 @@ export default function DealerManagement() {
                                 </div>
                               )}
                               <div className="text-[11px] text-secondary mt-1 leading-tight">
-                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{(d.pricingConfig?.pricingMode === 'custom' ? d.pricingConfig.customMarginPerKw : conf.defaultMarginPerKw).toLocaleString('en-IN')}/kW</strong>
+                                Margin: <strong className="text-on-surface font-semibold whitespace-nowrap">₹{Number(d.pricingConfig?.pricingMode === 'custom' ? (d.pricingConfig.customMarginPerKw || 0) : (conf?.defaultMarginPerKw || 0)).toLocaleString('en-IN')}/kW</strong>
                               </div>
                               <div className="text-[10px] text-secondary mt-0.5 leading-tight whitespace-nowrap">
-                                Cap: ₹{(d.maxMarginCapPerKw || conf.maxMarginCapPerKw).toLocaleString('en-IN')}/kW
+                                Cap: ₹{Number(d.maxMarginCapPerKw || conf?.maxMarginCapPerKw || 0).toLocaleString('en-IN')}/kW
                               </div>
                             </>
                           );
@@ -2056,7 +2179,7 @@ export default function DealerManagement() {
                 { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
                 { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
               ].map((tier) => {
-                const currentConfig = tempTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 4500, maxMarginCapPerKw: 6000 };
+                const currentConfig = tempTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                 return (
                   <div key={tier.key} className="p-4 rounded-xl border border-surface-container-high bg-surface-container-low/40 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2619,10 +2742,10 @@ export default function DealerManagement() {
                         value={customKwRate}
                         onChange={(e) => setCustomKwRate(e.target.value)}
                         className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
-                        placeholder="58000"
+                        placeholder={String(pricingPresets?.baseRatePerKw || '58000')}
                       />
                     </div>
-                    <span className="text-[11px] text-secondary mt-1 block">Company baseline: ₹59,800/kW</span>
+                    <span className="text-[11px] text-secondary mt-1 block">Company baseline: ₹{pricingPresets?.baseRatePerKw ? Number(pricingPresets.baseRatePerKw).toLocaleString('en-IN') : '58,000'}/kW</span>
                   </div>
 
                   {/* Custom Dealer Margin per kW */}
@@ -2640,10 +2763,20 @@ export default function DealerManagement() {
                         value={customMarginKw}
                         onChange={(e) => setCustomMarginKw(e.target.value)}
                         className="w-full bg-surface border border-surface-container-high rounded-lg pl-7 pr-3 py-2 text-xs font-bold text-on-surface focus:outline-none focus:border-primary"
-                        placeholder="4500"
+                        placeholder="0"
                       />
                     </div>
-                    <span className="text-[11px] text-secondary mt-1 block">Tier baseline: ₹4,500/kW</span>
+                    {(() => {
+                      const tierKey = (pricingModalDealer?.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                                      (pricingModalDealer?.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                                      (pricingModalDealer?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+                      const baseMargin = tierMargins?.[tierKey]?.defaultMarginPerKw ?? 0;
+                      return (
+                        <span className="text-[11px] text-secondary mt-1 block">
+                          Tier baseline: ₹{Number(baseMargin || 0).toLocaleString('en-IN')}/kW
+                        </span>
+                      );
+                    })()}
                   </div>
 
                   {/* Negotiated Discount */}
@@ -2691,28 +2824,28 @@ export default function DealerManagement() {
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">3.30 kW (6 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 3.3).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 3.3).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(550 * 6 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(550 * 6 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">4.40 kW (8 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 4.4).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 4.4).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(550 * 8 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(550 * 8 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                     <div className="p-2 bg-surface rounded-lg border border-surface-container-high text-center">
                       <span className="text-secondary block font-medium">6.00 kW (10 Panels)</span>
                       <strong className="text-primary font-bold block mt-0.5">
-                        ₹{Math.round((Number(customKwRate) || 58000) * 6.0).toLocaleString('en-IN')}
+                        ₹{Math.round((Number(customKwRate) || baseKw) * 6.0).toLocaleString('en-IN')}
                       </strong>
                       <span className="text-[10px] text-secondary">
-                        Panel: ₹{Math.round(600 * 10 * (Number(customWpRate) || 18)).toLocaleString('en-IN')}
+                        Panel: ₹{Math.round(600 * 10 * (Number(customWpRate) || baseWp)).toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>

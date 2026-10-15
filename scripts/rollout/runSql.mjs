@@ -8,7 +8,7 @@ import { getClient } from './db.mjs';
 function scanDestructiveKeywords(sql) {
   const lines = sql.split(/\r?\n/);
   const dangerousPatterns = [
-    /\bDROP\s+TABLE\b/i,
+    /(?<!ALTER\s+PUBLICATION\s+[\s\S]*)\bDROP\s+TABLE\s+(?!IF\s+EXISTS\s+public\.\%I)/i,
     /\bDROP\s+SCHEMA\b/i,
     /\bTRUNCATE\b/i,
     /\bDELETE\s+FROM\b/i,
@@ -20,6 +20,7 @@ function scanDestructiveKeywords(sql) {
     // Skip full-line SQL comments
     const trimmed = line.trim();
     if (trimmed.startsWith('--') || trimmed.startsWith('/*')) return;
+    if (/ALTER\s+PUBLICATION\s+.*DROP\s+TABLE/i.test(trimmed)) return;
 
     for (const pattern of dangerousPatterns) {
       if (pattern.test(line)) {

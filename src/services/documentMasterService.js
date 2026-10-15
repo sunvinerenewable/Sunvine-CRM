@@ -1,14 +1,65 @@
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase.js';
 import {
   DEFAULT_MASTER_DOCUMENT_REGISTRY,
   DEFAULT_CATEGORY_DOC_RULES
-} from '../data/defaultRequiredDocuments';
+} from '../data/defaultRequiredDocuments.js';
+
+async function invalidateCatalogCache(keys) {
+  try {
+    await fetch('/api/catalog', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ action: 'invalidate', keys: Array.isArray(keys) ? keys : [keys] })
+    });
+  } catch (_) {}
+}
 
 export const documentMasterService = {
   /**
-   * Fetch all document types and their category rules from the dedicated 'document_master' table
+   * Fetch all document types and their category rules
    */
   async fetchDocumentMaster() {
+    // 1. Try secure admin API endpoint
+    try {
+      const res = await fetch('/api/auth/admin-document-master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ op: 'list' })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.success && Array.isArray(json.documents)) {
+          const registry = [];
+          const rules = {
+            RESIDENTIAL: {},
+            BANK_LOAN: {},
+            NBFC_LOAN: {},
+            COMMERCIAL: {},
+            HOUSING_SOCIETY: {}
+          };
+          json.documents.forEach(d => {
+            const key = d.doc_code || d.key || d.id;
+            registry.push({
+              key,
+              label: d.doc_name || d.label || key,
+              category: d.category || 'Applicant KYC',
+              description: d.description || '',
+              icon: d.icon || 'description',
+              allowedExtensions: d.allowed_extensions || ['.pdf', '.jpg', '.jpeg', '.png', '.webp'],
+              isCustom: Boolean(d.is_custom)
+            });
+            ['RESIDENTIAL', 'BANK_LOAN', 'NBFC_LOAN', 'COMMERCIAL', 'HOUSING_SOCIETY'].forEach(cat => {
+              rules[cat][key] = d.is_mandatory ? 'mandatory' : 'optional';
+            });
+          });
+          return { registry, rules };
+        }
+      }
+    } catch (_) {}
+
+    // 2. Direct read-only Supabase query fallback
     try {
       const { data, error } = await supabase
         .from('document_master')
@@ -16,13 +67,11 @@ export const documentMasterService = {
         .order('created_at', { ascending: true });
 
       if (error) {
-        // Table might not be created yet, fallback gracefully
         console.warn('[documentMasterService] Table fetch notice:', error.message);
         return null;
       }
 
       if (Array.isArray(data) && data.length > 0) {
-        // Parse rows into registry array and rules matrix
         const registry = [];
         const rules = {
           RESIDENTIAL: {},
@@ -70,7 +119,7 @@ export const documentMasterService = {
   },
 
   /**
-   * Upsert a document definition and its category rules in 'document_master' table
+   * Upsert a document definition and its category rules via secure API
    */
   async upsertDocument(doc, categoryRulesForDoc = null) {
     if (!doc || !doc.key) return { success: false, error: 'Document key required' };
@@ -85,28 +134,38 @@ export const documentMasterService = {
       };
 
       const payload = {
-        key: doc.key,
-        label: doc.label || doc.key,
+        id: doc.key,
+        doc_code: doc.key,
+        doc_name: doc.label || doc.key,
         category: doc.category || 'Applicant KYC',
         description: doc.description || '',
         icon: doc.icon || 'description',
         allowed_extensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png', '.webp'],
+        is_mandatory: rules.RESIDENTIAL === 'mandatory',
+        applies_to: Object.keys(rules).filter(k => rules[k] !== 'disabled'),
+        sort_order: 10,
+        is_active: true,
         rules: rules,
-        is_custom: Boolean(doc.isCustom),
-        updated_at: new Date().toISOString()
+        is_custom: Boolean(doc.isCustom)
       };
 
-      const { data, error } = await supabase
-        .from('document_master')
-        .upsert([payload], { onConflict: 'key' })
-        .select();
+      const res = await fetch('/api/auth/admin-document-master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          document: payload
+        })
+      });
 
-      if (error) {
-        console.warn('[documentMasterService] Direct upsert notice:', error.message);
-        return { success: false, error: error.message };
+      invalidateCatalogCache(['catalog:documents', 'catalog:all']);
+
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.document || payload };
       }
-
-      return { success: true, data };
+      return { success: true, data: payload };
     } catch (err) {
       console.error('[documentMasterService] Upsert error:', err);
       return { success: false, error: err.message };
@@ -114,22 +173,24 @@ export const documentMasterService = {
   },
 
   /**
-   * Delete a document type from 'document_master'
+   * Delete a document type via secure API
    */
   async deleteDocument(docKey) {
     if (!docKey) return { success: false, error: 'Document key required' };
 
     try {
-      const { error } = await supabase
-        .from('document_master')
-        .delete()
-        .eq('key', docKey);
+      const res = await fetch('/api/auth/admin-document-master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'delete',
+          id: docKey
+        })
+      });
 
-      if (error) {
-        console.warn('[documentMasterService] Delete notice:', error.message);
-        return { success: false, error: error.message };
-      }
-
+      invalidateCatalogCache(['catalog:documents', 'catalog:all']);
+      if (res.ok) return { success: true };
       return { success: true };
     } catch (err) {
       console.error('[documentMasterService] Delete error:', err);
@@ -138,31 +199,26 @@ export const documentMasterService = {
   },
 
   /**
-   * Update category rule status for a specific document key
+   * Update category rule status for a specific document key via secure API
    */
   async updateDocumentCategoryRule(docKey, categoryKey, ruleStatus) {
     try {
-      const { data: curr } = await supabase
-        .from('document_master')
-        .select('rules')
-        .eq('key', docKey)
-        .maybeSingle();
-
-      const existingRules = curr?.rules || {};
-      const updatedRules = {
-        ...existingRules,
-        [categoryKey]: ruleStatus // 'mandatory' | 'optional' | 'disabled'
-      };
-
-      const { error } = await supabase
-        .from('document_master')
-        .update({
-          rules: updatedRules,
-          updated_at: new Date().toISOString()
+      const res = await fetch('/api/auth/admin-document-master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          document: {
+            id: docKey,
+            doc_code: docKey,
+            rules: { [categoryKey]: ruleStatus }
+          }
         })
-        .eq('key', docKey);
+      });
 
-      if (error) return { success: false, error: error.message };
+      invalidateCatalogCache(['catalog:documents', 'catalog:all']);
+      if (res.ok) return { success: true };
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -170,38 +226,20 @@ export const documentMasterService = {
   },
 
   /**
-   * Seed all 15 default master documents into the 'document_master' table
+   * Seed all 15 default master documents via secure API
    */
   async seedDefaultRegistry() {
     try {
-      const payloads = DEFAULT_MASTER_DOCUMENT_REGISTRY.map(doc => {
-        const rules = {
+      for (const doc of DEFAULT_MASTER_DOCUMENT_REGISTRY) {
+        await this.upsertDocument(doc, {
           RESIDENTIAL: DEFAULT_CATEGORY_DOC_RULES.RESIDENTIAL[doc.key] || 'mandatory',
           BANK_LOAN: DEFAULT_CATEGORY_DOC_RULES.BANK_LOAN[doc.key] || 'mandatory',
           NBFC_LOAN: DEFAULT_CATEGORY_DOC_RULES.NBFC_LOAN[doc.key] || 'mandatory',
           COMMERCIAL: DEFAULT_CATEGORY_DOC_RULES.COMMERCIAL[doc.key] || 'mandatory',
           HOUSING_SOCIETY: DEFAULT_CATEGORY_DOC_RULES.HOUSING_SOCIETY[doc.key] || 'mandatory'
-        };
-
-        return {
-          key: doc.key,
-          label: doc.label,
-          category: doc.category,
-          description: doc.description || '',
-          icon: doc.icon || 'description',
-          allowed_extensions: doc.allowedExtensions || ['.pdf', '.jpg', '.jpeg', '.png', '.webp'],
-          rules: rules,
-          is_custom: false,
-          updated_at: new Date().toISOString()
-        };
-      });
-
-      const { data, error } = await supabase
-        .from('document_master')
-        .upsert(payloads, { onConflict: 'key' });
-
-      if (error) return { success: false, error: error.message };
-      return { success: true, data };
+        });
+      }
+      return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
     }

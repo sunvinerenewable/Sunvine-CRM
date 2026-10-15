@@ -391,7 +391,7 @@ export function calculateOverallBusinessMetrics(arg1 = [], arg2 = [], arg3 = [],
   const completedKw = Number(completedFiles.reduce((acc, f) => acc + (Number(f?.solarSystemKw || f?.capacityKw) || 0), 0).toFixed(1));
 
   const totalContractValue = customerFiles.reduce((acc, f) => acc + (Number(f?.amount) || 240000), 0);
-  const totalSubsidyValue = customerFiles.length * 78000;
+  const totalSubsidyValue = customerFiles.reduce((acc, f) => acc + (Number(f?.subsidyAmount) || 0), 0);
   const totalQuotedValue = quotations.reduce((acc, q) => acc + (Number(q?.grandTotalCustomer || q?.totalAmount) || 180000), 0);
 
   // Bank Breakdown

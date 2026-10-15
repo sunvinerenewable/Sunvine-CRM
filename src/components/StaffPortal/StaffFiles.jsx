@@ -19,6 +19,7 @@ import CameraCaptureModal from '../Shared/CameraCaptureModal';
 import { CustomerCardSkeleton, DocumentVaultSkeleton } from '../Shared/Skeleton';
 import { formatFileSize } from '../../utils/mediaOptimizer';
 import { normalizeDocList, appendDocsToFileList, removeDocFromFileList, getCancellationRetentionStatus } from '../../utils/documentUtils';
+import { useRealtimeCustomerFiles } from '../../hooks/useRealtimeCustomerFiles';
 
 export default function StaffFiles() {
   const {
@@ -42,6 +43,13 @@ export default function StaffFiles() {
   const { addToast } = useToast();
   const { showLoader, hideLoader } = useLoading();
 
+  // Supabase Realtime synchronization for Staff Files view
+  useRealtimeCustomerFiles({
+    role: 'staff',
+    dealerId: null,
+    onRefresh: refreshCustomerFiles
+  });
+
   const [statusFilter, setStatusFilter] = useState('all');
   const [financeFilter, setFinanceFilter] = useState('all'); // 'all', 'CASH', 'LOAN'
   const [sourceFilter, setSourceFilter] = useState('all'); // 'all', 'DIRECT_STAFF', 'DEALER'
@@ -56,6 +64,39 @@ export default function StaffFiles() {
   const [showAddFileModal, setShowAddFileModal] = useState(false);
   const [fileToEdit, setFileToEdit] = useState(null);
   const [fileToCancel, setFileToCancel] = useState(null);
+
+  // Close modals on Escape key
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (cameraTargetDoc) {
+          setCameraTargetDoc(null);
+        } else if (previewDoc) {
+          setPreviewDoc(null);
+        } else if (selectedFileForDocs) {
+          setSelectedFileForDocs(null);
+        } else if (selectedFileForTimeline) {
+          setSelectedFileForTimeline(null);
+        } else if (fileToEdit) {
+          setFileToEdit(null);
+        } else if (fileToCancel) {
+          setFileToCancel(null);
+        } else if (showAddFileModal) {
+          setShowAddFileModal(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    cameraTargetDoc,
+    previewDoc,
+    selectedFileForDocs,
+    selectedFileForTimeline,
+    fileToEdit,
+    fileToCancel,
+    showAddFileModal
+  ]);
 
 
   // Auto-scroll to highlighted file from Push Notification
@@ -144,7 +185,9 @@ export default function StaffFiles() {
     showLoader('Registering new customer file...');
     try {
       const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
-      const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+      const year = new Date().getFullYear();
+      const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const newFileId = `FIL-${year}-${randPart}`;
       const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
       const newFile = {
         id: newFileId,
@@ -177,7 +220,11 @@ export default function StaffFiles() {
         documents: {}
       };
 
-      await addCustomerFile(newFile);
+      let savedFile = newFile;
+      if (addCustomerFile) {
+        const res = await addCustomerFile(newFile);
+        if (res) savedFile = res;
+      }
       setShowAddFileModal(false);
       setNewCustName('');
       setNewCustPhone('');
@@ -189,9 +236,12 @@ export default function StaffFiles() {
       setNewCustLoanRef('');
 
       // Auto-open Document Vault modal for the newly created customer file
-      setSelectedFileForDocs(newFile);
+      setSelectedFileForDocs(savedFile);
 
-      addToast(`New file ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
+      addToast(`New file ${savedFile.id} created for ${savedFile.customerName}! You can upload documents now or skip.`, 'success');
+    } catch (err) {
+      console.error('[StaffFiles] handleCreateFile error:', err);
+      addToast(err.message || 'Failed to create customer file', 'error');
     } finally {
       hideLoader();
     }
@@ -252,7 +302,15 @@ export default function StaffFiles() {
           }
 
           try {
-            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey);
+            const existingSlot = file.documents?.[docKey];
+            const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+            const currentFileIndex = (fileList.length > 1 || existingCount > 0)
+              ? existingCount + uploadedDocsList.length + 1
+              : null;
+
+            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey, {
+              fileIndex: currentFileIndex
+            });
             if (uploadRes?.success) {
               uploadedDocsList.push({
                 filename: uploadRes.filename || item.name,
@@ -379,7 +437,15 @@ export default function StaffFiles() {
 
         if (stats.file) {
           try {
-            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
+            const existingSlot = selectedFileForDocs?.documents?.[docKey];
+            const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+            const currentFileIndex = (items.length > 1 || existingCount > 0)
+              ? existingCount + uploadedDocsList.length + 1
+              : null;
+
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey, {
+              fileIndex: currentFileIndex
+            });
             if (uploadRes?.success) {
               fileUrl = uploadRes.publicUrl || uploadRes.url;
               filename = uploadRes.filename || stats.file.name;

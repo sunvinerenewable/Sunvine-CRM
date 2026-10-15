@@ -105,11 +105,11 @@ export default function ReportsAnalytics() {
       rows = filteredQuotations.map(q => [
         `"${q.id}"`,
         `"${q.customerName || ''}"`,
-        q.systemCapacityKW || 3.3,
+        q.systemCapacityKW || q.system_capacity_kw || 0,
         `"${q.dealerFirmName || ''}"`,
-        q.totalSystemPrice || 180000,
-        q.estimatedSubsidy || 78000,
-        q.netPayableAmount || 102000,
+        q.totalSystemPrice || q.total_amount || q.totalAmount || 0,
+        q.estimatedSubsidy || q.subsidyAmount || 0,
+        q.netPayableAmount || q.netPayableCustomer || 0,
         `"${q.status || 'Active'}"`,
         `"${q.date || ''}"`
       ]);
@@ -190,8 +190,8 @@ export default function ReportsAnalytics() {
         `"${f.customerName}"`,
         `"${f.financeType || 'CASH'}"`,
         `"${f.loanBank || 'Direct Cash'}"`,
-        f.amount || 240000,
-        78000,
+        f.amount || 0,
+        f.subsidyAmount || 0,
         `"${f.status}"`,
         `"${f.dealerName || 'Direct Staff'}"`,
         `"${f.staffName}"`
@@ -409,11 +409,11 @@ export default function ReportsAnalytics() {
                   <tr key={q.id} className="hover:bg-surface-container-low/40">
                     <td className="py-3 px-3 font-mono font-bold text-on-surface">{q.id}</td>
                     <td className="py-3 px-3 font-bold text-on-surface">{q.customerName}</td>
-                    <td className="py-3 px-3 font-mono">{q.systemCapacityKW || 3.3} kW</td>
-                    <td className="py-3 px-3 text-secondary">{q.dealerFirmName || 'Sunvine'}</td>
-                    <td className="py-3 px-3 text-right font-mono font-semibold">₹ {Number(q.totalSystemPrice || 180000).toLocaleString('en-IN')}</td>
-                    <td className="py-3 px-3 text-right font-mono text-emerald-600 font-semibold">₹ {Number(q.estimatedSubsidy || 78000).toLocaleString('en-IN')}</td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-primary">₹ {Number(q.netPayableAmount || 102000).toLocaleString('en-IN')}</td>
+                    <td className="py-3 px-3 font-mono">{q.systemCapacityKW || q.system_capacity_kw || 0} kW</td>
+                    <td className="py-3 px-3 text-secondary">{q.dealerFirmName || q.dealerName || 'Sunvine'}</td>
+                    <td className="py-3 px-3 text-right font-mono font-semibold">₹ {Number(q.totalSystemPrice || q.total_amount || q.totalAmount || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3 px-3 text-right font-mono text-emerald-600 font-semibold">₹ {Number(q.estimatedSubsidy || q.subsidyAmount || 0).toLocaleString('en-IN')}</td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-primary">₹ {Number(q.netPayableAmount || q.netPayableCustomer || 0).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>

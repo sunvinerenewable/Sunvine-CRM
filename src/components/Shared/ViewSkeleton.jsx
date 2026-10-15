@@ -1,4 +1,20 @@
 import React from 'react';
+import DealerDashboardSkeleton, {
+  DealerHeaderSkeleton,
+  DealerStatsSkeleton,
+  DealerFiltersSkeleton,
+  DealerTableSkeleton,
+  DealerCardGridSkeleton
+} from '../AdminPortal/DealerSkeletons';
+
+export {
+  DealerDashboardSkeleton,
+  DealerHeaderSkeleton,
+  DealerStatsSkeleton,
+  DealerFiltersSkeleton,
+  DealerTableSkeleton,
+  DealerCardGridSkeleton
+};
 
 export function ProposalSkeleton() {
   return (
@@ -142,7 +158,18 @@ export function PortalSkeleton() {
   );
 }
 
-export default function ViewSkeleton({ title = 'Loading portal view...' }) {
+export default function ViewSkeleton({ title = 'Loading portal view...', activeTab }) {
+  const isDealerView = activeTab === 'dealers_mgmt' ||
+    (typeof window !== 'undefined' && (
+      window.location.pathname === '/admin/dealers' ||
+      window.location.pathname.endsWith('/dealers') ||
+      window.location.hash.includes('dealers')
+    ));
+
+  if (isDealerView) {
+    return <DealerDashboardSkeleton />;
+  }
+
   return (
     <div className="flex flex-col gap-8 w-full max-w-full overflow-x-hidden animate-pulse">
       {/* 1. Header Skeleton */}

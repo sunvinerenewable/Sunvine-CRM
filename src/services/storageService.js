@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getDocumentTypeSlug, getCanonicalR2Key } from '../utils/documentStorageConfig';
 
 export const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -17,7 +18,18 @@ export const storageService = {
    * Request a presigned URL from the serverless API endpoint (Cloudflare R2 / Supabase)
    */
   async getPresignedUploadUrl(file, options = {}) {
-    const { bucket = 'sunvine-documents', folder = 'customer-files', customFileName, oldPath, oldDoc } = options;
+    const {
+      bucket = 'sunvine-documents',
+      folder = 'customer-files',
+      customFileName,
+      oldPath,
+      oldDoc,
+      fileId,
+      applicationId,
+      docType,
+      docKey,
+      fileIndex
+    } = options;
 
     if (!file) throw new Error('File is required for upload');
 
@@ -52,7 +64,12 @@ export const storageService = {
           fileSize: file.size,
           bucket,
           folder,
-          oldPath: previousFilePath
+          oldPath: previousFilePath,
+          fileId: fileId || applicationId,
+          applicationId: applicationId || fileId,
+          docType: docType || docKey,
+          docKey: docKey || docType,
+          fileIndex
         })
       });
 
@@ -155,48 +172,36 @@ export const storageService = {
 
   /**
    * High-level helper for customer document uploads
-   * Places all documents directly under `customers/${customerId}/` with clear standard names (e.g. Aadhaar_Card.pdf).
-   * Automatically cleans up previous files with other extensions (e.g. .png when uploading .pdf).
+   * Standardizes storage to canonical format:
+   * applications/{fileId}/{documentType}/{filename}
+   * e.g. applications/FIL-2026-0KGG8/aadhar/aadhar.png
+   * Automatically cleans up sibling extensions on replacement.
    */
   async uploadCustomerDocument(file, customerId = 'general', docKey = 'bill', options = {}) {
-    const DOC_KEY_TO_NAME = {
-      aadhaar: 'Aadhaar_Card',
-      aadhar: 'Aadhaar_Card',
-      applicantAadhaar: 'Aadhaar_Card',
-      pan: 'Applicant_PAN_Card',
-      panCard: 'Applicant_PAN_Card',
-      applicantPan: 'Applicant_PAN_Card',
-      coApplicantPan: 'Co_Applicant_PAN_Card',
-      coApplicantAadhaar: 'Co_Applicant_Aadhaar_Card',
-      coApplicantBank: 'Co_Applicant_Bank_Detail',
-      bank: 'Bank_Passbook_Cheque',
-      bankPassbook: 'Bank_Passbook_Cheque',
-      bankDetails: 'Bank_Passbook_Cheque',
-      applicantBank: 'Bank_Passbook_Cheque',
-      cheque: 'Bank_Passbook_Cheque',
-      bill: 'Electricity_Light_Bill',
-      lightBill: 'Electricity_Light_Bill',
-      electricityBill: 'Electricity_Light_Bill',
-      meter: 'Electricity_Meter_Photo',
-      meterPhoto: 'Electricity_Meter_Photo',
-      electricityMeter: 'Electricity_Meter_Photo',
-      site: 'Rooftop_Site_Photo',
-      sitePhoto: 'Rooftop_Site_Photo',
-      rooftopPhoto: 'Rooftop_Site_Photo',
-      veraBill: 'Vera_Property_Tax_Bill',
-      propertyTax: 'Vera_Property_Tax_Bill'
-    };
+    const cleanFileId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ext = file.name ? file.name.split('.').pop().toLowerCase() : 'pdf';
+    const docSlug = getDocumentTypeSlug(docKey);
 
-    const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const folder = `customers/${cleanCustomerId}`;
-    const baseCustomName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
-    const uniqueSuffix = options.isReplace ? '' : `_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-    const customFileName = options.customFileName || `${baseCustomName}${uniqueSuffix}`;
+    // Determine canonical file index if passed or preserve customFileName
+    const fileIndex = options.fileIndex !== undefined ? options.fileIndex : (options.index !== undefined ? options.index : null);
+    const canonicalInfo = getCanonicalR2Key({
+      fileId: cleanFileId,
+      docKey,
+      extension: ext,
+      index: fileIndex
+    });
+
+    const folder = canonicalInfo.folder;
+    const customFileName = options.customFileName || (fileIndex !== null && fileIndex !== undefined ? `${docSlug}-${fileIndex}` : docSlug);
 
     return await this.uploadWithPresignedUrl(file, {
       bucket: 'sunvine-documents',
       folder,
       customFileName,
+      fileId: cleanFileId,
+      docType: docSlug,
+      docKey,
+      fileIndex,
       ...options
     });
   },
@@ -234,9 +239,22 @@ export const storageService = {
   },
 
   /**
-   * Delete a customer document and all its potential extension variants
+   * Delete a customer document and all its potential extension variants.
+   * Cleans up both canonical applications/{fileId}/{docSlug}/ paths and legacy paths.
    */
   async deleteCustomerDocument(docKey, customerId = 'general', bucket = 'sunvine-documents', oldDoc = null) {
+    const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docSlug = getDocumentTypeSlug(docKey);
+
+    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+    const paths = [];
+
+    // 1. Canonical application paths
+    allowedExts.forEach(ext => {
+      paths.push(`applications/${cleanCustomerId}/${docSlug}/${docSlug}.${ext}`);
+    });
+
+    // 2. Legacy folder paths
     const DOC_KEY_TO_NAME = {
       aadhaar: 'Aadhaar_Card',
       aadhar: 'Aadhaar_Card',
@@ -264,16 +282,20 @@ export const storageService = {
       veraBill: 'Vera_Property_Tax_Bill',
       propertyTax: 'Vera_Property_Tax_Bill'
     };
+    const legacyBaseName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
+    allowedExts.forEach(ext => {
+      paths.push(`customers/${cleanCustomerId}/${legacyBaseName}.${ext}`);
+    });
 
-    const cleanCustomerId = (customerId || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const folder = `customers/${cleanCustomerId}`;
-    const baseCustomName = DOC_KEY_TO_NAME[docKey] || docKey.replace(/([A-Z])/g, '_$1').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_/, '');
-
-    const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-    const paths = allowedExts.map(ext => `${folder}/${baseCustomName}.${ext}`);
-
+    // 3. Explicit oldDoc references
     if (oldDoc?.path) paths.push(oldDoc.path);
     if (oldDoc?.url) paths.push(oldDoc.url);
+    if (Array.isArray(oldDoc?.files)) {
+      oldDoc.files.forEach(f => {
+        if (f.path) paths.push(f.path);
+        if (f.url) paths.push(f.url);
+      });
+    }
 
     return await this.deleteDocument(paths, bucket);
   }

@@ -63,6 +63,18 @@ export default function CameraCaptureModal({
     }
   }, [isOpen]);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isUploading && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isUploading, onClose]);
+
   if (!isOpen) return null;
 
   // Process incoming files (Images compressed, PDFs validated)

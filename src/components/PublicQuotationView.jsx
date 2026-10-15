@@ -18,7 +18,17 @@ function decodeQuotationData(dataParam) {
   return null;
 }
 
-export default function PublicQuotationView({ publicQuoteId }) {
+export default function PublicQuotationView({ publicQuoteId, shareToken }) {
+  const token = shareToken || (typeof window !== 'undefined' ? (
+    new URLSearchParams(window.location.search).get('token') ||
+    new URLSearchParams(window.location.search).get('shareToken')
+  ) : null);
+
+  const quoteId = publicQuoteId || (typeof window !== 'undefined' ? (
+    new URLSearchParams(window.location.search).get('id') ||
+    new URLSearchParams(window.location.search).get('quoteId')
+  ) : null);
+
   // Synchronously initialize from local storage / URL payload for instant 0ms first render
   const [quotation, setQuotation] = useState(() => {
     if (typeof window === 'undefined') return null;
@@ -30,19 +40,22 @@ export default function PublicQuotationView({ publicQuoteId }) {
       if (decoded) return decoded;
     } catch (_) {}
 
-    // 2. Fast check: local storage cache
-    if (publicQuoteId) {
-      const local = quotationService.getLocalQuotationById(publicQuoteId);
-      if (local) return local;
+    // 2. Fast check: local storage cache if quoteId or token is present
+    const lookupKey = quoteId || token;
+    if (lookupKey && typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const local = quotationService.getLocalQuotationById(lookupKey);
+        if (local) return local;
+      } catch (_) {}
     }
 
     return null;
   });
 
-  const [loading, setLoading] = useState(() => !quotation && Boolean(publicQuoteId));
+  const [loading, setLoading] = useState(() => !quotation && Boolean(token || quoteId));
 
   useEffect(() => {
-    if (!publicQuoteId) {
+    if (!token && !quoteId) {
       setLoading(false);
       return;
     }
@@ -54,29 +67,35 @@ export default function PublicQuotationView({ publicQuoteId }) {
       setLoading(true);
     }
 
-    // Fetch quotation from Supabase
-    quotationService.getQuotationById(publicQuoteId)
+    // Public token link routes through public-fetch endpoint (unauthenticated)
+    // ID-only link falls back to getQuotationById
+    const fetchPromise = token
+      ? quotationService.getPublicProposal(token)
+      : (quoteId ? quotationService.getQuotationById(quoteId) : Promise.resolve(null));
+
+    fetchPromise
       .then((data) => {
         if (isMounted && data) {
           setQuotation(data);
         }
       })
       .catch((err) => {
-        console.warn('[PublicQuotationView] Supabase fetch notice:', err);
+        console.warn('[PublicQuotationView] Proposal fetch notice:', err);
       })
       .finally(() => {
         if (isMounted) setLoading(false);
       });
 
     return () => { isMounted = false; };
-  }, [publicQuoteId]);
+  }, [token, quoteId]);
 
   return (
     <div className="min-h-screen bg-[#F6F8F7] text-[#0F1B2E] font-sans antialiased py-0">
       <main className="max-w-5xl mx-auto">
         <QuotationPreview
           isPublicView={true}
-          publicQuoteId={publicQuoteId}
+          publicQuoteId={quoteId}
+          shareToken={token}
           quotation={quotation}
           isLoadingProp={loading}
         />

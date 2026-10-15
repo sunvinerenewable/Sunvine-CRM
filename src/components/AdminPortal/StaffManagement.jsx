@@ -19,6 +19,7 @@ import {
   getDocumentSchemaKey,
   DOCUMENT_SCHEMAS
 } from '../../data/defaultRequiredDocuments';
+import { useRealtimeCustomerFiles } from '../../hooks/useRealtimeCustomerFiles';
 
 export default function StaffManagement() {
   const {
@@ -51,6 +52,13 @@ export default function StaffManagement() {
   } = useApp();
 
   const { addToast } = useToast();
+
+  // Supabase Realtime synchronization for Admin / Staff views
+  useRealtimeCustomerFiles({
+    role: role || 'admin',
+    dealerId: currentDealer?.id,
+    onRefresh: refreshCustomerFiles
+  });
 
   // Main UI section: 'files' (Customer Files) or 'staff' (Sales Team Directory)
   // Preserved across page refreshes via ?tab=staff / ?view=staff query parameter
@@ -146,6 +154,51 @@ export default function StaffManagement() {
   const [showStaffPassword, setShowStaffPassword] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState(null);
   const [staffDepartmentFilter, setStaffDepartmentFilter] = useState('all');
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (cameraTargetDoc) {
+          setCameraTargetDoc(null);
+        } else if (previewDoc) {
+          setPreviewDoc(null);
+        } else if (showBankModal) {
+          setShowBankModal(false);
+        } else if (selectedFileForDocs) {
+          setSelectedFileForDocs(null);
+        } else if (selectedFileForTimeline) {
+          setSelectedFileForTimeline(null);
+        } else if (fileToEdit) {
+          setFileToEdit(null);
+        } else if (fileToCancel) {
+          setFileToCancel(null);
+        } else if (showAddFileModal) {
+          setShowAddFileModal(false);
+        } else if (showAddStaffModal) {
+          setShowAddStaffModal(false);
+        } else if (selectedStaffForCreds) {
+          setSelectedStaffForCreds(null);
+        } else if (staffToDelete) {
+          setStaffToDelete(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    cameraTargetDoc,
+    previewDoc,
+    showBankModal,
+    selectedFileForDocs,
+    selectedFileForTimeline,
+    fileToEdit,
+    fileToCancel,
+    showAddFileModal,
+    showAddStaffModal,
+    selectedStaffForCreds,
+    staffToDelete
+  ]);
 
   const handleOpenStaffCreds = (member) => {
     setSelectedStaffForCreds(member);
@@ -286,7 +339,15 @@ export default function StaffManagement() {
           }
 
           try {
-            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey);
+            const existingSlot = file.documents?.[docKey];
+            const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+            const currentFileIndex = (fileList.length > 1 || existingCount > 0)
+              ? existingCount + uploadedDocsList.length + 1
+              : null;
+
+            const uploadRes = await storageService.uploadCustomerDocument(item, fileId, docKey, {
+              fileIndex: currentFileIndex
+            });
             if (uploadRes?.success) {
               uploadedDocsList.push({
                 filename: uploadRes.filename || item.name,
@@ -421,7 +482,15 @@ export default function StaffManagement() {
 
         if (stats.file) {
           try {
-            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey);
+            const existingSlot = selectedFileForDocs?.documents?.[docKey];
+            const existingCount = Array.isArray(existingSlot?.files) ? existingSlot.files.length : (existingSlot?.uploaded ? 1 : 0);
+            const currentFileIndex = (items.length > 1 || existingCount > 0)
+              ? existingCount + uploadedDocsList.length + 1
+              : null;
+
+            const uploadRes = await storageService.uploadCustomerDocument(stats.file, fileId, docKey, {
+              fileIndex: currentFileIndex
+            });
             if (uploadRes?.publicUrl || uploadRes?.url) {
               fileUrl = uploadRes.publicUrl || uploadRes.url;
               fileSize = uploadRes.fileSize || stats.file.size;
@@ -524,7 +593,9 @@ export default function StaffManagement() {
     }
     const assignedStaff = staffList.find(s => s.id === newCustStaffId) || staffList[0];
     const matchedDealer = newCustSourceType === 'DEALER' ? (dealers || []).find(d => d.id === newCustDealerId) : null;
-    const newFileId = `FIL-2026-${String((customerFiles || []).length + 85).padStart(3, '0')}`;
+    const year = new Date().getFullYear();
+    const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const newFileId = `FIL-${year}-${randPart}`;
     const isLoanCase = newCustFinanceType === 'LOAN' || newCustFinanceType === 'BANK_LOAN' || newCustFinanceType === 'FINANCE_LOAN';
     const newFile = {
       id: newFileId,
@@ -557,23 +628,33 @@ export default function StaffManagement() {
       documents: {}
     };
 
-    if (addCustomerFile) {
-      await addCustomerFile(newFile);
+    try {
+      showLoader('Creating customer file...');
+      let savedFile = newFile;
+      if (addCustomerFile) {
+        const res = await addCustomerFile(newFile);
+        if (res) savedFile = res;
+      }
+      setShowAddFileModal(false);
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustEmail('');
+      setNewCustCoApplicantName('');
+      setNewCustCoApplicantPhone('');
+      setNewCustAddress('');
+      setNewCustConsumerNo('');
+      setNewCustLoanRef('');
+
+      // Auto-open Document Vault modal for newly created file
+      setSelectedFileForDocs(savedFile);
+
+      addToast(`New file ${savedFile.id} created for ${savedFile.customerName}! You can upload documents now or skip.`, 'success');
+    } catch (err) {
+      console.error('[StaffManagement] handleCreateFile error:', err);
+      addToast(err.message || 'Failed to create customer file', 'error');
+    } finally {
+      hideLoader();
     }
-    setShowAddFileModal(false);
-    setNewCustName('');
-    setNewCustPhone('');
-    setNewCustEmail('');
-    setNewCustCoApplicantName('');
-    setNewCustCoApplicantPhone('');
-    setNewCustAddress('');
-    setNewCustConsumerNo('');
-    setNewCustLoanRef('');
-
-    // Auto-open Document Vault modal for newly created file
-    setSelectedFileForDocs(newFile);
-
-    addToast(`New file ${newFileId} created for ${newFile.customerName}! You can upload documents now or skip.`, 'success');
   };
 
   const handleSaveStaffPassword = () => {

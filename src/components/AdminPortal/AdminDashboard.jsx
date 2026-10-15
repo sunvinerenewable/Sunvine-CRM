@@ -748,7 +748,7 @@ export default function AdminDashboard() {
             <div className="mt-3 flex items-baseline gap-3">
               <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{activeDealersCount}</span>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-xs font-semibold bg-emerald-500/15 text-emerald-400">
-                <span className="material-symbols-outlined text-[12px] mr-0.5">verified</span> Active
+                <span className="material-symbols-outlined text-[12px] mr-0.5">verified</span> Live DB
               </span>
             </div>
           </div>
@@ -1472,7 +1472,7 @@ export default function AdminDashboard() {
                   icon: 'add_circle',
                   iconColor: 'text-primary',
                   label: 'Quotation Created',
-                  detail: `Created by ${getDealerCellData(auditTargetQuote).name || 'Dealer'}`,
+                  detail: `Created by ${auditTargetQuote.dealerName || auditTargetQuote.dealer_name || 'Dealer'}`,
                   timestamp: auditTargetQuote.date || auditTargetQuote.displayDate || '—',
                 },
                 {

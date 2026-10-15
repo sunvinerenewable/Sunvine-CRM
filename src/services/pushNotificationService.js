@@ -1,9 +1,7 @@
 /**
- * Sunvine Solar EPC - Push & Slack Notification Service
- * Manages W3C Web Push registration, OS-level permissions, and dual Slack + Web Push notification dispatch.
+ * Sunvine Solar EPC - Push Notification Service
+ * Manages W3C Web Push registration, OS-level permissions, and server Web Push notification dispatch.
  */
-
-import { slackNotificationService } from './slackNotificationService';
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -217,23 +215,7 @@ export const pushNotificationService = {
     financeType,
     roofType
   }) {
-    // 1. Direct Slack notification dispatch
-    slackNotificationService.notifyApplicationCreated({
-      fileId,
-      customerName,
-      solarKw,
-      sanctionedLoadKw,
-      dealerId,
-      dealerName,
-      assignedStaffId,
-      assignedStaffName,
-      city,
-      discom,
-      financeType,
-      roofType
-    }).catch(() => {});
-
-    // 2. Server-side dual WebPush + Slack webhook dispatch
+    // Server-side Web Push dispatch
     try {
       const payload = {
         action: 'new-application',
@@ -279,19 +261,7 @@ export const pushNotificationService = {
     actor = 'Staff Desk',
     notes = ''
   }) {
-    // 1. Client-side Slack dispatch
-    slackNotificationService.notifyStageChanged({
-      fileId,
-      customerName,
-      oldStage,
-      newStage,
-      status,
-      dealerName,
-      actor,
-      notes
-    }).catch(() => {});
-
-    // 2. Server-side dispatch
+    // Server-side Web Push dispatch
     try {
       await fetch('/api/push-notify', {
         method: 'POST',
@@ -320,16 +290,7 @@ export const pushNotificationService = {
     filename,
     uploadedBy = 'Dealer Partner'
   }) {
-    // 1. Client-side Slack dispatch
-    slackNotificationService.notifyDocumentUploaded({
-      fileId,
-      customerName,
-      docTitle,
-      filename,
-      uploadedBy
-    }).catch(() => {});
-
-    // 2. Server-side dispatch
+    // Server-side Web Push dispatch
     try {
       await fetch('/api/push-notify', {
         method: 'POST',
@@ -355,13 +316,6 @@ export const pushNotificationService = {
     reason,
     cancelledBy
   }) {
-    slackNotificationService.notifyApplicationCancelled({
-      fileId,
-      customerName,
-      reason,
-      cancelledBy
-    }).catch(() => {});
-
     try {
       await fetch('/api/push-notify', {
         method: 'POST',
@@ -385,12 +339,6 @@ export const pushNotificationService = {
     customerName,
     restoredBy
   }) {
-    slackNotificationService.notifyApplicationRestored({
-      fileId,
-      customerName,
-      restoredBy
-    }).catch(() => {});
-
     try {
       await fetch('/api/push-notify', {
         method: 'POST',
@@ -406,15 +354,9 @@ export const pushNotificationService = {
   },
 
   /**
-   * Send a test push + Slack notification to verify delivery channels
+   * Send a test push notification to verify delivery channels
    */
   async sendTestPush({ targetUserId, role = 'admin' } = {}) {
-    // Also trigger test slack alert
-    slackNotificationService.notifyTestAlert({
-      targetUser: targetUserId || (role === 'admin' ? 'Admin Desk' : 'Staff User'),
-      role
-    }).catch(() => {});
-
     try {
       const res = await fetch('/api/push-notify', {
         method: 'POST',

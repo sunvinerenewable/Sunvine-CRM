@@ -1,22 +1,9 @@
 // Google Places API (New) Client Service
 // Manages API dispatching, race-condition safety, caching, and diagnostics.
-
-const GCP_KEY_STORAGE_KEY = 'sunvine_gcp_places_api_key';
-const GEOAPIFY_KEY_STORAGE_KEY = 'sunvine_geoapify_api_key';
+// All API keys are securely managed server-side (SEC-022).
 
 export const DEFAULT_GEOAPIFY_KEY = '';
-
-export function getSavedGeoapifyApiKey() {
-  return localStorage.getItem(GEOAPIFY_KEY_STORAGE_KEY) || import.meta.env.VITE_GEOAPIFY_API_KEY || '';
-}
-
-export function saveGeoapifyApiKey(key) {
-  if (!key || key.trim().length === 0) {
-    localStorage.removeItem(GEOAPIFY_KEY_STORAGE_KEY);
-  } else {
-    localStorage.setItem(GEOAPIFY_KEY_STORAGE_KEY, key.trim());
-  }
-}
+export const DEFAULT_GOOGLE_API_KEY = '';
 
 // Phase 4: Production Solar Query Matrix
 export const PRODUCTION_SOLAR_KEYWORD_MATRIX = {
@@ -56,20 +43,6 @@ export const DEFAULT_ACTIVE_QUERIES = [
   'renewable energy company'
 ];
 
-export const DEFAULT_GOOGLE_API_KEY = '';
-
-export function getSavedGooglePlacesApiKey() {
-  return localStorage.getItem(GCP_KEY_STORAGE_KEY) || import.meta.env.VITE_GOOGLE_PLACES_API_KEY || '';
-}
-
-export function saveGooglePlacesApiKey(key) {
-  if (!key || key.trim().length === 0) {
-    localStorage.removeItem(GCP_KEY_STORAGE_KEY);
-  } else {
-    localStorage.setItem(GCP_KEY_STORAGE_KEY, key.trim());
-  }
-}
-
 // Request Race-Condition Guard (Phase 28)
 let activeRequestId = 0;
 let activeAbortController = null;
@@ -90,8 +63,7 @@ export async function fetchGooglePlacesNearby({
   radiusMeters = 5000,
   keywords = DEFAULT_ACTIVE_QUERIES,
   accuracy = 10,
-  forceRefresh = false,
-  apiKey = null
+  forceRefresh = false
 }) {
   const currentRequestId = ++activeRequestId;
 
@@ -116,9 +88,6 @@ export async function fetchGooglePlacesNearby({
     }
   }
 
-  const effectiveKey = apiKey || getSavedGooglePlacesApiKey();
-  const effectiveGeoapifyKey = getSavedGeoapifyApiKey();
-
   try {
     const res = await fetch('/api/places-nearby', {
       method: 'POST',
@@ -126,15 +95,14 @@ export async function fetchGooglePlacesNearby({
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
+      credentials: 'include',
       signal: activeAbortController.signal,
       body: JSON.stringify({
         latitude,
         longitude,
         radiusMeters,
         keywords,
-        accuracy,
-        apiKey: effectiveKey,
-        geoapifyKey: effectiveGeoapifyKey
+        accuracy
       })
     });
 

@@ -70,12 +70,6 @@ export default function StaffRadarMap() {
   const [gcpKeyInput, setGcpKeyInput] = useState(() => getSavedGooglePlacesApiKey());
   const [geoapifyKeyInput, setGeoapifyKeyInput] = useState(() => getSavedGeoapifyApiKey());
 
-  const handleSaveGeoapifyKey = () => {
-    saveGeoapifyApiKey(geoapifyKeyInput);
-    addToast('Geoapify Places API key saved!', 'success');
-    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
-  };
-
   // Core Search Execution (Phase 5, 8, 9, 10)
   const executeLeadSearch = useCallback(
     async (targetLat = coords.lat, targetLon = coords.lon, targetRadius = radiusMeters, force = false) => {
@@ -120,6 +114,12 @@ export default function StaffRadarMap() {
     },
     [coords.lat, coords.lon, radiusMeters, activeQueries, accuracy, addToast]
   );
+
+  const handleSaveGeoapifyKey = () => {
+    saveGeoapifyApiKey(geoapifyKeyInput);
+    addToast('Geoapify Places API key saved!', 'success');
+    executeLeadSearch(coords.lat, coords.lon, radiusMeters, true);
+  };
 
   // Initial search on mount
   useEffect(() => {
@@ -195,9 +195,11 @@ export default function StaffRadarMap() {
   };
 
   // Convert Lead to Customer File
-  const handleClaimLeadAsFile = (lead) => {
+  const handleClaimLeadAsFile = async (lead) => {
+    const year = new Date().getFullYear();
+    const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
     const newFile = {
-      id: `FIL-2026-${Math.floor(100 + Math.random() * 900)}`,
+      id: `FIL-${year}-${randPart}`,
       customerName: lead.name,
       phone: lead.phone || '',
       address: lead.address || '',
@@ -221,8 +223,15 @@ export default function StaffRadarMap() {
         bankPassbook: { uploaded: false, filename: null, date: null }
       }
     };
-    addCustomerFile(newFile);
-    addToast(`Lead "${lead.name}" added to your Customer Files!`, 'success');
+    try {
+      if (addCustomerFile) {
+        await addCustomerFile(newFile);
+      }
+      addToast(`Lead "${lead.name}" added to your Customer Files!`, 'success');
+    } catch (err) {
+      console.error('[StaffRadarMap] Claim lead error:', err);
+      addToast(err.message || 'Failed to claim lead', 'error');
+    }
   };
 
   // Filter leads

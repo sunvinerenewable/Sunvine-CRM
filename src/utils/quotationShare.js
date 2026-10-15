@@ -1,4 +1,4 @@
-import { quotationService } from '../services/quotationService';
+import { quotationService } from '../services/quotationService.js';
 
 // Clean customer phone number to Indian 10-digit format with country code 91
 export function cleanCustomerPhone(phoneStr) {
@@ -10,7 +10,7 @@ export function cleanCustomerPhone(phoneStr) {
   return '919825012345';
 }
 
-// Encode compact quotation payload for portable instant URL loading
+// Encode safe compact quotation payload for portable instant URL loading (No sensitive dealer margins or customer phone)
 export function encodeQuotationPayload(quote) {
   if (!quote || typeof quote !== 'object') return '';
   try {
@@ -18,7 +18,6 @@ export function encodeQuotationPayload(quote) {
       id: quote.id,
       date: quote.date,
       customerName: quote.customerName,
-      customerPhone: quote.customerPhone,
       city: quote.city || quote.location,
       state: quote.state,
       discom: quote.discom,
@@ -30,8 +29,6 @@ export function encodeQuotationPayload(quote) {
       grandTotalCustomer: quote.grandTotalCustomer || quote.totalAmount,
       subsidyAmount: quote.subsidyAmount,
       netPayable: quote.netPayable,
-      baseRatePerKW: quote.baseRatePerKW,
-      dealerMarginPerKW: quote.dealerMarginPerKW,
       dealerName: quote.dealerName,
       isDirectCompanyQuote: quote.isDirectCompanyQuote,
       bomItems: quote.bomItems,
@@ -44,40 +41,73 @@ export function encodeQuotationPayload(quote) {
   }
 }
 
-// Generate online link for customer proposal with instant portable payload
+// Generate online link for customer proposal using share token when available
 export function getPublicProposalUrl(quoteOrId) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvine-dealer.vprotech.online';
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://sunvinerenewable.com';
   if (typeof quoteOrId === 'object' && quoteOrId !== null) {
-    const id = quoteOrId.id || 'SV-2026-Q801';
-    const dataEncoded = encodeQuotationPayload(quoteOrId);
-    if (dataEncoded) {
-      return `${origin}/?view=quote&id=${encodeURIComponent(id)}&data=${encodeURIComponent(dataEncoded)}`;
+    const id = quoteOrId.id || quoteOrId.quoteId || quoteOrId.quotationNo || '';
+    const shareToken = quoteOrId.shareToken || quoteOrId.share_token;
+    if (shareToken) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(shareToken)}`;
+    }
+    // Check local cache for token if quotation has an ID
+    if (id && typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(id);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
     }
     return `${origin}/?view=quote&id=${encodeURIComponent(id)}`;
   }
-  return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId || 'SV-2026-Q801')}`;
+  if (typeof quoteOrId === 'string' && quoteOrId) {
+    // If quoteOrId is already a public token
+    if (quoteOrId.startsWith('tok_') || quoteOrId.startsWith('pub_') || /^[0-9a-f]{32,64}$/i.test(quoteOrId)) {
+      return `${origin}/?view=quote&token=${encodeURIComponent(quoteOrId)}`;
+    }
+    // Check local cache for token by quote ID
+    if (typeof quotationService?.getLocalQuotationById === 'function') {
+      try {
+        const cached = quotationService.getLocalQuotationById(quoteOrId);
+        const cachedToken = cached?.shareToken || cached?.share_token;
+        if (cachedToken) {
+          return `${origin}/?view=quote&token=${encodeURIComponent(cachedToken)}`;
+        }
+      } catch (_) {}
+    }
+    return `${origin}/?view=quote&id=${encodeURIComponent(quoteOrId)}`;
+  }
+  return `${origin}/?view=quote`;
 }
 
 // Generate the official proposal WhatsApp message
-export function buildProposalWhatsAppMessage(quote) {
+export function buildProposalWhatsAppMessage(quote, customUrl = null, profile = null) {
   const customerName = quote.customerName || 'Valued Customer';
   const capacity = quote.systemCapacityKW 
     ? `${quote.systemCapacityKW} KW` 
-    : (quote.capacity || '280.20 kW');
-  const quoteId = quote.id || 'SV-2026-Q801';
+    : (quote.capacity || `${Number(quote.system_capacity_kw || 0)} kW`);
+  const quoteId = quote.id || quote.quotation_id || 'SV-QUOTATION';
   const amount = typeof quote.amount === 'string'
     ? quote.amount
-    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : '67,24,800');
-  const moduleInfo = quote.solarModule || quote.moduleType || '600 WP TOPCon Mono Bifacial Panel';
-  const invInfo = quote.inverterCapacity || '125 KW Grid-Tied Inverter';
+    : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : (quote.totalAmount ? quote.totalAmount.toLocaleString('en-IN') : '0'));
+  const moduleInfo = quote.solarModule || quote.moduleType || quote.panelType || 'Tier-1 Certified PV Module';
+  const invInfo = quote.inverterCapacity || quote.inverterType || 'Grid-Tied Solar Inverter';
   const date = quote.date || new Date().toLocaleDateString('en-GB');
-  const publicUrl = getPublicProposalUrl(quote);
+  const publicUrl = customUrl || getPublicProposalUrl(quote);
 
-  return `*☀️ SUNVINE RENEWABLE ENERGY - SOLAR EPC PROPOSAL*
+  const companyProfile = profile || quote.companyProfile || quote.company_profile || {};
+  const compName = companyProfile.name || 'Sunvine Renewable Energy';
+  const helpline = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+  const email = companyProfile.email || 'support@sunvinerenewable.com';
+  const office = companyProfile.address || 'Gujarat, India';
+
+  return `*☀️ ${compName.toUpperCase()} - SOLAR EPC PROPOSAL*
 
 Dear *${customerName}*,
 
-Greetings from *Sunvine Renewable Energy*! We are pleased to share your customized official turnkey solar power proposal.
+Greetings from *${compName}*! We are pleased to share your customized official turnkey solar power proposal.
 
 📋 *QUOTATION SUMMARY*
 ━━━━━━━━━━━━━━━━━━━━
@@ -96,18 +126,15 @@ Your official 4-page turnkey proposal document with Bill of Materials (BOM), Tec
 🔗 *View / Download Proposal Online:*
 ${publicUrl}
 
-📞 *Sunvine Helpline:* +91 80000 50580
-📧 *Email:* sunvinerenewable@gmail.com
-🏢 *Corporate Office:* G-705, Metoda GIDC, Rajkot, Gujarat.
+📞 *Helpline:* ${helpline}
+📧 *Email:* ${email}
+🏢 *Corporate Office:* ${office}
 
 _Empowering The Future with Solar Energy_`;
 }
 
 // Open WhatsApp chat directly with pre-filled message (fast link)
 export function openWhatsAppChat(quote, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
-  }
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
     : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
@@ -116,32 +143,65 @@ export function openWhatsAppChat(quote, customPhone = null) {
   window.open(url, '_blank');
 }
 
-// Generate actual PDF Blob from element using html2pdf (lazy loaded on demand)
+// Generate actual PDF Blob from element using 1:1 page capture (Guarantees exactly 4 A4 pages, zero blank pages)
 export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801') {
   if (!element) return null;
 
   try {
-    const html2pdfModule = await import('html2pdf.js');
-    const html2pdf = html2pdfModule.default || html2pdfModule;
+    // 1. Wait for document fonts and all images inside the export container to be fully loaded
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+    const images = Array.from(element.querySelectorAll('img'));
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) return resolve();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(resolve, 800);
+          })
+      )
+    );
 
-    const opt = {
-      margin: 0,
-      filename: `Sunvine_Proposal_${quoteId}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
+    // 2. Dynamically import html2canvas and jsPDF
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf')
+    ]);
+
+    // 3. Resolve discrete .pdf-page elements to guarantee exact 1:1 page mapping (Exactly 4 A4 pages)
+    const pageElements = Array.from(element.querySelectorAll('.pdf-page'));
+    const targets = pageElements.length > 0 ? pageElements : [element];
+
+    const pdf = new jsPDF({
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true
+    });
+
+    for (let i = 0; i < targets.length; i++) {
+      if (i > 0) {
+        pdf.addPage('a4', 'portrait');
+      }
+
+      const canvas = await html2canvas(targets[i], {
         scale: 2,
         useCORS: true,
         logging: false,
+        backgroundColor: '#ffffff',
         scrollX: 0,
         scrollY: 0,
         windowWidth: 794
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] }
-    };
+      });
 
-    const worker = html2pdf().set(opt).from(element);
-    const blob = await worker.output('blob');
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    }
+
+    const blob = pdf.output('blob');
     return blob;
   } catch (err) {
     console.warn('PDF generation notice:', err);
@@ -149,23 +209,46 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
   }
 }
 
-// Share actual PDF file to WhatsApp (Web Share API on mobile, auto-download + chat on desktop)
-export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
-  if (quote && quote.id) {
-    quotationService.saveQuotation(quote).catch(() => {});
+// Check whether native Web Share API supports file sharing in current context
+export function canShareFilesDirectly() {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+    return false;
   }
-  const phone = customPhone 
-    ? cleanCustomerPhone(customPhone) 
-    : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
-  const text = buildProposalWhatsAppMessage(quote);
+  // Web Share API requires a secure context (HTTPS or localhost)
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    return false;
+  }
+  try {
+    const dummyFile = new File([''], 'test.pdf', { type: 'application/pdf' });
+    return navigator.canShare({ files: [dummyFile] });
+  } catch (e) {
+    return false;
+  }
+}
+
+// Share actual PDF file to WhatsApp (Web Share API on mobile HTTPS, auto-download + chat on desktop / HTTP LAN)
+export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customPhone = null) {
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  const canDirectShare = canShareFilesDirectly();
+
+  // Only pre-target phone if customPhone is explicitly provided; otherwise open contact chooser
+  const targetPhone = customPhone ? cleanCustomerPhone(customPhone) : null;
+  let waUrl = '';
+  if (targetPhone) {
+    waUrl = `https://api.whatsapp.com/send?phone=${targetPhone}`;
+  } else if (isMobile) {
+    waUrl = 'whatsapp://send';
+  } else {
+    waUrl = 'https://web.whatsapp.com';
+  }
+
   const quoteId = (quote.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
   const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
-  const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
 
-  // On desktop browser, pre-open window synchronously to prevent Chrome popup blocker
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  // Pre-open a blank tab ONLY on desktop when direct share is not supported
+  // (NEVER open about:blank on mobile devices)
   let preOpenedTab = null;
-  if (!isMobile) {
+  if (!canDirectShare && !isMobile) {
     try {
       preOpenedTab = window.open('about:blank', '_blank');
     } catch (e) {
@@ -182,44 +265,55 @@ export async function shareQuotationPdfViaWhatsApp(quote, exportElement, customP
     }
   }
 
-  // 1. If Mobile device supports native File Sharing via Web Share API
-  if (isMobile && pdfBlob && typeof navigator !== 'undefined' && navigator.canShare) {
+  // 1. If device & browser support native File Sharing via Web Share API
+  if (canDirectShare && pdfBlob) {
     try {
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      if (navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({
-          title: `Sunvine Proposal - ${quote.customerName}`,
-          text: text,
-          files: [pdfFile]
-        });
-        return { success: true, method: 'native_file_share' };
-      }
+      await navigator.share({
+        title: `Sunvine Proposal - ${quote.customerName || 'Solar Proposal'}`,
+        files: [pdfFile]
+      });
+      return { success: true, method: 'native_file_share' };
     } catch (shareErr) {
       if (shareErr.name === 'AbortError') {
+        // User intentionally cancelled the native share sheet
         return { success: false, aborted: true };
       }
-      console.warn('Native share failed, falling back:', shareErr);
+      console.warn('Native share failed, falling back to download & chat:', shareErr);
     }
   }
 
-  // 2. Fallback / Desktop: Download actual PDF directly to user's device
+  // 2. Fallback (Desktop, DevTools, HTTP LAN origins, or browsers without Web Share API Level 2):
+  // Download actual PDF directly to user's device
   if (pdfBlob) {
-    const blobUrl = URL.createObjectURL(pdfBlob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    try {
+      const blobUrl = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (downloadErr) {
+      console.warn('Failed to auto-download PDF blob:', downloadErr);
+    }
   }
 
-  // 3. Navigate pre-opened tab to WhatsApp (bypassing popup blocker)
+  // 3. Open WhatsApp (bypassing popup blocker via pre-opened tab on desktop or direct open)
   if (preOpenedTab && !preOpenedTab.closed) {
     preOpenedTab.location.href = waUrl;
   } else {
-    // Fallback if tab was not pre-opened
-    window.open(waUrl, '_blank') || (window.location.href = waUrl);
+    try {
+      const opened = window.open(waUrl, '_blank');
+      if (!opened && isMobile) {
+        window.location.href = waUrl;
+      }
+    } catch (e) {
+      if (isMobile) {
+        window.location.href = waUrl;
+      }
+    }
   }
 
   return { success: true, method: 'download_and_chat', fileName, waUrl };

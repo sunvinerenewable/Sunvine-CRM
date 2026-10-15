@@ -20,9 +20,13 @@ if (typeof setInterval !== 'undefined') {
 export async function checkDistributedRateLimit(identifier, options = {}) {
   const maxAttempts = options.maxAttempts || 20;
   const windowSeconds = Math.ceil((options.windowMs || 5 * 60 * 1000) / 1000);
-  const key = `ratelimit:${identifier}`;
+  const key = identifier.startsWith('ratelimit:') ? identifier : `ratelimit:${identifier}`;
+  const isProd = process.env.NODE_ENV === 'production';
 
   if (!isRedisConfigured()) {
+    if (isProd) {
+      throw new Error('[RateLimiter FATAL] Upstash Redis is not configured in production. Cannot perform rate limiting.');
+    }
     return checkRateLimit(identifier, options);
   }
 
@@ -35,7 +39,8 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
       const getRes = await fetch(`${url}/pipeline`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify([['GET', key], ['TTL', key]])
+        body: JSON.stringify([['GET', key], ['TTL', key]]),
+        signal: AbortSignal.timeout(1000)
       });
       if (getRes.ok) {
         const data = await getRes.json();
@@ -49,35 +54,53 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
           totalAttempts: count
         };
       }
-    }
+      if (isProd) {
+        throw new Error(`[RateLimiter FATAL] Upstash Redis check failed with status ${getRes.status} in production.`);
+      }
+    } else {
+      // INCR and EXPIRE in pipeline
+      const res = await fetch(`${url}/pipeline`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify([
+          ['INCR', key],
+          ['EXPIRE', key, windowSeconds, 'NX'],
+          ['TTL', key]
+        ]),
+        signal: AbortSignal.timeout(1000)
+      });
 
-    // INCR and EXPIRE in pipeline
-    const res = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify([
-        ['INCR', key],
-        ['EXPIRE', key, windowSeconds, 'NX'],
-        ['TTL', key]
-      ])
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      const count = data?.[0]?.result || 1;
-      const ttl = Math.max(1, data?.[2]?.result || windowSeconds);
-      const remaining = Math.max(0, maxAttempts - count);
-      return {
-        allowed: count <= maxAttempts,
-        remaining,
-        resetSeconds: ttl,
-        totalAttempts: count
-      };
+      if (res.ok) {
+        const data = await res.json();
+        const count = data?.[0]?.result || 1;
+        const ttl = Math.max(1, data?.[2]?.result || windowSeconds);
+        const remaining = Math.max(0, maxAttempts - count);
+        return {
+          allowed: count <= maxAttempts,
+          remaining,
+          resetSeconds: ttl,
+          totalAttempts: count
+        };
+      }
+      if (res.status === 429) {
+        console.warn('[RateLimiter WARNING] Upstash Redis quota exceeded (HTTP 429). Falling back safely to in-memory rate limiter.');
+        return checkRateLimit(identifier, options);
+      }
+      if (isProd) {
+        throw new Error(`[RateLimiter FATAL] Upstash Redis pipeline failed with status ${res.status} in production.`);
+      }
     }
   } catch (err) {
+    if (err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('limit')) {
+      console.warn('[RateLimiter WARNING] Upstash Redis quota issue detected. Falling back safely to in-memory rate limiter.');
+      return checkRateLimit(identifier, options);
+    }
+    if (isProd) {
+      throw new Error(`[RateLimiter FATAL] Redis rate limiter error in production: ${err.message}`);
+    }
     console.warn('[RateLimiter] Upstash unreachable, falling back to local:', err.message);
   }
 
@@ -141,8 +164,11 @@ export function checkRateLimit(identifier, options = {}) {
 }
 
 export async function resetRateLimit(identifier) {
+  const rawKey = identifier.startsWith('ratelimit:') ? identifier.slice('ratelimit:'.length) : identifier;
+  tracker.delete(rawKey);
   tracker.delete(identifier);
-  await redisDel(`ratelimit:${identifier}`).catch(() => {});
+  const redisKey = identifier.startsWith('ratelimit:') ? identifier : `ratelimit:${identifier}`;
+  await redisDel(redisKey).catch(() => {});
 }
 
 export async function resetAllRateLimits() {

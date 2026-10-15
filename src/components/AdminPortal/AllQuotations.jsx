@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { useToast } from '../Shared/Toast';
 import ViewModeToggle, { useTableViewMode } from '../Shared/ViewModeToggle';
 import ConvertQuotationModal from '../DealerPortal/ConvertQuotationModal';
+import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
+import { getDocumentListForFile, getDocumentCompletion } from '../../data/defaultRequiredDocuments';
 
 // Helper to reliably parse date strings into millisecond timestamps
 const parseQuoteDateToMs = (dateStr) => {
@@ -27,8 +29,48 @@ const parseQuoteDateToMs = (dateStr) => {
 };
 
 export default function AllQuotations() {
-  const { quotations, setPreviewQuotation, setActiveTab, dealers, staffList, addNotification, updateQuotationStatus, clearEditingQuotation, clearActiveDraftQuote } = useApp();
+  const {
+    quotations,
+    setPreviewQuotation,
+    setActiveTab,
+    dealers,
+    staffList,
+    tierMargins,
+    addNotification,
+    updateQuotationStatus,
+    clearEditingQuotation,
+    clearActiveDraftQuote,
+    hydrateAllFromSupabase,
+    customerFiles,
+    applicationStages,
+    refreshCustomerFiles,
+    refreshQuotations
+  } = useApp();
   const { addToast } = useToast();
+
+  const getDealerForQuote = (q) => {
+    return (dealers || []).find(d => d.id === q.dealerId || d.dealerCode === q.dealerId || d.id === q.dealer_id || d.dealerCode === q.dealer_code);
+  };
+
+  const getDealerCapForQuote = (q) => {
+    const d = getDealerForQuote(q);
+    const tierKey = (d?.tier || '').toLowerCase().includes('diamond') ? 'diamond' :
+                    (d?.tier || '').toLowerCase().includes('platinum') ? 'platinum' :
+                    (d?.tier || '').toLowerCase().includes('silver') ? 'silver' : 'gold';
+    return d?.maxMarginCapPerKw || d?.pricingConfig?.customMarginPerKw || tierMargins?.[tierKey]?.maxMarginCapPerKw || tierMargins?.gold?.maxMarginCapPerKw || 0;
+  };
+
+  const getStoredSubsidy = (q) => {
+    if (q.subsidyAmount !== undefined && q.subsidyAmount !== null) return Number(q.subsidyAmount);
+    if (q.subsidy_amount !== undefined && q.subsidy_amount !== null) return Number(q.subsidy_amount);
+    if (q.subsidy !== undefined && q.subsidy !== null) return Number(q.subsidy);
+    return 0;
+  };
+
+  // Primary Section Switcher ('quotations' | 'applications')
+  const [activeMainTab, setActiveMainTab] = useState('quotations');
+
+  // Quotations view state
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState('all');
   const [marginProfileFilter, setMarginProfileFilter] = useState('all');
@@ -37,6 +79,15 @@ export default function AllQuotations() {
   const [selectedAuditQuote, setSelectedAuditQuote] = useState(null);
   const [convertingQuote, setConvertingQuote] = useState(null);
   const [viewMode, setViewMode] = useTableViewMode('admin_all_quotations');
+
+  // Applications view state
+  const [appSearchTerm, setAppSearchTerm] = useState('');
+  const [appChannelFilter, setAppChannelFilter] = useState('all'); // 'all' | 'DEALER' | 'STAFF'
+  const [appDealerFilter, setAppDealerFilter] = useState('all');
+  const [appDiscomFilter, setAppDiscomFilter] = useState('all');
+  const [appStageFilter, setAppStageFilter] = useState('all');
+  const [appViewMode, setAppViewMode] = useState('table'); // 'table' | 'cards'
+  const [selectedAppForDetail, setSelectedAppForDetail] = useState(null);
 
   // Top Filter Controls (Default to All Time Records so all live database quotations appear)
   const [datePresetLabel, setDatePresetLabel] = useState('All Time Records');
@@ -74,6 +125,12 @@ export default function AllQuotations() {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (hydrateAllFromSupabase) {
+      hydrateAllFromSupabase();
+    }
+  }, [hydrateAllFromSupabase]);
 
   const handleApplyPresetDate = (label, start, end) => {
     setDatePresetLabel(label);
@@ -203,10 +260,15 @@ export default function AllQuotations() {
     if (activeTabFilter === 'discom' && !statusLower.includes('discom') && !statusLower.includes('sanctioned') && !statusLower.includes('review') && !statusLower.includes('pending')) return false;
     if (activeTabFilter === 'draft' && !statusLower.includes('draft') && !statusLower.includes('stale')) return false;
 
-    const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 0);
-    if (marginProfileFilter === 'high' && marginPerKw <= 4500) return false;
-    if (marginProfileFilter === 'flagged' && marginPerKw <= 5500) return false;
-    if (marginProfileFilter === 'compliant' && marginPerKw > 5500) return false;
+    const capacityKw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || kw || 5.0);
+    const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * capacityKw : 0));
+    const marginPerKw = capacityKw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / capacityKw)) : 0;
+    const dealerCap = getDealerCapForQuote(q);
+    const isFlagged = Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marginPerKw > dealerCap));
+
+    if (marginProfileFilter === 'high' && marginPerKw <= (dealerCap ? Math.round(dealerCap * 0.75) : (tierMargins?.gold?.defaultMarginPerKw || 0))) return false;
+    if (marginProfileFilter === 'flagged' && !isFlagged) return false;
+    if (marginProfileFilter === 'compliant' && isFlagged) return false;
 
     // Date range filter
     if (startDate || endDate) {
@@ -237,6 +299,15 @@ export default function AllQuotations() {
   const totalValue = filteredQuotes.reduce((acc, q) => acc + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
   const totalCapacityKW = filteredQuotes.reduce((acc, q) => acc + (parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0)), 0);
   const totalCapacityMW = (totalCapacityKW / 1000).toFixed(2);
+  const formattedCapacity = (() => {
+    if (totalCapacityKW >= 1000) {
+      const mw = totalCapacityKW / 1000;
+      const val = (mw % 1 === 0 ? mw.toFixed(1) : mw.toFixed(2));
+      return { value: val, unit: 'MW' };
+    }
+    const val = (totalCapacityKW % 1 === 0 ? totalCapacityKW.toFixed(0) : totalCapacityKW.toFixed(2));
+    return { value: val, unit: 'kW' };
+  })();
   const avgValue = totalProposalsCount > 0 ? Math.round(totalValue / totalProposalsCount) : 0;
 
   // Dynamic Average Dealer Margin calculation (SR-21)
@@ -258,15 +329,16 @@ export default function AllQuotations() {
 
     const avg = totalKwWithMargin > 0 ? Math.round(totalMarginRupees / totalKwWithMargin) : 0;
 
-    // Flag any quote with margin > ₹5,500/kW as non-compliant
+    // Flag quotes where margin exceeds dealer cap
     const flaggedCount = quotesWithMargin.filter(q => {
       const kw = parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0);
       const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
       const marg = kw > 0 ? Math.round(totalMargin / kw) : 0;
-      return marg > 5500;
+      const dealerCap = getDealerCapForQuote(q);
+      return Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marg > dealerCap));
     }).length;
 
-    const status = flaggedCount > 0 ? 'flagged' : avg > 5000 ? 'review' : 'compliant';
+    const status = flaggedCount > 0 ? 'flagged' : 'compliant';
     return { avgMarginPerKw: avg, avgMarginComplianceStatus: status };
   })();
 
@@ -329,10 +401,10 @@ export default function AllQuotations() {
         escapeCsv(q.inverterType || 'Sunvine Smart Series MPPT Grid-Tied'),
         escapeCsv(q.baseRatePerKW || 59800),
         escapeCsv(q.baseTotalAmount || Math.round((q.systemCapacityKW || 5) * 59800)),
-        escapeCsv(q.dealerMarginPerKW || 4500),
-        escapeCsv(q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 22500)),
+        escapeCsv(q.dealerMarginPerKW || (q.dealerTotalMargin && q.systemCapacityKW ? Math.round(q.dealerTotalMargin / q.systemCapacityKW) : 0)),
+        escapeCsv(q.dealerTotalMargin || (q.dealerMarginPerKW ? Math.round(q.dealerMarginPerKW * (q.systemCapacityKW || 5)) : 0)),
         escapeCsv(q.grandTotalCustomer || q.totalAmount),
-        escapeCsv(q.subsidyAmount || (q.systemCapacityKW <= 2 ? 60000 : 78000)),
+        escapeCsv(getStoredSubsidy(q)),
         escapeCsv(q.netPayable || q.grandTotalCustomer),
         escapeCsv(q.status)
       ];
@@ -371,6 +443,122 @@ export default function AllQuotations() {
     }
   };
 
+  // ── Universal Applications / Project Files (CustomerFiles + Quotations Synthesized) ──
+  const allUniversalFiles = useMemo(() => {
+    const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
+
+    const synthesizedFromQuotes = (quotations || []).map(q => {
+      const existing = rawFiles.find(f => (
+        (f.quotationId && f.quotationId === q.id) ||
+        (f.consumerNo && q.consumerNo && f.consumerNo === q.consumerNo) ||
+        (f.customerName && q.customerName && f.customerName.toLowerCase() === q.customerName.toLowerCase())
+      ));
+      if (existing) return null;
+
+      const capKw = Number(q.systemCapacityKW || String(q.capacity || '').replace(/[^\d.]/g, '') || 5);
+      const isWon = (q.status || '').toLowerCase().includes('won');
+      const isApproved = (q.status || '').toLowerCase().includes('approved');
+      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
+      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
+
+      return {
+        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
+        quotationId: q.id,
+        customerName: q.customerName || 'Solar Consumer',
+        phone: q.customerPhone || q.phone || 'N/A',
+        address: q.customerAddress || q.address || q.location || 'Gujarat',
+        city: q.city || 'Rajkot',
+        discom: q.discom || 'PGVCL',
+        consumerNo: q.consumerNo || 'PENDING',
+        solarSystemKw: capKw,
+        roofType: 'RCC Flat',
+        sourceType: q.sourceType || (q.dealerId ? 'DEALER' : 'STAFF'),
+        source: q.sourceType || (q.dealerId ? 'DEALER' : 'STAFF'),
+        dealerId: q.dealerId || null,
+        dealerName: q.dealerName || (q.dealerId ? 'Dealer Partner' : 'Sales Staff Direct'),
+        stage: stage,
+        currentStage: stage,
+        status: status,
+        financeType: q.financeType || 'CASH',
+        loanBank: q.loanBank || '',
+        createdAt: q.date || q.created_at || new Date().toISOString(),
+        documents: {},
+        timeline: [
+          {
+            stage: 'Quotation Created',
+            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
+            actor: q.dealerName || 'Solar Consultant',
+            notes: `Project application initialized from quotation for ${q.customerName || 'Consumer'}`
+          }
+        ]
+      };
+    }).filter(Boolean);
+
+    return [...rawFiles, ...synthesizedFromQuotes];
+  }, [customerFiles, quotations]);
+
+  // Filtered Applications
+  const filteredApplications = useMemo(() => {
+    return allUniversalFiles.filter(app => {
+      // 1. Channel filter
+      if (appChannelFilter !== 'all') {
+        const src = String(app.sourceType || app.source || (app.dealerId ? 'DEALER' : 'STAFF')).toUpperCase();
+        if (appChannelFilter === 'DEALER' && !src.includes('DEALER')) return false;
+        if (appChannelFilter === 'STAFF' && src.includes('DEALER')) return false;
+      }
+
+      // 2. Dealer filter
+      if (appDealerFilter !== 'all') {
+        const cleanFilter = String(appDealerFilter).replace(/^#/, '').toLowerCase();
+        const appDId = String(app.dealerId || app.dealer_id || '').replace(/^#/, '').toLowerCase();
+        const appDName = String(app.dealerName || app.dealer_name || '').toLowerCase();
+        if (appDId !== cleanFilter && !appDName.includes(cleanFilter) && !cleanFilter.includes(appDName)) return false;
+      }
+
+      // 3. Discom filter
+      if (appDiscomFilter !== 'all') {
+        const d = String(app.discom || '').toUpperCase();
+        if (!d.includes(appDiscomFilter.toUpperCase())) return false;
+      }
+
+      // 4. Stage filter
+      if (appStageFilter !== 'all') {
+        const st = String(app.stage || app.currentStage || '').toUpperCase();
+        if (st !== appStageFilter.toUpperCase()) return false;
+      }
+
+      // 5. Search query
+      if (appSearchTerm.trim()) {
+        const q = appSearchTerm.toLowerCase().trim();
+        const name = String(app.customerName || app.customer_name || '').toLowerCase();
+        const phone = String(app.phone || '');
+        const consumer = String(app.consumerNo || app.consumer_no || '').toLowerCase();
+        const id = String(app.id || '').toLowerCase();
+        const city = String(app.city || '').toLowerCase();
+        const dealer = String(app.dealerName || '').toLowerCase();
+        if (!name.includes(q) && !phone.includes(q) && !consumer.includes(q) && !id.includes(q) && !city.includes(q) && !dealer.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allUniversalFiles, appChannelFilter, appDealerFilter, appDiscomFilter, appStageFilter, appSearchTerm]);
+
+  // Applications KPI calculations
+  const totalAppsCount = filteredApplications.length;
+  const inVerificationAppsCount = filteredApplications.filter(f => {
+    const st = String(f.stage || f.currentStage || '').toUpperCase();
+    return st.includes('VERIF') || st.includes('LEAD') || st.includes('SURVEY') || st.includes('DISCOM') || st.includes('FEASIB');
+  }).length;
+  const commissionedAppsCount = filteredApplications.filter(f => {
+    const st = String(f.stage || f.currentStage || '').toUpperCase();
+    return st.includes('COMMISSION') || st.includes('METER') || st.includes('SUBSIDY') || st.includes('HANDOVER');
+  }).length;
+  const totalAppCapacityKw = filteredApplications.reduce((acc, f) => {
+    return acc + Number(f.solarSystemKw || f.systemCapacityKW || 0);
+  }, 0);
+
   return (
     <div className="flex flex-col w-full pb-16">
       {/* 1. Breadcrumbs & Page Header */}
@@ -379,15 +567,15 @@ export default function AllQuotations() {
           <nav className="flex items-center gap-1.5 text-xs font-label-xs text-secondary mb-1">
             <span>Admin Console</span>
             <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span>Gujarat Ledger</span>
+            <span>Gujarat Operations</span>
             <span className="material-symbols-outlined text-xs">chevron_right</span>
-            <span className="text-on-surface font-medium">All Quotations Master</span>
+            <span className="text-on-surface font-medium">All Quotations &amp; Applications</span>
           </nav>
           <h1 className="font-headline-xl text-headline-xl text-on-surface tracking-tight">
-            Gujarat Quotation Master Directory
+            Gujarat Quotations &amp; Applications Master
           </h1>
           <p className="font-body-md text-body-md text-secondary mt-1">
-            Centralized oversight of customer quotations issued across all {totalDealersCount} registered Gujarat dealers, margin audits, and conversion stages.
+            Centralized oversight of customer proposals, project application files, and uploaded documents across all {totalDealersCount} registered Gujarat dealers and sales team.
           </p>
         </div>
         {/* Action Controls Row - Functional Top Filters (SR-18) */}
@@ -696,7 +884,56 @@ export default function AllQuotations() {
         </div>
       </div>
 
-      {/* 2. Overview Metrics Row */}
+      {/* Primary Section Switcher: Quotations Master vs Applications & Files Directory */}
+      <div className="flex flex-wrap items-center justify-between gap-3 my-5 p-1.5 bg-[#F1F4F2] border border-[#E4E7EB] rounded-2xl">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('quotations')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+              activeMainTab === 'quotations'
+                ? 'bg-white text-primary shadow-xs border border-[#E4E7EB]'
+                : 'text-[#5A6065] hover:text-[#181C20]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[17px]">request_quote</span>
+            <span>All Quotations Directory</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+              activeMainTab === 'quotations' ? 'bg-primary/10 text-primary font-bold' : 'bg-[#E4E7EB] text-[#5A6065]'
+            }`}>
+              {filteredQuotes.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('applications')}
+            className={`px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer ${
+              activeMainTab === 'applications'
+                ? 'bg-white text-primary shadow-xs border border-[#E4E7EB]'
+                : 'text-[#5A6065] hover:text-[#181C20]'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[17px]">folder_shared</span>
+            <span>All Project Applications &amp; Files</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] ${
+              activeMainTab === 'applications' ? 'bg-primary/10 text-primary font-bold' : 'bg-[#E4E7EB] text-[#5A6065]'
+            }`}>
+              {filteredApplications.length}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-[11px] text-secondary font-medium px-3 hidden sm:block">
+          {activeMainTab === 'quotations'
+            ? 'Centralized Gujarat proposals master directory, margin auditing & lead conversions'
+            : 'All Gujarat dealer & staff customer files, uploaded documents vault & real-time stages'}
+        </div>
+      </div>
+
+      {activeMainTab === 'quotations' ? (
+        <>
+          {/* 2. Overview Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 my-6">
         {/* Card 1 */}
         <div className="kpi-card bg-white p-5 rounded-xl border border-[#E4E7EB] shadow-sm flex flex-col justify-between group">
@@ -746,7 +983,10 @@ export default function AllQuotations() {
           </div>
           <div className="mt-3">
             <div className="flex items-baseline gap-2">
-              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">{totalCapacityMW} MW</span>
+              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">
+                {formattedCapacity.value}{' '}
+                <span className="text-sm font-normal text-secondary">{formattedCapacity.unit}</span>
+              </span>
             </div>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden flex">
@@ -888,122 +1128,196 @@ export default function AllQuotations() {
                   const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
                   const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                   const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
-                  const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
-                  const isFlagged = marginPerKw > 6000 || Boolean(q.isFlagged);
+                  const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 0;
+                  const dealerCap = getDealerCapForQuote(q);
+                  const isFlagged = Boolean(q.isFlagged || q.requiresAudit || (dealerCap > 0 && marginPerKw > dealerCap));
                   const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                   const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
                   return (
-                    <div key={q.id || idx} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
-                      {/* Card Top */}
-                      <div className="flex items-center justify-between gap-2">
+                    <div
+                      key={q.id || idx}
+                      className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 group hover:border-primary/40 relative overflow-hidden"
+                    >
+                      {/* Top Accent Bar */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-primary to-teal-500 opacity-80" />
+
+                      {/* 1. Header: Quote Reference & Status */}
+                      <div className="flex items-center justify-between gap-2 pt-1">
                         <button
                           onClick={() => handleViewPdf(q)}
-                          className="font-mono font-bold text-xs text-[#256676] hover:underline flex items-center gap-1 cursor-pointer"
+                          className="font-mono font-bold text-xs text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-primary/20 whitespace-nowrap shrink-0"
+                          title="Open PDF Preview"
                         >
-                          {quoteRef}
+                          <span className="material-symbols-outlined text-[14px]">description</span>
+                          <span>{quoteRef}</span>
                         </button>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                          (q.status || '').toLowerCase().includes('approved')
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            : (q.status || '').toLowerCase().includes('sanction')
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}>
-                          {q.status || 'Active / Sent'}
+
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border shadow-2xs whitespace-nowrap shrink-0 ${
+                            (q.status || '').toLowerCase().includes('approved')
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                              : (q.status || '').toLowerCase().includes('sanction')
+                              ? 'bg-purple-50 text-purple-700 border-purple-200/80'
+                              : (q.status || '').toLowerCase().includes('draft')
+                              ? 'bg-amber-50 text-amber-800 border-amber-200/80'
+                              : 'bg-blue-50 text-blue-700 border-blue-200/80'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              (q.status || '').toLowerCase().includes('approved')
+                                ? 'bg-emerald-500'
+                                : (q.status || '').toLowerCase().includes('sanction')
+                                ? 'bg-purple-500'
+                                : (q.status || '').toLowerCase().includes('draft')
+                                ? 'bg-amber-500'
+                                : 'bg-blue-500'
+                            }`}
+                          />
+                          <span>{q.status || 'Active / Sent'}</span>
                         </span>
                       </div>
 
-                      {/* Customer & Ownership Mapping */}
-                      <div className="flex flex-col gap-2 pt-1 text-xs">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-secondary shrink-0">Customer:</span>
-                          <div className="text-right min-w-0">
-                            <span className="font-semibold text-on-surface truncate block">{q.customerName}</span>
-                            <span className="text-[11px] text-secondary">{q.city || 'Gujarat'} • {q.discom || 'PGVCL'}</span>
-                          </div>
+                      {/* 2. Customer Hero Details & Aligned Metadata */}
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0 border border-slate-200/80">
+                          <span className="material-symbols-outlined text-[17px]">person</span>
                         </div>
 
-                        {/* Ownership Mapping Card Badge */}
-                        <div className="p-2 rounded-lg bg-[#F6F8F7] border border-[#E4E7EB] space-y-1 text-xs">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-secondary flex items-center gap-1 truncate">
-                              <span className="material-symbols-outlined text-[13px] text-primary shrink-0">badge</span>
-                              <strong className="text-on-surface truncate">{staffName}</strong>
-                              <span className="text-[10px] text-secondary">({staffId})</span>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-slate-900 text-sm leading-tight truncate" title={q.customerName}>
+                            {q.customerName || 'Solar Consumer'}
+                          </h3>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 min-w-0">
+                            <span className="inline-flex items-center gap-1 min-w-0 truncate">
+                              <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0 leading-none">location_on</span>
+                              <span className="truncate">{q.city || 'Gujarat'}</span>
                             </span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[11px] text-secondary">
-                            <span className="material-symbols-outlined text-[13px] shrink-0">storefront</span>
-                            <span className="truncate">{dealerName}</span>
-                            <span className="font-mono text-[10px]">({dealerId})</span>
+                            <span className="text-slate-300 shrink-0">•</span>
+                            <span className="inline-flex items-center gap-1 shrink-0 font-medium text-slate-700">
+                              <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0 leading-none">electric_meter</span>
+                              <span>{q.discom || 'PGVCL'}</span>
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Metrics 3-col */}
-                      <div className="grid grid-cols-3 gap-1 bg-[#F6F8F7] p-2.5 rounded-lg text-center text-xs">
-                        <div>
-                          <span className="text-[10px] text-secondary block">Capacity</span>
-                          <span className="font-bold text-on-surface font-mono">{q.systemCapacityKW || q.capacity || '5.0'} kW</span>
+                      {/* 3. Ownership Card (Staff & Dealer Attribution) */}
+                      <div className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 space-y-2 text-xs">
+                        {/* Staff Row */}
+                        <div className="flex items-center justify-between text-[11px] gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0">badge</span>
+                            <span className="text-slate-500 shrink-0">Staff:</span>
+                            <span className="font-semibold text-slate-800 truncate">{staffName}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0 whitespace-nowrap">
+                            {staffId}
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-secondary block">Base Price</span>
-                          <span className="font-bold text-secondary font-mono text-[11px]">₹{baseCost.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-secondary block">Total Quoted</span>
-                          <span className="font-bold text-[#0F1B2E] font-mono text-[11px]">₹{totalAmt.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
 
-                      {/* Margin & Audit Flag */}
-                      <div className="flex items-center justify-between pt-1 text-xs">
-                        <span className="text-[11px] text-secondary">Dealer Margin:</span>
-                        <div className="text-right">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                            isFlagged
-                              ? 'bg-red-100 text-red-700 border border-red-300'
-                              : 'bg-[rgba(108,191,61,0.15)] text-[#2E7D32]'
-                          }`}>
-                            <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              {isFlagged ? 'warning' : 'check_circle'}
+                        {/* Dealer Row */}
+                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60 gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="material-symbols-outlined text-[14px] text-primary shrink-0">storefront</span>
+                            <span className="text-slate-500 shrink-0">Dealer:</span>
+                            <span className="font-semibold text-slate-800 truncate" title={dealerName}>
+                              {dealerName}
                             </span>
-                            <span>₹{(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))).toLocaleString('en-IN')}</span>
-                            <span className="text-[10px] font-normal opacity-90">(₹{marginPerKw}/kW)</span>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0 whitespace-nowrap">
+                            {dealerId}
                           </span>
                         </div>
                       </div>
 
-                      {/* Footer Actions: PDF, Audit, and Convert to Customer */}
-                      <div className="flex items-center justify-between pt-2 border-t border-[#F1F4F9]">
-                        <span className="text-[11px] text-secondary">{q.date || '24 Oct 2025'}</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setConvertingQuote(q)}
-                            className="px-2 py-1 text-xs font-bold rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 flex items-center gap-1 transition-colors cursor-pointer border border-emerald-500/30"
-                            title="Convert Quotation to Customer Record"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">person_add</span>
-                            <span>Convert</span>
-                          </button>
-                          <button
-                            onClick={() => handleViewPdf(q)}
-                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-primary text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
-                            title="View Customer PDF"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
-                            <span>PDF</span>
-                          </button>
-                          <button
-                            onClick={() => setSelectedAuditQuote(q)}
-                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-[#256676] text-secondary hover:text-[#256676] flex items-center gap-1 transition-colors cursor-pointer"
-                            title="Margin Audit Sheet"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">shield</span>
-                          </button>
+                      {/* 4. Financial & Tech Metrics 3-Column Grid */}
+                      <div className="grid grid-cols-3 divide-x divide-slate-200 bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 text-center">
+                        <div className="px-1">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block">Capacity</span>
+                          <span className="font-bold font-mono text-slate-900 text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            {kw} kW
+                          </span>
                         </div>
+                        <div className="px-1">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block">Base Price</span>
+                          <span className="font-semibold font-mono text-slate-600 text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            ₹{baseCost.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="px-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">Total Quoted</span>
+                          <span className="font-bold font-mono text-primary text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            ₹{totalAmt.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 5. Date & Dealer Margin Row */}
+                      <div className="flex items-center justify-between gap-2 px-0.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-mono shrink-0 whitespace-nowrap">
+                          <span className="material-symbols-outlined text-[14px] text-slate-400 leading-none">calendar_today</span>
+                          <span>{q.date || q.displayDate || 'Today'}</span>
+                        </div>
+                        <div className="min-w-0 shrink-0">
+                          {isFlagged ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-300 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                warning
+                              </span>
+                              <span>₹{Number(totalMargin).toLocaleString('en-IN')}</span>
+                              <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw).toLocaleString('en-IN')}/kW)</span>
+                            </span>
+                          ) : marginPerKw === 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                check_circle
+                              </span>
+                              <span>₹0 (Direct / 0 Margin)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                check_circle
+                              </span>
+                              <span>₹{Number(totalMargin).toLocaleString('en-IN')}</span>
+                              <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw).toLocaleString('en-IN')}/kW)</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 6. Footer Actions Toolbar (Full-Width Responsive Grid - Zero Cropping) */}
+                      <div className="pt-2.5 border-t border-slate-100 grid grid-cols-6 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConvertingQuote(q)}
+                          className="col-span-3 h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                          title="Convert Quotation to Customer Record"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">person_add</span>
+                          <span>Convert</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleViewPdf(q)}
+                          className="col-span-2 h-9 px-2.5 rounded-xl bg-white hover:bg-slate-50 active:scale-95 text-slate-700 hover:text-primary text-xs font-semibold border border-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                          title="View Customer PDF"
+                        >
+                          <span className="material-symbols-outlined text-[16px] text-rose-500">picture_as_pdf</span>
+                          <span>PDF</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAuditQuote(q)}
+                          className="col-span-1 h-9 rounded-xl bg-white hover:bg-slate-50 active:scale-95 text-slate-600 hover:text-slate-900 border border-slate-200 flex items-center justify-center transition-all cursor-pointer"
+                          title="Margin Audit Sheet"
+                        >
+                          <span className="material-symbols-outlined text-[17px] text-slate-500">shield</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -1034,8 +1348,9 @@ export default function AllQuotations() {
                 const kw = Number(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 5.0);
                 const totalAmt = Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0);
                 const totalMargin = Number(q.dealer_margin || q.dealerTotalMargin || (q.dealerMarginPerKW ? q.dealerMarginPerKW * kw : 0));
-                const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : 4000;
-                const isFlagged = marginPerKw > 6000;
+                const dealerCap = getDealerCapForQuote(q);
+                const marginPerKw = kw > 0 ? (q.dealerMarginPerKW || Math.round(totalMargin / kw)) : (dealerCap || 0);
+                const isFlagged = dealerCap > 0 ? marginPerKw > dealerCap : false;
                 const baseCost = Number(q.base_cost || q.baseCost || (totalAmt > 0 ? totalAmt - totalMargin : 0));
                 const ownership = getQuotationOwnership(q);
 
@@ -1087,8 +1402,8 @@ export default function AllQuotations() {
                           <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
                             {isFlagged ? 'warning' : 'check_circle'}
                           </span>
-                          <span className="whitespace-nowrap font-mono">₹{(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5))).toLocaleString('en-IN')}</span>
-                          <span className="font-normal font-mono whitespace-nowrap text-[10px] opacity-90">(₹{marginPerKw.toLocaleString('en-IN')}/kW)</span>
+                          <span className="whitespace-nowrap font-mono">₹{Number(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5)) || 0).toLocaleString('en-IN')}</span>
+                          <span className="font-normal font-mono whitespace-nowrap text-[10px] opacity-90">(₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW)</span>
                         </span>
                         {isFlagged && <span className="text-[10px] text-red-600 font-bold mt-0.5 whitespace-nowrap">Flagged for Audit</span>}
                       </div>
@@ -1176,19 +1491,409 @@ export default function AllQuotations() {
           </div>
         </div>
       </div>
+        </>
+      ) : (
+        /* Applications Directory View */
+        <div className="flex flex-col gap-6 animate-in fade-in duration-150">
+          {/* Applications 4 KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {/* KPI 1 */}
+            <div className="bg-white p-5 rounded-xl border border-[#E4E7EB] shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-secondary">
+                <span className="text-xs uppercase font-bold tracking-wider text-[#5A6065]">Total Project Files</span>
+                <span className="p-2 rounded-lg bg-emerald-50 text-emerald-700">
+                  <span className="material-symbols-outlined text-[20px]">folder_shared</span>
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-[#0F1B2E]">{totalAppsCount}</span>
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">All Channels</span>
+                </div>
+                <p className="text-xs text-secondary mt-1">Gujarat consumer rooftop projects</p>
+              </div>
+            </div>
+
+            {/* KPI 2 */}
+            <div className="bg-white p-5 rounded-xl border border-[#E4E7EB] shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-secondary">
+                <span className="text-xs uppercase font-bold tracking-wider text-[#5A6065]">Verification &amp; Feasibility</span>
+                <span className="p-2 rounded-lg bg-amber-50 text-amber-700">
+                  <span className="material-symbols-outlined text-[20px]">fact_check</span>
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-[#0F1B2E]">{inVerificationAppsCount}</span>
+                  <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">In Flight</span>
+                </div>
+                <p className="text-xs text-secondary mt-1">Under DISCOM &amp; doc scrutiny</p>
+              </div>
+            </div>
+
+            {/* KPI 3 */}
+            <div className="bg-white p-5 rounded-xl border border-[#E4E7EB] shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-secondary">
+                <span className="text-xs uppercase font-bold tracking-wider text-[#5A6065]">Energized &amp; Subsidized</span>
+                <span className="p-2 rounded-lg bg-teal-50 text-teal-700">
+                  <span className="material-symbols-outlined text-[20px]">solar_power</span>
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-[#0F1B2E]">{commissionedAppsCount}</span>
+                  <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">Commissioned</span>
+                </div>
+                <p className="text-xs text-secondary mt-1">Grid synchronized with net meter</p>
+              </div>
+            </div>
+
+            {/* KPI 4 */}
+            <div className="bg-white p-5 rounded-xl border border-[#E4E7EB] shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between text-secondary">
+                <span className="text-xs uppercase font-bold tracking-wider text-[#5A6065]">Cumulative Capacity</span>
+                <span className="p-2 rounded-lg bg-blue-50 text-blue-700">
+                  <span className="material-symbols-outlined text-[20px]">bolt</span>
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-[#0F1B2E]">{totalAppCapacityKw.toFixed(1)} kW</span>
+                  <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">Solar Load</span>
+                </div>
+                <p className="text-xs text-secondary mt-1">{(totalAppCapacityKw / 1000).toFixed(3)} MW Total Generation</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Applications Filter Toolbar */}
+          <div className="bg-white p-4 rounded-xl border border-[#E4E7EB] shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Search Input */}
+            <div className="relative flex-1 min-w-[240px]">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[18px]">search</span>
+              <input
+                type="text"
+                placeholder="Search by customer name, phone, consumer no, file ID, dealer..."
+                value={appSearchTerm}
+                onChange={(e) => setAppSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 bg-[#F6F8F7] border border-[#E4E7EB] rounded-lg text-xs text-[#0F1B2E] placeholder:text-secondary focus:outline-none focus:ring-1 focus:ring-primary focus:bg-white transition-all"
+              />
+              {appSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setAppSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-secondary hover:text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              )}
+            </div>
+
+            {/* Filter Pills / Dropdowns */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Channel Filter */}
+              <div className="flex items-center bg-[#F6F8F7] p-0.5 rounded-lg border border-[#E4E7EB] text-xs">
+                <button
+                  type="button"
+                  onClick={() => setAppChannelFilter('all')}
+                  className={`px-2.5 py-1.5 rounded-md font-semibold transition-all cursor-pointer ${
+                    appChannelFilter === 'all' ? 'bg-white text-primary shadow-xs' : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  All Channels
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppChannelFilter('DEALER')}
+                  className={`px-2.5 py-1.5 rounded-md font-semibold transition-all cursor-pointer ${
+                    appChannelFilter === 'DEALER' ? 'bg-white text-primary shadow-xs' : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  Dealers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppChannelFilter('STAFF')}
+                  className={`px-2.5 py-1.5 rounded-md font-semibold transition-all cursor-pointer ${
+                    appChannelFilter === 'STAFF' ? 'bg-white text-primary shadow-xs' : 'text-secondary hover:text-on-surface'
+                  }`}
+                >
+                  Direct Staff
+                </button>
+              </div>
+
+              {/* DISCOM Select */}
+              <select
+                value={appDiscomFilter}
+                onChange={(e) => setAppDiscomFilter(e.target.value)}
+                className="h-8 px-2.5 bg-[#F6F8F7] border border-[#E4E7EB] rounded-lg text-xs font-medium text-[#0F1B2E] focus:outline-none focus:bg-white cursor-pointer"
+              >
+                <option value="all">All DISCOMs</option>
+                <option value="PGVCL">PGVCL</option>
+                <option value="DGVCL">DGVCL</option>
+                <option value="MGVCL">MGVCL</option>
+                <option value="UGVCL">UGVCL</option>
+                <option value="Torrent">Torrent Power</option>
+              </select>
+
+              {/* Stage Select */}
+              <select
+                value={appStageFilter}
+                onChange={(e) => setAppStageFilter(e.target.value)}
+                className="h-8 px-2.5 bg-[#F6F8F7] border border-[#E4E7EB] rounded-lg text-xs font-medium text-[#0F1B2E] focus:outline-none focus:bg-white cursor-pointer"
+              >
+                <option value="all">All Project Stages</option>
+                <option value="LEAD_SOURCED">Lead Sourced</option>
+                <option value="SITE_SURVEY">Site Survey</option>
+                <option value="QUOTATION_ACCEPTED">Quotation Accepted</option>
+                <option value="DISCOM_APPLICATION">DISCOM Application</option>
+                <option value="FEASIBILITY_APPROVAL">Feasibility Approved</option>
+                <option value="PLANT_INSTALLATION">Plant Installation</option>
+                <option value="CEI_INSPECTION">CEI Inspection</option>
+                <option value="NET_METER_SYNC">Net Meter Synchronized</option>
+                <option value="SUBSIDY_CLAIM">Subsidy Claimed</option>
+                <option value="HANDOVER_COMPLETED">Completed &amp; Handover</option>
+              </select>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-[#F6F8F7] p-0.5 rounded-lg border border-[#E4E7EB]">
+                <button
+                  type="button"
+                  onClick={() => setAppViewMode('table')}
+                  className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                    appViewMode === 'table' ? 'bg-white text-primary shadow-xs' : 'text-secondary hover:text-on-surface'
+                  }`}
+                  title="Table View"
+                >
+                  <span className="material-symbols-outlined text-[18px]">table_rows</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppViewMode('cards')}
+                  className={`p-1.5 rounded-md transition-all cursor-pointer ${
+                    appViewMode === 'cards' ? 'bg-white text-primary shadow-xs' : 'text-secondary hover:text-on-surface'
+                  }`}
+                  title="Card View"
+                >
+                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                </button>
+              </div>
+
+              {(appSearchTerm || appChannelFilter !== 'all' || appDiscomFilter !== 'all' || appStageFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppSearchTerm('');
+                    setAppChannelFilter('all');
+                    setAppDiscomFilter('all');
+                    setAppStageFilter('all');
+                  }}
+                  className="h-8 px-2.5 text-xs text-rose-600 hover:bg-rose-50 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Applications View Body */}
+          {filteredApplications.length === 0 ? (
+            <div className="bg-white rounded-xl border border-[#E4E7EB] p-12 text-center flex flex-col items-center justify-center shadow-xs">
+              <span className="material-symbols-outlined text-5xl text-secondary mb-3">folder_open</span>
+              <h3 className="text-base font-bold text-[#0F1B2E]">No Project Applications Found</h3>
+              <p className="text-xs text-secondary mt-1 max-w-md">
+                No solar project files match the selected filters or search terms. Clear filters to view all consumer applications.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setAppSearchTerm('');
+                  setAppChannelFilter('all');
+                  setAppDiscomFilter('all');
+                  setAppStageFilter('all');
+                }}
+                className="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 transition-colors cursor-pointer"
+              >
+                Reset Application Filters
+              </button>
+            </div>
+          ) : appViewMode === 'table' ? (
+            /* Applications Table */
+            <div className="bg-white rounded-xl border border-[#E4E7EB] shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#F8FAFC] border-b border-[#E4E7EB] text-secondary font-semibold uppercase text-[11px] tracking-wider">
+                      <th className="py-3 px-4">Application / Date</th>
+                      <th className="py-3 px-4">Customer Details</th>
+                      <th className="py-3 px-4">Channel Origin</th>
+                      <th className="py-3 px-4">DISCOM &amp; Consumer</th>
+                      <th className="py-3 px-4">Capacity &amp; Roof</th>
+                      <th className="py-3 px-4">Stage</th>
+                      <th className="py-3 px-4">Documents</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E4E7EB]">
+                    {filteredApplications.map((app) => {
+                      const completion = getDocumentCompletion ? getDocumentCompletion(app) : { uploaded: 0, total: 6 };
+                      const isDealer = String(app.sourceType || app.source || (app.dealerId ? 'DEALER' : 'STAFF')).toUpperCase().includes('DEALER');
+                      const stageLabel = (app.stage || app.currentStage || 'DISCOM_APPLICATION').replace(/_/g, ' ');
+
+                      return (
+                        <tr key={app.id} className="hover:bg-[#F9FBFA] transition-colors group">
+                          <td className="py-3.5 px-4 font-mono font-medium text-[#0F1B2E]">
+                            <div>{app.id}</div>
+                            <div className="text-[10px] text-secondary font-sans mt-0.5">
+                              {app.createdAt ? String(app.createdAt).slice(0, 10) : 'Recent'}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-[#0F1B2E] text-xs">{app.customerName || 'Solar Consumer'}</div>
+                            <div className="text-secondary text-[11px] flex items-center gap-1 mt-0.5">
+                              <span className="material-symbols-outlined text-[13px]">call</span>
+                              <span>{app.phone || 'N/A'}</span>
+                            </div>
+                            <div className="text-secondary text-[10px]">{app.city || 'Gujarat'}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isDealer ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-blue-50 text-blue-800 border border-blue-200'
+                            }`}>
+                              <span className="material-symbols-outlined text-[12px]">{isDealer ? 'storefront' : 'badge'}</span>
+                              <span className="max-w-[130px] truncate">{app.dealerName || (isDealer ? 'Dealer Partner' : 'Direct Staff')}</span>
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-semibold text-[#0F1B2E]">{app.discom || 'PGVCL'}</div>
+                            <div className="text-secondary text-[11px] font-mono">{app.consumerNo || 'PENDING'}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-[#0F1B2E]">{app.solarSystemKw || 5} kW</div>
+                            <div className="text-secondary text-[10px]">{app.roofType || 'RCC Flat'}</div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200/80">
+                              {stageLabel}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[16px] text-primary">description</span>
+                              <span className="font-semibold text-[#0F1B2E]">{completion.uploaded} / {completion.total || 6}</span>
+                            </div>
+                            <div className="w-20 bg-slate-100 rounded-full h-1.5 mt-1 overflow-hidden">
+                              <div
+                                className="bg-primary h-1.5 rounded-full"
+                                style={{ width: `${Math.min(100, Math.round(((completion.uploaded || 0) / (completion.total || 6)) * 100))}%` }}
+                              />
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAppForDetail(app)}
+                              className="px-3 py-1.5 bg-[#0F1B2E] hover:bg-primary text-white font-semibold rounded-lg text-xs shadow-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+                              title="Analyze and inspect uploaded documents"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">folder_open</span>
+                              <span>Analyze &amp; Docs</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            /* Applications Cards Grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredApplications.map((app) => {
+                const completion = getDocumentCompletion ? getDocumentCompletion(app) : { uploaded: 0, total: 6 };
+                const isDealer = String(app.sourceType || app.source || (app.dealerId ? 'DEALER' : 'STAFF')).toUpperCase().includes('DEALER');
+                const stageLabel = (app.stage || app.currentStage || 'DISCOM_APPLICATION').replace(/_/g, ' ');
+
+                return (
+                  <div key={app.id} className="bg-white rounded-xl border border-[#E4E7EB] p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-start justify-between gap-2 pb-3 border-b border-[#E4E7EB]">
+                        <div>
+                          <span className="font-mono text-xs font-bold text-primary">{app.id}</span>
+                          <h4 className="font-bold text-[#0F1B2E] text-sm mt-0.5">{app.customerName || 'Solar Consumer'}</h4>
+                          <p className="text-secondary text-xs mt-0.5 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[13px]">location_on</span>
+                            <span>{app.city || 'Gujarat'}, {app.discom || 'PGVCL'}</span>
+                          </p>
+                        </div>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          isDealer ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-blue-50 text-blue-800 border border-blue-200'
+                        }`}>
+                          <span className="material-symbols-outlined text-[11px]">{isDealer ? 'storefront' : 'badge'}</span>
+                          <span className="max-w-[100px] truncate">{app.dealerName || 'Partner'}</span>
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 my-3 text-xs">
+                        <div className="bg-[#F8FAFC] p-2.5 rounded-lg border border-[#E4E7EB]">
+                          <span className="text-[10px] text-secondary uppercase font-bold">Capacity</span>
+                          <p className="font-bold text-[#0F1B2E] text-sm">{app.solarSystemKw || 5} kW</p>
+                        </div>
+                        <div className="bg-[#F8FAFC] p-2.5 rounded-lg border border-[#E4E7EB]">
+                          <span className="text-[10px] text-secondary uppercase font-bold">Consumer No</span>
+                          <p className="font-mono font-bold text-[#0F1B2E] text-xs truncate">{app.consumerNo || 'PENDING'}</p>
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-secondary font-medium">Stage</span>
+                          <span className="font-bold text-emerald-700 uppercase text-[10px]">{stageLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-secondary">
+                          <span>Uploaded Documents</span>
+                          <span className="font-bold text-[#0F1B2E]">{completion.uploaded} / {completion.total || 6} Docs</span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                          <div
+                            className="bg-primary h-1.5 rounded-full"
+                            style={{ width: `${Math.min(100, Math.round(((completion.uploaded || 0) / (completion.total || 6)) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAppForDetail(app)}
+                      className="w-full mt-2 py-2 bg-[#0F1B2E] hover:bg-primary text-white font-bold rounded-lg text-xs shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">folder_open</span>
+                      <span>Analyze &amp; View Documents</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* MARGIN AUDIT SHEET MODAL (SR-28) */}
       {selectedAuditQuote && (() => {
         const q = selectedAuditQuote;
         const capKw = Number(q.systemCapacityKW || q.capacity || 5);
-        const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && capKw ? Math.round(q.dealerTotalMargin / capKw) : 3200);
+        const dealerCap = getDealerCapForQuote(q);
+        const marginPerKw = q.dealerMarginPerKW || (q.dealerTotalMargin && capKw ? Math.round(q.dealerTotalMargin / capKw) : (dealerCap || 0));
         const totalMargin = q.dealerTotalMargin || (marginPerKw * capKw);
         const totalAmt = q.grandTotalCustomer || q.totalAmount || 0;
         const baseCost = q.baseCost || (totalAmt - totalMargin);
-        const baseRate = capKw > 0 ? Math.round(baseCost / capKw) : 59800;
-        const subsidy = q.subsidyAmount || (capKw <= 2 ? 60000 : 78000);
+        const baseRate = capKw > 0 ? Math.round(baseCost / capKw) : 0;
+        const subsidy = getStoredSubsidy(q);
         const netPayable = q.netPayable || Math.max(0, totalAmt - subsidy);
-        const isFlagged = marginPerKw > 6000 || q.isFlagged;
+        const isFlagged = (dealerCap > 0 && marginPerKw > dealerCap) || q.isFlagged;
         const quoteRef = q.quoteNumber || q.id || 'QUOTATION';
 
         const handleApproveMargin = () => {
@@ -1255,8 +1960,8 @@ export default function AllQuotations() {
                   </div>
                   <p className="mt-0.5 text-secondary">
                     {isFlagged
-                      ? `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW exceeds the standard Gujarat solar margin threshold of ₹6,000/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
-                      : `Dealer spread of ₹${marginPerKw.toLocaleString('en-IN')}/kW is within standard partner tier guidelines (≤ ₹6,000/kW). Eligible for automated EPC dispatch.`}
+                      ? `Dealer spread of ₹${Number(marginPerKw || 0).toLocaleString('en-IN')}/kW exceeds the assigned margin threshold of ₹${Number(dealerCap || 0).toLocaleString('en-IN')}/kW. Super Admin review is mandatory before DISCOM subsidy filing.`
+                      : `Dealer spread of ₹${Number(marginPerKw || 0).toLocaleString('en-IN')}/kW is within partner tier guidelines (≤ ₹${Number(dealerCap || 0).toLocaleString('en-IN')}/kW). Eligible for automated EPC dispatch.`}
                   </p>
                 </div>
               </div>
@@ -1291,41 +1996,41 @@ export default function AllQuotations() {
                   <div className="p-2.5 flex items-center justify-between hover:bg-surface-container-low/50">
                     <div>
                       <div className="font-medium text-on-surface">Base Procurement &amp; EPC Cost</div>
-                      <div className="text-[10px] text-secondary font-mono">{capKw} kW @ ₹{baseRate.toLocaleString('en-IN')}/kW</div>
+                      <div className="text-[10px] text-secondary font-mono">{capKw} kW @ ₹{Number(baseRate || 0).toLocaleString('en-IN')}/kW</div>
                     </div>
-                    <span className="font-bold font-mono">₹ {baseCost.toLocaleString('en-IN')}</span>
+                    <span className="font-bold font-mono">₹ {Number(baseCost || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className={`p-2.5 flex items-center justify-between ${isFlagged ? 'bg-amber-50/50' : ''}`}>
                     <div>
                       <div className="font-semibold text-on-surface flex items-center gap-1.5">
                         <span>Partner Commercial Margin</span>
                         <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${isFlagged ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
-                          ₹{marginPerKw.toLocaleString('en-IN')}/kW spread
+                          ₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW spread
                         </span>
                       </div>
                       <div className="text-[10px] text-secondary">Added on top of base EPC cost</div>
                     </div>
                     <span className={`font-bold font-mono ${isFlagged ? 'text-red-700' : 'text-emerald-700'}`}>
-                      + ₹ {totalMargin.toLocaleString('en-IN')}
+                      + ₹ {Number(totalMargin || 0).toLocaleString('en-IN')}
                     </span>
                   </div>
                   <div className="p-2.5 flex items-center justify-between bg-surface-container-low/30 font-bold">
                     <span className="text-on-surface">Total Quoted to Customer</span>
-                    <span className="font-mono text-sm">₹ {totalAmt.toLocaleString('en-IN')}</span>
+                    <span className="font-mono text-sm">₹ {Number(totalAmt || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="p-2.5 flex items-center justify-between text-secondary">
                     <div>
                       <div className="font-medium text-primary">PM Surya Ghar Central Subsidy (DBT)</div>
                       <div className="text-[10px] text-secondary">Disbursed directly into consumer bank account</div>
                     </div>
-                    <span className="font-bold font-mono text-primary">- ₹ {subsidy.toLocaleString('en-IN')}</span>
+                    <span className="font-bold font-mono text-primary">- ₹ {Number(subsidy || 0).toLocaleString('en-IN')}</span>
                   </div>
                   <div className="p-3 flex items-center justify-between bg-[#F0FDF4] border-t-2 border-[#6CBF3D]/50">
                     <div>
                       <div className="font-bold text-on-surface text-sm uppercase">Net Customer Payable</div>
                       <div className="text-[10px] text-secondary">Out-of-pocket investment after subsidy</div>
                     </div>
-                    <span className="text-base font-black font-mono text-[#0F1B2E]">₹ {netPayable.toLocaleString('en-IN')}</span>
+                    <span className="text-base font-black font-mono text-[#0F1B2E]">₹ {Number(netPayable || 0).toLocaleString('en-IN')}</span>
                   </div>
                 </div>
               </div>
@@ -1374,8 +2079,15 @@ export default function AllQuotations() {
           onClose={() => setConvertingQuote(null)}
           onSuccess={(newCust) => {
             setConvertingQuote(null);
-            if (refreshQuotations) refreshQuotations();
           }}
+        />
+      )}
+
+      {/* MASTER APPLICATION & FILE DETAIL MODAL */}
+      {selectedAppForDetail && (
+        <CustomerFileDetailModal
+          file={selectedAppForDetail}
+          onClose={() => setSelectedAppForDetail(null)}
         />
       )}
     </div>

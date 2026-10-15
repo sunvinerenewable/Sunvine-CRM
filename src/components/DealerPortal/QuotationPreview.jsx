@@ -7,13 +7,15 @@ import {
   shareQuotationPdfViaWhatsApp, 
   buildProposalWhatsAppMessage, 
   cleanCustomerPhone,
-  getPublicProposalUrl
+  getPublicProposalUrl,
+  generateQuotationPdfBlob
 } from '../../utils/quotationShare';
 import { useToast } from '../Shared/Toast';
 
 export default function QuotationPreview({
   isPublicView = false,
   publicQuoteId = null,
+  shareToken = null,
   quotation: propQuotation = null,
   isLoadingProp = false
 }) {
@@ -28,11 +30,9 @@ export default function QuotationPreview({
   const [baseScale, setBaseScale] = useState(1);
   const [userZoom, setUserZoom] = useState(1);
   const [isPinching, setIsPinching] = useState(false);
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
-  const [targetPhone, setTargetPhone] = useState('');
-  const [copiedFeedback, setCopiedFeedback] = useState(false);
   const [copiedLinkFeedback, setCopiedLinkFeedback] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [remoteFetchedQuote, setRemoteFetchedQuote] = useState(null);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
@@ -51,72 +51,153 @@ export default function QuotationPreview({
   const isPinchingRef = useRef(false);
   const pinchStateRef = useRef({ startDist: 0, startZoom: 1, docX: 0, docY: 0, lastMidX: 0, lastMidY: 0 });
 
-  // Asynchronously hydrate quotation from Supabase only in portal view without props
+  // Resolve preview quotation ID from URL query or session storage fallback
+  const getUrlOrStoredQuoteId = () => {
+    if (typeof window === 'undefined') return null;
+    const urlParams = new URLSearchParams(window.location.search);
+    return (
+      urlParams.get('id') ||
+      urlParams.get('quoteId') ||
+      urlParams.get('quotationId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id') ||
+      null
+    );
+  };
+
+  // Asynchronously hydrate quotation from Supabase / database on refresh or direct load
   useEffect(() => {
-    if (propQuotation || isLoadingProp !== undefined) return;
-    if (isPublicView && publicQuoteId && !remoteFetchedQuote) {
-      const cleanId = String(publicQuoteId).trim().toLowerCase();
-      const foundInLocal = (quotations || []).some(
-        q => String(q.id || '').trim().toLowerCase() === cleanId ||
-             String(q.quoteId || '').trim().toLowerCase() === cleanId
-      );
+    if (propQuotation || isLoadingProp) return;
 
-      if (!foundInLocal) {
-        let isMounted = true;
-        setIsLoadingRemote(true);
-        quotationService.getQuotationById(publicQuoteId).then(quote => {
-          if (isMounted && quote) {
-            setRemoteFetchedQuote(quote);
-          }
-        }).catch(err => {
-          console.warn('Failed to fetch remote quote:', err);
-        }).finally(() => {
-          if (isMounted) setIsLoadingRemote(false);
-        });
-        return () => { isMounted = false; };
-      }
+    // Handle token-based public links directly
+    const token = isPublicView ? (shareToken || (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('token') ||
+      new URLSearchParams(window.location.search).get('shareToken')
+    ) : null)) : null;
+
+    if (token) {
+      let isMounted = true;
+      setIsLoadingRemote(true);
+      quotationService.getPublicProposal(token).then(quote => {
+        if (isMounted && quote) {
+          setRemoteFetchedQuote(quote);
+        }
+      }).catch(err => {
+        console.warn('Failed to fetch remote public quote:', err);
+      }).finally(() => {
+        if (isMounted) setIsLoadingRemote(false);
+      });
+      return () => { isMounted = false; };
     }
-  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, propQuotation, isLoadingProp]);
 
-  // Resolve active quotation: priority to prop, remote fetched, publicQuoteId, then state
+    const targetQuoteId = isPublicView ? publicQuoteId : getUrlOrStoredQuoteId();
+    if (!targetQuoteId) {
+      // If portal mode and activeQuotation is still null and quotations list is loaded, fallback to newest quotation
+      if (!isPublicView && !remoteFetchedQuote && !previewQuotation && (quotations || []).length > 0) {
+        setRemoteFetchedQuote(quotations[0]);
+      }
+      return;
+    }
+
+    const cleanId = String(targetQuoteId).trim().toLowerCase();
+    const foundInLocal = (quotations || []).find(
+      q => String(q.id || '').trim().toLowerCase() === cleanId ||
+           String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+           String(q.quotationNo || '').trim().toLowerCase() === cleanId
+    );
+
+    if (foundInLocal) {
+      if (!remoteFetchedQuote || remoteFetchedQuote.id !== foundInLocal.id) {
+        setRemoteFetchedQuote(foundInLocal);
+      }
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingRemote(true);
+    quotationService.getQuotationById(targetQuoteId).then(quote => {
+      if (isMounted && quote) {
+        setRemoteFetchedQuote(quote);
+      }
+    }).catch(err => {
+      console.warn('Failed to fetch remote quote:', err);
+    }).finally(() => {
+      if (isMounted) setIsLoadingRemote(false);
+    });
+
+    return () => { isMounted = false; };
+  }, [isPublicView, publicQuoteId, quotations, remoteFetchedQuote, previewQuotation, propQuotation, isLoadingProp]);
+
+  // Resolve active quotation: priority to prop, remote fetched, previewQuotation, or local cache
   const activeQuotation = useMemo(() => {
     if (propQuotation) return propQuotation;
-    if (isPublicView) {
-      if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (remoteFetchedQuote) return remoteFetchedQuote;
+    if (previewQuotation) return previewQuotation;
 
-      if (publicQuoteId) {
-        const cleanId = String(publicQuoteId).trim().toLowerCase();
-        // 1. Search in current state / localStorage quotations
-        const foundInState = quotations?.find(
-          q => String(q.id || '').trim().toLowerCase() === cleanId ||
-               String(q.quoteId || '').trim().toLowerCase() === cleanId ||
-               String(q.quotationNo || '').trim().toLowerCase() === cleanId
-        );
-        if (foundInState) return foundInState;
+    // Check query param or stored quote ID
+    const targetQuoteId = isPublicView ? publicQuoteId : (typeof window !== 'undefined' ? (
+      new URLSearchParams(window.location.search).get('id') ||
+      new URLSearchParams(window.location.search).get('quoteId') ||
+      sessionStorage.getItem('sunvine_preview_quote_id') ||
+      localStorage.getItem('sunvine_preview_quote_id')
+    ) : null);
 
-        // 2. Fallback to URL encoded data payload if provided
-        if (typeof window !== 'undefined') {
-          try {
-            const dataParam = new URLSearchParams(window.location.search).get('data');
-            if (dataParam) {
-              const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
-              if (decoded) return decoded;
-            }
-          } catch (_) {}
+    if (targetQuoteId) {
+      const cleanId = String(targetQuoteId).trim().toLowerCase();
+      const foundInState = quotations?.find(
+        q => String(q.id || '').trim().toLowerCase() === cleanId ||
+             String(q.quoteId || '').trim().toLowerCase() === cleanId ||
+             String(q.quotationNo || '').trim().toLowerCase() === cleanId
+      );
+      if (foundInState) return foundInState;
+    }
+
+    // Public view URL encoded data fallback
+    if (isPublicView && typeof window !== 'undefined') {
+      try {
+        const dataParam = new URLSearchParams(window.location.search).get('data');
+        if (dataParam) {
+          const decoded = JSON.parse(decodeURIComponent(escape(atob(dataParam))));
+          if (decoded) return decoded;
         }
-        return null; // Explicit ID provided, waiting or not found
-      }
-      return previewQuotation || null;
+      } catch (_) {}
     }
-    return previewQuotation;
-  }, [propQuotation, isPublicView, publicQuoteId, quotations, previewQuotation, remoteFetchedQuote]);
 
-  // Initialize phone when quotation changes
-  useEffect(() => {
-    if (activeQuotation) {
-      setTargetPhone(activeQuotation.customerPhone || activeQuotation.mobile || '+91 98250 12345');
+    // Portal view fallback: if quotations are available, show the most recent quotation
+    if (!isPublicView && (quotations || []).length > 0) {
+      return quotations[0];
     }
-  }, [activeQuotation]);
+
+    return null;
+  }, [propQuotation, remoteFetchedQuote, previewQuotation, isPublicView, publicQuoteId, quotations]);
+
+  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+  const quotationWithProfile = useMemo(() => {
+    if (!activeQuotation) return null;
+    return {
+      ...activeQuotation,
+      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
+    };
+  }, [activeQuotation, companyProfile]);
+
+  // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeQuotation?.id) return;
+    try {
+      sessionStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      localStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
+      if (!isPublicView && window.location.pathname.includes('preview-quotation')) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('id') !== activeQuotation.id) {
+          params.set('id', activeQuotation.id);
+          const newUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState({ ...window.history.state, id: activeQuotation.id }, '', newUrl);
+        }
+      }
+    } catch (_) {}
+  }, [activeQuotation?.id, isPublicView]);
+
+
 
   // Guarantee view always starts at the absolute top of the proposal on all devices (mobile, tablet, desktop)
   useEffect(() => {
@@ -434,47 +515,94 @@ export default function QuotationPreview({
     window.print();
   };
 
-  const handleDirectWhatsAppFast = () => {
-    if (!activeQuotation) return;
-    openWhatsAppChat(activeQuotation, targetPhone);
+  const handleDownloadPdf = async () => {
+    if (!activeQuotation || !pdfExportRef.current) return;
+    setIsDownloadingPdf(true);
+    try {
+      const quoteId = (activeQuotation.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
+      const fileName = `Sunvine_Proposal_${quoteId}.pdf`;
+      const blob = await generateQuotationPdfBlob(pdfExportRef.current, quoteId);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded',
+            message: `Proposal saved: ${fileName}`,
+            type: 'success'
+          });
+        }
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      console.warn('PDF download fallback to print:', err);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   const handleShareWhatsAppWithPDF = async () => {
     if (!activeQuotation) return;
     setIsGeneratingPdf(true);
-    setStatusNotice('Generating official 4-Page PDF proposal...');
+    setStatusNotice('Generating proposal PDF...');
     try {
       const res = await shareQuotationPdfViaWhatsApp(
         activeQuotation,
         pdfExportRef.current,
-        targetPhone
+        null
       );
       if (res?.method === 'native_file_share') {
-        setStatusNotice('Official PDF shared to WhatsApp!');
+        setStatusNotice('PDF shared to WhatsApp!');
+        if (addToast) {
+          addToast({
+            title: 'WhatsApp Share',
+            message: 'Proposal PDF ready to share!',
+            type: 'success'
+          });
+        }
       } else if (res?.method === 'download_and_chat') {
-        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp Web opened. Attach using the 📎 paperclip or drag-and-drop into chat.`);
+        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp opened.`);
+        if (addToast) {
+          addToast({
+            title: 'PDF Downloaded & WhatsApp Opened',
+            message: `Proposal PDF downloaded (${res.fileName}). Please attach it in WhatsApp!`,
+            type: 'success'
+          });
+        }
       }
     } catch (err) {
       console.error(err);
-      openWhatsAppChat(activeQuotation, targetPhone);
+      if (addToast) {
+        addToast({
+          title: 'PDF Share Error',
+          message: 'Could not generate or share PDF. Please try again.',
+          type: 'error'
+        });
+      }
     } finally {
       setIsGeneratingPdf(false);
       setTimeout(() => setStatusNotice(''), 6000);
     }
   };
 
-  const handleCopyMessage = () => {
-    if (!activeQuotation) return;
-    const msg = buildProposalWhatsAppMessage(activeQuotation);
-    navigator.clipboard.writeText(msg);
-    setCopiedFeedback(true);
-    setTimeout(() => setCopiedFeedback(false), 2000);
-  };
-
   const handleCopyOnlineLink = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     try {
       await navigator.clipboard.writeText(url);
       setCopiedLinkFeedback(true);
@@ -489,14 +617,21 @@ export default function QuotationPreview({
     } catch (e) {}
   };
 
-  const handleOpenOnlineView = () => {
+  const handleOpenOnlineView = async () => {
     if (!activeQuotation) return;
-    quotationService.saveQuotation(activeQuotation).catch(() => {});
-    const url = getPublicProposalUrl(activeQuotation.id);
+    let quoteToShare = activeQuotation;
+    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
+      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
+      if (saveRes?.data) {
+        quoteToShare = saveRes.data;
+      }
+    }
+    const url = getPublicProposalUrl(quoteToShare);
     window.open(url, '_blank');
   };
 
   if (isLoadingRemote || isLoadingProp) {
+    const displayId = (isPublicView ? (publicQuoteId || shareToken) : getUrlOrStoredQuoteId()) || '';
     return (
       <div className="max-w-md mx-auto my-20 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-sm border border-surface-container-high">
         <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto mb-4">
@@ -504,7 +639,7 @@ export default function QuotationPreview({
         </div>
         <h3 className="text-base font-bold text-on-surface mb-1">Loading Solar Proposal...</h3>
         <p className="text-xs text-secondary">
-          Retrieving verified proposal <span className="font-mono font-semibold text-on-surface">{publicQuoteId || ''}</span>
+          Retrieving verified proposal {displayId ? <span className="font-mono font-semibold text-on-surface">{displayId}</span> : 'from database...'}
         </p>
       </div>
     );
@@ -512,6 +647,10 @@ export default function QuotationPreview({
 
   if (!activeQuotation) {
     if (isPublicView) {
+      const supportPhone = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+      const cleanWaPhone = String(companyProfile.whatsapp || '918000050580').replace(/\D/g, '');
+      const compName = companyProfile.name || 'Sunvine';
+
       return (
         <div className="max-w-2xl mx-auto my-12 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-md border border-surface-container-high">
           <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto mb-4">
@@ -519,18 +658,18 @@ export default function QuotationPreview({
           </div>
           <h3 className="text-xl font-bold text-on-surface mb-2">Proposal Not Found or Expired</h3>
           <p className="text-sm text-secondary mb-6 max-w-md mx-auto leading-relaxed">
-            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || 'N/A'}</span>. The proposal link may have expired or is unavailable.
+            We could not locate quotation reference <span className="font-mono font-bold text-on-surface">{publicQuoteId || shareToken || 'N/A'}</span>. The proposal link may have expired or is unavailable.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <a
-              href="tel:+918000050580"
+              href={`tel:${supportPhone.replace(/\s+/g, '')}`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-xs shadow-sm hover:opacity-90 transition-all"
             >
               <span className="material-symbols-outlined text-[18px]">call</span>
-              <span>Call Helpline: +91 80000 50580</span>
+              <span>Call Helpline: {supportPhone}</span>
             </a>
             <a
-              href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
+              href={`https://api.whatsapp.com/send?phone=${cleanWaPhone}&text=${encodeURIComponent(`Hello ${compName} Team, I was trying to open proposal link ${publicQuoteId || ''} but it is showing not found.`)}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] text-white font-semibold text-xs shadow-sm hover:bg-[#1EBE5B] transition-all"
@@ -656,16 +795,16 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={() => setShowWhatsAppModal(true)}
+                  onClick={handleShareWhatsAppWithPDF}
                   disabled={isGeneratingPdf}
                   className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
-                  title="Share proposal on WhatsApp (sends actual PDF file + online link)"
+                  title="Share proposal on WhatsApp (sends actual PDF file)"
                 >
                   <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGeneratingPdf ? 'animate-spin' : ''}`}>
                     {isGeneratingPdf ? 'sync' : 'chat'}
                   </span>
                   <span className="truncate">
-                    {isGeneratingPdf ? 'PDF...' : (
+                    {isGeneratingPdf ? 'Generating PDF...' : (
                       <>
                         <span className="sm:hidden">WhatsApp</span>
                         <span className="hidden sm:inline">Share WhatsApp</span>
@@ -675,14 +814,23 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">PDF</span>
-                    <span className="hidden sm:inline">Print / Save PDF</span>
+                    {isDownloadingPdf ? (
+                      'Downloading...'
+                    ) : (
+                      <>
+                        <span className="sm:hidden">Download</span>
+                        <span className="hidden sm:inline">Download PDF</span>
+                      </>
+                    )}
                   </span>
                 </button>
               </>
@@ -700,14 +848,16 @@ export default function QuotationPreview({
                 </a>
 
                 <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Print or Save as 4-Page PDF"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
+                  title="Download official 4-page Proposal PDF"
                 >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">print</span>
+                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
+                    {isDownloadingPdf ? 'sync' : 'download'}
+                  </span>
                   <span className="truncate">
-                    <span className="sm:hidden">Download PDF</span>
-                    <span className="hidden sm:inline">Download Official PDF</span>
+                    {isDownloadingPdf ? 'Downloading...' : 'Download PDF'}
                   </span>
                 </button>
               </>
@@ -749,7 +899,7 @@ export default function QuotationPreview({
             }}
             className="print:!w-auto print:!transform-none print:!static"
           >
-            <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
+            <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage={activePage} />
           </div>
         </div>
       </div>
@@ -758,151 +908,22 @@ export default function QuotationPreview({
       <div
         className="no-print"
         style={{
-          position: 'absolute',
-          left: '-9999px',
+          position: 'fixed',
           top: 0,
+          left: 0,
           width: '794px',
-          background: '#ffffff',
-          pointerEvents: 'none'
+          zIndex: -9999,
+          opacity: 0,
+          pointerEvents: 'none',
+          background: '#ffffff'
         }}
       >
         <div ref={pdfExportRef} className="pdf-export-container">
-          <PDFTemplate quotation={activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
+          <PDFTemplate quotation={quotationWithProfile || activeQuotation} pricingMaster={pricingMaster} activePage="all" isPdfExport={true} />
         </div>
       </div>
 
-      {/* WhatsApp Share Modal */}
-      {showWhatsAppModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-surface-container-lowest rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-surface-container-high relative">
-            <div className="flex items-center justify-between pb-3 border-b border-surface-container">
-              <div className="flex items-center gap-2 text-[#25D366]">
-                <span className="material-symbols-outlined text-[26px]">chat</span>
-                <h3 className="font-headline-sm text-base font-bold text-on-surface">Share Proposal with PDF on WhatsApp</h3>
-              </div>
-              <button
-                onClick={() => setShowWhatsAppModal(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            </div>
 
-            <div className="py-4 space-y-4">
-              {/* Direct Customer Proposal URL Box */}
-              <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-xl flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px]">link</span>
-                    Online Proposal Link (Portable)
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyOnlineLink}
-                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copiedLinkFeedback ? 'check' : 'content_copy'}
-                      </span>
-                      <span>{copiedLinkFeedback ? 'Copied!' : 'Copy Link'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleOpenOnlineView}
-                      className="text-xs font-bold text-blue-700 hover:text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-300 shadow-2xs hover:shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                      <span>Open</span>
-                    </button>
-                  </div>
-                </div>
-                <div className="text-[11px] font-mono text-blue-800 bg-white/90 p-2 rounded-lg border border-blue-200 truncate select-all">
-                  {getPublicProposalUrl(activeQuotation.id)}
-                </div>
-              </div>
-
-              {/* Customer Phone Input */}
-              <div>
-                <label className="block text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">
-                  Customer WhatsApp Mobile Number
-                </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3 font-semibold text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                    +91
-                  </span>
-                  <input
-                    type="text"
-                    value={targetPhone}
-                    onChange={(e) => setTargetPhone(e.target.value)}
-                    placeholder="Enter 10-digit mobile number"
-                    className="w-full h-11 pl-14 pr-4 bg-surface-container-low border border-surface-container-high rounded-xl text-sm font-semibold text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20"
-                  />
-                </div>
-                <p className="text-[11px] text-secondary mt-1">
-                  On mobile: WhatsApp will open with the official PDF file attached! On desktop: PDF is downloaded automatically and chat opens with message pre-filled.
-                </p>
-              </div>
-
-              {/* Message Preview Box */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-on-surface uppercase tracking-wider">
-                    Message Preview
-                  </label>
-                  <button
-                    onClick={handleCopyMessage}
-                    className="text-xs text-primary font-semibold hover:underline flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">
-                      {copiedFeedback ? 'check' : 'content_copy'}
-                    </span>
-                    <span>{copiedFeedback ? 'Copied!' : 'Copy Text'}</span>
-                  </button>
-                </div>
-                <div className="bg-[#EFEAE2] p-3 rounded-xl border border-[#D1D7DB] text-xs font-sans text-[#111B21] max-h-48 overflow-y-auto whitespace-pre-line leading-relaxed shadow-inner">
-                  {buildProposalWhatsAppMessage(activeQuotation)}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="pt-3 border-t border-surface-container flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-              <button
-                onClick={() => {
-                  handleDirectWhatsAppFast();
-                  setShowWhatsAppModal(false);
-                }}
-                className="text-xs font-semibold text-secondary hover:text-on-surface px-2 py-1 text-left sm:text-center"
-              >
-                Fast Link (Text Only)
-              </button>
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setShowWhatsAppModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-secondary hover:bg-surface-container-high"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    handleShareWhatsAppWithPDF();
-                    setShowWhatsAppModal(false);
-                  }}
-                  disabled={isGeneratingPdf}
-                  className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white font-label-md text-xs font-bold shadow-md active:scale-95 transition-all disabled:opacity-50"
-                >
-                  <span className={`material-symbols-outlined text-[18px] ${isGeneratingPdf ? 'animate-spin' : ''}`}>
-                    {isGeneratingPdf ? 'sync' : 'send'}
-                  </span>
-                  <span>{isGeneratingPdf ? 'Generating PDF...' : 'Share PDF & Message'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Floating 2-Finger Pinch Zoom Indicator & Controller */}
       <div className="no-print fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/90 text-white shadow-2xl backdrop-blur-md border border-white/15 text-xs font-semibold select-none transition-all">

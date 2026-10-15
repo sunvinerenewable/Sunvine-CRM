@@ -172,7 +172,9 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
 
     showLoader('Converting Quotation to Operations File...');
     try {
-      const fileId = `FIL-2026-${Math.floor(100 + Math.random() * 900)}`;
+      const year = new Date().getFullYear();
+      const randPart = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const fileId = `FIL-${year}-${randPart}`;
       const todayStr = new Date().toISOString().split('T')[0];
 
     // Build timeline
@@ -230,15 +232,17 @@ export default function ConvertQuotationModal({ quotation, isOpen, onClose, onSu
       }
     };
 
+    let savedFile = newCustomerFile;
     if (addCustomerFile) {
-      addCustomerFile(newCustomerFile);
+      const res = await addCustomerFile(newCustomerFile);
+      if (res) savedFile = res;
     }
 
     if (updateQuotation && quotation.id) {
       updateQuotation(quotation.id, {
         status: 'Won / Order Booked',
         statusClass: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold',
-        customerFileId: fileId,
+        customerFileId: savedFile.id,
         orderBookedDate: todayStr
       });
     }

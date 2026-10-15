@@ -8,6 +8,8 @@ export default function AdminSettings() {
   const { addToast } = useToast();
   const {
     currentAdmin,
+    dealers = [],
+    staffList = [],
     setStaffList,
     setDealers,
     masterDocRegistry,
@@ -19,6 +21,7 @@ export default function AdminSettings() {
     resetDocumentRulesToDefault,
     refreshMasterDocuments,
     applicationCategories,
+    tierMargins,
     applicationStages,
     addApplicationStage,
     updateApplicationStage,
@@ -288,11 +291,25 @@ export default function AdminSettings() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [modalError, setModalError] = useState('');
   const [successToast, setSuccessToast] = useState('');
 
   const [adminsList, setAdminsList] = useState([]);
-  const [dealersList, setDealersList] = useState([]);
-  const [staffListState, setStaffListState] = useState([]);
+  const [dealersList, setDealersList] = useState(() => (Array.isArray(dealers) && dealers.length > 0 ? dealers : []));
+  const [staffListState, setStaffListState] = useState(() => (Array.isArray(staffList) && staffList.length > 0 ? staffList : []));
+
+  // Sync with AppContext data if loaded
+  useEffect(() => {
+    if (Array.isArray(dealers) && dealers.length > 0 && dealersList.length === 0) {
+      setDealersList(dealers);
+    }
+  }, [dealers]);
+
+  useEffect(() => {
+    if (Array.isArray(staffList) && staffList.length > 0 && staffListState.length === 0) {
+      setStaffListState(staffList);
+    }
+  }, [staffList]);
 
   // Filters & Search
   const [staffFilter, setStaffFilter] = useState('all'); // 'all' | 'sales' | 'verification'
@@ -323,7 +340,7 @@ export default function AdminSettings() {
     state: 'Gujarat',
     discom: 'UGVCL',
     tier: 'Gold EPC',
-    maxMarginCapPerKw: 6000,
+    maxMarginCapPerKw: 0,
     status: 'Active',
     password: '',
     assignedStaffId: 'STF-DIRECT',
@@ -361,6 +378,7 @@ export default function AdminSettings() {
   });
 
   const [submitting, setSubmitting] = useState(false);
+  const isAnyModalOpen = Boolean(showAdminModal || showDealerModal || showStaffModal || passwordModal.isOpen || deleteModal.isOpen);
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -555,6 +573,7 @@ export default function AdminSettings() {
       password: ''
     });
     setError('');
+    setModalError('');
     setShowAdminModal(true);
   };
 
@@ -568,27 +587,29 @@ export default function AdminSettings() {
       password: ''
     });
     setError('');
+    setModalError('');
     setShowAdminModal(true);
   };
 
   const handleSaveAdmin = async (e) => {
     e.preventDefault();
     if (!adminForm.fullName.trim() || !adminForm.email.trim()) {
-      setError('Full Name and Email are required.');
+      setModalError('Full Name and Email are required.');
       return;
     }
     const cleanMobile = adminForm.mobileNumber.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length !== 10) {
-      setError('Valid 10-digit mobile number is required.');
+      setModalError('Valid 10-digit mobile number is required.');
       return;
     }
     if (!editingAdmin && !adminForm.password.trim()) {
-      setError('Password is required for new admin account.');
+      setModalError('Password is required for new admin account.');
       return;
     }
 
     setSubmitting(true);
     setError('');
+    setModalError('');
 
     try {
       if (editingAdmin) {
@@ -615,9 +636,12 @@ export default function AdminSettings() {
       }
 
       setShowAdminModal(false);
+      setModalError('');
       await loadAccounts(true);
     } catch (err) {
-      setError(err.message || 'Operation failed.');
+      const msg = err.message || 'Operation failed.';
+      setModalError(msg);
+      if (addToast) addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -648,18 +672,24 @@ export default function AdminSettings() {
       state: 'Gujarat',
       discom: 'UGVCL',
       tier: 'Gold EPC',
-      maxMarginCapPerKw: 6000,
+      maxMarginCapPerKw: tierMargins?.gold?.maxMarginCapPerKw || 0,
+      gstin: '',
+      pan: '',
+      address: '',
       status: 'Active',
       password: '',
       assignedStaffId: 'STF-DIRECT',
       assignedStaffName: 'Direct to Company (HQ Desk)'
     });
     setError('');
+    setModalError('');
     setShowDealerModal(true);
   };
 
   const handleOpenEditDealer = (dealer) => {
     setEditingDealer(dealer);
+    const gVal = dealer.gstin || dealer.pricing_config?.gstin || dealer.pricingConfig?.gstin || '';
+    const pVal = dealer.pan || dealer.pricing_config?.pan || dealer.pricingConfig?.pan || '';
     setDealerForm({
       id: dealer.id || dealer.dealer_code,
       dealerCode: dealer.dealer_code || dealer.dealerCode || dealer.id,
@@ -672,40 +702,45 @@ export default function AdminSettings() {
       state: dealer.state || 'Gujarat',
       discom: dealer.discom || 'UGVCL',
       tier: dealer.tier || 'Gold EPC',
-      maxMarginCapPerKw: dealer.max_margin_cap_per_kw || dealer.maxMarginCapPerKw || 6000,
+      maxMarginCapPerKw: Number(dealer.max_margin_cap_per_kw ?? dealer.maxMarginCapPerKw ?? 0),
+      gstin: gVal,
+      pan: pVal,
+      address: dealer.address || dealer.pricing_config?.address || dealer.pricingConfig?.address || '',
       status: dealer.status || 'Active',
       password: '',
       assignedStaffId: dealer.assigned_staff_id || dealer.assignedStaffId || 'STF-DIRECT',
       assignedStaffName: dealer.assigned_staff_name || dealer.assignedStaffName || 'Direct to Company (HQ Desk)'
     });
     setError('');
+    setModalError('');
     setShowDealerModal(true);
   };
 
   const handleSaveDealer = async (e) => {
     e.preventDefault();
     if (!dealerForm.firmName.trim() || !dealerForm.contactPerson.trim()) {
-      setError('Firm Name and Contact Person are required.');
+      setModalError('Firm Name and Contact Person are required.');
       return;
     }
     const cleanMobile = dealerForm.mobile.replace(/\D/g, '').slice(-10);
     if (cleanMobile.length !== 10) {
-      setError('Valid 10-digit mobile number is required.');
+      setModalError('Valid 10-digit mobile number is required.');
       return;
     }
     const cleanEmail = (dealerForm.email || '').trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (cleanEmail && !emailRegex.test(cleanEmail)) {
-      setError('Please enter a valid email address (e.g. partner@example.com) or leave it empty.');
+      setModalError('Please enter a valid email address (e.g. partner@example.com) or leave it empty.');
       return;
     }
     if (!editingDealer && !dealerForm.password.trim()) {
-      setError('Initial password is required for new dealer.');
+      setModalError('Initial password is required for new dealer.');
       return;
     }
 
     setSubmitting(true);
     setError('');
+    setModalError('');
 
     try {
       if (editingDealer) {
@@ -721,7 +756,10 @@ export default function AdminSettings() {
           state: dealerForm.state,
           discom: dealerForm.discom,
           tier: dealerForm.tier,
-          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password ? dealerForm.password.trim() : undefined,
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -741,7 +779,10 @@ export default function AdminSettings() {
           state: dealerForm.state,
           discom: dealerForm.discom,
           tier: dealerForm.tier,
-          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 6000,
+          maxMarginCapPerKw: Number(dealerForm.maxMarginCapPerKw) || 0,
+          gstin: dealerForm.gstin ? String(dealerForm.gstin).trim().toUpperCase() : '',
+          pan: dealerForm.pan ? String(dealerForm.pan).trim().toUpperCase() : '',
+          address: dealerForm.address ? String(dealerForm.address).trim() : '',
           status: dealerForm.status,
           password: dealerForm.password.trim(),
           assignedStaffId: dealerForm.assignedStaffId || 'STF-DIRECT',
@@ -752,9 +793,12 @@ export default function AdminSettings() {
       }
 
       setShowDealerModal(false);
+      setModalError('');
       await loadAccounts(true);
     } catch (err) {
-      setError(err.message || 'Operation failed.');
+      const msg = err.message || 'Operation failed.';
+      setModalError(msg);
+      if (addToast) addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -783,6 +827,7 @@ export default function AdminSettings() {
       password: ''
     });
     setError('');
+    setModalError('');
     setShowStaffModal(true);
   };
 
@@ -800,27 +845,29 @@ export default function AdminSettings() {
       password: ''
     });
     setError('');
+    setModalError('');
     setShowStaffModal(true);
   };
 
   const handleSaveStaff = async (e) => {
     e.preventDefault();
     if (!staffForm.name.trim()) {
-      setError('Staff Name is required.');
+      setModalError('Staff Name is required.');
       return;
     }
     const cleanPhone = staffForm.phone.replace(/\D/g, '').slice(-10);
     if (cleanPhone.length !== 10) {
-      setError('Valid 10-digit mobile number is required.');
+      setModalError('Valid 10-digit mobile number is required.');
       return;
     }
     if (!editingStaff && !staffForm.password.trim()) {
-      setError('Password is required for new staff account.');
+      setModalError('Password is required for new staff account.');
       return;
     }
 
     setSubmitting(true);
     setError('');
+    setModalError('');
 
     try {
       if (editingStaff) {
@@ -852,9 +899,12 @@ export default function AdminSettings() {
       }
 
       setShowStaffModal(false);
+      setModalError('');
       await loadAccounts(true);
     } catch (err) {
-      setError(err.message || 'Operation failed.');
+      const msg = err.message || 'Operation failed.';
+      setModalError(msg);
+      if (addToast) addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -871,21 +921,23 @@ export default function AdminSettings() {
       showPass: false
     });
     setError('');
+    setModalError('');
   };
 
   const handleSavePassword = async (e) => {
     e.preventDefault();
     if (!passwordModal.newPassword.trim()) {
-      setError('Password cannot be empty.');
+      setModalError('Password cannot be empty.');
       return;
     }
     if (passwordModal.newPassword !== passwordModal.confirmPassword) {
-      setError('Passwords do not match. Please verify.');
+      setModalError('Passwords do not match. Please verify.');
       return;
     }
 
     setSubmitting(true);
     setError('');
+    setModalError('');
 
     try {
       if (passwordModal.accountType === 'admin') {
@@ -913,9 +965,12 @@ export default function AdminSettings() {
       }
 
       setPasswordModal({ isOpen: false, accountType: '', account: null, newPassword: '', confirmPassword: '', showPass: false });
+      setModalError('');
       await loadAccounts(true);
     } catch (err) {
-      setError(err.message || 'Password update failed.');
+      const msg = err.message || 'Password update failed.';
+      setModalError(msg);
+      if (addToast) addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -933,12 +988,14 @@ export default function AdminSettings() {
       account
     });
     setError('');
+    setModalError('');
   };
 
   const handleConfirmDelete = async () => {
     if (!deleteModal.account) return;
     setSubmitting(true);
     setError('');
+    setModalError('');
 
     try {
       if (deleteModal.accountType === 'admin') {
@@ -957,9 +1014,12 @@ export default function AdminSettings() {
       }
 
       setDeleteModal({ isOpen: false, accountType: '', account: null });
+      setModalError('');
       await loadAccounts(true);
     } catch (err) {
-      setError(err.message || 'Deletion failed.');
+      const msg = err.message || 'Deletion failed.';
+      setModalError(msg);
+      if (addToast) addToast(msg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -1108,8 +1168,8 @@ export default function AdminSettings() {
         </div>
       </div>
 
-      {/* Global Error Banner */}
-      {error && (
+      {/* Global Error Banner (suppressed when modal is open so it never shows behind modal) */}
+      {!isAnyModalOpen && error && (
         <div className="flex items-center justify-between gap-3 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl shadow-sm">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-rose-600">error</span>
@@ -2377,12 +2437,30 @@ export default function AdminSettings() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowAdminModal(false)}
+                onClick={() => { setShowAdminModal(false); setModalError(''); }}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {/* In-Modal Error Alert Banner */}
+            {modalError && (
+              <div className="mx-4 sm:mx-5 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-start justify-between gap-2 shadow-xs shrink-0 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-rose-600 text-base shrink-0">error</span>
+                  <span>{modalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalError('')}
+                  className="text-rose-400 hover:text-rose-700 cursor-pointer p-0.5 rounded transition-colors"
+                  title="Dismiss error"
+                >
+                  <span className="material-symbols-outlined text-xs">close</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSaveAdmin} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
@@ -2444,7 +2522,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingAdmin}
-                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. admin123'}
+                    placeholder={editingAdmin ? 'Leave blank to keep unchanged' : 'e.g. Min 6 characters (e.g. admin123)'}
                     value={adminForm.password}
                     onChange={(e) => setAdminForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10"
@@ -2456,7 +2534,7 @@ export default function AdminSettings() {
               <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setShowAdminModal(false)}
+                  onClick={() => { setShowAdminModal(false); setModalError(''); }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
@@ -2490,12 +2568,30 @@ export default function AdminSettings() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowDealerModal(false)}
+                onClick={() => { setShowDealerModal(false); setModalError(''); }}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {/* In-Modal Error Alert Banner */}
+            {modalError && (
+              <div className="mx-4 sm:mx-5 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-start justify-between gap-2 shadow-xs shrink-0 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-rose-600 text-base shrink-0">error</span>
+                  <span>{modalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalError('')}
+                  className="text-rose-400 hover:text-rose-700 cursor-pointer p-0.5 rounded transition-colors"
+                  title="Dismiss error"
+                >
+                  <span className="material-symbols-outlined text-xs">close</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSaveDealer} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
@@ -2669,6 +2765,56 @@ export default function AdminSettings() {
                   />
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      GSTIN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={15}
+                      placeholder="24AAECB1234F1Z5"
+                      value={dealerForm.gstin}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase();
+                        setDealerForm(prev => ({
+                          ...prev,
+                          gstin: val,
+                          pan: val.length >= 12 ? val.slice(2, 12) : prev.pan
+                        }));
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      PAN Number <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={10}
+                      placeholder="AAECB1234F"
+                      value={dealerForm.pan}
+                      onChange={(e) => setDealerForm(prev => ({ ...prev, pan: e.target.value.toUpperCase() }))}
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono uppercase text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Registered Office Address <span className="text-xs text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Shop 12, Sunrise Complex, Rajkot"
+                    value={dealerForm.address}
+                    onChange={(e) => setDealerForm(prev => ({ ...prev, address: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
                 {/* Sales Channel & Salesman Alignment */}
                 <div className="space-y-2 pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between">
@@ -2701,10 +2847,11 @@ export default function AdminSettings() {
                     <button
                       type="button"
                       onClick={() => {
-                        const firstStaff = (staffListState || []).find(s => s.department === 'Sales') || (staffListState || [])[0];
+                        const salesStaffList = (staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification'));
+                        const firstStaff = salesStaffList.find(s => (s.department || '').toLowerCase() === 'sales') || salesStaffList[0] || (staffListState || [])[0];
                         setDealerForm(prev => ({
                           ...prev,
-                          assignedStaffId: firstStaff?.id || 'STF-801',
+                          assignedStaffId: firstStaff?.id || '',
                           assignedStaffName: firstStaff?.name || 'Sunvine Sales Staff'
                         }));
                       }}
@@ -2738,7 +2885,7 @@ export default function AdminSettings() {
                         }}
                         className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-emerald-500 cursor-pointer"
                       >
-                        {(staffListState || []).map(s => (
+                        {(staffListState || []).filter(s => !s.is_verification && !(s.department || '').toLowerCase().includes('verification') && !(s.role || '').toLowerCase().includes('verification')).map(s => (
                           <option key={s.id} value={s.id}>
                             {s.name} ({s.id}) • {s.role || s.department || 'Sales'}
                           </option>
@@ -2755,7 +2902,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingDealer}
-                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'dealer123'}
+                    placeholder={editingDealer ? 'Leave blank to keep unchanged' : 'e.g. Min 6 characters (e.g. admin123)'}
                     value={dealerForm.password}
                     onChange={(e) => setDealerForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -2767,7 +2914,7 @@ export default function AdminSettings() {
               <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setShowDealerModal(false)}
+                  onClick={() => { setShowDealerModal(false); setModalError(''); }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
@@ -2801,12 +2948,30 @@ export default function AdminSettings() {
               </div>
               <button
                 type="button"
-                onClick={() => setShowStaffModal(false)}
+                onClick={() => { setShowStaffModal(false); setModalError(''); }}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {/* In-Modal Error Alert Banner */}
+            {modalError && (
+              <div className="mx-4 sm:mx-5 mt-4 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-start justify-between gap-2 shadow-xs shrink-0 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-rose-600 text-base shrink-0">error</span>
+                  <span>{modalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalError('')}
+                  className="text-rose-400 hover:text-rose-700 cursor-pointer p-0.5 rounded transition-colors"
+                  title="Dismiss error"
+                >
+                  <span className="material-symbols-outlined text-xs">close</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSaveStaff} className="flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1 min-h-0 scrollbar-thin">
@@ -2911,7 +3076,7 @@ export default function AdminSettings() {
                   <input
                     type="text"
                     required={!editingStaff}
-                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : (staffForm.department === 'Verification' ? 'desk123' : 'staff123')}
+                    placeholder={editingStaff ? 'Leave blank to keep unchanged' : 'e.g. Min 6 characters (e.g. admin123)'}
                     value={staffForm.password}
                     onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -2923,7 +3088,7 @@ export default function AdminSettings() {
               <div className="flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setShowStaffModal(false)}
+                  onClick={() => { setShowStaffModal(false); setModalError(''); }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
@@ -2956,12 +3121,30 @@ export default function AdminSettings() {
                 </h3>
               </div>
               <button
-                onClick={() => setPasswordModal(prev => ({ ...prev, isOpen: false }))}
+                onClick={() => { setPasswordModal(prev => ({ ...prev, isOpen: false })); setModalError(''); }}
                 className="text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {/* In-Modal Error Alert Banner */}
+            {modalError && (
+              <div className="mx-5 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-start justify-between gap-2 shadow-xs shrink-0 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-rose-600 text-base shrink-0">error</span>
+                  <span>{modalError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setModalError('')}
+                  className="text-rose-400 hover:text-rose-700 cursor-pointer p-0.5 rounded transition-colors"
+                  title="Dismiss error"
+                >
+                  <span className="material-symbols-outlined text-xs">close</span>
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSavePassword} className="p-5 space-y-4">
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
@@ -2978,7 +3161,7 @@ export default function AdminSettings() {
                   <input
                     type={passwordModal.showPass ? 'text' : 'password'}
                     required
-                    placeholder="Enter new password"
+                    placeholder="Enter new password (min 6 characters)"
                     value={passwordModal.newPassword}
                     onChange={(e) => setPasswordModal(prev => ({ ...prev, newPassword: e.target.value }))}
                     className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 pr-10"
@@ -3010,7 +3193,7 @@ export default function AdminSettings() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setPasswordModal(prev => ({ ...prev, isOpen: false }))}
+                  onClick={() => { setPasswordModal(prev => ({ ...prev, isOpen: false })); setModalError(''); }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
                 >
                   Cancel
@@ -3050,10 +3233,18 @@ export default function AdminSettings() {
               </p>
             </div>
 
+            {/* In-Modal Error Alert */}
+            {modalError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-800 flex items-center gap-2 shadow-xs animate-fadeIn">
+                <span className="material-symbols-outlined text-rose-600 text-base shrink-0">error</span>
+                <span>{modalError}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => setDeleteModal({ isOpen: false, accountType: '', account: null })}
+                onClick={() => { setDeleteModal({ isOpen: false, accountType: '', account: null }); setModalError(''); }}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
               >
                 Cancel

@@ -51,20 +51,46 @@ ensureEnvLoaded();
 export function getDbPool() {
   ensureEnvLoaded();
   if (!pool && process.env.DATABASE_URL) {
+    const ssl = process.env.PG_CA
+      ? { ca: process.env.PG_CA, rejectUnauthorized: true }
+      : { rejectUnauthorized: false };
+
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      max: 10,
+      ssl,
+      max: 3,
       idleTimeoutMillis: 30000
     });
   }
   return pool;
 }
 
+let circuitBreakerOpenUntil = 0;
+let lastCircuitError = '';
+
 export async function query(sql, params = []) {
+  if (Date.now() < circuitBreakerOpenUntil) {
+    throw new Error(`(ECIRCUITBREAKER) Direct PostgreSQL pooler is paused: ${lastCircuitError}`);
+  }
+
   const p = getDbPool();
   if (p) {
-    return await p.query(sql, params);
+    try {
+      const res = await p.query(sql, params);
+      lastCircuitError = '';
+      return res;
+    } catch (err) {
+      if (
+        err.code === '28P01' ||
+        err.message?.includes('ECIRCUITBREAKER') ||
+        err.message?.includes('too many authentication failures') ||
+        err.message?.includes('password authentication failed')
+      ) {
+        circuitBreakerOpenUntil = Date.now() + 30000;
+        lastCircuitError = err.message;
+      }
+      throw err;
+    }
   }
   throw new Error('Database pool not available.');
 }
