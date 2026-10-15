@@ -10,6 +10,7 @@
  */
 
 import { supabase } from '../lib/supabase.js';
+import { normalizeCompanyProfile } from '../data/defaultPresets.js';
 
 export function normalizeQuotationRow(row) {
   if (!row) return null;
@@ -102,8 +103,8 @@ export function normalizeQuotationRow(row) {
     displayDate,
     created_at: row.created_at || rawDate,
     createdAt: row.created_at || rawDate,
-    companyProfile: row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile || null,
-    company_profile: row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile || null,
+    companyProfile: normalizeCompanyProfile(row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile),
+    company_profile: normalizeCompanyProfile(row.companyProfile || row.company_profile || payload.companyProfile || payload.company_profile),
     bomItems: row.bomItems || payload.bomItems || [],
     bomTotals: row.bomTotals || payload.bomTotals || {}
   };

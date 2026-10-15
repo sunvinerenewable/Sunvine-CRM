@@ -106,7 +106,20 @@ async function deleteR2Files(keys, bucket) {
   }
 }
 
+export function checkIsFileVerified(f) {
+  if (!f) return false;
+  return Boolean(
+    f.is_verified ||
+    f.isVerified ||
+    f.status === 'Verified' ||
+    f.status === 'DISCOM Registered' ||
+    (f.stage && f.stage !== 'LEAD_SOURCED' && f.stage !== 'SITE_SURVEY')
+  );
+}
+
 function mapDbToFrontend(f) {
+  const isVerified = checkIsFileVerified(f);
+
   return {
     id: f.id,
     customerName: f.customer_name,
@@ -141,6 +154,13 @@ function mapDbToFrontend(f) {
     cancellationReason: f.cancellation_reason || null,
     cancelledAt: f.cancelled_at || null,
     cancelledBy: f.cancelled_by ? (typeof f.cancelled_by === 'object' ? f.cancelled_by.name || f.cancelled_by.id : String(f.cancelled_by)) : null,
+    isVerified,
+    is_verified: isVerified,
+    verifiedAt: f.verified_at || null,
+    verifiedBy: f.verified_by || null,
+    isDeleted: Boolean(f.is_deleted),
+    deletedAt: f.deleted_at || null,
+    deletedBy: f.deleted_by || null,
     createdAt: f.created_at,
     updatedAt: f.updated_at
   };
@@ -224,6 +244,16 @@ export default async function handler(req, res) {
         queryBuilder = queryBuilder.eq('dealer_id', dealerId);
       }
 
+      const isTrashView = req.query?.trash === 'true';
+      if (isTrashView) {
+        if (user.role !== 'admin') {
+          return res.status(403).json({ error: 'Permission denied. Only Admin can view Trash.' });
+        }
+        queryBuilder = queryBuilder.eq('is_deleted', true);
+      } else {
+        queryBuilder = queryBuilder.not('is_deleted', 'is', true);
+      }
+
       queryBuilder = queryBuilder
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
@@ -262,12 +292,20 @@ export default async function handler(req, res) {
         assignedId = `FIL-${year}-${randPart}`;
       }
 
+      // SEC: Look up existing file for ownership and verification protection
+      let existingFile = null;
+      if (assignedId) {
+        const { data } = await db
+          .from('customer_files')
+          .select('*')
+          .eq('id', assignedId)
+          .maybeSingle();
+        existingFile = data;
+      }
+
       // Prevent dealer from spoofing or overwriting another dealer's file
-      if (isDealer && assignedId) {
-        const { data: existingFile } = await db.from('customer_files').select('dealer_id').eq('id', assignedId).single();
-        if (existingFile && existingFile.dealer_id && existingFile.dealer_id !== dealerId) {
-          return res.status(403).json({ error: 'Forbidden: You cannot modify customer files belonging to another dealer.' });
-        }
+      if (isDealer && existingFile && existingFile.dealer_id && existingFile.dealer_id !== dealerId) {
+        return res.status(403).json({ error: 'Forbidden: You cannot modify customer files belonging to another dealer.' });
       }
 
       const payload = {
@@ -296,6 +334,40 @@ export default async function handler(req, res) {
         timeline: Array.isArray(file.timeline) ? file.timeline : [],
         updated_at: new Date().toISOString()
       };
+
+      // Verification Lock Guard: If existing file is verified, core customer & technical specs cannot be modified
+      if (existingFile) {
+        const isVerified = checkIsFileVerified(existingFile);
+        if (isVerified) {
+          const coreFields = [
+            'customer_name', 'phone', 'address', 'city', 'discom',
+            'consumer_no', 'sanctioned_load_kw', 'solar_system_kw',
+            'roof_type', 'finance_type', 'loan_bank'
+          ];
+          const attemptedCoreChange = coreFields.some(f => {
+            if (f === 'sanctioned_load_kw' || f === 'solar_system_kw') {
+              if (payload[f] === undefined) return false;
+              const pVal = Number(payload[f]);
+              const oVal = Number(existingFile[f] ?? 0);
+              return !isNaN(pVal) && pVal !== oVal;
+            }
+            return payload[f] !== undefined && String(payload[f]).trim() !== String(existingFile[f] ?? '').trim();
+          });
+
+          if (attemptedCoreChange) {
+            return res.status(423).json({
+              error: 'This customer file has been verified and is locked. Core customer specifications cannot be modified.'
+            });
+          }
+
+          // Preserve existing verification metadata, status, and stage if not provided
+          payload.status = file.status || existingFile.status;
+          payload.stage = file.stage || file.currentStage || existingFile.stage;
+          payload.is_verified = existingFile.is_verified;
+          payload.verified_at = existingFile.verified_at;
+          payload.verified_by = existingFile.verified_by;
+        }
+      }
 
       // ITEM-7: HEAD validate registered documents (size and MIME type verification)
       if (file.documents) {
@@ -339,6 +411,16 @@ export default async function handler(req, res) {
       if (user.role !== 'admin') {
         delete updates.dealerId;
         delete updates.dealer_id;
+      }
+
+      // SEC: Dealers cannot self-verify or modify verification timestamps
+      if (isDealer) {
+        delete updates.isVerified;
+        delete updates.is_verified;
+        delete updates.verifiedAt;
+        delete updates.verified_at;
+        delete updates.verifiedBy;
+        delete updates.verified_by;
       }
 
       // ITEM-7: HEAD validate updated documents
@@ -389,9 +471,32 @@ export default async function handler(req, res) {
       if (updates.staffName !== undefined || updates.staff_name !== undefined) {
         payload.staff_name = updates.staffName !== undefined ? updates.staffName : updates.staff_name;
       }
-      if (updates.status !== undefined) payload.status = updates.status;
+      if (updates.status !== undefined) {
+        if (updates.status === 'Cancelled') {
+          return res.status(400).json({
+            error: 'Direct transition to Cancelled status via update is prohibited. Please use the dedicated cancel action with a mandatory cancellation reason.'
+          });
+        }
+        payload.status = updates.status;
+      }
       if (updates.stage !== undefined || updates.currentStage !== undefined) {
-        payload.stage = updates.stage || updates.currentStage;
+        const nextStage = updates.stage || updates.currentStage;
+        if (nextStage === 'CANCELLED') {
+          return res.status(400).json({
+            error: 'Direct transition to CANCELLED stage via update is prohibited. Please use the dedicated cancel action with a mandatory cancellation reason.'
+          });
+        }
+        payload.stage = nextStage;
+      }
+      if (updates.isVerified !== undefined || updates.is_verified !== undefined) {
+        payload.is_verified = Boolean(updates.isVerified ?? updates.is_verified);
+        if (payload.is_verified) {
+          payload.verified_at = updates.verifiedAt || new Date().toISOString();
+          payload.verified_by = updates.verifiedBy || user.name || user.id || 'Verification Desk';
+        } else {
+          payload.verified_at = null;
+          payload.verified_by = null;
+        }
       }
       if (updates.timeline !== undefined) payload.timeline = updates.timeline;
       if (updates.documents !== undefined) payload.documents = updates.documents;
@@ -403,12 +508,41 @@ export default async function handler(req, res) {
       }
 
       try {
-        // Fetch existing row for diff calculation & thread notifications
+        // Fetch existing row for diff calculation, verification lock & thread notifications
         let oldRowQuery = db.from('customer_files').select('*').eq('id', fileId);
         if (isDealer) {
           oldRowQuery = oldRowQuery.eq('dealer_id', dealerId);
         }
         const { data: oldRow } = await oldRowQuery.maybeSingle();
+
+        if (!oldRow) {
+          return res.status(403).json({ error: 'Customer file not found or unauthorized.' });
+        }
+
+        // Verification Lock Enforcement: If file is verified, core customer & technical specs are frozen
+        const isVerified = checkIsFileVerified(oldRow);
+        if (isVerified) {
+          const coreFields = [
+            'customer_name', 'phone', 'address', 'city', 'discom',
+            'consumer_no', 'sanctioned_load_kw', 'solar_system_kw',
+            'roof_type', 'finance_type', 'loan_bank'
+          ];
+          const attemptedCoreChange = coreFields.some(f => {
+            if (f === 'sanctioned_load_kw' || f === 'solar_system_kw') {
+              if (payload[f] === undefined) return false;
+              const pVal = Number(payload[f]);
+              const oVal = Number(oldRow[f] ?? 0);
+              return !isNaN(pVal) && pVal !== oVal;
+            }
+            return payload[f] !== undefined && String(payload[f]).trim() !== String(oldRow[f] ?? '').trim();
+          });
+
+          if (attemptedCoreChange) {
+            return res.status(423).json({
+              error: 'This customer file has been verified and is locked. Core customer specifications cannot be modified.'
+            });
+          }
+        }
 
         let updateQuery = db
           .from('customer_files')
@@ -448,6 +582,62 @@ export default async function handler(req, res) {
       }
     }
 
+    if (action === 'soft_delete' && fileId) {
+      try {
+        let selQuery = db.from('customer_files').select('*').eq('id', fileId);
+        if (isDealer) {
+          selQuery = selQuery.eq('dealer_id', dealerId);
+        }
+        const { data: existing, error: selErr } = await selQuery.maybeSingle();
+
+        if (selErr || !existing) {
+          return res.status(403).json({ error: 'Customer file not found or unauthorized.' });
+        }
+
+        const isVerified = checkIsFileVerified(existing);
+        if (isVerified) {
+          return res.status(400).json({
+            error: 'Verified applications cannot be deleted. If this project cannot proceed, please cancel the file with a specific reason.'
+          });
+        }
+
+        const actor = user.name || user.firmName || user.id || (isDealer ? 'Dealer Desk' : 'Admin Desk');
+        const trashNote = {
+          title: 'Application Moved to Trash',
+          description: `Application soft-deleted by ${actor}. Scheduled for permanent removal after 14 days.`,
+          timestamp: new Date().toISOString(),
+          stage: existing.stage || 'LEAD_SOURCED',
+          author: actor
+        };
+
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, trashNote] : [trashNote];
+
+        const payload = {
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          deleted_by: actor,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        let delQuery = db.from('customer_files').update(payload).eq('id', fileId);
+        if (isDealer) {
+          delQuery = delQuery.eq('dealer_id', dealerId);
+        }
+
+        const { data, error } = await delQuery.select().single();
+        if (error || !data) {
+          return res.status(400).json({ error: error?.message || 'Soft delete failed.' });
+        }
+
+        await redisDel(_env, 'customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Soft delete exception:', err);
+        return res.status(500).json({ error: 'Failed to soft delete customer file.' });
+      }
+    }
+
     if (action === 'cancel' && fileId) {
       const { reason, remarks, customRemarks, cancelledBy } = req.body || {};
       const noteText = (remarks || customRemarks || '').trim();
@@ -457,7 +647,11 @@ export default async function handler(req, res) {
       } else if (noteText && !finalReason.includes(noteText)) {
         finalReason = `${finalReason} — Remarks: ${noteText}`;
       }
-      finalReason = finalReason || 'Cancelled by user';
+      finalReason = finalReason.trim();
+
+      if (!finalReason || finalReason.length < 5) {
+        return res.status(400).json({ error: 'A specific cancellation reason of at least 5 characters is required.' });
+      }
 
       const actor = cancelledBy || user.name || user.id || (isDealer ? 'Dealer Desk' : 'Admin Desk');
       const cancelNote = {
@@ -608,6 +802,59 @@ export default async function handler(req, res) {
       }
     }
 
+    if (action === 'restore_trash' && fileId) {
+      if (user.role !== 'admin') {
+        return res.status(403).json({ error: 'Permission denied. Only Administrator can restore files from Trash.' });
+      }
+
+      try {
+        const { data: existing, error: selErr } = await db.from('customer_files').select('*').eq('id', fileId).maybeSingle();
+        if (selErr || !existing) {
+          return res.status(404).json({ error: 'Customer file not found.' });
+        }
+
+        if (existing.deleted_at) {
+          const diffMs = Date.now() - new Date(existing.deleted_at).getTime();
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          if (diffDays > 14) {
+            return res.status(400).json({
+              error: 'Restoration locked: The 14-day recovery window has expired. File is queued for permanent removal.'
+            });
+          }
+        }
+
+        const actor = user.name || user.id || 'Admin Desk';
+        const restoreNote = {
+          title: 'Application Restored from Trash',
+          description: `Application restored to active pipeline by ${actor}.`,
+          timestamp: new Date().toISOString(),
+          stage: existing.stage || 'LEAD_SOURCED',
+          author: actor
+        };
+
+        const updatedTimeline = Array.isArray(existing?.timeline) ? [...existing.timeline, restoreNote] : [restoreNote];
+
+        const payload = {
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null,
+          timeline: updatedTimeline,
+          updated_at: new Date().toISOString()
+        };
+
+        const { data, error } = await db.from('customer_files').update(payload).eq('id', fileId).select().single();
+        if (error || !data) {
+          return res.status(400).json({ error: error?.message || 'Restore failed.' });
+        }
+
+        await redisDel(_env, 'customer_files:all');
+        return res.status(200).json({ success: true, data: mapDbToFrontend(data) });
+      } catch (err) {
+        console.error('[api/customer-files] Restore trash exception:', err);
+        return res.status(500).json({ error: 'Failed to restore customer file from trash.' });
+      }
+    }
+
     if (action === 'delete' && fileId) {
       // Super Admin check for hard permanent purge
       if (user.role !== 'admin') {
@@ -615,17 +862,23 @@ export default async function handler(req, res) {
       }
 
       try {
-        // Fetch file to purge all attached documents from Cloudflare R2 before removing row
-        let selQuery = db
+        // Fetch file to check verification & purge all attached documents from Cloudflare R2 before removing row
+        const { data: fileToDelete } = await db
           .from('customer_files')
-          .select('documents, dealer_id')
-          .eq('id', fileId);
+          .select('*')
+          .eq('id', fileId)
+          .maybeSingle();
 
-        if (isDealer) {
-          selQuery = selQuery.eq('dealer_id', dealerId);
+        if (!fileToDelete) {
+          return res.status(404).json({ error: 'Customer file not found.' });
         }
 
-        const { data: fileToDelete } = await selQuery.single();
+        const isVerified = checkIsFileVerified(fileToDelete);
+        if (isVerified) {
+          return res.status(400).json({
+            error: 'Verified applications cannot be deleted. If this project cannot proceed, please cancel the file with a specific reason.'
+          });
+        }
 
         if (fileToDelete?.documents) {
           const docKeys = extractAllDocPaths(fileToDelete.documents);
@@ -634,16 +887,10 @@ export default async function handler(req, res) {
           }
         }
 
-        let delQuery = db
+        const { error } = await db
           .from('customer_files')
           .delete()
           .eq('id', fileId);
-
-        if (isDealer) {
-          delQuery = delQuery.eq('dealer_id', dealerId);
-        }
-
-        const { error } = await delQuery;
 
         if (error) {
           console.error('[api/customer-files] Delete DB error:', error);

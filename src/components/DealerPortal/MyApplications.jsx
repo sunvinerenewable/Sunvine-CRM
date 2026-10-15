@@ -6,6 +6,8 @@ import { storageService } from '../../services/storageService';
 import CustomerFileDetailModal from '../Shared/CustomerFileDetailModal';
 import DocumentPreviewModal from '../Shared/DocumentPreviewModal';
 import CameraCaptureModal from '../Shared/CameraCaptureModal';
+import EditCustomerFileModal from '../Shared/EditCustomerFileModal';
+import CancelCustomerFileModal from '../Shared/CancelCustomerFileModal';
 import { compressMedia, formatFileSize } from '../../utils/mediaOptimizer';
 import { normalizeDocList, appendDocsToFileList, removeDocFromFileList } from '../../utils/documentUtils';
 import {
@@ -28,6 +30,9 @@ export default function MyApplications() {
     quotations,
     applicationStages,
     updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    softDeleteCustomerFile,
     addCustomerFile,
     addCustomerFileTimelineEvent,
     refreshCustomerFiles,
@@ -55,6 +60,8 @@ export default function MyApplications() {
 
   // Modal States
   const [activeFileDetail, setActiveFileDetail] = useState(null);
+  const [fileToEdit, setFileToEdit] = useState(null);
+  const [fileToCancelOrDelete, setFileToCancelOrDelete] = useState(null);
   const [uploadTargetFile, setUploadTargetFile] = useState(null);
   const [cameraTargetDoc, setCameraTargetDoc] = useState(null);
   const [cameraUploadProgress, setCameraUploadProgress] = useState(0);
@@ -74,6 +81,10 @@ export default function MyApplications() {
           setCameraTargetDoc(null);
         } else if (previewDoc) {
           setPreviewDoc(null);
+        } else if (fileToEdit) {
+          setFileToEdit(null);
+        } else if (fileToCancelOrDelete) {
+          setFileToCancelOrDelete(null);
         } else if (showBankModal) {
           setShowBankModal(false);
         } else if (uploadTargetFile) {
@@ -92,6 +103,8 @@ export default function MyApplications() {
   }, [
     cameraTargetDoc,
     previewDoc,
+    fileToEdit,
+    fileToCancelOrDelete,
     showBankModal,
     uploadTargetFile,
     activeFileDetail,
@@ -837,6 +850,13 @@ export default function MyApplications() {
               const isMandatory = isDocMandatoryForCategory(d, file.category || 'residential');
               return isMandatory && (!file.documents || !file.documents[d.key]?.uploaded);
             });
+            const isVerified = Boolean(
+              file.isVerified ||
+              file.is_verified ||
+              file.status === 'Verified' ||
+              file.status === 'DISCOM Registered' ||
+              (file.stage && file.stage !== 'LEAD_SOURCED' && file.stage !== 'SITE_SURVEY')
+            );
 
             return (
               <div
@@ -847,11 +867,17 @@ export default function MyApplications() {
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-bold text-primary">{file.id}</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary uppercase">
                           {file.discom || 'PGVCL'}
                         </span>
+                        {isVerified && (
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <span className="material-symbols-outlined text-[12px]">verified</span>
+                            Verified
+                          </span>
+                        )}
                       </div>
                       <h3 className="font-bold text-sm text-on-surface truncate mt-1">{file.customerName}</h3>
                       <div className="flex items-center gap-1.5 text-xs text-secondary mt-0.5">
@@ -913,18 +939,50 @@ export default function MyApplications() {
 
                 {/* Card Actions */}
                 <div className="flex items-center justify-between pt-3 border-t border-surface-container/60 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuickStageFile(file);
-                      setQuickStageVal(file.currentStage || 'DISCOM_APPLICATION');
-                    }}
-                    className="px-2.5 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Quick Advance Stage"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">alt_route</span>
-                    <span>Stage</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickStageFile(file);
+                        setQuickStageVal(file.currentStage || 'DISCOM_APPLICATION');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-surface-container-highest text-secondary hover:text-on-surface text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Quick Advance Stage"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">alt_route</span>
+                      <span>Stage</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFileToEdit(file)}
+                      className={`p-1.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center transition-colors cursor-pointer ${
+                        isVerified
+                          ? 'border-surface-container-highest text-secondary/60 hover:text-secondary'
+                          : 'border-surface-container-highest text-secondary hover:text-on-surface hover:bg-surface-container'
+                      }`}
+                      title={isVerified ? 'Application verified & locked from core editing' : 'Edit Customer Specifications'}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">
+                        {isVerified ? 'lock' : 'edit'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setFileToCancelOrDelete(file)}
+                      className={`p-1.5 rounded-lg border text-[11px] font-semibold flex items-center justify-center transition-colors cursor-pointer ${
+                        isVerified
+                          ? 'border-amber-500/30 text-amber-500/80 hover:text-amber-400 hover:bg-amber-500/10'
+                          : 'border-red-500/30 text-red-500/80 hover:text-red-400 hover:bg-red-500/10'
+                      }`}
+                      title={isVerified ? 'Cancel Application (Verified file)' : 'Move to Trash (14-day retention)'}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">
+                        {isVerified ? 'cancel' : 'delete'}
+                      </span>
+                    </button>
+                  </div>
 
                   <div className="flex items-center gap-1.5">
                     <button
@@ -974,15 +1032,28 @@ export default function MyApplications() {
                   const isMandatory = isDocMandatoryForCategory(d, file.category || 'residential');
                   return isMandatory && (!file.documents || !file.documents[d.key]?.uploaded);
                 });
+                const isVerified = Boolean(
+                  file.isVerified ||
+                  file.is_verified ||
+                  file.status === 'Verified' ||
+                  file.status === 'DISCOM Registered' ||
+                  (file.stage && file.stage !== 'LEAD_SOURCED' && file.stage !== 'SITE_SURVEY')
+                );
 
                 return (
                   <tr key={file.id} className="hover:bg-surface-container-low/50 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-xs font-bold text-primary">{file.id}</span>
                         {file.applicationNo && (
                           <span className="text-[10px] font-mono text-secondary px-1.5 py-0.2 rounded bg-surface-container">
                             {file.applicationNo}
+                          </span>
+                        )}
+                        {isVerified && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <span className="material-symbols-outlined text-[10px]">verified</span>
+                            Verified
                           </span>
                         )}
                       </div>
@@ -1030,6 +1101,26 @@ export default function MyApplications() {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          onClick={() => setFileToEdit(file)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            isVerified ? 'text-secondary/50 hover:text-secondary' : 'text-secondary hover:text-on-surface hover:bg-surface-container'
+                          }`}
+                          title={isVerified ? 'Application is verified & locked from core editing' : 'Edit Customer Specifications'}
+                        >
+                          <span className="material-symbols-outlined text-[17px]">{isVerified ? 'lock' : 'edit'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFileToCancelOrDelete(file)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            isVerified ? 'text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10' : 'text-red-500/70 hover:text-red-400 hover:bg-red-500/10'
+                          }`}
+                          title={isVerified ? 'Cancel Application (Verified)' : 'Move to Trash (14-day retention)'}
+                        >
+                          <span className="material-symbols-outlined text-[17px]">{isVerified ? 'cancel' : 'delete'}</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setUploadTargetFile(file)}
                           className="p-1.5 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
                           title="Manage Uploads"
@@ -1059,6 +1150,37 @@ export default function MyApplications() {
         <CustomerFileDetailModal
           file={activeFileDetail}
           onClose={() => setActiveFileDetail(null)}
+        />
+      )}
+
+      {/* EDIT CUSTOMER FILE MODAL */}
+      {fileToEdit && (
+        <EditCustomerFileModal
+          file={fileToEdit}
+          isOpen={Boolean(fileToEdit)}
+          onClose={() => setFileToEdit(null)}
+          onSave={async (fileId, updatedFields) => {
+            await editCustomerFile(fileId, updatedFields);
+            setFileToEdit(null);
+          }}
+        />
+      )}
+
+      {/* CANCEL / DELETE CUSTOMER FILE MODAL */}
+      {fileToCancelOrDelete && (
+        <CancelCustomerFileModal
+          file={fileToCancelOrDelete}
+          isOpen={Boolean(fileToCancelOrDelete)}
+          isAdmin={false}
+          onClose={() => setFileToCancelOrDelete(null)}
+          onCancelFile={async (fileId, reason) => {
+            await cancelCustomerFile(fileId, reason);
+            setFileToCancelOrDelete(null);
+          }}
+          onSoftDelete={async (fileId) => {
+            await softDeleteCustomerFile(fileId);
+            setFileToCancelOrDelete(null);
+          }}
         />
       )}
 

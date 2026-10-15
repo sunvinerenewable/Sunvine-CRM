@@ -20,8 +20,21 @@ export default function EditCustomerFileModal({ file, isOpen, onClose, onSave })
 
   if (!isOpen || !file) return null;
 
+  const isVerified = Boolean(
+    file?.isVerified ||
+    file?.is_verified ||
+    file?.status === 'Verified' ||
+    file?.status === 'DISCOM Registered' ||
+    (file?.stage && file.stage !== 'LEAD_SOURCED' && file.stage !== 'SITE_SURVEY')
+  );
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (isVerified) {
+      addToast('This application is verified and locked from editing', 'error');
+      return;
+    }
 
     if (!customerName.trim()) {
       addToast('Customer Name is required', 'error');
@@ -71,11 +84,21 @@ export default function EditCustomerFileModal({ file, isOpen, onClose, onSave })
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/60 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center">
-              <span className="material-symbols-outlined text-xl">edit_note</span>
+            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${isVerified ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+              <span className="material-symbols-outlined text-xl">{isVerified ? 'lock' : 'edit_note'}</span>
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-base">Edit Customer File</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-slate-900 text-base">
+                  {isVerified ? 'View Customer File (Verified & Locked)' : 'Edit Customer File'}
+                </h3>
+                {isVerified && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[12px]">verified</span>
+                    Locked
+                  </span>
+                )}
+              </div>
               <p className="text-[11px] text-slate-500 font-mono font-semibold">{file.id}</p>
             </div>
           </div>
@@ -88,8 +111,21 @@ export default function EditCustomerFileModal({ file, isOpen, onClose, onSave })
           </button>
         </div>
 
+        {isVerified && (
+          <div className="mx-6 mt-4 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-amber-600 text-lg shrink-0 mt-0.5">lock</span>
+            <div>
+              <div className="font-bold text-xs">Application Verified &amp; Specification Locked</div>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                This project has been verified by the Verification Desk. Customer metadata and technical load ratings are locked against editing. If changes are required, contact the Verification Desk.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Body / Form */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 text-xs">
+          <fieldset disabled={isVerified} className="space-y-4">
           {/* Row 1: Name & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div>
@@ -257,6 +293,7 @@ export default function EditCustomerFileModal({ file, isOpen, onClose, onSave })
               </div>
             )}
           </div>
+          </fieldset>
 
           {/* Footer Actions */}
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0">
@@ -266,25 +303,27 @@ export default function EditCustomerFileModal({ file, isOpen, onClose, onSave })
               disabled={isSubmitting}
               className="h-10 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs cursor-pointer transition-colors"
             >
-              Cancel
+              {isVerified ? 'Close' : 'Cancel'}
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-10 px-5 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all duration-150 disabled:opacity-50"
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                  <span>Save Changes</span>
-                </>
-              )}
-            </button>
+            {!isVerified && (
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="h-10 px-5 bg-[#6CBF3D] hover:bg-[#4F9A2C] text-white font-semibold rounded-lg text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all duration-150 disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </form>
       </div>

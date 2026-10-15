@@ -10,6 +10,7 @@ import {
   getPublicProposalUrl,
   generateQuotationPdfBlob
 } from '../../utils/quotationShare';
+import { normalizeCompanyProfile } from '../../data/defaultPresets';
 import { useToast } from '../Shared/Toast';
 
 export default function QuotationPreview({
@@ -171,14 +172,16 @@ export default function QuotationPreview({
     return null;
   }, [propQuotation, remoteFetchedQuote, previewQuotation, isPublicView, publicQuoteId, quotations]);
 
-  const companyProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
+  const fallbackProfile = appContext.systemSettings?.companyProfile || appContext.systemSettings?.company_profile || appContext.officialProfile || {};
   const quotationWithProfile = useMemo(() => {
     if (!activeQuotation) return null;
+    const rawProfile = activeQuotation.companyProfile || activeQuotation.company_profile;
+    const resolvedProfile = normalizeCompanyProfile(rawProfile, fallbackProfile);
     return {
       ...activeQuotation,
-      companyProfile: activeQuotation.companyProfile || activeQuotation.company_profile || companyProfile
+      companyProfile: resolvedProfile || fallbackProfile
     };
-  }, [activeQuotation, companyProfile]);
+  }, [activeQuotation, fallbackProfile]);
 
   // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
   useEffect(() => {

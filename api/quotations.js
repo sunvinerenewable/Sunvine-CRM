@@ -6,6 +6,7 @@ import { cacheAside, redisDel } from './_lib/redis.js';
 import { calculateSubsidy, calcBOMTotals, validateDealerMargin, calcFinalTotals } from '../src/shared/pricing/calculations.js';
 import { getSettings } from './catalog.js';
 import { STANDARD_BOM_CATALOG } from '../src/data/standardBomData.js';
+import { normalizeCompanyProfile } from '../src/data/defaultPresets.js';
 
 /**
  * /api/quotations — consolidated quotation resource handler
@@ -824,7 +825,7 @@ export async function handleSave(req, res, jwt, db) {
     loanTenureYears: Number(body.loan_tenure_years) || 5,
     isDirectCompanyQuote: isDirectCompany,
     isInterState,
-    companyProfile: settings?.company_profile || null,
+    companyProfile: normalizeCompanyProfile(body.companyProfile || body.company_profile, settings?.company_profile) || settings?.company_profile || null,
     computedAt: new Date().toISOString(),
     serverVersion: '2.2'
   };
@@ -1052,24 +1053,10 @@ export async function handlePublicView(req, res, db) {
       : (quoteData.quote_payload || {});
 
     // Resolve company profile from payload or active database settings
-    let companyProfile = payload.companyProfile || payload.company_profile;
-    const hasGstin = Boolean(companyProfile?.gstin && String(companyProfile.gstin).trim());
-    const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
-    const hasBank = Boolean(bankAcc && String(bankAcc).trim());
-
-    if (!hasGstin || !hasBank) {
-      const settings = await getSettings(db);
-      if (settings?.company_profile) {
-        companyProfile = {
-          ...settings.company_profile,
-          ...(companyProfile || {}),
-          bank: {
-            ...(settings.company_profile?.bank || {}),
-            ...(companyProfile?.bank || companyProfile?.bankDetails || {})
-          }
-        };
-      }
-    }
+    const settings = await getSettings(db);
+    const dbProfile = settings?.company_profile || null;
+    const rawProfile = payload.companyProfile || payload.company_profile;
+    const companyProfile = normalizeCompanyProfile(rawProfile, dbProfile) || dbProfile || null;
 
     return {
       id: quoteData.id,

@@ -45,13 +45,13 @@ export function resolveCompanyProfile(settingsProfile = {}) {
   }
   return {
     ...SUNVINE_OFFICIAL_PROFILE,
-    companyName: settingsProfile.name || SUNVINE_OFFICIAL_PROFILE.companyName,
-    gstin: settingsProfile.gstin || SUNVINE_OFFICIAL_PROFILE.gstin,
+    companyName: settingsProfile.name || settingsProfile.companyName || settingsProfile.company_name || SUNVINE_OFFICIAL_PROFILE.companyName,
+    gstin: settingsProfile.gstin || settingsProfile.company_gstin || settingsProfile.companyGstin || SUNVINE_OFFICIAL_PROFILE.gstin,
     address: settingsProfile.address || SUNVINE_OFFICIAL_PROFILE.address,
     state: settingsProfile.state || SUNVINE_OFFICIAL_PROFILE.state,
     bankDetails: {
       ...SUNVINE_OFFICIAL_PROFILE.bankDetails,
-      ...(settingsProfile.bank || {})
+      ...(settingsProfile.bank || settingsProfile.bankDetails || settingsProfile.bank_details || {})
     },
     terms: {
       ...SUNVINE_OFFICIAL_PROFILE.terms,
@@ -60,6 +60,180 @@ export function resolveCompanyProfile(settingsProfile = {}) {
       website: settingsProfile.website || SUNVINE_OFFICIAL_PROFILE.terms.website,
       validityText: settingsProfile.validityText
     }
+  };
+}
+
+/**
+ * Normalizes company profile across snake_case and camelCase formats.
+ * Preserves legitimate GSTIN and Bank account details from the authoritative
+ * saved company profile without silently fabricating placeholder details.
+ */
+export function normalizeCompanyProfile(profile = null, fallback = null) {
+  if (!profile && !fallback) return null;
+  const p = profile || {};
+  const f = fallback || {};
+
+  const pickFirstValid = (...candidates) => {
+    for (const c of candidates) {
+      if (c !== undefined && c !== null) {
+        const str = String(c).trim();
+        if (str.length > 0) return str;
+      }
+    }
+    return '';
+  };
+
+  const gstin = pickFirstValid(
+    p.gstin,
+    p.GSTIN,
+    p.company_gstin,
+    p.companyGstin,
+    p.gst_number,
+    p.gstNumber,
+    p.gst,
+    f.gstin,
+    f.GSTIN,
+    f.company_gstin,
+    f.companyGstin,
+    f.gst_number,
+    f.gstNumber,
+    f.gst
+  ).toUpperCase();
+
+  const rawBank = p.bank || p.bankDetails || p.bank_details || {};
+  const fbBank = f.bank || f.bankDetails || f.bank_details || {};
+
+  const accountNumber = pickFirstValid(
+    rawBank.accountNumber,
+    rawBank.account_number,
+    rawBank.bank_account_no,
+    rawBank.bankAccountNo,
+    rawBank.accNo,
+    p.accountNumber,
+    p.account_number,
+    p.bank_account_no,
+    fbBank.accountNumber,
+    fbBank.account_number,
+    fbBank.bank_account_no,
+    fbBank.bankAccountNo,
+    fbBank.accNo,
+    f.accountNumber,
+    f.account_number,
+    f.bank_account_no
+  );
+
+  const ifsc = pickFirstValid(
+    rawBank.ifsc,
+    rawBank.ifscCode,
+    rawBank.ifsc_code,
+    rawBank.bank_ifsc,
+    p.ifsc,
+    p.ifsc_code,
+    fbBank.ifsc,
+    fbBank.ifscCode,
+    fbBank.ifsc_code,
+    fbBank.bank_ifsc,
+    f.ifsc,
+    f.ifsc_code
+  ).toUpperCase();
+
+  const bankName = pickFirstValid(
+    rawBank.bankName,
+    rawBank.bank_name,
+    p.bankName,
+    p.bank_name,
+    fbBank.bankName,
+    fbBank.bank_name,
+    f.bankName,
+    f.bank_name
+  );
+
+  const branch = pickFirstValid(
+    rawBank.branch,
+    rawBank.branch_name,
+    rawBank.branchName,
+    rawBank.bank_branch,
+    p.branch,
+    fbBank.branch,
+    fbBank.branch_name,
+    fbBank.branchName,
+    fbBank.bank_branch,
+    f.branch
+  );
+
+  const accountHolder = pickFirstValid(
+    rawBank.accountHolder,
+    rawBank.account_holder,
+    rawBank.bank_account_holder,
+    rawBank.firmName,
+    rawBank.firm_name,
+    p.accountHolder,
+    fbBank.accountHolder,
+    fbBank.account_holder,
+    fbBank.bank_account_holder,
+    fbBank.firmName,
+    fbBank.firm_name,
+    f.accountHolder
+  );
+
+  const name = pickFirstValid(
+    p.name,
+    p.companyName,
+    p.company_name,
+    p.firmName,
+    p.firm_name,
+    f.name,
+    f.companyName,
+    f.company_name,
+    f.firmName,
+    f.firm_name
+  );
+
+  const address = pickFirstValid(p.address, f.address);
+  const state = pickFirstValid(p.state, f.state) || 'Gujarat';
+  const email = pickFirstValid(p.email, rawBank.email, fbBank.email, f.email);
+  const website = pickFirstValid(p.website, f.website);
+  const whatsapp = pickFirstValid(p.whatsapp, f.whatsapp);
+  const helpdesk = pickFirstValid(p.helpdesk, f.helpdesk);
+  const terms = pickFirstValid(p.terms, f.terms);
+  const validityText = pickFirstValid(p.validityText, f.validityText);
+  const pan = pickFirstValid(p.pan, p.panNumber, p.pan_number, f.pan, f.panNumber, f.pan_number);
+
+  const bank = {
+    bankName,
+    bank_name: bankName,
+    accountNumber,
+    account_number: accountNumber,
+    ifsc,
+    ifscCode: ifsc,
+    ifsc_code: ifsc,
+    branch,
+    branch_name: branch,
+    branchName: branch,
+    accountHolder,
+    account_holder: accountHolder,
+    email
+  };
+
+  return {
+    name,
+    companyName: name,
+    company_name: name,
+    gstin,
+    company_gstin: gstin,
+    pan,
+    pan_number: pan,
+    address,
+    state,
+    email,
+    website,
+    whatsapp,
+    helpdesk,
+    terms,
+    validityText,
+    bank,
+    bankDetails: bank,
+    bank_details: bank
   };
 }
 

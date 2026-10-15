@@ -8,6 +8,7 @@ import {
   DEFAULT_SUBSIDY_SLAB_2_RATE,
   DEFAULT_SUBSIDY_CAP
 } from '../../src/shared/pricing/calculations.js';
+import { normalizeCompanyProfile } from '../../src/data/defaultPresets.js';
 
 function parseCookies(cookieHeader = '') {
   const out = {};
@@ -38,6 +39,26 @@ export async function getSettings(db, env) {
     const company = row?.company_profile || {};
     const bankDetails = row?.bank_details || {};
 
+    const resolvedCompany = normalizeCompanyProfile(company, { bank: bankDetails, bankDetails }) || {
+      name: company.name || company.companyName || company.company_name || '',
+      gstin: (company.gstin || company.company_gstin || company.companyGstin || company.gst_number || company.gstNumber || '').trim(),
+      address: company.address || '',
+      state: company.state || '',
+      whatsapp: company.whatsapp || '',
+      helpdesk: company.helpdesk || '',
+      website: company.website || '',
+      email: company.email || '',
+      bank: {
+        bankName: company.bank?.bankName || company.bank_name || bankDetails.bankName || bankDetails.bank_name || '',
+        accountNumber: company.bank?.accountNumber || company.bank_account_no || bankDetails.accountNumber || bankDetails.account_number || '',
+        ifsc: company.bank?.ifsc || company.bank_ifsc || bankDetails.ifsc || bankDetails.ifsc_code || '',
+        branch: company.bank?.branch || company.bank_branch || bankDetails.branch || '',
+        accountHolder: company.bank?.accountHolder || company.bank_account_holder || bankDetails.accountHolder || bankDetails.account_holder || ''
+      },
+      terms: company.terms || '',
+      validityText: company.validityText || ''
+    };
+
     return {
       governance_settings: {
         max_discount_pct: governance.max_discount_pct !== undefined ? Number(governance.max_discount_pct) : 5,
@@ -60,27 +81,31 @@ export async function getSettings(db, env) {
         },
         gstSlabs: Array.isArray(statutory.gstSlabs) ? statutory.gstSlabs : [0, 5, 12, 18, 28]
       },
-      company_profile: {
-        name: company.name || '',
-        gstin: company.gstin || '',
-        address: company.address || '',
-        state: company.state || '',
-        whatsapp: company.whatsapp || '',
-        helpdesk: company.helpdesk || '',
-        website: company.website || '',
-        email: company.email || '',
-        bank: {
-          bankName: company.bank?.bankName || company.bank_name || bankDetails.bankName || bankDetails.bank_name || '',
-          accountNumber: company.bank?.accountNumber || company.bank_account_no || bankDetails.accountNumber || bankDetails.account_number || '',
-          ifsc: company.bank?.ifsc || company.bank_ifsc || bankDetails.ifsc || bankDetails.ifsc_code || '',
-          branch: company.bank?.branch || company.bank_branch || bankDetails.branch || '',
-          accountHolder: company.bank?.accountHolder || company.bank_account_holder || bankDetails.accountHolder || bankDetails.account_holder || ''
-        },
-        terms: company.terms || '',
-        validityText: company.validityText || ''
-      }
+      company_profile: resolvedCompany
     };
   });
+
+  if (data?.company_profile && (!data.company_profile.gstin || !data.company_profile.bank?.accountNumber)) {
+    try {
+      const { data: row } = await db
+        .from('system_settings')
+        .select('*')
+        .eq('id', 'global_settings')
+        .maybeSingle();
+      const liveCompany = row?.company_profile || {};
+      const liveBankDetails = row?.bank_details || {};
+      const freshComp = normalizeCompanyProfile(liveCompany, { bank: liveBankDetails, bankDetails: liveBankDetails });
+      if (freshComp?.gstin && !data.company_profile.gstin) {
+        data.company_profile = freshComp;
+        await redisSet(env, 'catalog:settings', data, 21600).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  if (data?.company_profile) {
+    data.company_profile = normalizeCompanyProfile(data.company_profile);
+  }
+
   return data;
 }
 

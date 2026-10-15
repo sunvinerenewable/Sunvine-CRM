@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
 import { calculateSubsidy, DEFAULT_SPECIFIC_YIELD, DEFAULT_TARIFF_PER_UNIT } from '../../shared/pricing/calculations';
+import { normalizeCompanyProfile } from '../../data/defaultPresets';
 
 // Format Indian Rupee currency with commas
 const formatINR = (val) => {
@@ -146,7 +147,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   const fallbackProfile = appContext?.systemSettings?.companyProfile || appContext?.systemSettings?.company_profile || appContext?.officialProfile || {};
   const rawCompanyProfile = initialCompanyProfile || quotation?.companyProfile || quotation?.company_profile || {};
-  const companyProfile = {
+  const companyProfile = normalizeCompanyProfile(rawCompanyProfile, fallbackProfile) || {
     ...fallbackProfile,
     ...rawCompanyProfile,
     bank: {
@@ -437,6 +438,18 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
   const bankAcc = companyProfile?.bank?.accountNumber || companyProfile?.bank?.account_number || companyProfile?.bankDetails?.accountNumber || companyProfile?.bankDetails?.account_number;
   const hasBank = Boolean(bankAcc && String(bankAcc).trim());
   const isBillingProfileComplete = hasGstin && hasBank;
+
+  const isProfileLoading = Boolean((appContext?.isHardwareDbSyncing || appContext?.isSettingsLoaded === false) && !isBillingProfileComplete);
+  if (isProfileLoading) {
+    return (
+      <div className="pdf-document w-full max-w-2xl mx-auto my-12 p-8 bg-slate-900/40 border border-slate-700/50 rounded-2xl text-center flex flex-col items-center gap-4 text-white">
+        <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-spin">
+          <span className="material-symbols-outlined text-2xl">sync</span>
+        </div>
+        <p className="text-sm text-slate-300">Loading verified company profile...</p>
+      </div>
+    );
+  }
 
   if (!isBillingProfileComplete) {
     return (

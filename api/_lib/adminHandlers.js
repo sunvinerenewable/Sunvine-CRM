@@ -1341,10 +1341,23 @@ export async function handleAdminSettings(req, res) {
             updated_at = NOW()
           RETURNING *;
         `;
-        const qRes = await safeQuery(sql, [JSON.stringify(values)]);
+        let row = null;
+        try {
+          const qRes = await safeQuery(sql, [JSON.stringify(values)]);
+          row = qRes.rows?.[0] || {};
+        } catch (pgErr) {
+          console.warn('[admin-settings] safeQuery upsert failed, falling back to Supabase client:', pgErr.message);
+          const db = getSupabaseServiceClient();
+          const { data, error } = await db
+            .from('system_settings')
+            .upsert({ id: 'global_settings', [section]: values, updated_at: new Date().toISOString() })
+            .select()
+            .single();
+          if (error) throw error;
+          row = data || {};
+        }
 
         await invalidateCaches(['catalog:settings', 'catalog:all']);
-        const row = qRes.rows?.[0] || {};
         return res.status(200).json({
           success: true,
           settings: {

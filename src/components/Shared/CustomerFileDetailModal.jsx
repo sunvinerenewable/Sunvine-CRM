@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useToast } from './Toast';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import EditCustomerFileModal from './EditCustomerFileModal';
+import CancelCustomerFileModal from './CancelCustomerFileModal';
 import {
   getDocumentListForFile,
   getDocumentCompletion,
@@ -15,6 +17,11 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     systemSettings,
     addCustomerFileTimelineEvent,
     updateCustomerFile,
+    editCustomerFile,
+    cancelCustomerFile,
+    softDeleteCustomerFile,
+    deleteCustomerFile,
+    setFileVerificationStatus,
     role,
     currentStaff,
     applicationStages,
@@ -30,8 +37,18 @@ export default function CustomerFileDetailModal({ file, onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('timeline'); // 'timeline', 'financials', 'documents'
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   if (!file) return null;
+
+  const isVerified = Boolean(
+    file?.isVerified ||
+    file?.is_verified ||
+    file?.status === 'Verified' ||
+    file?.status === 'DISCOM Registered' ||
+    (file?.stage && file.stage !== 'LEAD_SOURCED' && file.stage !== 'SITE_SURVEY')
+  );
 
   const stages = (applicationStages && applicationStages.length > 0)
     ? applicationStages
@@ -119,9 +136,20 @@ export default function CustomerFileDetailModal({ file, onClose }) {
                 }`}>
                   {file.status || 'Active'}
                 </span>
+                {isVerified ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs" title="Application verified: core customer specifications are locked">
+                    <span className="material-symbols-outlined text-[13px]">verified</span>
+                    <span>Verified &amp; Locked</span>
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-surface-container-high text-secondary border border-surface-container flex items-center gap-1" title="Initial stage: edits and soft deletion permitted">
+                    <span className="material-symbols-outlined text-[13px]">pending</span>
+                    <span>Verification Pending</span>
+                  </span>
+                )}
               </div>
               <p className="text-xs text-secondary mt-0.5 truncate">
-                {file.city || 'Gujarat'} &bull; {file.discomCircle || 'UGVCL'} &bull; Consumer #{file.consumerNumber || 'N/A'}
+                {file.city || 'Gujarat'} &bull; {file.discomCircle || file.discom || 'UGVCL'} &bull; Consumer #{file.consumerNumber || file.consumerNo || 'N/A'}
               </p>
             </div>
           </div>
@@ -562,7 +590,62 @@ export default function CustomerFileDetailModal({ file, onClose }) {
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-surface-container-high bg-surface-container-low/40 flex justify-end gap-2">
+        <div className="p-4 border-t border-surface-container-high bg-surface-container-low/40 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="px-3.5 py-2 rounded-xl border border-surface-container-highest hover:bg-surface-container text-on-surface text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {isVerified ? 'visibility' : 'edit'}
+              </span>
+              <span>{isVerified ? 'View Specs (Locked)' : 'Edit Details'}</span>
+            </button>
+
+            {isVerified ? (
+              <button
+                type="button"
+                onClick={() => setIsCancelling(true)}
+                className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-300/40 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                title="Verified files can only be cancelled with mandatory audit reason"
+              >
+                <span className="material-symbols-outlined text-[16px]">cancel</span>
+                <span>Cancel File</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsCancelling(true)}
+                className="px-3.5 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-300/40 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                title="Move file to Trash (14-day retention)"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                <span>Delete File</span>
+              </button>
+            )}
+
+            {/* Quick Admin Verification Toggle if unverified */}
+            {role === 'admin' && !isVerified && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await setFileVerificationStatus(file.id, true);
+                    addToast(`Application ${file.id} marked as Verified & Locked`, 'success');
+                  } catch (err) {
+                    addToast(err?.message || 'Failed to verify file', 'error');
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-300/40 text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                title="Mark this customer file verified and lock core specifications"
+              >
+                <span className="material-symbols-outlined text-[16px]">verified</span>
+                <span>Verify Application</span>
+              </button>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={onClose}
@@ -578,6 +661,44 @@ export default function CustomerFileDetailModal({ file, onClose }) {
         <DocumentPreviewModal
           doc={previewDoc}
           onClose={() => setPreviewDoc(null)}
+        />
+      )}
+
+      {/* EDIT CUSTOMER FILE MODAL */}
+      {isEditing && (
+        <EditCustomerFileModal
+          file={file}
+          isOpen={isEditing}
+          onClose={() => setIsEditing(false)}
+          onSave={async (fileId, updatedFields) => {
+            await editCustomerFile(fileId, updatedFields);
+            setIsEditing(false);
+          }}
+        />
+      )}
+
+      {/* CANCEL / DELETE CUSTOMER FILE MODAL */}
+      {isCancelling && (
+        <CancelCustomerFileModal
+          file={file}
+          isOpen={isCancelling}
+          isAdmin={role === 'admin'}
+          onClose={() => setIsCancelling(false)}
+          onCancelFile={async (fileId, reason) => {
+            await cancelCustomerFile(fileId, reason);
+            setIsCancelling(false);
+            if (onClose) onClose();
+          }}
+          onSoftDelete={async (fileId) => {
+            await softDeleteCustomerFile(fileId);
+            setIsCancelling(false);
+            if (onClose) onClose();
+          }}
+          onHardDelete={async (fileId) => {
+            await deleteCustomerFile(fileId);
+            setIsCancelling(false);
+            if (onClose) onClose();
+          }}
         />
       )}
     </div>
