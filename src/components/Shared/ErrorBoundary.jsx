@@ -112,26 +112,30 @@ export default class ErrorBoundary extends React.Component {
         errorMsg.includes('syntaxerror') ||
         errorMsg.includes('unexpected token');
 
-      // Auto-reload silently if it's a chunk/network mismatch or first boot glitch
-      const sessionKey = 'sunvine_eb_autoreload_ts';
-      const lastReload = Number(sessionStorage.getItem(sessionKey) || 0);
-      const now = Date.now();
-      const canAutoReload = !lastReload || (now - lastReload > 12000);
+      // Max 1 auto-reload attempt to prevent any infinite reload loops
+      const attemptKey = 'sunvine_eb_attempts';
+      const attempts = Number(sessionStorage.getItem(attemptKey) || 0);
 
-      if (isChunkOrNetworkError || canAutoReload) {
-        if (canAutoReload) {
-          sessionStorage.setItem(sessionKey, String(now));
-          setTimeout(() => {
-            window.location.reload();
-          }, 350);
+      if (isChunkOrNetworkError && attempts < 1) {
+        sessionStorage.setItem(attemptKey, String(attempts + 1));
+        // Clear caches to break any stale deployment loop
+        if ('caches' in window) {
+          caches.keys().then(names => names.forEach(n => caches.delete(n))).catch(() => {});
         }
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(() => {});
+        }
+        setTimeout(() => {
+          window.location.href = window.location.pathname + '?refresh=' + Date.now() + window.location.hash;
+        }, 350);
+
         return (
           <div className="min-h-screen bg-[#070D18] flex flex-col items-center justify-center p-6 text-center">
             <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/5">
               <span className="material-symbols-outlined text-3xl text-emerald-400 animate-spin">sync</span>
             </div>
-            <h3 className="text-sm font-bold text-white tracking-wide">Syncing Portal Application...</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs">Loading latest build and configuration. Please wait a moment.</p>
+            <h3 className="text-sm font-bold text-white tracking-wide">Updating Application...</h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-xs">Connecting to latest version. Please wait a moment.</p>
           </div>
         );
       }

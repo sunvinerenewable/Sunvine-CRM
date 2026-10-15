@@ -10,8 +10,19 @@ initCrashReporter();
 // Auto-recover from outdated chunks on new deployment without error boundary popup
 if (typeof window !== 'undefined') {
   window.addEventListener('vite:preloadError', (event) => {
-    console.warn('[Vite] Preload chunk error caught. Auto-reloading application...');
-    window.location.reload();
+    if (typeof event?.preventDefault === 'function') {
+      event.preventDefault();
+    }
+    const attemptKey = 'sunvine_preload_attempt';
+    const attempts = Number(sessionStorage.getItem(attemptKey) || 0);
+    if (attempts < 1) {
+      sessionStorage.setItem(attemptKey, '1');
+      console.warn('[Vite] Preload chunk error caught. Refreshing application...');
+      if ('caches' in window) {
+        caches.keys().then(names => names.forEach(n => caches.delete(n))).catch(() => {});
+      }
+      window.location.reload();
+    }
   });
 
   window.addEventListener('load', () => {
