@@ -5,6 +5,7 @@ import { applyCors } from './_lib/cors.js';
 import { cacheAside, redisDel } from './_lib/redis.js';
 import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
 import { syncFile, computeThreadNotification } from './_lib/slackSync.js';
+import purgeTrashCronHandler from './_cron/purge-trash.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -190,6 +191,11 @@ export default async function handler(req, res, injectedDb = null) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // Cron invocation: Purge soft-deleted trash and expired cancelled documents (CRON_SECRET authorization)
+  if (req.query?.action === 'purge-trash' || req.body?.action === 'purge-trash') {
+    return purgeTrashCronHandler(req, res, injectedDb);
   }
 
   // SEC-011: Require authenticated user

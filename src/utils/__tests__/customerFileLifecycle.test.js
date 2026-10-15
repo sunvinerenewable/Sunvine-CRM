@@ -32,7 +32,7 @@ process.env.R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || 'test-r2-
 
 import { signJwt } from '../../../api/_lib/jwt.js';
 import customerFilesHandler, { checkIsFileVerified, extractAllDocPaths } from '../../../api/customer-files.js';
-import purgeTrashCronHandler from '../../../api/cron/purge-trash.js';
+import purgeTrashCronHandler from '../../../api/_cron/purge-trash.js';
 import { resetAllRateLimits } from '../../../api/_lib/rateLimiter.js';
 
 // ── Test User Personas & JWT Tokens ─────────────────────────────────────────

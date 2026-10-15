@@ -82,6 +82,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/cron/purge-trash",
+      "destination": "/api/customer-files?action=purge-trash"
+    },
+    {
       "source": "/api/auth/:action*",
       "destination": "/api/auth/[action]?action=:action*"
     },
