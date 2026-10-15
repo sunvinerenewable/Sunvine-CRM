@@ -1,4 +1,18 @@
 {
+  "functions": {
+    "api/ai-analyze.js": { "maxDuration": 30 },
+    "api/catalog.js": { "maxDuration": 10 },
+    "api/customer-files.js": { "maxDuration": 10 },
+    "api/ledger.js": { "maxDuration": 10 },
+    "api/places-nearby.js": { "maxDuration": 10 },
+    "api/push-notify.js": { "maxDuration": 10 },
+    "api/push-subscription.js": { "maxDuration": 10 },
+    "api/quotations.js": { "maxDuration": 10 },
+    "api/storage-delete.js": { "maxDuration": 10 },
+    "api/storage-download.js": { "maxDuration": 10 },
+    "api/storage-presign.js": { "maxDuration": 10 },
+    "api/auth/[action].js": { "maxDuration": 10 }
+  },
   "headers": [
     {
       "source": "/(.*)",
