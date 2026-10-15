@@ -221,10 +221,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
           'vendor-three': ['three'],
-          'vendor-ocr': ['tesseract.js'],
-          'vendor-pdf': ['html2canvas', 'jspdf'],
-          'vendor-lucide': ['lucide-react']
+          'vendor-pdf': ['html2canvas', 'jspdf']
         }
       }
     }
