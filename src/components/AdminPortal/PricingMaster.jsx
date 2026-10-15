@@ -3254,7 +3254,7 @@ ${origin}/?tab=pricing_master
                           Structure
                         </div>
                         <div className="text-base sm:text-lg font-bold font-mono text-inverse-surface mt-1">
-                          {formatINR(resolved.categoryTotals.structure)}
+                          {formatINR(typeof resolved.categoryTotals?.structure === 'number' ? resolved.categoryTotals.structure : resolved.categoryTotals?.find?.(c => c.id === 'structure')?.total || 0)}
                         </div>
                         <span className="text-[10px] text-secondary">Pipes, Fasteners &amp; Hardware</span>
                       </div>
@@ -3265,7 +3265,7 @@ ${origin}/?tab=pricing_master
                           Electrical
                         </div>
                         <div className="text-base sm:text-lg font-bold font-mono text-inverse-surface mt-1">
-                          {formatINR(resolved.categoryTotals.electrical)}
+                          {formatINR(typeof resolved.categoryTotals?.electrical === 'number' ? resolved.categoryTotals.electrical : resolved.categoryTotals?.find?.(c => c.id === 'electrical')?.total || 0)}
                         </div>
                         <span className="text-[10px] text-secondary">Inverter, ACDB/DCDB, MC4</span>
                       </div>
@@ -3276,7 +3276,7 @@ ${origin}/?tab=pricing_master
                           Solar Cables
                         </div>
                         <div className="text-base sm:text-lg font-bold font-mono text-inverse-surface mt-1">
-                          {formatINR(resolved.categoryTotals.cables)}
+                          {formatINR(typeof resolved.categoryTotals?.cables === 'number' ? resolved.categoryTotals.cables : resolved.categoryTotals?.find?.(c => c.id === 'cables')?.total || 0)}
                         </div>
                         <span className="text-[10px] text-secondary">AC, DC, Earthing &amp; LA</span>
                       </div>
@@ -3287,7 +3287,7 @@ ${origin}/?tab=pricing_master
                           Conduits
                         </div>
                         <div className="text-base sm:text-lg font-bold font-mono text-inverse-surface mt-1">
-                          {formatINR(resolved.categoryTotals.conduits)}
+                          {formatINR(typeof resolved.categoryTotals?.conduits === 'number' ? resolved.categoryTotals.conduits : resolved.categoryTotals?.find?.(c => c.id === 'conduits')?.total || 0)}
                         </div>
                         <span className="text-[10px] text-secondary">PVC pipes &amp; fixtures</span>
                       </div>
@@ -3364,7 +3364,7 @@ ${origin}/?tab=pricing_master
                                               type="number"
                                               min="0"
                                               step="any"
-                                              value={item.qty}
+                                              value={item.qty ?? item.quantity ?? ''}
                                               onChange={(e) => {
                                                 const val = parseFloat(e.target.value) || 0;
                                                 if (updateCapacityBomItemQty) {
@@ -3382,7 +3382,7 @@ ${origin}/?tab=pricing_master
                                               type="number"
                                               min="0"
                                               step="any"
-                                              value={item.unitRate}
+                                              value={item.unitRate ?? item.rate ?? ''}
                                               onChange={(e) => {
                                                 const val = parseFloat(e.target.value) || 0;
                                                 if (updateBomItemRate) {
@@ -3394,7 +3394,7 @@ ${origin}/?tab=pricing_master
                                           </div>
                                         </td>
                                         <td className="px-4 py-2.5 text-right font-mono font-bold text-inverse-surface whitespace-nowrap">
-                                          {formatINR(item.totalCost)}
+                                          {formatINR(item.totalCost ?? item.totalAmount ?? 0)}
                                         </td>
                                         <td className="px-3 py-2.5 text-center">
                                           <button
@@ -3403,7 +3403,7 @@ ${origin}/?tab=pricing_master
                                               id: item.id,
                                               name: item.name,
                                               category: 'bom',
-                                              benchmarkPrice: item.unitRate,
+                                              benchmarkPrice: item.unitRate ?? item.rate ?? 0,
                                               unit: `₹/${item.unit}`
                                             })}
                                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-primary-container hover:text-on-primary text-secondary transition-colors text-[11px] font-semibold cursor-pointer"

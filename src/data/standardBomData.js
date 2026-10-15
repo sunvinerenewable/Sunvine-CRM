@@ -641,16 +641,21 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
       ? preset.items[catItem.id]
       : (hasAltQty ? preset.items[altKey] : (catItem.defaultQty || (catItem.category === 'structure' ? 2 : 1)));
 
-    const finalQty = customMatrix[kwKey] && hasPresetQty
-      ? baseQty
-      : Math.max(1, Math.round(baseQty * ratio));
+    const finalQty = baseQty === 0
+      ? 0
+      : (customMatrix[kwKey] && hasPresetQty
+        ? baseQty
+        : Math.max(1, Math.round(baseQty * ratio)));
     const unitRate = customRates[catItem.id] ?? (catItem.defaultRate || catItem.rate || 100);
     const totalAmount = finalQty * unitRate;
 
     return {
       ...catItem,
+      qty: finalQty,
       quantity: finalQty,
       unitRate,
+      rate: unitRate,
+      totalCost: totalAmount,
       totalAmount
     };
   });
@@ -687,13 +692,24 @@ export function resolveCapacityBom(capacityKW, customMatrix = DEFAULT_CAPACITY_B
     }
   });
 
+  const allCategoryList = [...categoryTotals, ...customCategories];
+  // Assign category IDs as properties directly on allCategoryList so both:
+  // Array iterations: resolved.categoryTotals.map(...)
+  // AND Object property access: resolved.categoryTotals.structure, resolved.categoryTotals.electrical, etc.
+  // work seamlessly and return the exact numeric total
+  allCategoryList.forEach(cat => {
+    if (cat && cat.id) {
+      allCategoryList[cat.id] = cat.total;
+    }
+  });
+
   const totalBoSCost = resolvedItems.reduce((acc, i) => acc + i.totalAmount, 0);
 
   return {
     capacityKW: kw,
     structureHeight: preset?.structureHeight || '6/8 Standard',
     items: resolvedItems,
-    categoryTotals: [...categoryTotals, ...customCategories],
+    categoryTotals: allCategoryList,
     totalBoSCost
   };
 }
