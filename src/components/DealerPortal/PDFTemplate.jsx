@@ -108,7 +108,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
 
   const {
     id = 'SV-2026-Q801',
-    date = new Date().toLocaleDateString('en-GB'),
+    date: rawDate = new Date().toLocaleDateString('en-GB'),
     customerName = 'Valued Customer',
     customerPhone = '',
     location = 'Rajkot, Gujarat',
@@ -137,6 +137,12 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     bomItems,
     companyProfile: initialCompanyProfile = null
   } = quotation || {};
+
+  const date = (rawDate && String(rawDate) !== 'Invalid Date' && !String(rawDate).includes('Invalid'))
+    ? rawDate
+    : (quotation?.createdAt && !isNaN(new Date(quotation.createdAt).getTime())
+        ? new Date(quotation.createdAt).toLocaleDateString('en-GB')
+        : new Date().toLocaleDateString('en-GB'));
 
   const fallbackProfile = appContext?.systemSettings?.companyProfile || appContext?.systemSettings?.company_profile || appContext?.officialProfile || {};
   const rawCompanyProfile = initialCompanyProfile || quotation?.companyProfile || quotation?.company_profile || {};
@@ -496,7 +502,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               </div>
             </div>
             <div className="text-right">
-              <div className="inline-block bg-[#0B2545] text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded">
+              <div className="inline-flex items-center justify-center bg-[#0B2545] text-white text-[10px] font-mono font-bold px-2.5 py-1 rounded leading-normal">
                 REF: {id}
               </div>
               <p className="text-[10px] text-gray-600 font-medium mt-0.5">
@@ -640,7 +646,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                       <td className="py-1.5 px-3 text-center border-r border-slate-200 font-mono text-emerald-800">•</td>
                       <td className="py-1.5 px-3 border-r border-slate-200 text-emerald-950">
                         <div className="flex items-center gap-1.5">
-                          <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded uppercase font-bold">GST Included</span>
+                          <span className="bg-emerald-700 text-white text-[8.5px] px-2 py-0.5 rounded uppercase font-bold inline-flex items-center leading-normal">GST Included</span>
                           <span>Total Statutory GST ({gstRate}%)</span>
                         </div>
                       </td>
@@ -657,7 +663,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <td className="py-2 px-3 text-center border-r border-slate-200 font-mono text-gray-500">•</td>
                     <td className="py-2 px-3 border-r border-slate-200">
                       <div className="flex items-center gap-1.5">
-                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded uppercase font-bold">LOGISTICS</span>
+                        <span className="bg-blue-600 text-white text-[8.5px] px-2 py-0.5 rounded uppercase font-bold inline-flex items-center leading-normal">LOGISTICS</span>
                         <span className="font-bold text-[#0B2545]">Doorstep Transport &amp; Freight</span>
                       </div>
                       <p className="text-[10px] text-gray-500">
@@ -687,7 +693,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                     <td className="py-2 px-3 text-center border-r border-emerald-300 font-mono">•</td>
                     <td className="py-2 px-3 border-r border-emerald-300">
                       <div className="flex items-center gap-1.5">
-                        <span className="bg-emerald-700 text-white text-[9px] px-1.5 py-0.2 rounded font-extrabold">CENTRAL SUBSIDY</span>
+                        <span className="bg-emerald-700 text-white text-[8.5px] px-2 py-0.5 rounded font-extrabold inline-flex items-center leading-normal">CENTRAL SUBSIDY</span>
                         <span>Less: PM Surya Ghar Muft Bijli Yojana Central Subsidy</span>
                       </div>
                       <p className="text-[10px] text-emerald-800 font-normal">
@@ -751,7 +757,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                           <div className="flex items-center gap-1.5">
                             <span className="text-[#0B2545]">{pkg.name || `${pkg.brand} ${pkg.wattage}W`}</span>
                             {isSelected && (
-                              <span className="bg-[#2E7D32] text-white text-[7.5px] font-black px-1.5 py-0.2 rounded uppercase tracking-wider">
+                              <span className="bg-[#2E7D32] text-white text-[7.5px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider inline-flex items-center leading-none">
                                 Proposed
                               </span>
                             )}

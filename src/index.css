@@ -250,8 +250,8 @@
   margin-bottom: 0 !important;
   border: none !important;
   box-shadow: none !important;
-  page-break-after: always !important;
-  break-after: page !important;
+  page-break-after: avoid !important;
+  break-after: avoid !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
 }

@@ -223,7 +223,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-three': ['three'],
           'vendor-ocr': ['tesseract.js'],
-          'vendor-pdf': ['html2pdf.js'],
+          'vendor-pdf': ['html2canvas', 'jspdf'],
           'vendor-lucide': ['lucide-react']
         }
       }

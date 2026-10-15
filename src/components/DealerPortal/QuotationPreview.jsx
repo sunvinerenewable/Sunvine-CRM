@@ -908,12 +908,14 @@ export default function QuotationPreview({
       <div
         className="no-print"
         style={{
-          position: 'absolute',
-          left: '-9999px',
+          position: 'fixed',
           top: 0,
+          left: 0,
           width: '794px',
-          background: '#ffffff',
-          pointerEvents: 'none'
+          zIndex: -9999,
+          opacity: 0,
+          pointerEvents: 'none',
+          background: '#ffffff'
         }}
       >
         <div ref={pdfExportRef} className="pdf-export-container">

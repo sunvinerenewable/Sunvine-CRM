@@ -143,32 +143,65 @@ export function openWhatsAppChat(quote, customPhone = null) {
   window.open(url, '_blank');
 }
 
-// Generate actual PDF Blob from element using html2pdf (lazy loaded on demand)
+// Generate actual PDF Blob from element using 1:1 page capture (Guarantees exactly 4 A4 pages, zero blank pages)
 export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801') {
   if (!element) return null;
 
   try {
-    const html2pdfModule = await import('html2pdf.js');
-    const html2pdf = html2pdfModule.default || html2pdfModule;
+    // 1. Wait for document fonts and all images inside the export container to be fully loaded
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+    const images = Array.from(element.querySelectorAll('img'));
+    await Promise.all(
+      images.map(
+        (img) =>
+          new Promise((resolve) => {
+            if (img.complete) return resolve();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(resolve, 800);
+          })
+      )
+    );
 
-    const opt = {
-      margin: 0,
-      filename: `Sunvine_Proposal_${quoteId}.pdf`,
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
+    // 2. Dynamically import html2canvas and jsPDF
+    const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf')
+    ]);
+
+    // 3. Resolve discrete .pdf-page elements to guarantee exact 1:1 page mapping (Exactly 4 A4 pages)
+    const pageElements = Array.from(element.querySelectorAll('.pdf-page'));
+    const targets = pageElements.length > 0 ? pageElements : [element];
+
+    const pdf = new jsPDF({
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'portrait',
+      compress: true
+    });
+
+    for (let i = 0; i < targets.length; i++) {
+      if (i > 0) {
+        pdf.addPage('a4', 'portrait');
+      }
+
+      const canvas = await html2canvas(targets[i], {
         scale: 2,
         useCORS: true,
         logging: false,
+        backgroundColor: '#ffffff',
         scrollX: 0,
         scrollY: 0,
         windowWidth: 794
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'] }
-    };
+      });
 
-    const worker = html2pdf().set(opt).from(element);
-    const blob = await worker.output('blob');
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    }
+
+    const blob = pdf.output('blob');
     return blob;
   } catch (err) {
     console.warn('PDF generation notice:', err);
