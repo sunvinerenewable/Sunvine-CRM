@@ -18,22 +18,10 @@ export function lazyWithRetry(componentImport) {
       if (lastReload) sessionStorage.removeItem(sessionKey);
       return module;
     } catch (error) {
-      console.warn('[Sunvine] Dynamic chunk import error caught:', error?.message);
-
-      // If we haven't reloaded recently, silently reload to fetch the latest chunk index
-      if (!hasRecentlyReloaded) {
-        sessionStorage.setItem(sessionKey, String(now));
-        window.location.reload();
-        // Return a pending promise so React doesn't render an error boundary while reloading
-        return new Promise(() => {});
-      }
-
-      // If already reloaded recently, try one more attempt
-      try {
-        return await componentImport();
-      } catch (finalError) {
-        throw finalError;
-      }
+      console.warn('[Sunvine] Dynamic chunk import error caught, retrying once...', error?.message);
+      // Wait 500ms and retry import once
+      await new Promise(r => setTimeout(r, 500));
+      return await componentImport();
     }
   });
 }

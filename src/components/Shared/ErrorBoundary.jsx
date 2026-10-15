@@ -25,29 +25,10 @@ export default class ErrorBoundary extends React.Component {
       componentStack: errorInfo?.componentStack
     });
 
+    // Log sanitized summary locally
     try {
       localStorage.setItem('sunvine_last_error', JSON.stringify(sanitizedSummary));
     } catch (_) {}
-
-    // Auto-recover immediately on deployment chunk mismatch or dynamic import errors
-    const errorMsg = String(error?.message || '').toLowerCase();
-    const isChunkOrImportError =
-      errorMsg.includes('dynamically imported') ||
-      errorMsg.includes('chunkloaderror') ||
-      errorMsg.includes('failed to fetch') ||
-      errorMsg.includes('importing a module script failed') ||
-      errorMsg.includes('loading chunk') ||
-      errorMsg.includes('preload') ||
-      errorMsg.includes('failed to load module');
-
-    if (isChunkOrImportError) {
-      const lastAutoReload = sessionStorage.getItem('sunvine_chunk_autoreload');
-      const now = Date.now();
-      if (!lastAutoReload || now - Number(lastAutoReload) > 10000) {
-        sessionStorage.setItem('sunvine_chunk_autoreload', String(now));
-        window.location.reload();
-      }
-    }
   }
 
   handleReload = () => {
@@ -112,30 +93,26 @@ export default class ErrorBoundary extends React.Component {
         errorMsg.includes('syntaxerror') ||
         errorMsg.includes('unexpected token');
 
-      // Max 1 auto-reload attempt to prevent any infinite reload loops
-      const attemptKey = 'sunvine_eb_attempts';
-      const attempts = Number(sessionStorage.getItem(attemptKey) || 0);
-
-      if (isChunkOrNetworkError && attempts < 1) {
-        sessionStorage.setItem(attemptKey, String(attempts + 1));
-        // Clear caches to break any stale deployment loop
-        if ('caches' in window) {
-          caches.keys().then(names => names.forEach(n => caches.delete(n))).catch(() => {});
-        }
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(() => {});
-        }
-        setTimeout(() => {
-          window.location.href = window.location.pathname + '?refresh=' + Date.now() + window.location.hash;
-        }, 350);
-
+      if (isChunkOrNetworkError) {
         return (
-          <div className="min-h-screen bg-[#070D18] flex flex-col items-center justify-center p-6 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/5">
-              <span className="material-symbols-outlined text-3xl text-emerald-400 animate-spin">sync</span>
+          <div className="min-h-screen bg-[#070D18] text-white flex items-center justify-center p-6 text-center">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col items-center shadow-2xl">
+              <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/5">
+                <span className="material-symbols-outlined text-3xl text-emerald-400">system_update</span>
+              </div>
+              <h3 className="text-base font-bold text-white tracking-wide">New Version Available</h3>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                A new version of the Sunvine Portal is ready. Please click below to load the latest version.
+              </p>
+              <button
+                type="button"
+                onClick={this.handleReload}
+                className="mt-6 w-full py-3 px-4 rounded-xl bg-[#6CBF3D] hover:bg-[#5EAB34] text-white text-xs font-bold tracking-wide shadow-lg shadow-[#6CBF3D]/25 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">refresh</span>
+                <span>Load Latest Version</span>
+              </button>
             </div>
-            <h3 className="text-sm font-bold text-white tracking-wide">Updating Application...</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-xs">Connecting to latest version. Please wait a moment.</p>
           </div>
         );
       }

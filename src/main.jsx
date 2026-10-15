@@ -13,16 +13,7 @@ if (typeof window !== 'undefined') {
     if (typeof event?.preventDefault === 'function') {
       event.preventDefault();
     }
-    const attemptKey = 'sunvine_preload_attempt';
-    const attempts = Number(sessionStorage.getItem(attemptKey) || 0);
-    if (attempts < 1) {
-      sessionStorage.setItem(attemptKey, '1');
-      console.warn('[Vite] Preload chunk error caught. Refreshing application...');
-      if ('caches' in window) {
-        caches.keys().then(names => names.forEach(n => caches.delete(n))).catch(() => {});
-      }
-      window.location.reload();
-    }
+    console.warn('[Vite] Preload chunk error caught.');
   });
 
   window.addEventListener('load', () => {

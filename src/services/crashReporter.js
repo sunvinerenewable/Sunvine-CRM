@@ -282,6 +282,18 @@ export async function reportCrash(error, extraContext = {}) {
   }
 }
 
+function isModuleScriptError(msg) {
+  if (!msg) return false;
+  const s = String(msg).toLowerCase();
+  return (
+    s.includes('dynamically imported') ||
+    s.includes('failed to load module script') ||
+    s.includes('chunkloaderror') ||
+    s.includes('loading chunk') ||
+    s.includes('failed to fetch dynamically imported')
+  );
+}
+
 /**
  * Initializes global window error listeners
  */
@@ -289,10 +301,12 @@ export function initCrashReporter() {
   if (typeof window === 'undefined') return;
 
   window.addEventListener('error', (event) => {
+    const rawMsg = event.message || event.error?.message || '';
     if (
-      event.message?.includes('ResizeObserver') ||
-      event.message?.includes('Script error.') ||
-      event.filename?.includes('extension')
+      rawMsg.includes('ResizeObserver') ||
+      rawMsg.includes('Script error.') ||
+      event.filename?.includes('extension') ||
+      isModuleScriptError(rawMsg)
     ) {
       return;
     }
@@ -307,6 +321,11 @@ export function initCrashReporter() {
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason;
     if (reason?.name === 'AbortError') return;
+
+    const reasonMsg = String(reason?.message || reason || '');
+    if (isModuleScriptError(reasonMsg)) {
+      return;
+    }
 
     reportCrash(reason instanceof Error ? reason : new Error(String(reason)), {
       type: 'UnhandledPromiseRejection'
