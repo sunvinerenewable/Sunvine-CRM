@@ -299,6 +299,15 @@ export default function AllQuotations() {
   const totalValue = filteredQuotes.reduce((acc, q) => acc + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
   const totalCapacityKW = filteredQuotes.reduce((acc, q) => acc + (parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0)), 0);
   const totalCapacityMW = (totalCapacityKW / 1000).toFixed(2);
+  const formattedCapacity = (() => {
+    if (totalCapacityKW >= 1000) {
+      const mw = totalCapacityKW / 1000;
+      const val = (mw % 1 === 0 ? mw.toFixed(1) : mw.toFixed(2));
+      return { value: val, unit: 'MW' };
+    }
+    const val = (totalCapacityKW % 1 === 0 ? totalCapacityKW.toFixed(0) : totalCapacityKW.toFixed(2));
+    return { value: val, unit: 'kW' };
+  })();
   const avgValue = totalProposalsCount > 0 ? Math.round(totalValue / totalProposalsCount) : 0;
 
   // Dynamic Average Dealer Margin calculation (SR-21)
@@ -974,7 +983,10 @@ export default function AllQuotations() {
           </div>
           <div className="mt-3">
             <div className="flex items-baseline gap-2">
-              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">{totalCapacityMW} MW</span>
+              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">
+                {formattedCapacity.value}{' '}
+                <span className="text-sm font-normal text-secondary">{formattedCapacity.unit}</span>
+              </span>
             </div>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden flex">
@@ -1123,116 +1135,189 @@ export default function AllQuotations() {
                   const { dealerName, dealerId, staffName, staffId } = getQuotationOwnership(q);
 
                   return (
-                    <div key={q.id || idx} className="bg-white border border-[#E4E7EB] rounded-xl p-4 shadow-xs flex flex-col justify-between gap-3 hover:border-primary/50 transition-all">
-                      {/* Card Top */}
-                      <div className="flex items-center justify-between gap-2">
+                    <div
+                      key={q.id || idx}
+                      className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 group hover:border-primary/40 relative overflow-hidden"
+                    >
+                      {/* Top Accent Bar */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-primary to-teal-500 opacity-80" />
+
+                      {/* 1. Header: Quote Reference & Status */}
+                      <div className="flex items-center justify-between gap-2 pt-1">
                         <button
                           onClick={() => handleViewPdf(q)}
-                          className="font-mono font-bold text-xs text-[#256676] hover:underline flex items-center gap-1 cursor-pointer"
+                          className="font-mono font-bold text-xs text-primary bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-lg inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-primary/20 whitespace-nowrap shrink-0"
+                          title="Open PDF Preview"
                         >
-                          {quoteRef}
+                          <span className="material-symbols-outlined text-[14px]">description</span>
+                          <span>{quoteRef}</span>
                         </button>
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                          (q.status || '').toLowerCase().includes('approved')
-                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                            : (q.status || '').toLowerCase().includes('sanction')
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : 'bg-blue-50 text-blue-700 border border-blue-200'
-                        }`}>
-                          {q.status || 'Active / Sent'}
+
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border shadow-2xs whitespace-nowrap shrink-0 ${
+                            (q.status || '').toLowerCase().includes('approved')
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                              : (q.status || '').toLowerCase().includes('sanction')
+                              ? 'bg-purple-50 text-purple-700 border-purple-200/80'
+                              : (q.status || '').toLowerCase().includes('draft')
+                              ? 'bg-amber-50 text-amber-800 border-amber-200/80'
+                              : 'bg-blue-50 text-blue-700 border-blue-200/80'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              (q.status || '').toLowerCase().includes('approved')
+                                ? 'bg-emerald-500'
+                                : (q.status || '').toLowerCase().includes('sanction')
+                                ? 'bg-purple-500'
+                                : (q.status || '').toLowerCase().includes('draft')
+                                ? 'bg-amber-500'
+                                : 'bg-blue-500'
+                            }`}
+                          />
+                          <span>{q.status || 'Active / Sent'}</span>
                         </span>
                       </div>
 
-                      {/* Customer & Ownership Mapping */}
-                      <div className="flex flex-col gap-2 pt-1 text-xs">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="text-secondary shrink-0">Customer:</span>
-                          <div className="text-right min-w-0">
-                            <span className="font-semibold text-on-surface truncate block">{q.customerName}</span>
-                            <span className="text-[11px] text-secondary">{q.city || 'Gujarat'} • {q.discom || 'PGVCL'}</span>
-                          </div>
+                      {/* 2. Customer Hero Details & Aligned Metadata */}
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0 border border-slate-200/80">
+                          <span className="material-symbols-outlined text-[17px]">person</span>
                         </div>
 
-                        {/* Ownership Mapping Card Badge */}
-                        <div className="p-2 rounded-lg bg-[#F6F8F7] border border-[#E4E7EB] space-y-1 text-xs">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-secondary flex items-center gap-1 truncate">
-                              <span className="material-symbols-outlined text-[13px] text-primary shrink-0">badge</span>
-                              <strong className="text-on-surface truncate">{staffName}</strong>
-                              <span className="text-[10px] text-secondary">({staffId})</span>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-slate-900 text-sm leading-tight truncate" title={q.customerName}>
+                            {q.customerName || 'Solar Consumer'}
+                          </h3>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 min-w-0">
+                            <span className="inline-flex items-center gap-1 min-w-0 truncate">
+                              <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0 leading-none">location_on</span>
+                              <span className="truncate">{q.city || 'Gujarat'}</span>
                             </span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[11px] text-secondary">
-                            <span className="material-symbols-outlined text-[13px] shrink-0">storefront</span>
-                            <span className="truncate">{dealerName}</span>
-                            <span className="font-mono text-[10px]">({dealerId})</span>
+                            <span className="text-slate-300 shrink-0">•</span>
+                            <span className="inline-flex items-center gap-1 shrink-0 font-medium text-slate-700">
+                              <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0 leading-none">electric_meter</span>
+                              <span>{q.discom || 'PGVCL'}</span>
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Metrics 3-col */}
-                      <div className="grid grid-cols-3 gap-1 bg-[#F6F8F7] p-2.5 rounded-lg text-center text-xs">
-                        <div>
-                          <span className="text-[10px] text-secondary block">Capacity</span>
-                          <span className="font-bold text-on-surface font-mono">{q.systemCapacityKW || q.capacity || '5.0'} kW</span>
+                      {/* 3. Ownership Card (Staff & Dealer Attribution) */}
+                      <div className="bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 space-y-2 text-xs">
+                        {/* Staff Row */}
+                        <div className="flex items-center justify-between text-[11px] gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0">badge</span>
+                            <span className="text-slate-500 shrink-0">Staff:</span>
+                            <span className="font-semibold text-slate-800 truncate">{staffName}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0 whitespace-nowrap">
+                            {staffId}
+                          </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-secondary block">Base Price</span>
-                          <span className="font-bold text-secondary font-mono text-[11px]">₹{baseCost.toLocaleString('en-IN')}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-secondary block">Total Quoted</span>
-                          <span className="font-bold text-[#0F1B2E] font-mono text-[11px]">₹{totalAmt.toLocaleString('en-IN')}</span>
-                        </div>
-                      </div>
 
-                      {/* Margin & Audit Flag */}
-                      <div className="flex items-center justify-between pt-1 text-xs">
-                        <span className="text-[11px] text-secondary">Dealer Margin:</span>
-                        <div className="text-right">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                            isFlagged
-                              ? 'bg-red-100 text-red-700 border border-red-300'
-                              : 'bg-[rgba(108,191,61,0.15)] text-[#2E7D32]'
-                          }`}>
-                            <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
-                              {isFlagged ? 'warning' : 'check_circle'}
+                        {/* Dealer Row */}
+                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60 gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="material-symbols-outlined text-[14px] text-primary shrink-0">storefront</span>
+                            <span className="text-slate-500 shrink-0">Dealer:</span>
+                            <span className="font-semibold text-slate-800 truncate" title={dealerName}>
+                              {dealerName}
                             </span>
-                            <span>₹{Number(q.dealerTotalMargin || (marginPerKw * (q.systemCapacityKW || 5)) || 0).toLocaleString('en-IN')}</span>
-                            <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw || 0).toLocaleString('en-IN')}/kW)</span>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0 whitespace-nowrap">
+                            {dealerId}
                           </span>
                         </div>
                       </div>
 
-                      {/* Footer Actions: PDF, Audit, and Convert to Customer */}
-                      <div className="flex items-center justify-between pt-2 border-t border-[#F1F4F9]">
-                        <span className="text-[11px] text-secondary">{q.date || '24 Oct 2025'}</span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setConvertingQuote(q)}
-                            className="px-2 py-1 text-xs font-bold rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 flex items-center gap-1 transition-colors cursor-pointer border border-emerald-500/30"
-                            title="Convert Quotation to Customer Record"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">person_add</span>
-                            <span>Convert</span>
-                          </button>
-                          <button
-                            onClick={() => handleViewPdf(q)}
-                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-primary text-secondary hover:text-primary flex items-center gap-1 transition-colors cursor-pointer"
-                            title="View Customer PDF"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">picture_as_pdf</span>
-                            <span>PDF</span>
-                          </button>
-                          <button
-                            onClick={() => setSelectedAuditQuote(q)}
-                            className="px-2 py-1 text-xs rounded border border-[#E4E7EB] hover:border-[#256676] text-secondary hover:text-[#256676] flex items-center gap-1 transition-colors cursor-pointer"
-                            title="Margin Audit Sheet"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">shield</span>
-                          </button>
+                      {/* 4. Financial & Tech Metrics 3-Column Grid */}
+                      <div className="grid grid-cols-3 divide-x divide-slate-200 bg-slate-50/90 rounded-xl p-2.5 border border-slate-200/80 text-center">
+                        <div className="px-1">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block">Capacity</span>
+                          <span className="font-bold font-mono text-slate-900 text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            {kw} kW
+                          </span>
                         </div>
+                        <div className="px-1">
+                          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500 block">Base Price</span>
+                          <span className="font-semibold font-mono text-slate-600 text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            ₹{baseCost.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                        <div className="px-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-primary block">Total Quoted</span>
+                          <span className="font-bold font-mono text-primary text-xs sm:text-sm mt-0.5 block whitespace-nowrap">
+                            ₹{totalAmt.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* 5. Date & Dealer Margin Row */}
+                      <div className="flex items-center justify-between gap-2 px-0.5 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-mono shrink-0 whitespace-nowrap">
+                          <span className="material-symbols-outlined text-[14px] text-slate-400 leading-none">calendar_today</span>
+                          <span>{q.date || q.displayDate || 'Today'}</span>
+                        </div>
+                        <div className="min-w-0 shrink-0">
+                          {isFlagged ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-300 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-xs shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                warning
+                              </span>
+                              <span>₹{Number(totalMargin).toLocaleString('en-IN')}</span>
+                              <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw).toLocaleString('en-IN')}/kW)</span>
+                            </span>
+                          ) : marginPerKw === 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                check_circle
+                              </span>
+                              <span>₹0 (Direct / 0 Margin)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-600" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                check_circle
+                              </span>
+                              <span>₹{Number(totalMargin).toLocaleString('en-IN')}</span>
+                              <span className="text-[10px] font-normal opacity-90">(₹{Number(marginPerKw).toLocaleString('en-IN')}/kW)</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 6. Footer Actions Toolbar (Full-Width Responsive Grid - Zero Cropping) */}
+                      <div className="pt-2.5 border-t border-slate-100 grid grid-cols-6 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConvertingQuote(q)}
+                          className="col-span-3 h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                          title="Convert Quotation to Customer Record"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">person_add</span>
+                          <span>Convert</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleViewPdf(q)}
+                          className="col-span-2 h-9 px-2.5 rounded-xl bg-white hover:bg-slate-50 active:scale-95 text-slate-700 hover:text-primary text-xs font-semibold border border-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                          title="View Customer PDF"
+                        >
+                          <span className="material-symbols-outlined text-[16px] text-rose-500">picture_as_pdf</span>
+                          <span>PDF</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAuditQuote(q)}
+                          className="col-span-1 h-9 rounded-xl bg-white hover:bg-slate-50 active:scale-95 text-slate-600 hover:text-slate-900 border border-slate-200 flex items-center justify-center transition-all cursor-pointer"
+                          title="Margin Audit Sheet"
+                        >
+                          <span className="material-symbols-outlined text-[17px] text-slate-500">shield</span>
+                        </button>
                       </div>
                     </div>
                   );
