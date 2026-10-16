@@ -140,54 +140,13 @@ export default function MyApplications() {
     const dealerName = currentDealer?.name;
 
     // Filter by dealer ID or name (or if dealer is not assigned yet, show all files matching dealer source)
-    let filtered = list.filter(f => {
+    return list.filter(f => {
       if (!dealerId) return true;
       if (f.dealerId === dealerId) return true;
       if (dealerName && f.dealerName && f.dealerName.toLowerCase() === dealerName.toLowerCase()) return true;
       return false;
     });
-
-    // Also match any converted quotations with 'Won / Order Booked' that might not have fileId
-    const wonQuotes = (quotations || []).filter(q => {
-      const isWon = q.status === 'Won / Order Booked';
-      const isDealer = !dealerId || q.dealerId === dealerId || (dealerName && q.dealerName === dealerName);
-      const alreadyHasFile = filtered.some(f => f.quotationId === q.id);
-      return isWon && isDealer && !alreadyHasFile;
-    });
-
-    const synthesizedFromQuotes = wonQuotes.map(q => {
-      const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
-      return {
-        id: `FIL-${q.id || Date.now()}`,
-        quotationId: q.id,
-        customerName: q.customerName || 'Solar Consumer',
-        phone: q.customerPhone || q.phone || 'N/A',
-        address: q.customerAddress || q.address || q.location || 'Gujarat',
-        city: q.city || 'Rajkot',
-        discom: q.discom || 'PGVCL',
-        consumerNo: q.consumerNo || 'PENDING-REGISTRATION',
-        solarSystemKw: capKw,
-        amount: q.grandTotalCustomer || q.totalAmount || 0,
-        financeType: q.financeType || 'CASH',
-        loanBank: q.loanBank || '',
-        category: q.category || (q.projectType?.toLowerCase().includes('comm') ? 'commercial' : 'residential'),
-        currentStage: 'DISCOM_APPLICATION',
-        status: 'Verification',
-        createdDate: q.date || new Date().toISOString().split('T')[0],
-        documents: {},
-        timeline: [
-          {
-            stage: 'Quotation Approved',
-            date: q.date || new Date().toISOString().split('T')[0],
-            actor: q.dealerName || currentDealer?.name || 'Dealer Partner',
-            notes: 'Converted to project application'
-          }
-        ]
-      };
-    });
-
-    return [...filtered, ...synthesizedFromQuotes];
-  }, [customerFiles, quotations, currentDealer]);
+  }, [customerFiles, currentDealer]);
 
   // Apply filters
   const displayedFiles = useMemo(() => {

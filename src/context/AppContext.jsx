@@ -2247,6 +2247,11 @@ export const AppProvider = ({ children }) => {
         }
       } catch (_) {}
 
+      try {
+        refreshCustomerFiles({ force: true });
+        broadcastDbEvent('SYNC_FILES');
+      } catch (_) {}
+
       return savedRecord;
     } catch (err) {
       console.error('[AppContext] Failed to save quotation:', err);

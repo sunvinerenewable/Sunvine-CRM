@@ -85,77 +85,13 @@ export default function StaffAccountsManagement() {
   const allStaffFiles = useMemo(() => {
     const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
 
-    const baseStaffFiles = rawFiles.filter(f => {
+    return rawFiles.filter(f => {
       if (!f) return false;
       const hasStaff = Boolean(f.staffId || f.staff_id || f.staffName || f.staff_name);
       const isDirect = (f.sourceType || f.source || '').toUpperCase() === 'DIRECT_STAFF';
       return hasStaff || isDirect;
     });
-
-    // Also match any direct/staff quotations that don't already have an explicit file in customerFiles
-    const staffQuotes = (quotations || []).filter(q => {
-      if (!q) return false;
-      const isStaffOrDirect = Boolean(
-        q.staffId ||
-        q.staff_id ||
-        q.staffName ||
-        (q.dealerName && q.dealerName.includes('Head Office')) ||
-        !q.dealerId
-      );
-      if (!isStaffOrDirect) return false;
-      const alreadyHasFile = baseStaffFiles.some(f =>
-        f.quotationId === q.id ||
-        f.id === q.id ||
-        f.id === `FIL-${q.id}` ||
-        (f.customerName && q.customerName && f.customerName.trim().toLowerCase() === q.customerName.trim().toLowerCase())
-      );
-      return !alreadyHasFile;
-    });
-
-    const synthesizedFromQuotes = staffQuotes.map(q => {
-      const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
-      const isWon = (q.status || '').toLowerCase().includes('won');
-      const isApproved = (q.status || '').toLowerCase().includes('approved');
-      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
-      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
-
-      return {
-        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
-        quotationId: q.id,
-        customerName: q.customerName || 'Solar Consumer',
-        phone: q.customerPhone || q.phone || 'N/A',
-        address: q.customerAddress || q.address || q.location || 'Gujarat',
-        city: q.city || 'Ahmedabad',
-        discom: q.discom || 'PGVCL',
-        consumerNo: q.consumerNo || 'PENDING',
-        solarSystemKw: capKw,
-        roofType: 'RCC Flat',
-        sourceType: 'DIRECT_STAFF',
-        source: 'DIRECT_STAFF',
-        staffId: q.staffId || 'STF-DIRECT',
-        staffName: q.staffName || 'Sunvine Sales Staff',
-        dealerId: null,
-        dealerName: 'Direct to Company (HQ Desk)',
-        stage: stage,
-        currentStage: stage,
-        status: status,
-        financeType: q.financeType || 'CASH',
-        loanBank: q.loanBank || '',
-        createdAt: q.date || q.created_at || new Date().toISOString(),
-        documents: {},
-        timeline: [
-          {
-            stage: 'Quotation Created',
-            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
-            actor: q.staffName || 'Sunvine Sales Desk',
-            notes: `Project file from quotation for ${q.customerName || 'Consumer'}`
-          }
-        ]
-      };
-    });
-
-    return [...baseStaffFiles, ...synthesizedFromQuotes];
-  }, [customerFiles, quotations]);
+  }, [customerFiles]);
 
   // Filtered Files based on staff selection & search
   const displayedFiles = useMemo(() => {

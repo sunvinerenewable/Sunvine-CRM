@@ -930,6 +930,66 @@ export async function handleSave(req, res, jwt, db) {
     await redisDel(_env, `quote:public:${data?.share_token || body?.share_token}`).catch(() => {});
   }
 
+  // ── Auto-sync to customer_files table (Lead Sourced - Direct DB First) ───────
+  try {
+    const fileId = `FIL-${data.id}`;
+    const { data: existingFile } = await db
+      .from('customer_files')
+      .select('id, stage, status')
+      .eq('id', fileId)
+      .maybeSingle();
+
+    if (!existingFile) {
+      const nowIso = new Date().toISOString();
+      const todayStr = nowIso.split('T')[0];
+      const leadFileRecord = {
+        id: fileId,
+        customer_name: data.customer_name || 'Solar Consumer',
+        phone: data.customer_phone || '',
+        address: data.customer_city || data.customer_state || 'Gujarat',
+        city: data.customer_city || 'Rajkot',
+        discom: body.discom || 'PGVCL',
+        consumer_no: body.consumer_no || 'PENDING',
+        sanctioned_load_kw: serverValidatedKw,
+        solar_system_kw: serverValidatedKw,
+        roof_type: body.roof_type || 'RCC Terrace',
+        source_type: resolvedDealerCode || resolvedDealerUuid ? 'DEALER' : 'DIRECT_STAFF',
+        dealer_id: resolvedDealerUuid || resolvedDealerCode || null,
+        dealer_name: resolvedDealerName || null,
+        staff_id: (resolvedDealerCode || resolvedDealerUuid) ? 'STF-DIRECT' : 'STF-801',
+        staff_name: (resolvedDealerCode || resolvedDealerUuid) ? 'Direct to Company (HQ Desk)' : 'Sunvine Sales Staff',
+        finance_type: body.finance_type || 'CASH',
+        loan_bank: body.loan_bank || null,
+        stage: 'LEAD_SOURCED',
+        status: 'Sourced',
+        quotation_id: data.id,
+        documents: {},
+        timeline: [
+          {
+            id: `TL-${Date.now()}`,
+            stage: 'LEAD_SOURCED',
+            title: 'Lead Sourced & Quotation Generated',
+            date: todayStr,
+            actor: resolvedDealerName || 'Solar Consultant',
+            notes: `Lead sourced and quotation ${data.id} generated for ${data.customer_name || 'Solar Consumer'}.`,
+            timestamp: nowIso
+          }
+        ],
+        is_verified: false,
+        is_deleted: false,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      if (typeof db.from('customer_files').upsert === 'function') {
+        await db.from('customer_files').upsert([leadFileRecord], { onConflict: 'id' });
+        await redisDel(_env, 'customer_files:all').catch(() => {});
+      }
+    }
+  } catch (fileSyncErr) {
+    console.warn('[functions/api/quotations] Auto customer_file lead sync notice:', fileSyncErr?.message);
+  }
+
   // ── SEC-019 & BUG-01: Audit log entry in audit_logs table ───────────────────
   try {
     const { error: auditErr } = await db.from('audit_logs').insert([{

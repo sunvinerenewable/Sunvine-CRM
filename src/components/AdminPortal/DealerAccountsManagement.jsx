@@ -85,69 +85,13 @@ export default function DealerAccountsManagement() {
   const allDealerFiles = useMemo(() => {
     const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
 
-    const dealerCreatedFiles = rawFiles.filter(f => {
+    return rawFiles.filter(f => {
       if (!f) return false;
       const isDealerSource = (f.sourceType || f.source || '').toUpperCase() === 'DEALER';
       const hasDealerRef = Boolean(f.dealerId || f.dealer_id || f.dealerName || f.dealer_name);
       return isDealerSource || hasDealerRef;
     });
-
-    // Match ALL dealer quotations that don't already have an explicit customerFile entry
-    const dealerQuotesToFiles = (quotations || []).filter(q => {
-      if (!q) return false;
-      const isDealer = Boolean(q.dealerId || q.dealer_id || (q.dealerName && !q.dealerName.includes('Head Office')));
-      if (!isDealer) return false;
-      const alreadyHasFile = dealerCreatedFiles.some(f => 
-        f.quotationId === q.id || 
-        f.id === q.id || 
-        f.id === `FIL-${q.id}` ||
-        (f.customerName && q.customerName && f.customerName.trim().toLowerCase() === q.customerName.trim().toLowerCase() && f.dealerName && q.dealerName && f.dealerName.trim().toLowerCase() === q.dealerName.trim().toLowerCase())
-      );
-      return !alreadyHasFile;
-    });
-
-    const synthesizedFromQuotes = dealerQuotesToFiles.map(q => {
-      const capKw = Number(q.systemCapacityKW || q.capacity?.replace(/[^\d.]/g, '') || 5);
-      const isWon = (q.status || '').toLowerCase().includes('won');
-      const isApproved = (q.status || '').toLowerCase().includes('approved');
-      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
-      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
-
-      return {
-        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
-        quotationId: q.id,
-        customerName: q.customerName || 'Solar Consumer',
-        phone: q.customerPhone || q.phone || 'N/A',
-        address: q.customerAddress || q.address || q.location || 'Gujarat',
-        city: q.city || 'Rajkot',
-        discom: q.discom || 'PGVCL',
-        consumerNo: q.consumerNo || 'PENDING',
-        solarSystemKw: capKw,
-        roofType: 'RCC Flat',
-        sourceType: 'DEALER',
-        source: 'DEALER',
-        dealerId: q.dealerId || null,
-        dealerName: q.dealerName || 'Dealer Partner',
-        stage: stage,
-        currentStage: stage,
-        status: status,
-        financeType: q.financeType || 'CASH',
-        loanBank: q.loanBank || '',
-        createdAt: q.date || q.created_at || new Date().toISOString(),
-        documents: {},
-        timeline: [
-          {
-            stage: 'Quotation Created',
-            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
-            actor: q.dealerName || 'Dealer Partner',
-            notes: `Project file from quotation for ${q.customerName || 'Consumer'}`
-          }
-        ]
-      };
-    });
-
-    return [...dealerCreatedFiles, ...synthesizedFromQuotes];
-  }, [customerFiles, quotations]);
+  }, [customerFiles]);
 
   // Filtered Files based on current selection
   const displayedFiles = useMemo(() => {

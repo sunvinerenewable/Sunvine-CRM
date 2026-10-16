@@ -469,59 +469,10 @@ export default function AllQuotations() {
     }
   };
 
-  // ── Universal Applications / Project Files (CustomerFiles + Quotations Synthesized) ──
+  // ── Universal Applications / Project Files (Direct Database customer_files) ──
   const allUniversalFiles = useMemo(() => {
-    const rawFiles = Array.isArray(customerFiles) ? customerFiles : [];
-
-    const synthesizedFromQuotes = (quotations || []).map(q => {
-      const existing = rawFiles.find(f => (
-        (f.quotationId && f.quotationId === q.id) ||
-        (f.consumerNo && q.consumerNo && f.consumerNo === q.consumerNo) ||
-        (f.customerName && q.customerName && f.customerName.toLowerCase() === q.customerName.toLowerCase())
-      ));
-      if (existing) return null;
-
-      const capKw = Number(q.systemCapacityKW || String(q.capacity || '').replace(/[^\d.]/g, '') || 5);
-      const isWon = (q.status || '').toLowerCase().includes('won');
-      const isApproved = (q.status || '').toLowerCase().includes('approved');
-      const stage = isWon ? 'DISCOM_APPLICATION' : (isApproved ? 'QUOTATION_ACCEPTED' : 'LEAD_SOURCED');
-      const status = isWon ? 'Won / Order Booked' : (isApproved ? 'Approved' : 'Active / Sent');
-
-      return {
-        id: `FIL-${q.quoteNumber || q.id || Date.now()}`,
-        quotationId: q.id,
-        customerName: q.customerName || 'Solar Consumer',
-        phone: q.customerPhone || q.phone || 'N/A',
-        address: q.customerAddress || q.address || q.location || 'Gujarat',
-        city: q.city || 'Rajkot',
-        discom: q.discom || 'PGVCL',
-        consumerNo: q.consumerNo || 'PENDING',
-        solarSystemKw: capKw,
-        roofType: 'RCC Flat',
-        sourceType: q.sourceType || (q.dealerId ? 'DEALER' : 'STAFF'),
-        source: q.sourceType || (q.dealerId ? 'DEALER' : 'STAFF'),
-        dealerId: q.dealerId || null,
-        dealerName: q.dealerName || (q.dealerId ? 'Dealer Partner' : 'Sales Staff Direct'),
-        stage: stage,
-        currentStage: stage,
-        status: status,
-        financeType: q.financeType || 'CASH',
-        loanBank: q.loanBank || '',
-        createdAt: q.date || q.created_at || new Date().toISOString(),
-        documents: {},
-        timeline: [
-          {
-            stage: 'Quotation Created',
-            date: q.date || (q.created_at ? new Date(q.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
-            actor: q.dealerName || 'Solar Consultant',
-            notes: `Project application initialized from quotation for ${q.customerName || 'Consumer'}`
-          }
-        ]
-      };
-    }).filter(Boolean);
-
-    return [...rawFiles, ...synthesizedFromQuotes];
-  }, [customerFiles, quotations]);
+    return Array.isArray(customerFiles) ? customerFiles : [];
+  }, [customerFiles]);
 
   // Filtered Applications
   const filteredApplications = useMemo(() => {

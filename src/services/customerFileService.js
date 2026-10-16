@@ -87,6 +87,7 @@ export const customerFileService = {
           loanBank: f.loan_bank,
           loanAccountNo: f.loan_account_no,
           loanRefNo: f.loan_account_no,
+          quotationId: f.quotation_id || null,
           stage: f.stage || 'LEAD_SOURCED',
           currentStage: f.stage || 'LEAD_SOURCED',
           status: f.status || 'Sourced',
