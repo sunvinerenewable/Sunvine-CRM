@@ -188,11 +188,14 @@ export async function reportCrash(error, extraContext = {}) {
   }
   recentErrors.set(dedupeKey, now);
 
-  const [geo, user, device] = await Promise.all([
-    fetchClientGeo(),
-    Promise.resolve(getCleanUserContext()),
-    Promise.resolve(getConciseDevice())
-  ]);
+  // Non-blocking geo: use cached if available, otherwise resolve in background
+  const geo = cachedGeo || { ip: 'Client Origin', city: '', region: '', country: 'India' };
+  if (!cachedGeo) {
+    fetchClientGeo().catch(() => {});
+  }
+
+  const user = getCleanUserContext();
+  const device = getConciseDevice();
 
   const locationText = [geo.city, geo.region, geo.country].filter(Boolean).join(', ') || 'India';
 
@@ -262,6 +265,7 @@ export async function reportCrash(error, extraContext = {}) {
   try {
     await fetch(REPORT_ERROR_ENDPOINT, {
       method: 'POST',
+      keepalive: true,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         errorCode: errorType,

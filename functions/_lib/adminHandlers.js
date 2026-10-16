@@ -1574,13 +1574,20 @@ export async function reportErrorHandler(req, res) {
   const isTestRunner = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST || process.env.NODE_TEST_CONTEXT);
 
   const webhookUrl = !isTestRunner && (
-    process.env.SLACK_CRASH_WEBHOOK_URL ||
-    process.env.VITE_SLACK_CRASH_WEBHOOK_URL ||
-    process.env.SLACK_FILES_UPDATE ||
-    process.env.SLACK_WEBHOOK_URL
+    _env?.SLACK_CRASH_WEBHOOK_URL ||
+    _env?.VITE_SLACK_CRASH_WEBHOOK_URL ||
+    _env?.SLACK_FILES_UPDATE ||
+    _env?.SLACK_WEBHOOK_URL ||
+    process.env?.SLACK_CRASH_WEBHOOK_URL ||
+    process.env?.VITE_SLACK_CRASH_WEBHOOK_URL ||
+    process.env?.SLACK_FILES_UPDATE ||
+    process.env?.SLACK_WEBHOOK_URL
   );
 
-  if (webhookUrl) {
+  const botToken = !isTestRunner && (_env?.SLACK_BOT_TOKEN || _env?.VITE_SLACK_BOT_TOKEN || process.env?.SLACK_BOT_TOKEN || process.env?.VITE_SLACK_BOT_TOKEN);
+  const channelId = !isTestRunner && (_env?.SLACK_FILES_CHANNEL_ID || _env?.VITE_SLACK_FILES_CHANNEL_ID || process.env?.SLACK_FILES_CHANNEL_ID || process.env?.VITE_SLACK_FILES_CHANNEL_ID);
+
+  if (webhookUrl || (botToken && channelId)) {
     try {
       const blocks = [
         {
@@ -1664,11 +1671,25 @@ export async function reportErrorHandler(req, res) {
         blocks
       };
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
+      if (webhookUrl) {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      } else if (botToken && channelId) {
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${botToken}`
+          },
+          body: JSON.stringify({
+            channel: channelId,
+            ...payload
+          })
+        }).catch(() => {});
+      }
     } catch (_) {}
   }
 

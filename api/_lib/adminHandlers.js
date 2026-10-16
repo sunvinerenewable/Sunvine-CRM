@@ -1588,7 +1588,10 @@ export async function reportErrorHandler(req, res) {
     process.env.SLACK_WEBHOOK_URL
   );
 
-  if (webhookUrl) {
+  const botToken = !isTestRunner && (process.env.SLACK_BOT_TOKEN || process.env.VITE_SLACK_BOT_TOKEN);
+  const channelId = !isTestRunner && (process.env.SLACK_FILES_CHANNEL_ID || process.env.VITE_SLACK_FILES_CHANNEL_ID);
+
+  if (webhookUrl || (botToken && channelId)) {
     try {
       const blocks = [
         {
@@ -1672,11 +1675,25 @@ export async function reportErrorHandler(req, res) {
         blocks
       };
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).catch(() => {});
+      if (webhookUrl) {
+        await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      } else if (botToken && channelId) {
+        await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${botToken}`
+          },
+          body: JSON.stringify({
+            channel: channelId,
+            ...payload
+          })
+        }).catch(() => {});
+      }
     } catch (_) {}
   }
 
