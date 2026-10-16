@@ -681,12 +681,13 @@ ${origin}/?tab=pricing_master
     });
 
     const capKw = Number(slabForm.capacityKW) || slabForm.capacityKW;
+    const modCount = Number(slabForm.noOfModules) || Math.round((Number(capKw) * 1000) / 550);
     const newRow = {
       capacityKW: capKw,
-      noOfModules: Number(slabForm.noOfModules) || Math.round(Number(capKw) * 1000 / 550),
+      noOfModules: modCount,
       inverterCapacityKW: slabForm.inverterCapacityKW ? String(slabForm.inverterCapacityKW) : `${capKw}KW`,
-      topcon585CapacityKW: Number(capKw) * 1.06,
-      topcon600CapacityKW: Number(capKw) * 1.09,
+      topcon585CapacityKW: Number(((modCount * 585) / 1000).toFixed(3)),
+      topcon600CapacityKW: Number(((modCount * 600) / 1000).toFixed(3)),
       panelPrices: newPanelPrices,
       ...legacyMap
     };

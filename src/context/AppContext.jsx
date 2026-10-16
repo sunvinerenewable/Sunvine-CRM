@@ -869,12 +869,16 @@ export const AppProvider = ({ children }) => {
           const cleanBrand = inv.brand ? inv.brand.trim() : '';
           const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
           const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+          const rawPrice = inv.basePrice ?? inv.base_price_inr ?? inv.base_price;
+          const parsedPrice = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
+          const basePrice = !isNaN(parsedPrice) && parsedPrice > 0 ? parsedPrice : null;
           return {
             ...inv,
             brand,
             capacityKW: capKW,
             capacity_kw: capKW,
-            capacity: inv.capacity || `${capKW} kW`
+            capacity: inv.capacity || `${capKW} kW`,
+            basePrice: basePrice ?? inv.basePrice
           };
         });
         setInvertersList(canonicalInverters);
@@ -1066,12 +1070,16 @@ export const AppProvider = ({ children }) => {
               const cleanBrand = inv.brand ? inv.brand.trim() : '';
               const brand = cleanBrand.toLowerCase() === 'deye' ? 'Deye' : cleanBrand;
               const capKW = Number(inv.capacityKW ?? inv.capacity_kw ?? parseFloat(String(inv.capacity || '').replace(/[^0-9.]/g, ''))) || 5.0;
+              const rawPrice = inv.basePrice ?? inv.base_price_inr ?? inv.base_price;
+              const parsedPrice = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice || '').replace(/[^0-9.]/g, ''));
+              const basePrice = !isNaN(parsedPrice) && parsedPrice > 0 ? parsedPrice : null;
               return {
                 ...inv,
                 brand,
                 capacityKW: capKW,
                 capacity_kw: capKW,
-                capacity: inv.capacity || `${capKW} kW`
+                capacity: inv.capacity || `${capKW} kW`,
+                basePrice: basePrice ?? inv.basePrice
               };
             });
             setInvertersList(canonicalInverters);

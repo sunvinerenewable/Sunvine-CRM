@@ -322,32 +322,31 @@ export default function CreateQuotation() {
     }
     const matching = sorted.find(i => Number(i.capacityKW ?? i.capacity_kw ?? 0) >= plantKw) || sorted[sorted.length - 1];
     const resolvedCap = Number(matching.capacityKW ?? matching.capacity_kw) || plantKw;
+    const defaultTierRate = resolvedCap <= 2.5 ? 12500 : (resolvedCap <= 3.6 ? 15500 : (resolvedCap <= 5.0 ? 26000 : (resolvedCap <= 6.0 ? 40000 : (resolvedCap <= 8.0 ? 48000 : (resolvedCap <= 10.0 ? 54000 : 75000)))));
+    const resolvedPrice = parseNumericPrice(matching.basePrice || matching.base_price_inr || matching.base_price, defaultTierRate);
     return {
       capacityKW: resolvedCap,
-      price: parseNumericPrice(matching.basePrice, 15500),
+      price: resolvedPrice > 0 ? resolvedPrice : defaultTierRate,
       inverter: matching
     };
   };
 
   const getInverterBenchmarkRate = (brandName, capKw) => {
+    const tieredFallback = capKw <= 2.5 ? 12500 : (capKw <= 3.6 ? 15500 : (capKw <= 5.0 ? 26000 : (capKw <= 6.0 ? 40000 : (capKw <= 8.0 ? 48000 : (capKw <= 10.0 ? 54000 : 75000)))));
     const match = activeInverters.find(i =>
       (i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName) &&
       Math.abs(Number(i.capacityKW ?? i.capacity_kw ?? 0) - Number(capKw)) < 0.05
     );
     if (match) {
-      return parseNumericPrice(match.basePrice, 15500);
+      const p = parseNumericPrice(match.basePrice || match.base_price_inr || match.base_price, 0);
+      if (p > 0) return p;
     }
     const brandFallback = activeInverters.find(i => i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName);
     if (brandFallback) {
-      return parseNumericPrice(brandFallback.basePrice, 15500);
+      const p = parseNumericPrice(brandFallback.basePrice || brandFallback.base_price_inr || brandFallback.base_price, 0);
+      if (p > 0) return p;
     }
-    if (capKw <= 2.5) return 12500;
-    if (capKw <= 3.6) return 15500;
-    if (capKw <= 5.0) return 26000;
-    if (capKw <= 6.0) return 40000;
-    if (capKw <= 8.0) return 48000;
-    if (capKw <= 10.0) return 54000;
-    return 75000;
+    return tieredFallback;
   };
 
   // Step 1.2 Dynamic Hardware: Brand -> Wattage (Wp) -> Panel Quantity -> Auto kW
@@ -414,6 +413,26 @@ export default function CreateQuotation() {
           kw: standardKw,
           panelsCount: modules,
           label: `${standardKw} kW System — ${modules} Panels`
+        });
+      }
+
+      // Also register 600W capacity from matrix if available
+      const top600Kw = Number(slab.topcon600CapacityKW || slab.topcon600_capacity_kw);
+      if (top600Kw && top600Kw > 0 && !kwMap.has(top600Kw)) {
+        kwMap.set(top600Kw, {
+          kw: top600Kw,
+          panelsCount: modules,
+          label: `${top600Kw} kW System — ${modules} Panels`
+        });
+      }
+
+      // Also register 585W capacity from matrix if available
+      const top585Kw = Number(slab.topcon585CapacityKW || slab.topcon585_capacity_kw);
+      if (top585Kw && top585Kw > 0 && !kwMap.has(top585Kw)) {
+        kwMap.set(top585Kw, {
+          kw: top585Kw,
+          panelsCount: modules,
+          label: `${top585Kw} kW System — ${modules} Panels`
         });
       }
     });
@@ -483,10 +502,26 @@ export default function CreateQuotation() {
 
   // Active slab strictly matching selected kW from the admin matrix
   const matchedSlab = useMemo(() => {
-    const matchByKw = (activeBosMatrix || []).find(
+    const list = activeBosMatrix || [];
+    // 1. Exact match on standard capacityKW
+    const matchByKw = list.find(
       (r) => Math.abs(Number(r.capacityKW || r.capacity_kw) - Number(selectedPresetKw)) < 0.05
     );
-    return matchByKw || activeBosMatrix?.[0] || {
+    if (matchByKw) return matchByKw;
+
+    // 2. Match on topcon600CapacityKW (e.g. 8.4 kW, 9.0 kW, 9.6 kW)
+    const matchBy600 = list.find(
+      (r) => Math.abs(Number(r.topcon600CapacityKW || r.topcon600_capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    if (matchBy600) return matchBy600;
+
+    // 3. Match on topcon585CapacityKW (e.g. 7.02 kW, 8.19 kW)
+    const matchBy585 = list.find(
+      (r) => Math.abs(Number(r.topcon585CapacityKW || r.topcon585_capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    if (matchBy585) return matchBy585;
+
+    return list[0] || {
       capacityKW: 3.3,
       noOfModules: 6,
       inverterCapacityKW: 3.6,
@@ -626,7 +661,12 @@ export default function CreateQuotation() {
 
     const targetSlab = (activeBosMatrix || []).find((r) => {
       const slabKw = Number(r.capacityKW || r.capacity_kw);
-      return Math.abs(slabKw - numKw) < 0.05;
+      if (Math.abs(slabKw - numKw) < 0.05) return true;
+      const slab600 = Number(r.topcon600CapacityKW || r.topcon600_capacity_kw);
+      if (slab600 && Math.abs(slab600 - numKw) < 0.05) return true;
+      const slab585 = Number(r.topcon585CapacityKW || r.topcon585_capacity_kw);
+      if (slab585 && Math.abs(slab585 - numKw) < 0.05) return true;
+      return false;
     });
     if (targetSlab) {
       const invCap = parseFloat(targetSlab.inverterCapacityKW || targetSlab.inverter_capacity_kw) || numKw;
@@ -651,7 +691,12 @@ export default function CreateQuotation() {
 
   // Auto-calculated System Capacity (kW)
   // Accurately aligned with Admin preset slab capacity
-  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
+  const calculatedQty = (currentPresetMake?.watt && selectedPresetKw)
+    ? getPanelQuantityForCapacity(selectedPresetKw, currentPresetMake.watt)
+    : 0;
+  const actualModuleCount = isMarginBased
+    ? (calculatedQty > 0 ? calculatedQty : (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity))
+    : panelQuantity;
   const kw = isMarginBased
     ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || parseFloat(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(3)))
     : parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3));
@@ -661,7 +706,12 @@ export default function CreateQuotation() {
   // Synchronize Margin-Based state with component hardware state
   useEffect(() => {
     if (isMarginBased && matchedSlab) {
-      const targetModules = Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4;
+      const calculatedModules = (currentPresetMake?.watt && selectedPresetKw)
+        ? getPanelQuantityForCapacity(selectedPresetKw, currentPresetMake.watt)
+        : 0;
+      const targetModules = calculatedModules > 0
+        ? calculatedModules
+        : (Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4);
       if (panelQuantity !== targetModules) {
         setPanelQuantity(targetModules);
       }
