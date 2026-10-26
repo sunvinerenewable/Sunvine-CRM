@@ -525,12 +525,12 @@ export default function CreateQuotation() {
       capacityKW: 3.3,
       noOfModules: 6,
       inverterCapacityKW: 3.6,
-      adaniBiFiPrice: 160173,
-      apsBiFiPrice: 148500,
-      rayzonePrice: 148500,
-      waaree540Price: 155844,
-      waaree585Price: 173043,
-      apsTopcon600Price: 164520
+      adaniBiFiPrice: 153573,
+      apsBiFiPrice: 141900,
+      rayzonePrice: 141900,
+      waaree540Price: 149244,
+      waaree585Price: 166023,
+      apsTopcon600Price: 157320
     };
   }, [activeBosMatrix, selectedPresetKw]);
 
