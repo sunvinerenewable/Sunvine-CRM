@@ -280,25 +280,25 @@ export const DEFAULT_PRICING_MASTER = {
       tierName: 'Diamond EPC',
       defaultMarginPerKw: 6500,
       maxMarginCapPerKw: 8000,
-      description: 'Premier High-Volume Partners (> 5.0 MW/quarter)'
+      description: 'Premier High-Volume Partners (> 5,000 kW/quarter)'
     },
     platinum: {
       tierName: 'Platinum Tier',
       defaultMarginPerKw: 5500,
       maxMarginCapPerKw: 7000,
-      description: 'Tier-1 Large Scale EPC (> 3.0 MW/quarter)'
+      description: 'Tier-1 Large Scale EPC (> 3,000 kW/quarter)'
     },
     gold: {
       tierName: 'Gold EPC',
       defaultMarginPerKw: 4500,
       maxMarginCapPerKw: 6000,
-      description: 'Established Standard Installers (1.5 - 3.0 MW/quarter)'
+      description: 'Established Standard Installers (1,500 - 3,000 kW/quarter)'
     },
     silver: {
       tierName: 'Silver Installer',
       defaultMarginPerKw: 3500,
       maxMarginCapPerKw: 5000,
-      description: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)'
+      description: 'Entry / Regional Empanelled Installers (< 1,500 kW/quarter)'
     }
   },
 

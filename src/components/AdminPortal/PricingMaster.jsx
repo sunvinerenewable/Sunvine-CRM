@@ -2307,10 +2307,10 @@ ${origin}/?tab=pricing_master
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5.0 MW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-                    { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3.0 MW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                    { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-                    { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
+                    { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5,000 kW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                    { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3,000 kW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                    { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1,500 - 3,000 kW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+                    { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1,500 kW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
                   ].map((tier) => {
                     const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                     return (
