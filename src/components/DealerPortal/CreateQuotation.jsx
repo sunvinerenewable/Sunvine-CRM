@@ -1061,8 +1061,8 @@ export default function CreateQuotation() {
     });
   });
 
-  // Selected kit preset for loading & View Mode
-  const [bomViewMode, setBomViewMode] = useTableViewMode('dealer_quote_bom', 'table');
+  // Selected kit preset for loading & View Mode (defaults to 'card' format)
+  const [bomViewMode, setBomViewMode] = useTableViewMode('dealer_quote_bom_v2', 'card');
   const [mobileBomCategory, setMobileBomCategory] = useState('all');
   const [selectedKitId, setSelectedKitId] = useState('');
   const [isSaveKitModalOpen, setIsSaveKitModalOpen] = useState(false);
@@ -3290,8 +3290,8 @@ export default function CreateQuotation() {
                     })}
                   </div>
 
-                  {/* Compact Mobile Items List */}
-                  <div className="space-y-2">
+                  {/* Compact Responsive Cards List */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
                     {filteredMobileBomItems.map((item, idx) => {
                       const itemName = item.name || item.item || item.description || `BOM Material #${idx + 1}`;
                       const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
