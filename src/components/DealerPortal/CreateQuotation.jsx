@@ -2436,6 +2436,93 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
+                {/* 3.1 SYSTEM-WISE BASE PACKAGE PRICING (AUTOMATIC + MANUAL ADJUSTMENT) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">currency_rupee</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label htmlFor="systemBasePriceInput" className="text-xs sm:text-sm font-bold text-on-surface">
+                            Turnkey Base System Price *
+                          </label>
+                          {customPresetBasePrice !== null && customPresetBasePrice !== undefined ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300/80 px-2 py-0.5 rounded-full">
+                              <span className="material-symbols-outlined text-[13px] text-amber-700">edit</span>
+                              Manual Override Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2 py-0.5 rounded-full">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-700">auto_awesome</span>
+                              Auto Database Matrix (-₹2k/kW)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary">
+                          Auto-derived from official price list with ₹2,000/kW dealer margin deducted. You can customize or manually override anytime.
+                        </p>
+                      </div>
+                    </div>
+
+                    {customPresetBasePrice !== null && customPresetBasePrice !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomPresetBasePrice(null)}
+                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
+                        title="Revert to auto matrix price"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                        Reset to Auto ({formatINR(activePresetBasePrice)})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-bold text-sm">
+                          ₹
+                        </div>
+                        <input
+                          id="systemBasePriceInput"
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={customPresetBasePrice !== null && customPresetBasePrice !== undefined ? customPresetBasePrice : (activePresetBasePrice || '')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              setCustomPresetBasePrice('');
+                            } else {
+                              const num = Number(val);
+                              setCustomPresetBasePrice(isNaN(num) ? 0 : num);
+                            }
+                          }}
+                          className="w-full h-11 pl-8 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-mono text-sm sm:text-base font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                          placeholder="Enter base package price"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 px-3 py-2 rounded-lg bg-surface-container-lowest/60 border border-surface-container-high/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-secondary block">Effective Rate / kW</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          ₹{kw > 0 ? Math.round(effectiveMarginBasePrice / kw).toLocaleString('en-IN') : 0} / kW
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-secondary block">Modules &amp; Inverter</span>
+                        <span className="font-mono text-slate-700 font-semibold">
+                          {moduleCount} × {currentPresetMake?.watt || 550}W + {matchedSlab?.inverterCapacityKW || kw}kW
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 4. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
                 <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -3839,14 +3926,37 @@ export default function CreateQuotation() {
                     {/* Base Package Price from Matrix */}
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex flex-col min-w-0">
-                        <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
+                          {customPresetBasePrice !== null && customPresetBasePrice !== undefined ? (
+                            <span className="text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded">
+                              Manual
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                              Auto
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-slate-500">
                           {currentPresetMake.name} ({currentPresetMake.watt}W) • {panelQuantity} Modules • {kw} kW
                         </span>
                       </div>
-                      <span className="font-mono font-bold text-slate-900 shrink-0">
-                        {formatINR(baseProjectCost)}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-bold text-slate-900">
+                          {formatINR(baseProjectCost)}
+                        </span>
+                        {customPresetBasePrice !== null && customPresetBasePrice !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() => setCustomPresetBasePrice(null)}
+                            title="Reset to automatic matrix price"
+                            className="text-secondary hover:text-emerald-700 p-0.5 rounded transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Bundled Equipment & Scope Note */}

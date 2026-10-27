@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "migrate": "node scripts/run_migrations.js",
-    "test": "node --test src/utils/__tests__/*.test.js",
+    "test": "node --test --test-concurrency=1 src/utils/__tests__/*.test.js",
     "env:staging": "node scripts/switch-env.mjs staging",
     "env:prod": "node scripts/switch-env.mjs prod",
     "env:status": "node scripts/switch-env.mjs status"
@@ -25,6 +25,7 @@
     "html2pdf.js": "^0.14.0",
     "jose": "^6.2.12",
     "lucide-react": "^0.468.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.23.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
