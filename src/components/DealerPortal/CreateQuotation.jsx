@@ -322,32 +322,31 @@ export default function CreateQuotation() {
     }
     const matching = sorted.find(i => Number(i.capacityKW ?? i.capacity_kw ?? 0) >= plantKw) || sorted[sorted.length - 1];
     const resolvedCap = Number(matching.capacityKW ?? matching.capacity_kw) || plantKw;
+    const defaultTierRate = resolvedCap <= 2.5 ? 12500 : (resolvedCap <= 3.6 ? 15500 : (resolvedCap <= 5.0 ? 26000 : (resolvedCap <= 6.0 ? 40000 : (resolvedCap <= 8.0 ? 48000 : (resolvedCap <= 10.0 ? 54000 : 75000)))));
+    const resolvedPrice = parseNumericPrice(matching.basePrice || matching.base_price_inr || matching.base_price, defaultTierRate);
     return {
       capacityKW: resolvedCap,
-      price: parseNumericPrice(matching.basePrice, 15500),
+      price: resolvedPrice > 0 ? resolvedPrice : defaultTierRate,
       inverter: matching
     };
   };
 
   const getInverterBenchmarkRate = (brandName, capKw) => {
+    const tieredFallback = capKw <= 2.5 ? 12500 : (capKw <= 3.6 ? 15500 : (capKw <= 5.0 ? 26000 : (capKw <= 6.0 ? 40000 : (capKw <= 8.0 ? 48000 : (capKw <= 10.0 ? 54000 : 75000)))));
     const match = activeInverters.find(i =>
       (i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName) &&
       Math.abs(Number(i.capacityKW ?? i.capacity_kw ?? 0) - Number(capKw)) < 0.05
     );
     if (match) {
-      return parseNumericPrice(match.basePrice, 15500);
+      const p = parseNumericPrice(match.basePrice || match.base_price_inr || match.base_price, 0);
+      if (p > 0) return p;
     }
     const brandFallback = activeInverters.find(i => i.brand?.toLowerCase() === brandName?.toLowerCase() || i.brand === brandName);
     if (brandFallback) {
-      return parseNumericPrice(brandFallback.basePrice, 15500);
+      const p = parseNumericPrice(brandFallback.basePrice || brandFallback.base_price_inr || brandFallback.base_price, 0);
+      if (p > 0) return p;
     }
-    if (capKw <= 2.5) return 12500;
-    if (capKw <= 3.6) return 15500;
-    if (capKw <= 5.0) return 26000;
-    if (capKw <= 6.0) return 40000;
-    if (capKw <= 8.0) return 48000;
-    if (capKw <= 10.0) return 54000;
-    return 75000;
+    return tieredFallback;
   };
 
   // Step 1.2 Dynamic Hardware: Brand -> Wattage (Wp) -> Panel Quantity -> Auto kW
@@ -414,6 +413,26 @@ export default function CreateQuotation() {
           kw: standardKw,
           panelsCount: modules,
           label: `${standardKw} kW System — ${modules} Panels`
+        });
+      }
+
+      // Also register 600W capacity from matrix if available
+      const top600Kw = Number(slab.topcon600CapacityKW || slab.topcon600_capacity_kw);
+      if (top600Kw && top600Kw > 0 && !kwMap.has(top600Kw)) {
+        kwMap.set(top600Kw, {
+          kw: top600Kw,
+          panelsCount: modules,
+          label: `${top600Kw} kW System — ${modules} Panels`
+        });
+      }
+
+      // Also register 585W capacity from matrix if available
+      const top585Kw = Number(slab.topcon585CapacityKW || slab.topcon585_capacity_kw);
+      if (top585Kw && top585Kw > 0 && !kwMap.has(top585Kw)) {
+        kwMap.set(top585Kw, {
+          kw: top585Kw,
+          panelsCount: modules,
+          label: `${top585Kw} kW System — ${modules} Panels`
         });
       }
     });
@@ -483,19 +502,35 @@ export default function CreateQuotation() {
 
   // Active slab strictly matching selected kW from the admin matrix
   const matchedSlab = useMemo(() => {
-    const matchByKw = (activeBosMatrix || []).find(
+    const list = activeBosMatrix || [];
+    // 1. Exact match on standard capacityKW
+    const matchByKw = list.find(
       (r) => Math.abs(Number(r.capacityKW || r.capacity_kw) - Number(selectedPresetKw)) < 0.05
     );
-    return matchByKw || activeBosMatrix?.[0] || {
+    if (matchByKw) return matchByKw;
+
+    // 2. Match on topcon600CapacityKW (e.g. 8.4 kW, 9.0 kW, 9.6 kW)
+    const matchBy600 = list.find(
+      (r) => Math.abs(Number(r.topcon600CapacityKW || r.topcon600_capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    if (matchBy600) return matchBy600;
+
+    // 3. Match on topcon585CapacityKW (e.g. 7.02 kW, 8.19 kW)
+    const matchBy585 = list.find(
+      (r) => Math.abs(Number(r.topcon585CapacityKW || r.topcon585_capacity_kw) - Number(selectedPresetKw)) < 0.05
+    );
+    if (matchBy585) return matchBy585;
+
+    return list[0] || {
       capacityKW: 3.3,
       noOfModules: 6,
       inverterCapacityKW: 3.6,
-      adaniBiFiPrice: 160173,
-      apsBiFiPrice: 148500,
-      rayzonePrice: 148500,
-      waaree540Price: 155844,
-      waaree585Price: 173043,
-      apsTopcon600Price: 164520
+      adaniBiFiPrice: 153573,
+      apsBiFiPrice: 141900,
+      rayzonePrice: 141900,
+      waaree540Price: 149244,
+      waaree585Price: 166023,
+      apsTopcon600Price: 157320
     };
   }, [activeBosMatrix, selectedPresetKw]);
 
@@ -626,7 +661,12 @@ export default function CreateQuotation() {
 
     const targetSlab = (activeBosMatrix || []).find((r) => {
       const slabKw = Number(r.capacityKW || r.capacity_kw);
-      return Math.abs(slabKw - numKw) < 0.05;
+      if (Math.abs(slabKw - numKw) < 0.05) return true;
+      const slab600 = Number(r.topcon600CapacityKW || r.topcon600_capacity_kw);
+      if (slab600 && Math.abs(slab600 - numKw) < 0.05) return true;
+      const slab585 = Number(r.topcon585CapacityKW || r.topcon585_capacity_kw);
+      if (slab585 && Math.abs(slab585 - numKw) < 0.05) return true;
+      return false;
     });
     if (targetSlab) {
       const invCap = parseFloat(targetSlab.inverterCapacityKW || targetSlab.inverter_capacity_kw) || numKw;
@@ -651,7 +691,12 @@ export default function CreateQuotation() {
 
   // Auto-calculated System Capacity (kW)
   // Accurately aligned with Admin preset slab capacity
-  const actualModuleCount = isMarginBased ? (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity) : panelQuantity;
+  const calculatedQty = (currentPresetMake?.watt && selectedPresetKw)
+    ? getPanelQuantityForCapacity(selectedPresetKw, currentPresetMake.watt)
+    : 0;
+  const actualModuleCount = isMarginBased
+    ? (calculatedQty > 0 ? calculatedQty : (Number(matchedSlab?.noOfModules || matchedSlab?.no_of_modules) || panelQuantity))
+    : panelQuantity;
   const kw = isMarginBased
     ? Number(matchedSlab?.capacityKW || matchedSlab?.capacity_kw || selectedPresetKw || parseFloat(((currentPresetMake.watt * actualModuleCount) / 1000).toFixed(3)))
     : parseFloat(((panelWatt * panelQuantity) / 1000).toFixed(3));
@@ -661,7 +706,12 @@ export default function CreateQuotation() {
   // Synchronize Margin-Based state with component hardware state
   useEffect(() => {
     if (isMarginBased && matchedSlab) {
-      const targetModules = Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4;
+      const calculatedModules = (currentPresetMake?.watt && selectedPresetKw)
+        ? getPanelQuantityForCapacity(selectedPresetKw, currentPresetMake.watt)
+        : 0;
+      const targetModules = calculatedModules > 0
+        ? calculatedModules
+        : (Number(matchedSlab.noOfModules || matchedSlab.no_of_modules) || 4);
       if (panelQuantity !== targetModules) {
         setPanelQuantity(targetModules);
       }
@@ -1011,8 +1061,8 @@ export default function CreateQuotation() {
     });
   });
 
-  // Selected kit preset for loading & View Mode
-  const [bomViewMode, setBomViewMode] = useTableViewMode('dealer_quote_bom', 'table');
+  // Selected kit preset for loading & View Mode (defaults to 'card' format)
+  const [bomViewMode, setBomViewMode] = useTableViewMode('dealer_quote_bom_v2', 'card');
   const [mobileBomCategory, setMobileBomCategory] = useState('all');
   const [selectedKitId, setSelectedKitId] = useState('');
   const [isSaveKitModalOpen, setIsSaveKitModalOpen] = useState(false);
@@ -2386,6 +2436,93 @@ export default function CreateQuotation() {
                   </div>
                 </div>
 
+                {/* 3.1 SYSTEM-WISE BASE PACKAGE PRICING (AUTOMATIC + MANUAL ADJUSTMENT) */}
+                <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-[20px]">currency_rupee</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label htmlFor="systemBasePriceInput" className="text-xs sm:text-sm font-bold text-on-surface">
+                            Turnkey Base System Price *
+                          </label>
+                          {customPresetBasePrice !== null && customPresetBasePrice !== undefined ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300/80 px-2 py-0.5 rounded-full">
+                              <span className="material-symbols-outlined text-[13px] text-amber-700">edit</span>
+                              Manual Override Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2 py-0.5 rounded-full">
+                              <span className="material-symbols-outlined text-[13px] text-emerald-700">auto_awesome</span>
+                              Auto Database Matrix (-₹2k/kW)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-secondary">
+                          Auto-derived from official price list with ₹2,000/kW dealer margin deducted. You can customize or manually override anytime.
+                        </p>
+                      </div>
+                    </div>
+
+                    {customPresetBasePrice !== null && customPresetBasePrice !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => setCustomPresetBasePrice(null)}
+                        className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
+                        title="Revert to auto matrix price"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                        Reset to Auto ({formatINR(activePresetBasePrice)})
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500 font-bold text-sm">
+                          ₹
+                        </div>
+                        <input
+                          id="systemBasePriceInput"
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={customPresetBasePrice !== null && customPresetBasePrice !== undefined ? customPresetBasePrice : (activePresetBasePrice || '')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              setCustomPresetBasePrice('');
+                            } else {
+                              const num = Number(val);
+                              setCustomPresetBasePrice(isNaN(num) ? 0 : num);
+                            }
+                          }}
+                          className="w-full h-11 pl-8 pr-3 rounded-lg bg-surface-container-lowest text-on-surface font-mono text-sm sm:text-base font-bold shadow-xs border border-surface-container-high hover:border-emerald-500/60 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                          placeholder="Enter base package price"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 px-3 py-2 rounded-lg bg-surface-container-lowest/60 border border-surface-container-high/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-secondary block">Effective Rate / kW</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          ₹{kw > 0 ? Math.round(effectiveMarginBasePrice / kw).toLocaleString('en-IN') : 0} / kW
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-secondary block">Modules &amp; Inverter</span>
+                        <span className="font-mono text-slate-700 font-semibold">
+                          {moduleCount} × {currentPresetMake?.watt || 550}W + {matchedSlab?.inverterCapacityKW || kw}kW
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 4. PROJECT SCHEME & SUBSIDY ELIGIBILITY */}
                 <div className="p-4 bg-surface-container-low border border-surface-container-high rounded-xl">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -3153,8 +3290,8 @@ export default function CreateQuotation() {
                     })}
                   </div>
 
-                  {/* Compact Mobile Items List */}
-                  <div className="space-y-2">
+                  {/* Compact Responsive Cards List */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
                     {filteredMobileBomItems.map((item, idx) => {
                       const itemName = item.name || item.item || item.description || `BOM Material #${idx + 1}`;
                       const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
@@ -3789,14 +3926,37 @@ export default function CreateQuotation() {
                     {/* Base Package Price from Matrix */}
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex flex-col min-w-0">
-                        <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-800 font-semibold truncate">Complete Solar Package (Base)</span>
+                          {customPresetBasePrice !== null && customPresetBasePrice !== undefined ? (
+                            <span className="text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.5 rounded">
+                              Manual
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
+                              Auto
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-slate-500">
                           {currentPresetMake.name} ({currentPresetMake.watt}W) • {panelQuantity} Modules • {kw} kW
                         </span>
                       </div>
-                      <span className="font-mono font-bold text-slate-900 shrink-0">
-                        {formatINR(baseProjectCost)}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-mono font-bold text-slate-900">
+                          {formatINR(baseProjectCost)}
+                        </span>
+                        {customPresetBasePrice !== null && customPresetBasePrice !== undefined && (
+                          <button
+                            type="button"
+                            onClick={() => setCustomPresetBasePrice(null)}
+                            title="Reset to automatic matrix price"
+                            className="text-secondary hover:text-emerald-700 p-0.5 rounded transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Bundled Equipment & Scope Note */}

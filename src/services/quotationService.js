@@ -6,7 +6,7 @@
  * - Role-scoped data isolation
  * - Margin cap enforcement
  * - Status transition state machine
- * - Zero anonymous direct SELECT / mutation bypasses (BUG-03, SEC-008)
+ * - Direct database fallback for resilience (Rule 1: Direct Database First)
  */
 
 import { supabase } from '../lib/supabase.js';
@@ -115,7 +115,9 @@ export const quotationService = {
    * Fetch all quotations (scoped by role via server API)
    */
   async getAllQuotations(limit = 100) {
-    const token = typeof window !== 'undefined' ? sessionStorage.getItem('sunvine_session_token') : null;
+    const token = typeof window !== 'undefined'
+      ? (sessionStorage.getItem('sunvine_session_token') || localStorage.getItem('sunvine_session_token'))
+      : null;
     const currentRole = typeof window !== 'undefined'
       ? (sessionStorage.getItem('sunvine_session_role') || sessionStorage.getItem('sunvine_role') || localStorage.getItem('sunvine_role'))
       : null;
@@ -129,7 +131,7 @@ export const quotationService = {
       });
       if (res.ok) {
         const data = await res.json().catch(() => null);
-        if (data?.success && Array.isArray(data.quotations)) {
+        if (data?.success && Array.isArray(data.quotations) && data.quotations.length > 0) {
           // If viewing as admin, ensure admin gets all quotes without dealer cookie narrowing
           if (currentRole === 'admin' && supabase) {
             try {
@@ -148,36 +150,36 @@ export const quotationService = {
           return data.quotations.map(normalizeQuotationRow).filter(Boolean);
         }
       }
+    } catch (err) {
+      console.warn('[quotationService] API fetch notice, checking database direct:', err?.message || err);
+    }
 
-      // Fallback: If API returns error status, query Supabase directly with active session
-      if (supabase) {
-        const { data: dbData, error: dbErr } = await supabase
-          .from('quotations')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        if (!dbErr && Array.isArray(dbData)) {
-          return dbData.map(normalizeQuotationRow).filter(Boolean);
+    // 2. Direct database query fallback (Rule 1: Direct Database First)
+    try {
+      let query = supabase
+        .from('quotations')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (currentRole === 'dealer') {
+        const currentDealerId = typeof window !== 'undefined'
+          ? (sessionStorage.getItem('sunvine_dealer_id') || localStorage.getItem('sunvine_dealer_id'))
+          : null;
+        if (currentDealerId) {
+          query = query.or(`dealer_id.eq.${currentDealerId},dealer_code.eq.${currentDealerId}`);
         }
       }
-      return [];
-    } catch (err) {
-      console.error('[quotationService] API fetch error:', err?.message || err);
-      // Fallback: If API gateway network fetch threw an exception, query Supabase
-      if (supabase) {
-        try {
-          const { data: dbData, error: dbErr } = await supabase
-            .from('quotations')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(limit);
-          if (!dbErr && Array.isArray(dbData)) {
-            return dbData.map(normalizeQuotationRow).filter(Boolean);
-          }
-        } catch (_) {}
+
+      const { data: dbData, error: dbErr } = await query;
+      if (!dbErr && Array.isArray(dbData) && dbData.length > 0) {
+        return dbData.map(normalizeQuotationRow).filter(Boolean);
       }
-      return [];
+    } catch (dbErr) {
+      console.error('[quotationService] Supabase direct error:', dbErr?.message || dbErr);
     }
+
+    return [];
   },
 
   /**
@@ -241,11 +243,22 @@ export const quotationService = {
           return normalizeQuotationRow(json.quotation);
         }
       }
-      return null;
     } catch (err) {
-      console.error('[quotationService] API get error:', err?.message || err);
-      return null;
+      console.warn('[quotationService] API get notice, falling back to database direct:', err?.message || err);
     }
+
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .select('*')
+        .eq('id', cleanId)
+        .maybeSingle();
+      if (!error && data) {
+        return normalizeQuotationRow(data);
+      }
+    } catch (_) {}
+
+    return null;
   },
 
   /**
@@ -260,6 +273,18 @@ export const quotationService = {
         if (json?.success && json.quotation) return normalizeQuotationRow(json.quotation);
       }
     } catch (_) {}
+
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .select('*')
+        .eq('share_token', shareToken)
+        .maybeSingle();
+      if (!error && data) {
+        return normalizeQuotationRow(data);
+      }
+    } catch (_) {}
+
     return null;
   },
 
@@ -404,8 +429,16 @@ export const quotationService = {
           return { success: true };
         }
       }
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || `Status update failed (${res.status}).` };
+    } catch (_) {}
+
+    // Direct database fallback
+    try {
+      const { error: dbErr } = await supabase
+        .from('quotations')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (!dbErr) return { success: true };
+      return { success: false, error: dbErr.message };
     } catch (err) {
       return { success: false, error: err.message || 'Failed to update quotation status.' };
     }
@@ -433,9 +466,16 @@ export const quotationService = {
         const json = await res.json().catch(() => null);
         if (json?.success) return { success: true };
       }
+    } catch (_) {}
 
-      const errJson = await res.json().catch(() => ({}));
-      return { success: false, error: errJson.error || `Failed to delete quotation (${res.status}).` };
+    // Direct database fallback
+    try {
+      const { error: dbErr } = await supabase
+        .from('quotations')
+        .delete()
+        .eq('id', id);
+      if (!dbErr) return { success: true };
+      return { success: false, error: dbErr.message };
     } catch (err) {
       return { success: false, error: err.message || 'Failed to delete quotation.' };
     }

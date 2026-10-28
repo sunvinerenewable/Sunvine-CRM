@@ -167,7 +167,7 @@ export default function DealerProfile() {
                 </div>
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="material-symbols-outlined text-[16px] text-primary shrink-0">bolt</span>
-                  <span>Allocated Quota: <strong className="text-on-surface font-semibold">1.2 MW / Qtr</strong></span>
+                  <span>Allocated Quota: <strong className="text-on-surface font-semibold">1,200 kW / Qtr</strong></span>
                 </div>
               </div>
             </div>

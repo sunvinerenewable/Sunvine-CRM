@@ -255,6 +255,8 @@ export async function handleAdminDealers(req, res) {
           return res.status(404).json({ error: `Dealer "${targetId}" not found for update.` });
         }
 
+        const rawMobile = dealer.mobile || dealer.mobileNumber || dealer.mobile_number;
+        const cleanMobile = rawMobile ? String(rawMobile).replace(/\D/g, '').slice(-10) : null;
         const isUpdate = (op === 'update' || op === 'upsert') && Boolean(existing);
 
         if (isUpdate) {
@@ -381,8 +383,8 @@ export async function handleAdminDealers(req, res) {
           pricingConfig
         } = dealer;
 
-        const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
-        if (cleanMobile.length !== 10) {
+        const resolvedMobile = cleanMobile || String(mobile || '').replace(/\D/g, '').slice(-10);
+        if (!resolvedMobile || resolvedMobile.length !== 10) {
           return res.status(400).json({ error: 'Valid 10-digit mobile number is required.' });
         }
         if (!firmName || !contactPerson) {
@@ -393,23 +395,23 @@ export async function handleAdminDealers(req, res) {
         let collisionFound = false;
         try {
           if (dealerCode) {
-            const collision = await safeQuery('SELECT id, dealer_code FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, cleanMobile]);
+            const collision = await safeQuery('SELECT id, dealer_code FROM dealer_accounts WHERE dealer_code = $1 OR mobile_number = $2', [dealerCode, resolvedMobile]);
             if (collision?.rows?.length > 0) collisionFound = true;
           } else {
-            const collision = await safeQuery('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [cleanMobile]);
+            const collision = await safeQuery('SELECT id FROM dealer_accounts WHERE mobile_number = $1', [resolvedMobile]);
             if (collision?.rows?.length > 0) collisionFound = true;
           }
         } catch (_) {
           const db = getSupabaseServiceClient();
           const queryBuilder = dealerCode
-            ? db.from('dealer_accounts').select('id, dealer_code').or(`dealer_code.eq.${dealerCode},mobile_number.eq.${cleanMobile}`)
-            : db.from('dealer_accounts').select('id').eq('mobile_number', cleanMobile);
+            ? db.from('dealer_accounts').select('id, dealer_code').or(`dealer_code.eq.${dealerCode},mobile_number.eq.${resolvedMobile}`)
+            : db.from('dealer_accounts').select('id').eq('mobile_number', resolvedMobile);
           const { data } = await queryBuilder;
           if (data && data.length > 0) collisionFound = true;
         }
 
         if (collisionFound) {
-          return res.status(409).json({ error: `Dealer with code "${dealerCode || ''}" or mobile "${cleanMobile}" already exists.` });
+          return res.status(409).json({ error: `Dealer with code "${dealerCode || ''}" or mobile "${resolvedMobile}" already exists.` });
         }
 
         let passwordHash = null;
@@ -427,7 +429,7 @@ export async function handleAdminDealers(req, res) {
           ? Number(maxMarginCapPerKw)
           : null;
         const cleanStatus = (status || 'active').toLowerCase();
-        const cleanEmail = email || `${cleanMobile}@sunvinedealer.in`;
+        const cleanEmail = email || `${resolvedMobile}@sunvinedealer.in`;
         const cleanCity = city || 'Ahmedabad';
         const cleanState = state || 'Gujarat';
         const cleanDiscom = discom || 'UGVCL';
@@ -469,7 +471,7 @@ export async function handleAdminDealers(req, res) {
             code,
             firmName.trim(),
             contactPerson.trim(),
-            cleanMobile,
+            resolvedMobile,
             cleanEmail.trim(),
             cleanCity,
             cleanState,
@@ -979,18 +981,20 @@ export async function handleAdminPricing(req, res) {
           const adani = Number(it.adaniBiFiPrice || it.adani_bifi_price) || 0;
           const aps = Number(it.apsBiFiPrice || it.aps_bifi_price) || 0;
           const rayzone = Number(it.rayzonePrice || it.rayzone_price) || 0;
+          const waaree540 = Number(it.waaree540Price || it.waaree_540_price) || 0;
           const top585Cap = Number(it.topcon585CapacityKW || it.topcon585_capacity_kw) || capKw;
           const waaree585 = Number(it.waaree585Price || it.waaree_585_price) || 0;
           const top600Cap = Number(it.topcon600CapacityKW || it.topcon600_capacity_kw) || capKw;
           const aps600 = Number(it.apsTopcon600Price || it.aps_topcon_600_price) || 0;
+          const panelPrices = (it.panelPrices && typeof it.panelPrices === 'object') ? JSON.stringify(it.panelPrices) : '{}';
 
           const sql = `
             INSERT INTO bos_pricing_matrix (
               id, capacity_kw, no_of_modules, inverter_capacity_kw,
-              adani_bifi_price, aps_bifi_price, rayzone_price,
+              adani_bifi_price, aps_bifi_price, rayzone_price, waaree_540_price,
               topcon585_capacity_kw, waaree_585_price,
-              topcon600_capacity_kw, aps_topcon_600_price, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+              topcon600_capacity_kw, aps_topcon_600_price, panel_prices, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, NOW())
             ON CONFLICT (id) DO UPDATE SET
               capacity_kw = EXCLUDED.capacity_kw,
               no_of_modules = EXCLUDED.no_of_modules,
@@ -998,13 +1002,15 @@ export async function handleAdminPricing(req, res) {
               adani_bifi_price = EXCLUDED.adani_bifi_price,
               aps_bifi_price = EXCLUDED.aps_bifi_price,
               rayzone_price = EXCLUDED.rayzone_price,
+              waaree_540_price = EXCLUDED.waaree_540_price,
               topcon585_capacity_kw = EXCLUDED.topcon585_capacity_kw,
               waaree_585_price = EXCLUDED.waaree_585_price,
               topcon600_capacity_kw = EXCLUDED.topcon600_capacity_kw,
               aps_topcon_600_price = EXCLUDED.aps_topcon_600_price,
+              panel_prices = EXCLUDED.panel_prices,
               updated_at = NOW();
           `;
-          await safeQuery(sql, [idVal, capKw, noMod, invCap, adani, aps, rayzone, top585Cap, waaree585, top600Cap, aps600]);
+          await safeQuery(sql, [idVal, capKw, noMod, invCap, adani, aps, rayzone, waaree540, top585Cap, waaree585, top600Cap, aps600, panelPrices]);
         }
 
         await invalidateCaches(['catalog:bos', 'catalog:bos_matrix', 'catalog:all']);

@@ -124,6 +124,25 @@ test('PUBLIC PROPOSAL E2E: Valid share token returns unauthenticated proposal wi
   // Mock DB query builder
   const mockDb = {
     from: (table) => {
+      if (table === 'system_settings') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: {
+                  id: 'global_settings',
+                  company_profile: {
+                    name: 'Sunvine Renewable Energy',
+                    gstin: '24AFPFS7402A1Z7',
+                    address: 'Gujarat, India'
+                  }
+                },
+                error: null
+              })
+            })
+          })
+        };
+      }
       assert.equal(table, 'quotations');
       return {
         select: () => ({

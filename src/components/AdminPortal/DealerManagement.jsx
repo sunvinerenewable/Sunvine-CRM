@@ -189,7 +189,7 @@ export default function DealerManagement() {
   const [newGstin, setNewGstinState] = useState('');
   const [newPan, setNewPan] = useState('');
   const [newDiscomCode, setNewDiscomCode] = useState('PGVCL-VND-2025-0845');
-  const [newTier, setNewTier] = useState('Gold EPC Partner (Quarterly Cap: 1.5 MW)');
+  const [newTier, setNewTier] = useState('Gold EPC Partner (Quarterly Cap: 1,500 kW)');
   const [newCategory, setNewCategory] = useState('Margin Based');
   const [newCap, setNewCap] = useState('5,000');
   const [newPassword, setNewPassword] = useState('Sunvine@2026');
@@ -298,7 +298,7 @@ export default function DealerManagement() {
   const suspendedDealersCount = (dealers || []).filter(d => d.status === 'Suspended').length;
   const marginDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category || 'Margin Based') === 'Margin Based').length;
   const kitDealersCount = (dealers || []).filter(d => (d.category || d.pricingConfig?.category) === 'Kit Based').length;
-  const totalCapacityMw = ((dealers || []).reduce((acc, d) => acc + (d.totalCapacityKw || 0), 0) / 1000).toFixed(1);
+  const totalCapacityKw = (dealers || []).reduce((acc, d) => acc + (d.totalCapacityKw || 0), 0);
 
   // Sort dealers: newly onboarded / updated dealers first
   const sortedDealers = useMemo(() => {
@@ -450,7 +450,7 @@ export default function DealerManagement() {
     setNewGstinState('');
     setNewPan('');
     setNewDiscomCode('PGVCL-VND-2025-0845');
-    setNewTier('Gold EPC Partner (Quarterly Cap: 1.5 MW)');
+    setNewTier('Gold EPC Partner (Quarterly Cap: 1,500 kW)');
     setNewCap('5,000');
     setNewPassword('Sunvine@2026');
     setFormError('');
@@ -477,10 +477,10 @@ export default function DealerManagement() {
     setNewPan(dealer.pan || '');
     setNewDiscomCode(dealer.discomLicense || dealer.gedaLicenseNo || 'PGVCL-VND-2025-0845');
 
-    const tierStr = (dealer.tier || '').toLowerCase().includes('diamond') ? 'Diamond EPC Partner (Quarterly Cap: > 5 MW)' :
-                    (dealer.tier || '').toLowerCase().includes('platinum') ? 'Platinum Tier (Quarterly Cap: > 3.0 MW)' :
+    const tierStr = (dealer.tier || '').toLowerCase().includes('diamond') ? 'Diamond EPC Partner (Quarterly Cap: > 5,000 kW)' :
+                    (dealer.tier || '').toLowerCase().includes('platinum') ? 'Platinum Tier (Quarterly Cap: > 3,000 kW)' :
                     (dealer.tier || '').toLowerCase().includes('silver') ? 'Silver Installer (Quarterly Cap: 500 kW)' :
-                    'Gold EPC Partner (Quarterly Cap: 1.5 MW)';
+                    'Gold EPC Partner (Quarterly Cap: 1,500 kW)';
     setNewTier(tierStr);
     setNewCap(dealer.maxMarginCapPerKw ? Number(dealer.maxMarginCapPerKw).toLocaleString('en-IN') : '5,000');
     setNewPassword(dealer.password || 'Sunvine@2026');
@@ -1187,8 +1187,8 @@ export default function DealerManagement() {
                     onChange={(e) => setNewTier(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-surface-container-highest rounded-lg text-body-md font-body-md text-on-surface focus:outline-none focus:border-primary-container focus:ring-2 focus:ring-primary-container/20 font-semibold cursor-pointer"
                   >
-                    <option>Gold EPC Partner (Quarterly Cap: 1.5 MW)</option>
-                    <option>Platinum Tier (Quarterly Cap: &gt; 3.0 MW)</option>
+                    <option>Gold EPC Partner (Quarterly Cap: 1,500 kW)</option>
+                    <option>Platinum Tier (Quarterly Cap: &gt; 3,000 kW)</option>
                     <option>Silver Installer (Quarterly Cap: 500 kW)</option>
                     <option>Bronze Associate (Speculative)</option>
                   </select>
@@ -1470,7 +1470,7 @@ export default function DealerManagement() {
               {dealers.length === 0 && isHardwareDbSyncing ? (
                 <Skeleton className="h-4 w-16 rounded inline-block" />
               ) : (
-                `${totalCapacityMw} MW`
+                `${Number(totalCapacityKw.toFixed(1))} kW`
               )}
             </span>
           </div>
@@ -1789,7 +1789,7 @@ export default function DealerManagement() {
                         <div className="text-right">
                           <span className="text-[10px] text-secondary block">Capacity Sold</span>
                           <span className="font-bold text-on-surface font-poppins">
-                            {d.totalCapacityKw >= 1000 ? `${(d.totalCapacityKw / 1000).toFixed(2)} MW` : `${d.totalCapacityKw} kW`}
+                            {`${Number((d.totalCapacityKw || 0).toFixed(1))} kW`}
                           </span>
                         </div>
                       </div>
@@ -2031,7 +2031,7 @@ export default function DealerManagement() {
                           return (
                             <>
                               <div className="font-bold text-on-surface font-poppins text-[13px]">
-                                {capVal >= 1000 ? `${(capVal / 1000).toFixed(2)} MW` : `${Number(capVal.toFixed(1))} kW`}
+                                {`${Number(capVal.toFixed(1))} kW`}
                               </div>
                               <div className="w-16 ml-auto mt-1.5 bg-surface-container rounded-full h-1.5 overflow-hidden">
                                 <div className="bg-[#6CBF3D] h-full rounded-full" style={{ width: `${Math.min(100, Math.max(15, (capVal / 30) * 100))}%` }}></div>
@@ -2174,10 +2174,10 @@ export default function DealerManagement() {
 
             <div className="py-5 space-y-4">
               {[
-                { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5.0 MW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-                { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3.0 MW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-                { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
+                { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5,000 kW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3,000 kW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1,500 - 3,000 kW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+                { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1,500 kW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
               ].map((tier) => {
                 const currentConfig = tempTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                 return (
@@ -2810,7 +2810,7 @@ export default function DealerManagement() {
                     rows={2}
                     value={customNotes}
                     onChange={(e) => setCustomNotes(e.target.value)}
-                    placeholder="e.g. Approved by Director for Saurashtra territory quarterly commitment of 2.5 MW."
+                    placeholder="e.g. Approved by Director for Saurashtra territory quarterly commitment of 2,500 kW."
                     className="w-full bg-surface border border-surface-container-high rounded-lg px-3 py-2 text-xs text-on-surface focus:outline-none focus:border-primary"
                   />
                 </div>

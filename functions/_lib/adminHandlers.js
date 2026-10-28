@@ -972,18 +972,20 @@ export async function handleAdminPricing(req, res) {
           const adani = Number(it.adaniBiFiPrice || it.adani_bifi_price) || 0;
           const aps = Number(it.apsBiFiPrice || it.aps_bifi_price) || 0;
           const rayzone = Number(it.rayzonePrice || it.rayzone_price) || 0;
+          const waaree540 = Number(it.waaree540Price || it.waaree_540_price) || 0;
           const top585Cap = Number(it.topcon585CapacityKW || it.topcon585_capacity_kw) || capKw;
           const waaree585 = Number(it.waaree585Price || it.waaree_585_price) || 0;
           const top600Cap = Number(it.topcon600CapacityKW || it.topcon600_capacity_kw) || capKw;
           const aps600 = Number(it.apsTopcon600Price || it.aps_topcon_600_price) || 0;
+          const panelPrices = (it.panelPrices && typeof it.panelPrices === 'object') ? JSON.stringify(it.panelPrices) : '{}';
 
           const sql = `
             INSERT INTO bos_pricing_matrix (
               id, capacity_kw, no_of_modules, inverter_capacity_kw,
-              adani_bifi_price, aps_bifi_price, rayzone_price,
+              adani_bifi_price, aps_bifi_price, rayzone_price, waaree_540_price,
               topcon585_capacity_kw, waaree_585_price,
-              topcon600_capacity_kw, aps_topcon_600_price, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+              topcon600_capacity_kw, aps_topcon_600_price, panel_prices, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, NOW())
             ON CONFLICT (id) DO UPDATE SET
               capacity_kw = EXCLUDED.capacity_kw,
               no_of_modules = EXCLUDED.no_of_modules,
@@ -991,13 +993,15 @@ export async function handleAdminPricing(req, res) {
               adani_bifi_price = EXCLUDED.adani_bifi_price,
               aps_bifi_price = EXCLUDED.aps_bifi_price,
               rayzone_price = EXCLUDED.rayzone_price,
+              waaree_540_price = EXCLUDED.waaree_540_price,
               topcon585_capacity_kw = EXCLUDED.topcon585_capacity_kw,
               waaree_585_price = EXCLUDED.waaree_585_price,
               topcon600_capacity_kw = EXCLUDED.topcon600_capacity_kw,
               aps_topcon_600_price = EXCLUDED.aps_topcon_600_price,
+              panel_prices = EXCLUDED.panel_prices,
               updated_at = NOW();
           `;
-          await safeQuery(sql, [idVal, capKw, noMod, invCap, adani, aps, rayzone, top585Cap, waaree585, top600Cap, aps600]);
+          await safeQuery(sql, [idVal, capKw, noMod, invCap, adani, aps, rayzone, waaree540, top585Cap, waaree585, top600Cap, aps600, panelPrices]);
         }
 
         await invalidateCaches(['catalog:bos', 'catalog:bos_matrix', 'catalog:all']);

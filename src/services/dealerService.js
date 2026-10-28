@@ -84,7 +84,7 @@ export const dealerService = {
           tier: d.tier || 'Gold EPC',
           category: d.pricing_config?.category || d.category || 'Margin Based',
           dealerType: d.dealer_type || d.pricing_config?.dealer_type || (String(d.category || '').toLowerCase().includes('kit') ? 'kit_based' : 'margin_based'),
-          defaultCommissionPerKw: Number(d.default_commission_per_kw) || 4500,
+          defaultCommissionPerKw: Number(d.default_commission_per_kw) || 2000,
           registrationFeeRate: Number(d.registration_fee_rate) || 2000,
           distanceFromRajkotKm: Number(d.distance_from_rajkot_km) || 0,
           maxMarginCapPerKw: (d.max_margin_cap_per_kw !== undefined && d.max_margin_cap_per_kw !== null) ? Number(d.max_margin_cap_per_kw) : 0,

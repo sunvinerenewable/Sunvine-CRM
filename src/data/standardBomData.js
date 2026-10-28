@@ -370,6 +370,66 @@ export const STANDARD_BOM_CATALOG = [
     gstRate: 18
   },
   {
+    id: 'hotdip_pipe',
+    category: 'structure',
+    name: 'HOTDIP PIPE',
+    make: 'HINDUSTAN / STANDARD',
+    description: 'Hot-Dip Galvanized Structural Pipe for Solar Mounting Structure',
+    specs: 'HDGI Structural Pipe',
+    unit: 'Meter',
+    defaultRate: 95,
+    rate: 95,
+    gstRate: 18
+  },
+  {
+    id: 'pvc_clamp',
+    category: 'conduits',
+    name: 'PVC CLAMP',
+    make: 'STANDARD',
+    description: 'Heavy-Duty PVC Conduit Pipe Clamps (Packet of 100)',
+    specs: 'Packet of 100 Nos',
+    unit: 'Packet',
+    defaultRate: 120,
+    rate: 120,
+    gstRate: 18
+  },
+  {
+    id: 'acdb_box',
+    category: 'electrical',
+    name: 'ACDB BOX (1-6 KW / 6-10 KW)',
+    make: 'POLYCAB / WINSURGE',
+    description: 'AC Distribution Box IP65 with SPD & MCB Protection',
+    specs: '1-6 KW / 6-10 KW IP65',
+    unit: 'Set',
+    defaultRate: 900,
+    rate: 900,
+    gstRate: 18
+  },
+  {
+    id: 'dcdb_box',
+    category: 'electrical',
+    name: 'DCDB BOX (1-6 KW / 6-10 KW)',
+    make: 'POLYCAB / WINSURGE',
+    description: 'DC Distribution Box IP65 with 1000V DC SPD & Fuse Protection',
+    specs: '1-6 KW / 6-10 KW IP65',
+    unit: 'Set',
+    defaultRate: 850,
+    rate: 850,
+    gstRate: 18
+  },
+  {
+    id: 'j_bolt',
+    category: 'structure',
+    name: 'J BOLT',
+    make: 'STANDARD',
+    description: 'Galvanized Structural J-Bolt with Nuts & Washers',
+    specs: 'M10/M12 HDGI J-Bolt',
+    unit: 'Nos',
+    defaultRate: 16,
+    rate: 16,
+    gstRate: 18
+  },
+  {
     id: 'transportation',
     category: 'logistics',
     name: 'Transportation & Doorstep Freight',

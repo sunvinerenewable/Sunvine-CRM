@@ -44,19 +44,10 @@ export const formatDynamicCurrency = (amount) => {
   return `₹${num.toLocaleString('en-IN')}`;
 };
 
-// Universal Dynamic Solar Capacity Formatter (kW vs MW based on threshold 1000 kW)
+// Universal Dynamic Solar Capacity Formatter (always in kW across platform)
 export const formatCapacity = (capacityInKW) => {
   const kw = Number(capacityInKW) || 0;
-  if (kw >= 1000) {
-    const mw = kw / 1000;
-    const val = (mw % 1 === 0 ? mw.toFixed(1) : mw.toFixed(2));
-    return {
-      value: val,
-      unit: 'MW',
-      full: `${val} MW`
-    };
-  }
-  const val = (kw % 1 === 0 ? kw.toFixed(0) : kw.toFixed(1));
+  const val = Number.isInteger(kw) ? kw.toLocaleString('en-IN') : Number(kw.toFixed(2)).toLocaleString('en-IN');
   return {
     value: val,
     unit: 'kW',
