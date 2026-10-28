@@ -552,59 +552,72 @@ export default function QuotationPreview({
     }
   };
 
-  const handleShareWhatsAppWithPDF = async () => {
-    if (!activeQuotation) return;
-    setIsGeneratingPdf(true);
-    setStatusNotice('Generating proposal PDF...');
+  const ensureQuotationInDb = async (quote) => {
+    if (!quote) return null;
     try {
-      const res = await shareQuotationPdfViaWhatsApp(
-        activeQuotation,
-        pdfExportRef.current,
-        null
-      );
-      if (res?.method === 'native_file_share') {
-        setStatusNotice('PDF shared to WhatsApp!');
-        if (addToast) {
-          addToast({
-            title: 'WhatsApp Share',
-            message: 'Proposal PDF ready to share!',
-            type: 'success'
-          });
-        }
-      } else if (res?.method === 'download_and_chat') {
-        setStatusNotice(`Official PDF downloaded (${res.fileName})! WhatsApp opened.`);
-        if (addToast) {
-          addToast({
-            title: 'PDF Downloaded & WhatsApp Opened',
-            message: `Proposal PDF downloaded (${res.fileName}). Please attach it in WhatsApp!`,
-            type: 'success'
-          });
-        }
+      const checkRes = await quotationService.getQuotationById(quote.id).catch(() => null);
+      if (checkRes?.id) return checkRes;
+    } catch (_) {}
+
+    try {
+      const saveRes = await quotationService.saveQuotation(quote);
+      if (saveRes?.success && saveRes?.data) {
+        setRemoteFetchedQuote(saveRes.data);
+        return saveRes.data;
       }
     } catch (err) {
-      console.error(err);
+      console.warn('[QuotationPreview] Auto-save quotation notice:', err);
+    }
+    return quote;
+  };
+
+  const handleShareWhatsApp = async () => {
+    if (!activeQuotation) return;
+    setIsGeneratingPdf(true);
+    setStatusNotice('Connecting to WhatsApp...');
+    try {
+      // 1. Ensure quotation is saved to database so link is 100% active and verified
+      const quoteToShare = await ensureQuotationInDb(activeQuotation);
+
+      // 2. Resolve customer phone
+      const rawPhone = quoteToShare.customerPhone || quoteToShare.customer_phone || quoteToShare.mobile || quoteToShare.phone;
+      const cleanPhone = cleanCustomerPhone(rawPhone);
+
+      // 3. Resolve customized WhatsApp template from system settings
+      const companyProf = fallbackProfile || appContext.systemSettings?.companyProfile || {};
+
+      // 4. Open WhatsApp directly with pre-filled message & proposal link (no unwanted PDF download!)
+      openWhatsAppChat(quoteToShare, cleanPhone, null, companyProf);
+
+      setStatusNotice('WhatsApp chat opened!');
       if (addToast) {
         addToast({
-          title: 'PDF Share Error',
-          message: 'Could not generate or share PDF. Please try again.',
+          title: 'WhatsApp Redirected',
+          message: cleanPhone 
+            ? `WhatsApp opened for customer (${cleanPhone}) with pre-filled proposal message & link.`
+            : 'WhatsApp opened with pre-filled proposal message & link.',
+          type: 'success'
+        });
+      }
+    } catch (err) {
+      console.error('[QuotationPreview] WhatsApp share error:', err);
+      if (addToast) {
+        addToast({
+          title: 'WhatsApp Error',
+          message: err?.message || 'Could not redirect to WhatsApp.',
           type: 'error'
         });
       }
     } finally {
       setIsGeneratingPdf(false);
-      setTimeout(() => setStatusNotice(''), 6000);
+      setTimeout(() => setStatusNotice(''), 4000);
     }
   };
 
   const handleCopyOnlineLink = async () => {
     if (!activeQuotation) return;
-    let quoteToShare = activeQuotation;
-    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
-      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
-      if (saveRes?.data) {
-        quoteToShare = saveRes.data;
-      }
-    }
+    setStatusNotice('Verifying proposal link...');
+    const quoteToShare = await ensureQuotationInDb(activeQuotation);
     const url = getPublicProposalUrl(quoteToShare);
     try {
       await navigator.clipboard.writeText(url);
@@ -618,19 +631,16 @@ export default function QuotationPreview({
         });
       }
     } catch (e) {}
+    setStatusNotice('');
   };
 
   const handleOpenOnlineView = async () => {
     if (!activeQuotation) return;
-    let quoteToShare = activeQuotation;
-    if (!quoteToShare.shareToken && !quoteToShare.share_token) {
-      const saveRes = await quotationService.saveQuotation(activeQuotation).catch(() => null);
-      if (saveRes?.data) {
-        quoteToShare = saveRes.data;
-      }
-    }
+    setStatusNotice('Verifying proposal...');
+    const quoteToShare = await ensureQuotationInDb(activeQuotation);
     const url = getPublicProposalUrl(quoteToShare);
     window.open(url, '_blank');
+    setStatusNotice('');
   };
 
   if (isLoadingRemote || isLoadingProp) {
@@ -650,9 +660,10 @@ export default function QuotationPreview({
 
   if (!activeQuotation) {
     if (isPublicView) {
-      const supportPhone = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
-      const cleanWaPhone = String(companyProfile.whatsapp || '918000050580').replace(/\D/g, '');
-      const compName = companyProfile.name || 'Sunvine';
+      const prof = fallbackProfile || {};
+      const supportPhone = prof.helpdesk || prof.whatsapp || '+91 80000 50580';
+      const cleanWaPhone = String(prof.whatsapp || '918000050580').replace(/\D/g, '');
+      const compName = prof.name || prof.companyName || 'Sunvine';
 
       return (
         <div className="max-w-2xl mx-auto my-12 p-8 text-center bg-surface-container-lowest rounded-2xl shadow-md border border-surface-container-high">
@@ -798,16 +809,16 @@ export default function QuotationPreview({
                 </button>
 
                 <button
-                  onClick={handleShareWhatsAppWithPDF}
+                  onClick={handleShareWhatsApp}
                   disabled={isGeneratingPdf}
                   className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
-                  title="Share proposal on WhatsApp (sends actual PDF file)"
+                  title="Share proposal on WhatsApp with pre-filled message"
                 >
                   <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGeneratingPdf ? 'animate-spin' : ''}`}>
                     {isGeneratingPdf ? 'sync' : 'chat'}
                   </span>
                   <span className="truncate">
-                    {isGeneratingPdf ? 'Generating PDF...' : (
+                    {isGeneratingPdf ? 'Connecting...' : (
                       <>
                         <span className="sm:hidden">WhatsApp</span>
                         <span className="hidden sm:inline">Share WhatsApp</span>
