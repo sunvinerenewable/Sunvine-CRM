@@ -3223,14 +3223,14 @@ export default function CreateQuotation() {
                                     </div>
                                   ) : (
                                     <>
-                                      <span className="text-[10px] text-secondary mr-1 font-bold">₹</span>
+                                      <span className="text-[10px] text-secondary mr-1 font-bold select-none">₹</span>
                                       <input
                                         type="number"
                                         min="0"
                                         step="10"
                                         value={item.rate}
                                         onChange={(e) => handleBomRateChange(item.id, e.target.value)}
-                                        className="w-16 h-7 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1.5 text-xs focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
+                                        className="w-20 h-7 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1.5 text-xs focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none"
                                       />
                                     </>
                                   )}
@@ -3302,8 +3302,8 @@ export default function CreateQuotation() {
                     })}
                   </div>
 
-                  {/* Compact Responsive Cards List */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 sm:gap-3">
+                  {/* Compact Row-Wise Items List */}
+                  <div className="space-y-2.5">
                     {filteredMobileBomItems.map((item, idx) => {
                       const itemName = item.name || item.item || item.description || `BOM Material #${idx + 1}`;
                       const gst = item.gstRate !== undefined ? item.gstRate : (item.taxRate !== undefined ? item.taxRate : 18);
@@ -3315,9 +3315,11 @@ export default function CreateQuotation() {
                       return (
                         <div
                           key={item.id || idx}
-                          className={`p-2.5 bg-surface rounded-xl border ${isLocked ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-surface-container-high'} shadow-2xs hover:border-primary/40 transition-all space-y-2`}
+                          className={`p-3 bg-surface rounded-xl border ${
+                            isLocked ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-surface-container-high'
+                          } shadow-2xs hover:border-primary/40 transition-all space-y-2.5 min-w-0`}
                         >
-                          {/* Row 1: Item Title + GST Chip + Line Total + Delete / Lock */}
+                          {/* Row 1: Item Index + Name & Specs + GST Chip + Line Total + Delete / Lock */}
                           <div className="flex items-center justify-between gap-2 min-w-0">
                             <div className="flex items-center gap-2 min-w-0 flex-1">
                               <span className="w-5 h-5 rounded bg-surface-container text-secondary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
@@ -3325,7 +3327,7 @@ export default function CreateQuotation() {
                               </span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5 min-w-0">
-                                  <h4 className="font-bold text-xs text-on-surface truncate leading-snug">
+                                  <h4 className="font-bold text-xs sm:text-sm text-on-surface truncate leading-snug" title={itemName}>
                                     {itemName}
                                   </h4>
                                   {isLocked && (
@@ -3336,18 +3338,19 @@ export default function CreateQuotation() {
                                   )}
                                 </div>
                                 {item.specs && (
-                                  <span className="text-[10px] text-secondary truncate block">{item.specs}</span>
+                                  <span className="text-[10px] text-secondary truncate block mt-0.5" title={item.specs}>{item.specs}</span>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold ${gst === 5
-                                  ? 'bg-emerald-500/15 text-emerald-800 border border-emerald-500/30'
-                                  : 'bg-blue-500/15 text-blue-800 border border-blue-500/30'
-                                }`}>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
+                                gst === 5
+                                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30'
+                              }`}>
                                 {gst}%
                               </span>
-                              <span className="font-mono font-bold text-xs text-emerald-950">
+                              <span className="font-mono font-bold text-xs sm:text-sm text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                                 {formatINR(lineTotal)}
                               </span>
                               {isLocked ? (
@@ -3367,21 +3370,22 @@ export default function CreateQuotation() {
                             </div>
                           </div>
 
-                          {/* Row 2: Inline Qty Stepper + Unit Rate in 1 clean line */}
-                          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-surface-container-high/40 text-xs">
+                          {/* Row 2: Inline Qty Stepper + Unit Rate in 1 clean line (Row-wise) */}
+                          <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-2 border-t border-surface-container-high/40 text-xs min-w-0">
                             {/* Quantity Stepper */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] font-bold text-secondary uppercase mr-0.5">Qty:</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-bold text-secondary uppercase tracking-wider mr-0.5">Qty:</span>
                               {isLocked ? (
-                                <span className="px-2 py-0.5 font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200 rounded text-xs select-none">
+                                <span className="px-2.5 py-1 font-mono font-bold bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs select-none">
                                   {item.qty}
                                 </span>
                               ) : (
-                                <>
+                                <div className="flex items-center rounded-lg border border-surface-container-high bg-surface-container-lowest h-7 overflow-hidden focus-within:border-primary transition-colors">
                                   <button
                                     type="button"
                                     onClick={() => handleBomQtyChange(item.id, Math.max(0, (Number(item.qty) || 0) - (item.unit === 'MTR' ? 5 : 1)))}
-                                    className="w-6 h-6 rounded bg-surface-container-lowest border border-surface-container-high text-on-surface hover:bg-surface-container flex items-center justify-center font-bold cursor-pointer"
+                                    className="w-7 h-full flex items-center justify-center text-on-surface hover:bg-surface-container cursor-pointer transition-colors shrink-0"
+                                    title="Decrease quantity"
                                   >
                                     <span className="material-symbols-outlined text-[13px]">remove</span>
                                   </button>
@@ -3391,41 +3395,43 @@ export default function CreateQuotation() {
                                     step={item.unit === 'MTR' ? '5' : '1'}
                                     value={item.qty}
                                     onChange={(e) => handleBomQtyChange(item.id, e.target.value)}
-                                    className="w-11 h-6 text-center font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded text-xs focus:border-primary outline-none"
+                                    className="w-12 h-full text-center font-mono font-bold bg-transparent text-xs outline-none px-1 text-on-surface"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => handleBomQtyChange(item.id, (Number(item.qty) || 0) + (item.unit === 'MTR' ? 5 : 1))}
-                                    className="w-6 h-6 rounded bg-surface-container-lowest border border-surface-container-high text-on-surface hover:bg-surface-container flex items-center justify-center font-bold cursor-pointer"
+                                    className="w-7 h-full flex items-center justify-center text-on-surface hover:bg-surface-container cursor-pointer transition-colors shrink-0"
+                                    title="Increase quantity"
                                   >
                                     <span className="material-symbols-outlined text-[13px]">add</span>
                                   </button>
-                                </>
+                                </div>
                               )}
-                              <span className="text-[10px] font-bold text-secondary font-mono ml-0.5">{item.unit || 'NOS'}</span>
+                              <span className="text-[11px] font-bold text-secondary font-mono ml-1">{item.unit || 'NOS'}</span>
                             </div>
 
                             {/* Unit Rate Input */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] font-bold text-secondary uppercase mr-0.5">Rate:</span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-bold text-secondary uppercase tracking-wider mr-0.5">Rate:</span>
                               {isLocked ? (
-                                <div className="inline-flex items-center gap-1 px-1.5 py-0.5 font-mono font-bold text-slate-800 bg-slate-100 border border-slate-200 rounded text-xs select-none" title="Controlled via Site Engineering & Logistics section">
+                                <div className="inline-flex items-center gap-1 px-2 py-1 font-mono font-bold text-slate-800 bg-slate-100 border border-slate-200 rounded-lg text-xs select-none" title="Controlled via Site Engineering & Logistics section">
                                   <span className="material-symbols-outlined text-[11px] text-slate-400">lock</span>
                                   <span>₹{Number(item.rate).toLocaleString('en-IN')}</span>
                                 </div>
                               ) : (
-                                <div className="relative inline-flex items-center">
-                                  <span className="text-[10px] text-secondary font-bold mr-0.5">₹</span>
+                                <div className="flex items-center rounded-lg border border-surface-container-high bg-surface-container-lowest h-7 px-2 focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                                  <span className="text-[11px] text-secondary font-bold mr-1 select-none">₹</span>
                                   <input
                                     type="number"
                                     min="0"
                                     step="10"
                                     value={item.rate}
                                     onChange={(e) => handleBomRateChange(item.id, e.target.value)}
-                                    className="w-16 h-6 text-right font-mono font-bold bg-surface-container-lowest border border-surface-container-high rounded px-1 text-xs focus:border-primary outline-none"
+                                    className="w-20 sm:w-24 h-full text-right font-mono font-bold bg-transparent text-xs outline-none text-on-surface"
                                   />
                                 </div>
                               )}
+                              <span className="text-[10px] text-secondary font-mono hidden sm:inline">/ {item.unit || 'NOS'}</span>
                             </div>
                           </div>
                         </div>
@@ -3452,10 +3458,10 @@ export default function CreateQuotation() {
                   </button>
 
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-900 font-semibold">
+                    <span className="px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 font-semibold">
                       5% GST (PV, Inv &amp; MC4): <strong>{formatINR(bomTotals.subtotal5GstBase + bomTotals.gst5Total)}</strong>
                     </span>
-                    <span className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-900 font-semibold">
+                    <span className="px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-800 dark:text-blue-300 font-semibold">
                       18% GST (BOS/Structure): <strong>{formatINR(bomTotals.subtotal18GstBase + bomTotals.gst18Total)}</strong>
                     </span>
                     <span className="px-3 py-1.5 rounded-lg bg-[#0D1527] text-white font-mono font-bold border border-slate-700 shadow-xs">
