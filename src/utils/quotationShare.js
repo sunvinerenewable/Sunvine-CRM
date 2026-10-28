@@ -82,9 +82,54 @@ export function getPublicProposalUrl(quoteOrId) {
   return `${origin}/?view=quote`;
 }
 
-// Generate the official proposal WhatsApp message
+// Helper to interpolate dynamic variables into custom template
+export function applyWhatsAppTemplate(template, vars = {}) {
+  if (!template || typeof template !== 'string') return '';
+  return template
+    .replace(/\{customer_name\}|\{customerName\}/gi, vars.customerName || 'Valued Customer')
+    .replace(/\{system_capacity\}|\{systemCapacity\}|\{capacity\}/gi, vars.capacity || '')
+    .replace(/\{quotation_id\}|\{quotationId\}|\{quote_id\}|\{id\}/gi, vars.quoteId || '')
+    .replace(/\{total_amount\}|\{totalAmount\}|\{amount\}/gi, vars.amount || '')
+    .replace(/\{net_payable\}|\{netPayable\}/gi, vars.netPayable || '')
+    .replace(/\{subsidy_amount\}|\{subsidyAmount\}|\{subsidy\}/gi, vars.subsidyAmount || '')
+    .replace(/\{link\}|\{proposal_link\}|\{url\}/gi, vars.publicUrl || '')
+    .replace(/\{company_name\}|\{companyName\}/gi, vars.compName || 'Sunvine Renewable Energy')
+    .replace(/\{company_phone\}|\{companyPhone\}|\{helpline\}/gi, vars.helpline || '')
+    .replace(/\{email\}/gi, vars.email || '')
+    .replace(/\{office\}|\{address\}/gi, vars.office || '')
+    .replace(/\{date\}/gi, vars.date || '')
+    .replace(/\{modules\}|\{solar_modules\}/gi, vars.moduleInfo || '')
+    .replace(/\{inverter\}|\{inverters\}/gi, vars.invInfo || '');
+}
+
+export const DEFAULT_WHATSAPP_TEMPLATE = `*☀️ {company_name} - SOLAR EPC PROPOSAL*
+
+Dear *{customer_name}*,
+
+Greetings from *{company_name}*! We are pleased to share your customized official turnkey solar power proposal.
+
+📋 *QUOTATION SUMMARY*
+━━━━━━━━━━━━━━━━━━━━
+• *Proposal Ref:* {quotation_id}
+• *Date:* {date}
+• *System Capacity:* *{system_capacity}* On-Grid Solar
+• *Total Project Value:* *{total_amount}*
+• *PM Surya Ghar Subsidy:* *{subsidy_amount}*
+• *Net Payable:* *{net_payable}*
+• *Performance Warranty:* 30 Years Module Output Guarantee
+• *Inverter Warranty:* 8 Years Manufacturing Warranty
+
+🔗 *View / Download Proposal Online:*
+{link}
+
+📞 *Helpline / WhatsApp:* {company_phone}
+📍 *Office:* {office}
+
+_Thank you for choosing Clean, Green & Reliable Energy!_`;
+
+// Generate the official proposal WhatsApp message (with custom template override if set)
 export function buildProposalWhatsAppMessage(quote, customUrl = null, profile = null) {
-  const customerName = quote.customerName || 'Valued Customer';
+  const customerName = quote.customerName || quote.customer_name || 'Valued Customer';
   const capacity = quote.systemCapacityKW 
     ? `${quote.systemCapacityKW} KW` 
     : (quote.capacity || `${Number(quote.system_capacity_kw || 0)} kW`);
@@ -92,55 +137,71 @@ export function buildProposalWhatsAppMessage(quote, customUrl = null, profile = 
   const amount = typeof quote.amount === 'string'
     ? quote.amount
     : '₹ ' + (quote.grandTotalCustomer ? quote.grandTotalCustomer.toLocaleString('en-IN') : (quote.totalAmount ? quote.totalAmount.toLocaleString('en-IN') : '0'));
+  const netPayable = typeof quote.netPayable === 'string'
+    ? quote.netPayable
+    : '₹ ' + (quote.netPayable ? Number(quote.netPayable).toLocaleString('en-IN') : (quote.net_payable ? Number(quote.net_payable).toLocaleString('en-IN') : '0'));
+  const subsidyAmount = typeof quote.subsidyAmount === 'string'
+    ? quote.subsidyAmount
+    : '₹ ' + (quote.subsidyAmount ? Number(quote.subsidyAmount).toLocaleString('en-IN') : (quote.subsidy_amount ? Number(quote.subsidy_amount).toLocaleString('en-IN') : '0'));
+
   const moduleInfo = quote.solarModule || quote.moduleType || quote.panelType || 'Tier-1 Certified PV Module';
   const invInfo = quote.inverterCapacity || quote.inverterType || 'Grid-Tied Solar Inverter';
   const date = quote.date || new Date().toLocaleDateString('en-GB');
   const publicUrl = customUrl || getPublicProposalUrl(quote);
 
   const companyProfile = profile || quote.companyProfile || quote.company_profile || {};
-  const compName = companyProfile.name || 'Sunvine Renewable Energy';
-  const helpline = companyProfile.helpdesk || companyProfile.whatsapp || '+91 80000 50580';
+  const compName = companyProfile.name || companyProfile.companyName || 'Sunvine Renewable Energy';
+  const helpline = companyProfile.helpdesk || companyProfile.whatsapp || '+91 94294 65600';
   const email = companyProfile.email || 'support@sunvinerenewable.com';
   const office = companyProfile.address || 'Gujarat, India';
 
-  return `*☀️ ${compName.toUpperCase()} - SOLAR EPC PROPOSAL*
+  const templateVars = {
+    customerName,
+    capacity,
+    quoteId,
+    amount,
+    netPayable,
+    subsidyAmount,
+    moduleInfo,
+    invInfo,
+    date,
+    publicUrl,
+    compName,
+    helpline,
+    email,
+    office
+  };
 
-Dear *${customerName}*,
+  const configuredTemplate = companyProfile.whatsappTemplate || companyProfile.whatsapp_template;
+  if (configuredTemplate && typeof configuredTemplate === 'string' && configuredTemplate.trim()) {
+    return applyWhatsAppTemplate(configuredTemplate.trim(), templateVars);
+  }
 
-Greetings from *${compName}*! We are pleased to share your customized official turnkey solar power proposal.
-
-📋 *QUOTATION SUMMARY*
-━━━━━━━━━━━━━━━━━━━━
-• *Proposal Ref:* ${quoteId}
-• *Date:* ${date}
-• *System Capacity:* *${capacity}* On-Grid Solar
-• *Solar Modules:* ${moduleInfo}
-• *Inverters:* ${invInfo}
-• *Total Project Value:* *${amount}*
-• *Performance Warranty:* 30 Years Module Output Guarantee
-• *Inverter Warranty:* 8 Years Manufacturing Warranty
-
-📄 *OFFICIAL 4-PAGE PROPOSAL PDF*
-Your official 4-page turnkey proposal document with Bill of Materials (BOM), Technical Specifications, and Commercial Terms has been generated.
-
-🔗 *View / Download Proposal Online:*
-${publicUrl}
-
-📞 *Helpline:* ${helpline}
-📧 *Email:* ${email}
-🏢 *Corporate Office:* ${office}
-
-_Empowering The Future with Solar Energy_`;
+  return applyWhatsAppTemplate(DEFAULT_WHATSAPP_TEMPLATE, templateVars);
 }
 
 // Open WhatsApp chat directly with pre-filled message (fast link)
-export function openWhatsAppChat(quote, customPhone = null) {
+export function openWhatsAppChat(quote, customPhone = null, customUrl = null, profile = null) {
   const phone = customPhone 
     ? cleanCustomerPhone(customPhone) 
-    : cleanCustomerPhone(quote.customerPhone || quote.mobile || quote.phone);
-  const text = buildProposalWhatsAppMessage(quote);
-  const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank');
+    : cleanCustomerPhone(quote.customerPhone || quote.customer_phone || quote.mobile || quote.phone);
+  const text = buildProposalWhatsAppMessage(quote, customUrl, profile);
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '');
+  
+  let url = '';
+  if (phone) {
+    url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+  } else {
+    url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+  }
+
+  if (typeof window !== 'undefined') {
+    const opened = window.open(url, '_blank');
+    if (!opened && isMobile) {
+      window.location.href = url;
+    }
+  }
+  return { success: true, url, phone, text };
 }
 
 // Generate actual PDF Blob from element using 1:1 page capture (Guarantees exactly 4 A4 pages, zero blank pages)

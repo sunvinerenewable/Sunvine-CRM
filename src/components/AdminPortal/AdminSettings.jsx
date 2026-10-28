@@ -5,6 +5,7 @@ import { adminAccountService } from '../../services/adminAccountService';
 import { pushNotificationService } from '../../services/pushNotificationService';
 import { settingsService } from '../../services/settingsService';
 import { normalizeCompanyProfile } from '../../data/defaultPresets';
+import { DEFAULT_WHATSAPP_TEMPLATE } from '../../utils/quotationShare';
 
 export default function AdminSettings() {
   const { addToast } = useToast();
@@ -62,6 +63,7 @@ export default function AdminSettings() {
     helpdesk: '',
     terms: '',
     validityText: '',
+    whatsappTemplate: '',
     bankName: '',
     accountNumber: '',
     ifsc: '',
@@ -91,6 +93,7 @@ export default function AdminSettings() {
           helpdesk: norm.helpdesk || '',
           terms: norm.terms || '',
           validityText: norm.validityText || '',
+          whatsappTemplate: norm.whatsappTemplate || norm.whatsapp_template || '',
           bankName: norm.bank?.bankName || '',
           accountNumber: norm.bank?.accountNumber || '',
           ifsc: norm.bank?.ifsc || '',
@@ -167,6 +170,8 @@ export default function AdminSettings() {
         helpdesk: companyForm.helpdesk.trim(),
         terms: companyForm.terms.trim(),
         validityText: companyForm.validityText.trim(),
+        whatsappTemplate: companyForm.whatsappTemplate?.trim() || '',
+        whatsapp_template: companyForm.whatsappTemplate?.trim() || '',
         bank: bankPayload,
         bankDetails: bankPayload,
         bank_details: bankPayload
@@ -216,6 +221,7 @@ export default function AdminSettings() {
             helpdesk: norm.helpdesk || '',
             terms: norm.terms || '',
             validityText: norm.validityText || '',
+            whatsappTemplate: norm.whatsappTemplate || norm.whatsapp_template || '',
             bankName: norm.bank?.bankName || '',
             accountNumber: norm.bank?.accountNumber || '',
             ifsc: norm.bank?.ifsc || '',
@@ -2908,6 +2914,106 @@ export default function AdminSettings() {
                     placeholder="1. Net-metering approval is subject to DISCOM guidelines. 2. Subsidy is processed directly through the National PM Surya Ghar Portal. 3. Warranty as per manufacturer terms."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: WhatsApp Quotation Sharing Template */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 mb-6 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
+                    <span className="material-symbols-outlined text-xl">chat</span>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                      WhatsApp Quotation Share Template
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">Pre-filled text</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500">Configure the automated pre-filled message sent to customer's contact number on clicking "Share WhatsApp"</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCompanyFieldChange('whatsappTemplate', DEFAULT_WHATSAPP_TEMPLATE)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-sm">restart_alt</span>
+                  Reset to Default Template
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Dynamic variables helper */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Click any tag to append to your template:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { tag: '{customer_name}', label: 'Customer Name' },
+                      { tag: '{system_capacity}', label: 'Capacity (e.g. 3.3 kW)' },
+                      { tag: '{quotation_id}', label: 'Quotation Ref' },
+                      { tag: '{total_amount}', label: 'Total Amount' },
+                      { tag: '{subsidy_amount}', label: 'PM Subsidy' },
+                      { tag: '{net_payable}', label: 'Net Payable' },
+                      { tag: '{link}', label: 'Online Proposal Link' },
+                      { tag: '{company_name}', label: 'Company Name' },
+                      { tag: '{company_phone}', label: 'Company Phone' }
+                    ].map(v => (
+                      <button
+                        key={v.tag}
+                        type="button"
+                        onClick={() => {
+                          const current = companyForm.whatsappTemplate || '';
+                          handleCompanyFieldChange('whatsappTemplate', current ? `${current} ${v.tag}` : v.tag);
+                        }}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-mono bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-slate-700 transition-all cursor-pointer"
+                        title={`Click to append ${v.tag}`}
+                      >
+                        <span className="font-bold">{v.tag}</span> <span className="text-slate-400 font-sans text-[10px]">({v.label})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    WhatsApp Message Text
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={companyForm.whatsappTemplate}
+                    onChange={(e) => handleCompanyFieldChange('whatsappTemplate', e.target.value)}
+                    placeholder={DEFAULT_WHATSAPP_TEMPLATE}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 leading-relaxed"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    WhatsApp markdown formatting supported: <code className="text-slate-600">*bold*</code>, <code className="text-slate-600">_italic_</code>. Clicking "Share WhatsApp" on quotation preview immediately opens WhatsApp to the customer's phone number with this pre-filled message.
+                  </p>
+                </div>
+
+                {/* Real-time WhatsApp Chat Bubble Simulation */}
+                <div className="mt-4 p-4 rounded-xl bg-[#0b141a] border border-[#202c33]">
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[#202c33] text-emerald-400 text-xs font-semibold">
+                    <span className="material-symbols-outlined text-sm">visibility</span>
+                    <span>Live WhatsApp Chat Bubble Preview</span>
+                  </div>
+                  <div className="max-w-md bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none p-3.5 text-xs shadow-md space-y-1 font-sans whitespace-pre-wrap leading-relaxed">
+                    {(companyForm.whatsappTemplate || DEFAULT_WHATSAPP_TEMPLATE)
+                      .replace(/\{customer_name\}|\{customerName\}/gi, 'Sumit Chauhan')
+                      .replace(/\{system_capacity\}|\{systemCapacity\}|\{capacity\}/gi, '3.3 kW')
+                      .replace(/\{quotation_id\}|\{quotationId\}|\{quote_id\}|\{id\}/gi, 'SV-2026-QJ0GT-700M')
+                      .replace(/\{total_amount\}|\{totalAmount\}|\{amount\}/gi, '₹ 1,75,000')
+                      .replace(/\{subsidy_amount\}|\{subsidyAmount\}|\{subsidy\}/gi, '₹ 78,000')
+                      .replace(/\{net_payable\}|\{netPayable\}/gi, '₹ 97,000')
+                      .replace(/\{company_name\}|\{companyName\}/gi, companyForm.companyName || 'Sunvine Renewable Energy')
+                      .replace(/\{company_phone\}|\{companyPhone\}|\{helpline\}/gi, companyForm.whatsapp || companyForm.helpdesk || '+91 94294 65600')
+                      .replace(/\{link\}|\{proposal_link\}|\{url\}/gi, 'https://solar.sunvine.in/?view=quote&token=demo123')
+                    }
+                    <div className="text-[10px] text-emerald-200/60 text-right mt-1 font-mono">10:45 AM ✓✓</div>
+                  </div>
                 </div>
               </div>
             </div>

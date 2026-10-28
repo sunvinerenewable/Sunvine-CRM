@@ -197,6 +197,7 @@ export function normalizeCompanyProfile(profile = null, fallback = null) {
   const helpdesk = pickFirstValid(p.helpdesk, f.helpdesk);
   const terms = pickFirstValid(p.terms, f.terms);
   const validityText = pickFirstValid(p.validityText, f.validityText);
+  const whatsappTemplate = pickFirstValid(p.whatsappTemplate, p.whatsapp_template, f.whatsappTemplate, f.whatsapp_template);
   const pan = pickFirstValid(p.pan, p.panNumber, p.pan_number, f.pan, f.panNumber, f.pan_number);
 
   const bank = {
@@ -231,6 +232,8 @@ export function normalizeCompanyProfile(profile = null, fallback = null) {
     helpdesk,
     terms,
     validityText,
+    whatsappTemplate,
+    whatsapp_template: whatsappTemplate,
     bank,
     bankDetails: bank,
     bank_details: bank

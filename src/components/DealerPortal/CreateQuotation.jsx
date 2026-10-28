@@ -1719,8 +1719,8 @@ export default function CreateQuotation() {
     };
   };
 
-  // Preview Quotation: ONLY prepares in-memory view, DOES NOT insert into database table!
-  const handlePreview = () => {
+  // Preview Quotation: Prepares proposal view & persists to database for immediate online sharing
+  const handlePreview = async () => {
     if (!custName.trim()) {
       addToast({
         title: 'Customer Name Required',
@@ -1741,8 +1741,20 @@ export default function CreateQuotation() {
     showLoader('Preparing Proposal Preview...');
     try {
       const quotePayload = buildCurrentQuotePayload();
-      if (setPreviewQuotation) setPreviewQuotation(quotePayload);
-      if (setActiveDraftQuote) setActiveDraftQuote(quotePayload);
+      let activeQuote = quotePayload;
+      if (addQuotation) {
+        try {
+          const saved = await addQuotation(quotePayload);
+          if (saved && (saved.id || saved.shareToken)) {
+            activeQuote = saved;
+          }
+        } catch (dbErr) {
+          console.warn('[CreateQuotation] Auto-persist preview notice:', dbErr);
+        }
+      }
+
+      if (setPreviewQuotation) setPreviewQuotation(activeQuote);
+      if (setActiveDraftQuote) setActiveDraftQuote(activeQuote);
       if (typeof window !== 'undefined') {
         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
         document.documentElement.scrollTop = 0;
