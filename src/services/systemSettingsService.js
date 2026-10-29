@@ -14,11 +14,14 @@ export const systemSettingsService = {
         if (json?.success && json.settings) {
           const s = json.settings;
           const tw = s.terms_and_warranties || {};
+          const gov = s.governance_settings || {};
           return {
             companyProfile: s.company_profile,
             bankDetails: s.bank_details,
             termsAndWarranties: tw,
             statutoryTaxes: s.statutory_taxes,
+            governanceSettings: gov,
+            portalFeatures: gov.portal_features || null,
             masterDocRegistry: tw.masterDocRegistry || s.master_doc_registry || null,
             categoryDocRules: tw.categoryDocRules || s.category_doc_rules || null
           };
@@ -35,11 +38,14 @@ export const systemSettingsService = {
 
       if (!error && data) {
         const tw = data.terms_and_warranties || {};
+        const gov = data.governance_settings || {};
         return {
           companyProfile: data.company_profile,
           bankDetails: data.bank_details,
           termsAndWarranties: tw,
           statutoryTaxes: data.statutory_taxes,
+          governanceSettings: gov,
+          portalFeatures: gov.portal_features || null,
           masterDocRegistry: tw.masterDocRegistry || data.master_doc_registry || null,
           categoryDocRules: tw.categoryDocRules || data.category_doc_rules || null
         };
@@ -90,6 +96,46 @@ export const systemSettingsService = {
       return { success: false, error: error?.message || 'Failed to save system settings' };
     } catch (sbErr) {
       return { success: false, error: sbErr?.message || 'Failed to save system settings' };
+    }
+  },
+
+  async savePortalFeatures(governanceSettings) {
+    try {
+      const res = await fetch('/api/auth/admin-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          op: 'upsert',
+          section: 'governance_settings',
+          values: governanceSettings
+        })
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        return { success: true, data: json?.settings };
+      }
+    } catch (err) {
+      console.warn('[systemSettingsService] Save portal features API failed, trying Supabase:', err);
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .upsert({
+          id: 'global_settings',
+          governance_settings: governanceSettings,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      if (!error && data) {
+        return { success: true, data };
+      }
+      return { success: false, error: error?.message || 'Failed to save portal features' };
+    } catch (sbErr) {
+      return { success: false, error: sbErr?.message || 'Failed to save portal features' };
     }
   },
 

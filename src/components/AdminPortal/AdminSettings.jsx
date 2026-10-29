@@ -25,6 +25,8 @@ export default function AdminSettings() {
     refreshMasterDocuments,
     applicationCategories,
     tierMargins,
+    portalFeatures,
+    updatePortalFeatures,
     applicationStages,
     addApplicationStage,
     updateApplicationStage,
@@ -35,7 +37,7 @@ export default function AdminSettings() {
     isSettingsLoaded
   } = useApp();
 
-  const VALID_SETTINGS_TABS = ['account_center', 'company_profile', 'document_rules', 'pipeline_stages', 'security', 'system'];
+  const VALID_SETTINGS_TABS = ['account_center', 'company_profile', 'document_rules', 'pipeline_stages', 'features', 'security', 'system'];
   const VALID_CATEGORIES = ['RESIDENTIAL', 'BANK_LOAN', 'NBFC_LOAN', 'COMMERCIAL', 'HOUSING_SOCIETY'];
 
   // Primary Settings Page Tabs: 'account_center' | 'company_profile' | 'document_rules' | 'security' | 'system'
@@ -49,6 +51,48 @@ export default function AdminSettings() {
     }
     return 'account_center';
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // PORTAL FEATURE CONTROLS STATE & TOGGLES (DIRECT DATABASE SAVED)
+  // ─────────────────────────────────────────────────────────────
+  const [togglingFeature, setTogglingFeature] = useState(null);
+
+  const handleToggleFeature = async (featureKey) => {
+    const currentState = Boolean(portalFeatures?.[featureKey]);
+    const nextState = !currentState;
+    const featureLabels = {
+      applications: 'Customer Applications & Execution',
+      ledger: 'Financial Ledger & Payments',
+      performance: 'Performance & Analytics',
+      leads: 'Lead Generation Radar'
+    };
+
+    const label = featureLabels[featureKey] || featureKey;
+    setTogglingFeature(featureKey);
+
+    const res = await updatePortalFeatures({
+      ...portalFeatures,
+      [featureKey]: nextState
+    });
+
+    setTogglingFeature(null);
+
+    if (res?.success) {
+      addToast({
+        title: nextState ? `${label} Enabled` : `${label} Disabled`,
+        message: nextState
+          ? `Module is now active for Dealers and Staff in live database.`
+          : `Module is now hidden from Dealers and Staff in live database.`,
+        type: nextState ? 'success' : 'info'
+      });
+    } else {
+      addToast({
+        title: 'Update Failed',
+        message: res?.error || 'Could not update feature flag in database.',
+        type: 'error'
+      });
+    }
+  };
 
   // Company Profile & Bank Settlement State (Synchronized directly with PostgreSQL system_settings)
   const [companyForm, setCompanyForm] = useState({
@@ -1453,6 +1497,21 @@ export default function AdminSettings() {
         >
           <span className="material-symbols-outlined text-lg">security</span>
           <span>Security &amp; Policies</span>
+        </button>
+
+        <button
+          onClick={() => startTransition(() => setSettingsTab('features'))}
+          className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-all cursor-pointer ${
+            settingsTab === 'features'
+              ? 'border-emerald-600 text-emerald-700 bg-white shadow-sm rounded-t-xl'
+              : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
+          }`}
+        >
+          <span className="material-symbols-outlined text-lg">toggle_on</span>
+          <span>Feature Controls</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-800 font-bold ml-1">
+            {Object.values(portalFeatures || {}).filter(Boolean).length}/4
+          </span>
         </button>
 
         <button
@@ -3049,6 +3108,297 @@ export default function AdminSettings() {
               </div>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAB CONTENT: 4. PORTAL FEATURE CONTROLS & PROGRESSIVE ROLLOUT
+          ======================================================== */}
+      {settingsTab === 'features' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-2xl">toggle_on</span>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">Portal Feature Controls</h2>
+                    <span className="text-xs text-slate-500">Progressive module release &amp; access governance for Dealers and Staff</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Instant Live DB Save
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-slate-400 text-base shrink-0 mt-0.5">info</span>
+              <p className="leading-relaxed">
+                Toggling any switch below updates the database instantly. When a module is turned <strong>OFF</strong>, its sidebar navigation, shortcut buttons, and action modals disappear from Dealer and Staff portals. Turning it <strong>ON</strong> seamlessly restores full operational capabilities.
+              </p>
+            </div>
+
+            {/* 4 Feature Control Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+              {/* Feature 1: Customer Applications & DISCOM Execution */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-teal-50 text-teal-700 border border-teal-200 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-2xl">assignment</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">Customer Applications &amp; Execution</h3>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Module: applications</span>
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                      portalFeatures?.applications
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {portalFeatures?.applications ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mt-3 leading-relaxed">
+                    Controls access to project applications, DISCOM execution stages, document uploads, and allows converting quotations to booked orders.
+                  </p>
+
+                  <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Dealer "My Applications" &amp; Staff "Customer Files"</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>"Track Applications" button in Quotation view</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>"Book Order &amp; Convert to Customer File" action modal</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-700">
+                    {portalFeatures?.applications ? 'Enabled for Dealers & Staff' : 'Hidden from Dealers & Staff'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={togglingFeature === 'applications'}
+                    onClick={() => handleToggleFeature('applications')}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                      portalFeatures?.applications ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={Boolean(portalFeatures?.applications)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        portalFeatures?.applications ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Feature 2: Financial Ledger & Payments */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-2xl">account_balance_wallet</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">Financial Ledger &amp; Statements</h3>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Module: ledger</span>
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                      portalFeatures?.ledger
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {portalFeatures?.ledger ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mt-3 leading-relaxed">
+                    Controls access to running financial statements, debit/credit ledger vouchers, payment receipts, and balance reconciliation.
+                  </p>
+
+                  <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Dealer "My Ledger &amp; Payments" navigation tab</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Staff financial payment records &amp; receipts</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-700">
+                    {portalFeatures?.ledger ? 'Enabled for Dealers & Staff' : 'Hidden from Dealers & Staff'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={togglingFeature === 'ledger'}
+                    onClick={() => handleToggleFeature('ledger')}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                      portalFeatures?.ledger ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={Boolean(portalFeatures?.ledger)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        portalFeatures?.ledger ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Feature 3: Performance & Analytics */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-2xl">monitoring</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">Performance &amp; Conversion Analytics</h3>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Module: performance</span>
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                      portalFeatures?.performance
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {portalFeatures?.performance ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mt-3 leading-relaxed">
+                    Controls access to productivity metrics, quotation conversion rates, business performance scorecards, and volume charts.
+                  </p>
+
+                  <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Dealer "My Performance" analytics navigation tab</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Staff salesperson productivity leaderboard</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-700">
+                    {portalFeatures?.performance ? 'Enabled for Dealers & Staff' : 'Hidden from Dealers & Staff'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={togglingFeature === 'performance'}
+                    onClick={() => handleToggleFeature('performance')}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                      portalFeatures?.performance ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={Boolean(portalFeatures?.performance)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        portalFeatures?.performance ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Feature 4: Lead Generation Radar */}
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 border border-amber-200 flex items-center justify-center shrink-0">
+                        <span className="material-symbols-outlined text-2xl">radar</span>
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">Lead Generation Radar</h3>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Module: leads</span>
+                      </div>
+                    </div>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                      portalFeatures?.leads
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}>
+                      {portalFeatures?.leads ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mt-3 leading-relaxed">
+                    Controls access to local solar consumer discovery radar, geolocation mapping, nearby customer search, and automated lead capture.
+                  </p>
+
+                  <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1 text-[11px] text-slate-500">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Dealer "Lead Generation" radar navigation tab</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-slate-400">check_circle</span>
+                      <span>Staff nearby radar map &amp; customer prospecting</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-4 mt-4 border-t border-slate-100">
+                  <span className="text-xs font-semibold text-slate-700">
+                    {portalFeatures?.leads ? 'Enabled for Dealers & Staff' : 'Hidden from Dealers & Staff'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={togglingFeature === 'leads'}
+                    onClick={() => handleToggleFeature('leads')}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                      portalFeatures?.leads ? 'bg-emerald-600' : 'bg-slate-300'
+                    }`}
+                    role="switch"
+                    aria-checked={Boolean(portalFeatures?.leads)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        portalFeatures?.leads ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
