@@ -25,7 +25,7 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
 
   if (!isRedisConfigured()) {
     if (isProd) {
-      throw new Error('[RateLimiter FATAL] Upstash Redis is not configured in production. Cannot perform rate limiting.');
+      console.warn('[RateLimiter WARNING] Upstash Redis not configured in production. Falling back to local limiter.');
     }
     return checkRateLimit(identifier, options);
   }
@@ -54,9 +54,8 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
           totalAttempts: count
         };
       }
-      if (isProd) {
-        throw new Error(`[RateLimiter FATAL] Upstash Redis check failed with status ${getRes.status} in production.`);
-      }
+      console.warn(`[RateLimiter WARNING] Upstash Redis check status ${getRes.status}. Falling back to local limiter.`);
+      return checkRateLimit(identifier, options);
     } else {
       // INCR and EXPIRE in pipeline
       const res = await fetch(`${url}/pipeline`, {
@@ -89,18 +88,15 @@ export async function checkDistributedRateLimit(identifier, options = {}) {
         console.warn('[RateLimiter WARNING] Upstash Redis quota exceeded (HTTP 429). Falling back safely to in-memory rate limiter.');
         return checkRateLimit(identifier, options);
       }
-      if (isProd) {
-        throw new Error(`[RateLimiter FATAL] Upstash Redis pipeline failed with status ${res.status} in production.`);
-      }
+      console.warn(`[RateLimiter WARNING] Upstash Redis pipeline status ${res.status}. Falling back to local limiter.`);
+      return checkRateLimit(identifier, options);
     }
   } catch (err) {
     if (err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('limit')) {
       console.warn('[RateLimiter WARNING] Upstash Redis quota issue detected. Falling back safely to in-memory rate limiter.');
       return checkRateLimit(identifier, options);
     }
-    if (isProd) {
-      throw new Error(`[RateLimiter FATAL] Redis rate limiter error in production: ${err.message}`);
-    }
+    console.warn('[RateLimiter WARNING] Redis error in production:', err.message);
     console.warn('[RateLimiter] Upstash unreachable, falling back to local:', err.message);
   }
 

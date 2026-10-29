@@ -1,3 +1,4 @@
+import { applyCors } from './_lib/cors.js';
 import { requireUser } from './_lib/requireAuth.js';
 import { checkDistributedRateLimit, getClientIp } from './_lib/rateLimiter.js';
 
@@ -28,6 +29,8 @@ function parseDataUrl(dataUrl) {
 }
 
 export default async function handler(req, res) {
+  applyCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   // ── Auth check ──────────────────────────────────────────────────────────

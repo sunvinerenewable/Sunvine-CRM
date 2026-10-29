@@ -132,21 +132,6 @@ export const quotationService = {
       if (res.ok) {
         const data = await res.json().catch(() => null);
         if (data?.success && Array.isArray(data.quotations) && data.quotations.length > 0) {
-          // If viewing as admin, ensure admin gets all quotes without dealer cookie narrowing
-          if (currentRole === 'admin' && supabase) {
-            try {
-              const { data: dbData } = await supabase
-                .from('quotations')
-                .select('*')
-                .order('created_at', { ascending: false })
-                .limit(limit);
-              if (Array.isArray(dbData) && dbData.length > data.quotations.length) {
-                return dbData.map(normalizeQuotationRow).filter(Boolean);
-              }
-            } catch (supErr) {
-              console.warn('[quotationService] Direct Supabase admin query warning, falling back to API results:', supErr);
-            }
-          }
           return data.quotations.map(normalizeQuotationRow).filter(Boolean);
         }
       }

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt, extractAuthToken } from './_lib/jwt.js';
 import { getClientIp, checkRateLimit } from './_lib/rateLimiter.js';
+import { applyCors } from './_lib/cors.js';
 
 function getDb() {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -11,11 +12,8 @@ function getDb() {
 }
 
 export default async function handler(req, res) {
-  // CORS & Preflight
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  // CORS & Preflight (SEC-001 allowlist)
+  applyCors(req, res);
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -98,9 +96,10 @@ export default async function handler(req, res) {
 
   // ── POST: Create Voucher Entry ─────────────────────────────────────────────
   if (req.method === 'POST') {
-    // Only Admin or Verification staff can create financial vouchers
-    if (role !== 'admin' && role !== 'staff') {
-      return res.status(403).json({ error: 'Only authorized administrative staff can create vouchers.' });
+    // Only Admin or Verification desk staff can create financial vouchers
+    const staffDept = String(jwtResult.payload?.department || '').toLowerCase();
+    if (role !== 'admin' && (role !== 'staff' || staffDept !== 'verification')) {
+      return res.status(403).json({ error: 'Only Super Admin or Verification Desk staff can issue financial vouchers.' });
     }
 
     try {

@@ -443,7 +443,8 @@ export async function handleAdminDealers(req, res) {
           category: dealerCategory,
           ...(address ? { address: address.trim() } : {}),
           ...(gstin ? { gstin: gstin.trim() } : {}),
-          ...(pan ? { pan: pan.trim() } : {}),
+           ...(pan ? { pan: pan.trim() } : {}),
+          ...(dealer.discomLicense ? { discomLicense: String(dealer.discomLicense).trim() } : {}),
           assignedStaffId: staffId,
           assignedStaffName: staffName
         };

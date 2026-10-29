@@ -30,18 +30,15 @@ const VerificationDesk = lazyWithRetry(() => import('./StaffPortal/VerificationD
 
 // Top-Level Lazy-Loaded Admin Portal Views
 const AdminDashboard = lazyWithRetry(() => import('./AdminPortal/AdminDashboard'));
-const DealerManagement = lazyWithRetry(() => import('./AdminPortal/DealerManagement'));
 const DealerAccountsManagement = lazyWithRetry(() => import('./AdminPortal/DealerAccountsManagement'));
 const PricingMaster = lazyWithRetry(() => import('./AdminPortal/PricingMaster'));
 const HardwareMaster = lazyWithRetry(() => import('./AdminPortal/HardwareMaster'));
 const AllQuotations = lazyWithRetry(() => import('./AdminPortal/AllQuotations'));
 const AdminSettings = lazyWithRetry(() => import('./AdminPortal/AdminSettings'));
-const StaffManagement = lazyWithRetry(() => import('./AdminPortal/StaffManagement'));
 const StaffAccountsManagement = lazyWithRetry(() => import('./AdminPortal/StaffAccountsManagement'));
 const BusinessPerformance = lazyWithRetry(() => import('./AdminPortal/BusinessPerformance'));
 const ReportsAnalytics = lazyWithRetry(() => import('./AdminPortal/ReportsAnalytics'));
 const AuditLogViewer = lazyWithRetry(() => import('./AdminPortal/AuditLogViewer'));
-const DealerPaymentLedger = lazyWithRetry(() => import('./AdminPortal/DealerPaymentLedger'));
 
 // Shared Views
 const LeadGenerationComingSoon = lazyWithRetry(() => import('./Shared/LeadGenerationComingSoon'));
