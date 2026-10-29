@@ -44,19 +44,10 @@ export const formatDynamicCurrency = (amount) => {
   return `₹${num.toLocaleString('en-IN')}`;
 };
 
-// Universal Dynamic Solar Capacity Formatter (kW vs MW based on threshold 1000 kW)
+// Universal Dynamic Solar Capacity Formatter (always in kW across platform)
 export const formatCapacity = (capacityInKW) => {
   const kw = Number(capacityInKW) || 0;
-  if (kw >= 1000) {
-    const mw = kw / 1000;
-    const val = (mw % 1 === 0 ? mw.toFixed(1) : mw.toFixed(2));
-    return {
-      value: val,
-      unit: 'MW',
-      full: `${val} MW`
-    };
-  }
-  const val = (kw % 1 === 0 ? kw.toFixed(0) : kw.toFixed(1));
+  const val = Number.isInteger(kw) ? kw.toLocaleString('en-IN') : Number(kw.toFixed(2)).toLocaleString('en-IN');
   return {
     value: val,
     unit: 'kW',
@@ -748,7 +739,7 @@ export default function AdminDashboard() {
             <div className="mt-3 flex items-baseline gap-3">
               <span className="font-headline-xl text-headline-xl font-bold text-on-surface">{activeDealersCount}</span>
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-label-xs font-semibold bg-emerald-500/15 text-emerald-400">
-                <span className="material-symbols-outlined text-[12px] mr-0.5">verified</span> Live DB
+                <span className="material-symbols-outlined text-[12px] mr-0.5">verified</span> Live
               </span>
             </div>
           </div>
@@ -837,7 +828,7 @@ export default function AdminDashboard() {
         </div>
       </section>
 
-      {/* Top Performing Dealers & Partner Operations (Full Width, Live Database Synced) */}
+      {/* Top Performing Dealers & Partner Operations (Full Width, Up to Date) */}
       <section className="w-full bg-surface-container-lowest rounded-xl border border-surface-container-highest p-5 sm:p-6 shadow-sm flex flex-col gap-5">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-surface-container-highest">
@@ -852,7 +843,7 @@ export default function AdminDashboard() {
                 </h3>
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-label-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Live Database Synced
+                  Up to Date
                 </span>
               </div>
               <p className="font-body-sm text-[12px] text-secondary mt-0.5">
@@ -867,10 +858,10 @@ export default function AdminDashboard() {
               disabled={isSyncing}
               type="button"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
-              title="Sync live records from Supabase"
+              title="Refresh dealer performance data"
             >
               <span className={`material-symbols-outlined text-[16px] text-primary ${isSyncing ? 'animate-spin' : ''}`}>sync</span>
-              <span>{isSyncing ? 'Syncing...' : (lastSyncedTime ? `Synced (${lastSyncedTime})` : 'Sync Now')}</span>
+              <span>{isSyncing ? 'Refreshing...' : (lastSyncedTime ? `Updated (${lastSyncedTime})` : 'Refresh')}</span>
             </button>
             <button
               onClick={() => setActiveTab('dealers_mgmt')}
@@ -887,7 +878,7 @@ export default function AdminDashboard() {
         {topDealersList.length === 0 ? (
           <div className="py-12 flex flex-col items-center justify-center text-center gap-3 bg-surface-container-low/40 rounded-xl border border-dashed border-surface-container-high">
             <span className="material-symbols-outlined text-4xl text-secondary">group_off</span>
-            <p className="text-sm font-medium text-secondary">No registered dealers found in the database.</p>
+            <p className="text-sm font-medium text-secondary">No registered dealers found.</p>
             <button
               onClick={() => setActiveTab('dealers_mgmt')}
               className="px-4 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold cursor-pointer"

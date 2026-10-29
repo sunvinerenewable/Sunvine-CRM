@@ -228,7 +228,7 @@ export default function MyApplications() {
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
+    showLoader(`Uploading ${fileList.length > 1 ? `${fileList.length} files` : 'document'} securely...`);
     try {
       const uploadedDocsList = [];
 
@@ -316,7 +316,7 @@ export default function MyApplications() {
     const slotData = uploadTargetFile.documents?.[docKey];
     if (!slotData) return;
 
-    showLoader('Removing document from Cloudflare R2 Vault...');
+    showLoader('Removing document...');
     try {
       const fileList = normalizeDocList(slotData);
       const targetDoc = targetDocIdOrUrl
@@ -350,7 +350,7 @@ export default function MyApplications() {
         await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
       }
       setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      addToast('Document removed from Cloudflare R2', 'info');
+      addToast('Document removed successfully', 'info');
     } catch (e) {
       console.error('[MyApplications] Delete error:', e);
       addToast(e.message || 'Failed to remove document', 'error');
@@ -659,7 +659,7 @@ export default function MyApplications() {
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high flex flex-col justify-between shadow-xs">
-          <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Installation &amp; Sync</span>
+          <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Installation &amp; Commissioning</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="font-mono text-2xl font-bold text-indigo-400">{metrics.installationCount}</span>
             <span className="text-[10px] text-secondary">Stage 6-8</span>

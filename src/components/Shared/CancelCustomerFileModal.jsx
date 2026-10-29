@@ -229,7 +229,7 @@ export default function CancelCustomerFileModal({
                       <span>Permanent Delete</span>
                     </div>
                     <p className="text-[10px] text-slate-500 font-normal leading-tight">
-                      Admin only. Wipes row &amp; R2 documents immediately.
+                      Admin only. Permanently deletes application &amp; documents.
                     </p>
                   </button>
                 )}
@@ -275,7 +275,7 @@ export default function CancelCustomerFileModal({
               <span className="material-symbols-outlined text-slate-600 text-[18px] shrink-0 mt-0.5">timer</span>
               <div className="leading-relaxed">
                 <strong className="block font-bold mb-0.5 text-slate-900">14-Day Trash Retention Policy</strong>
-                This application will be moved to the Trash bin and hidden from your active list. If deleted by mistake, an Administrator can restore it within <strong>14 days</strong>. After 14 days, the application and all uploaded files will be permanently deleted from the database and storage.
+                This application will be moved to the Trash bin and hidden from your active list. If deleted by mistake, an Administrator can restore it within <strong>14 days</strong>. After 14 days, the application and all uploaded files will be permanently deleted from system records.
               </div>
             </div>
           )}
@@ -286,7 +286,7 @@ export default function CancelCustomerFileModal({
               <span className="material-symbols-outlined text-red-600 text-[18px] shrink-0 mt-0.5">delete_forever</span>
               <div className="leading-relaxed">
                 <strong className="block font-bold mb-0.5 text-red-950">⚠️ Irreversible Permanent Wipe</strong>
-                This will immediately and permanently delete customer <strong>{file.customerName}</strong> ({file.id}), all timeline milestones, and all associated documents from Cloudflare R2 storage.
+                This will immediately and permanently delete customer <strong>{file.customerName}</strong> ({file.id}), all timeline milestones, and all associated documents from system records.
               </div>
             </div>
           )}

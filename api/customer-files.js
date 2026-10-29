@@ -225,65 +225,6 @@ export default async function handler(req, res, injectedDb = null) {
       const limit = Math.min(Math.max(parseInt(req.query?.limit, 10) || 100, 1), 100);
       const offset = Math.max(parseInt(req.query?.offset, 10) || 0, 0);
 
-      // 14-Day Retention Check 1: purge R2 documents for cancelled files older than 14 days
-      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-      let expQuery = db
-        .from('customer_files')
-        .select('id, documents, timeline')
-        .eq('status', 'Cancelled')
-        .lt('cancelled_at', fourteenDaysAgo);
-
-      if (isDealer) {
-        expQuery = expQuery.eq('dealer_id', dealerId);
-      }
-
-      const { data: expiredFiles } = await expQuery;
-
-      if (Array.isArray(expiredFiles) && expiredFiles.length > 0) {
-        for (const exp of expiredFiles) {
-          const docKeys = extractAllDocPaths(exp.documents);
-          if (docKeys.length > 0) {
-            await deleteR2Files(docKeys);
-            const expiredPurgeNote = {
-              title: 'Uploaded Documents Removed',
-              description: 'Uploaded customer documents were permanently deleted after the 14-day recovery period ended.',
-              timestamp: new Date().toISOString(),
-              stage: 'CANCELLED',
-              author: 'System'
-            };
-            const updatedTimeline = Array.isArray(exp.timeline) ? [...exp.timeline, expiredPurgeNote] : [expiredPurgeNote];
-            await db.from('customer_files').update({
-              documents: {},
-              timeline: updatedTimeline,
-              updated_at: new Date().toISOString()
-            }).eq('id', exp.id);
-          }
-        }
-      }
-
-      // 14-Day Retention Check 2: permanent hard delete for soft-deleted trash files older than 14 days
-      let trashExpQuery = db
-        .from('customer_files')
-        .select('id, documents')
-        .eq('is_deleted', true)
-        .lt('deleted_at', fourteenDaysAgo);
-
-      if (isDealer) {
-        trashExpQuery = trashExpQuery.eq('dealer_id', dealerId);
-      }
-
-      const { data: expiredTrashFiles } = await trashExpQuery;
-      if (Array.isArray(expiredTrashFiles) && expiredTrashFiles.length > 0) {
-        for (const exp of expiredTrashFiles) {
-          const docKeys = extractAllDocPaths(exp.documents);
-          if (docKeys.length > 0) {
-            await deleteR2Files(docKeys);
-          }
-          await db.from('customer_files').delete().eq('id', exp.id);
-        }
-        await redisDel('customer_files:all');
-      }
-
       let queryBuilder = db
         .from('customer_files')
         .select('*', { count: 'exact' });

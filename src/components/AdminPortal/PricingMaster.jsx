@@ -250,7 +250,7 @@ export default function PricingMaster() {
 
   const [inverterTopology, setInverterTopology] = useState('1-Phase / 3-Phase Grid-Tied Cloud Wi-Fi');
   const [inverterEfficiency, setInverterEfficiency] = useState('98.6% Euro Efficiency');
-  const [inverterWarranty, setInverterWarranty] = useState('8 Years Full Replacement + Remote Telemetry');
+  const [inverterWarranty, setInverterWarranty] = useState('8 Years Full Replacement + Remote Monitoring');
 
   // Bank details matching official PDF
   const [beneficiaryName, setBeneficiaryName] = useState(pricingMaster?.bankDetails?.accountName || 'SUNVINE RENEWABLE');
@@ -540,12 +540,12 @@ ${origin}/?tab=pricing_master
       addNotification({
         type: 'success',
         icon: 'table_chart',
-        title: 'BOS Price List Matrix Updated',
+        title: 'BOS Price List Updated',
         description: `BOS price slabs updated across ${matrixToSave.length} capacities. Synced to all ${totalDealersCount} dealers.`,
         targetTab: 'pricing_master'
       });
     }
-    triggerToast(`BOS Price Matrix saved successfully (${matrixToSave.length} capacity slabs)!`);
+    triggerToast(`BOS Price List saved successfully (${matrixToSave.length} capacity slabs)!`);
   };
 
   // Handle inline cell changes in Matrix
@@ -731,7 +731,7 @@ ${origin}/?tab=pricing_master
     setInverterBenchmarkMatrix(toSave);
     pricingService.saveInverterBenchmarks(toSave);
     setIsInlineEditingInverters(false);
-    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved to database!');
+    triggerToast('Inverter Sizing & Benchmark Pricing saved successfully!');
   };
 
   const handleInverterCellChange = (idx, field, value) => {
@@ -811,12 +811,12 @@ ${origin}/?tab=pricing_master
   };
 
   const handleResetMatrixToDefault = () => {
-    if (window.confirm('Reset the BOS Price Matrix to the official PDF defaults?')) {
+    if (window.confirm('Reset the BOS Price List to the standard defaults?')) {
       setLocalBosMatrix(PDF_BOS_PRICE_MATRIX);
       if (setPdfBosMatrix) {
         setPdfBosMatrix(PDF_BOS_PRICE_MATRIX);
       }
-      triggerToast('Reset BOS Price Matrix to official PDF defaults');
+      triggerToast('Reset BOS Price List to standard defaults');
     }
   };
 
@@ -1096,7 +1096,7 @@ ${origin}/?tab=pricing_master
                     {activeTab === 'inverters' && 'Solar Inverters'}
                     {activeTab === 'bom' && 'Default Bill of Material (BOM)'}
                     {activeTab === 'bank' && 'Company Bank Details & Terms'}
-                    {activeTab === 'dealer_custom' && 'Dealer Custom Pricing Matrix'}
+                    {activeTab === 'dealer_custom' && 'Dealer Custom Pricing'}
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-primary text-surface-container-lowest font-bold shrink-0">
                     Active
@@ -1136,7 +1136,7 @@ ${origin}/?tab=pricing_master
                     id: 'base',
                     icon: 'payments',
                     title: 'System Presets (Plant Slabs)',
-                    subtitle: 'Panel-Wise Complete Quotation Matrix',
+                    subtitle: 'Panel-Wise Quotation Pricing Table',
                     badge: `${localBosMatrix?.length || 13} Slabs`
                   },
                   {
@@ -1150,7 +1150,7 @@ ${origin}/?tab=pricing_master
                     id: 'inverters',
                     icon: 'electric_bolt',
                     title: 'Solar Inverters',
-                    subtitle: `${invertersList?.length ?? 0} Inverter Models & Sizing Matrix`,
+                    subtitle: `${invertersList?.length ?? 0} Inverter Models & Sizing Guide`,
                     badge: `${invertersList?.length ?? 0} Inverters`
                   },
                   {
@@ -1170,7 +1170,7 @@ ${origin}/?tab=pricing_master
                   {
                     id: 'dealer_custom',
                     icon: 'tune',
-                    title: 'Dealer Custom Pricing Matrix',
+                    title: 'Dealer Pricing Rates', 
                     subtitle: `${totalDealersCount} Partner Pricing Rules`,
                     badge: `${totalDealersCount} Dealers`
                   }
@@ -1357,7 +1357,7 @@ ${origin}/?tab=pricing_master
             </span>
           </button>
 
-          {/* TAB 6: Dealer Custom Pricing Matrix */}
+          {/* TAB 6: Dealer Custom Pricing */}
           <button
             type="button"
             onClick={() => handleTabChange('dealer_custom')}
@@ -1402,7 +1402,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="font-headline-md text-headline-md text-inverse-surface font-bold">
-                          Sunvine Official BOS Price List Matrix
+                          Sunvine Official BOS Price List
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-primary-container/20 text-primary text-[11px] font-bold">
                           {filteredBosMatrixWithIdx.length === localBosMatrix.length 
@@ -1445,7 +1445,7 @@ ${origin}/?tab=pricing_master
                       <span className="material-symbols-outlined text-[16px]">
                         {isInlineEditingMatrix ? 'check' : 'edit'}
                       </span>
-                      <span>{isInlineEditingMatrix ? 'Save Matrix' : 'Edit Matrix'}</span>
+                      <span>{isInlineEditingMatrix ? 'Save Rates' : 'Edit Rates'}</span>
                     </button>
                   </div>
                 </div>
@@ -1809,7 +1809,7 @@ ${origin}/?tab=pricing_master
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-label-md text-xs font-bold rounded-lg shadow-sm cursor-pointer flex items-center gap-1.5"
                     >
                       <span className="material-symbols-outlined text-[18px]">save</span>
-                      <span>Save Matrix Changes</span>
+                      <span>Save Pricing Changes</span>
                     </button>
                   </div>
                 )}
@@ -1826,7 +1826,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
-                          Inverter Sizing &amp; Benchmark Pricing Matrix
+                          Inverter Sizing &amp; Benchmark Pricing Guide
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                           {inverterBenchmarkMatrix.length} Ratings
@@ -2213,12 +2213,12 @@ ${origin}/?tab=pricing_master
                       <span className="material-symbols-outlined text-xl">account_balance</span>
                     </div>
                     <div>
-                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Central Govt. PM Surya Ghar Subsidy Matrix</h2>
+                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Central Govt. PM Surya Ghar Subsidy Table</h2>
                       <p className="font-body-sm text-body-sm text-secondary">National DBT Portal guidelines for Direct Benefit Transfer applied to quote sheets.</p>
                     </div>
                   </div>
                   <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-3 py-1 rounded-full font-bold self-start sm:self-center">
-                    MNRE National Portal DBT Matrix 2024-25
+                    MNRE National Portal DBT Rates 2024-25
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2307,10 +2307,10 @@ ${origin}/?tab=pricing_master
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
-                    { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5.0 MW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-                    { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3.0 MW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                    { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1.5 - 3.0 MW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
-                    { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1.5 MW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
+                    { key: 'diamond', name: 'Diamond EPC Partner', desc: 'Premier High-Volume Partners (> 5,000 kW/quarter)', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                    { key: 'platinum', name: 'Platinum Tier', desc: 'Tier-1 Large Scale EPC (> 3,000 kW/quarter)', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                    { key: 'gold', name: 'Gold EPC Partner', desc: 'Established Standard Installers (1,500 - 3,000 kW/quarter)', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+                    { key: 'silver', name: 'Silver Installer', desc: 'Entry / Regional Empanelled Installers (< 1,500 kW/quarter)', badge: 'bg-slate-100 text-slate-700 border-slate-300' }
                   ].map((tier) => {
                     const conf = localTierMargins[tier.key] || tierMargins?.[tier.key] || { defaultMarginPerKw: 0, maxMarginCapPerKw: 0 };
                     return (
@@ -2394,7 +2394,7 @@ ${origin}/?tab=pricing_master
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span>Real-Time Sync Active</span>
+                      <span>Live Rates Active</span>
                     </span>
                   </div>
                 </div>
@@ -2411,7 +2411,7 @@ ${origin}/?tab=pricing_master
                   <div className="p-4 rounded-xl border border-surface-container-highest bg-surface-container-low/50 flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary text-xl mt-0.5">sync_alt</span>
                     <div>
-                      <div className="font-bold text-on-surface text-sm">Discom Tariff Grids Synced</div>
+                      <div className="font-bold text-on-surface text-sm">Discom Tariff Rates Active</div>
                       <p className="text-xs text-secondary mt-0.5">PGVCL, DGVCL, UGVCL, and MGVCL net-metering slabs unified.</p>
                     </div>
                   </div>
@@ -2428,7 +2428,7 @@ ${origin}/?tab=pricing_master
                 <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs text-secondary">
                     <span className="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
-                    <span>Last synced: {pricingMaster?.lastSynced || 'Today, just now'}</span>
+                    <span>Last updated: {pricingMaster?.lastSynced || 'Today, just now'}</span>
                   </div>
                   <span className="text-xs text-secondary">Changes published via top action bar instantly trigger in-app updates</span>
                 </div>
@@ -2624,7 +2624,7 @@ ${origin}/?tab=pricing_master
                   <div>
                     <h4 className="text-xs font-bold text-on-surface">Need dealer-specific panel rates or special margins?</h4>
                     <p className="text-[11px] text-secondary">
-                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing Matrix.
+                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing.
                     </p>
                   </div>
                 </div>
@@ -2657,7 +2657,7 @@ ${origin}/?tab=pricing_master
                       <p className="font-body-sm text-body-sm text-secondary">These hardware specifications auto-populate when a dealer creates a new residential or light-commercial estimate.</p>
                     </div>
                   </div>
-                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Cloud IoT Sync</span>
+                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Smart Monitoring</span>
                 </div>
                 <div className="w-full">
                   <div className="border border-surface-container-highest rounded-lg p-4 bg-surface-container-low">
@@ -2666,7 +2666,7 @@ ${origin}/?tab=pricing_master
                         <span className="material-symbols-outlined text-primary text-xl">electrical_services</span>
                         <h3 className="font-label-md text-label-md font-bold text-on-surface">Default Solar Inverter</h3>
                       </div>
-                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Cloud IoT Sync</span>
+                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Smart Monitoring</span>
                     </div>
                     <div className="space-y-3">
                       <div>
@@ -2756,7 +2756,7 @@ ${origin}/?tab=pricing_master
                         <th className="px-3 py-2 text-xs">Phase Topology</th>
                         <th className="px-3 py-2 text-xs text-center">Peak Efficiency</th>
                         <th className="px-3 py-2 text-right">Warranty Term</th>
-                        <th className="px-3 py-2 text-center">Cloud Sync</th>
+                        <th className="px-3 py-2 text-center">Monitoring</th>
                         <th className="px-3 py-2 text-center">Dealer Pricing</th>
                         <th className="px-3 py-2 text-center">Action</th>
                       </tr>
@@ -2831,7 +2831,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
-                          Inverter Sizing &amp; Benchmark Pricing Matrix
+                          Inverter Sizing &amp; Benchmark Pricing Guide
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                           {inverterBenchmarkMatrix.length} Ratings
@@ -3114,7 +3114,7 @@ ${origin}/?tab=pricing_master
                   <div>
                     <h4 className="text-xs font-bold text-on-surface">Need dealer-specific inverter rates or special margins?</h4>
                     <p className="text-[11px] text-secondary">
-                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing Matrix.
+                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing.
                     </p>
                   </div>
                 </div>
@@ -3176,7 +3176,7 @@ ${origin}/?tab=pricing_master
                     <div className="flex items-center gap-2 self-start sm:self-center">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low text-secondary text-xs font-semibold border border-surface-container-highest">
                         <span className="material-symbols-outlined text-[16px] text-primary">cloud_done</span>
-                        <span>Auto-Synced • Publish via Top Header</span>
+                        <span>Auto-Calculated • Publish via Top Header</span>
                       </span>
                     </div>
                   </div>
@@ -3430,7 +3430,7 @@ ${origin}/?tab=pricing_master
                   <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-highest flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary text-xl mt-0.5">verified_user</span>
                     <div className="text-xs text-secondary leading-relaxed">
-                      <strong className="text-on-surface font-semibold">Real-Time Sync Notice:</strong> Changes made here immediately update the dealer quotation calculation engine for <strong className="text-primary">{selectedBomCapacity} kW</strong> systems across all empanelled Gujarat dealers. Dealers select only the system size, module, and inverter—all BOM calculations roll up automatically!
+                      <strong className="text-on-surface font-semibold">Live Rate Notice:</strong> Changes made here immediately update the dealer quotation calculation engine for <strong className="text-primary">{selectedBomCapacity} kW</strong> systems across all empanelled Gujarat dealers. Dealers select only the system size, module, and inverter—all BOM calculations roll up automatically!
                     </div>
                   </div>
                 </div>
@@ -3586,7 +3586,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <h4 className="text-xs font-bold text-on-surface">Need dealer-specific BOM rates or custom margins?</h4>
                       <p className="text-[11px] text-secondary">
-                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing Matrix.
+                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing.
                       </p>
                     </div>
                   </div>
@@ -3683,7 +3683,7 @@ ${origin}/?tab=pricing_master
                     </div>
                     <div>
                       <h2 className="font-headline-md text-headline-md text-inverse-surface">Commercial Milestones &amp; Legal Terms</h2>
-                      <p className="font-body-sm text-body-sm text-secondary">Default clause presets appended to dealer quotation terms from Sunvine price matrix.</p>
+                      <p className="font-body-sm text-body-sm text-secondary">Default clause presets appended to quotation terms from official price list.</p>
                     </div>
                   </div>
                 </div>

@@ -170,7 +170,7 @@ export default function StaffRadarMap() {
     setActiveQueries((prev) => {
       if (prev.includes(queryText)) {
         if (prev.length === 1) {
-          addToast('At least one search query must remain active', 'error');
+          addToast('At least one search keyword must remain active', 'error');
           return prev;
         }
         return prev.filter((q) => q !== queryText);
@@ -186,12 +186,12 @@ export default function StaffRadarMap() {
     const clean = customKeywordInput.trim();
     if (!clean) return;
     if (activeQueries.includes(clean)) {
-      addToast('Query already in active search matrix', 'info');
+      addToast('Keyword already in active search list', 'info');
       return;
     }
     setActiveQueries((prev) => [...prev, clean]);
     setCustomKeywordInput('');
-    addToast(`Added "${clean}" to search matrix`, 'success');
+    addToast(`Added "${clean}" to search list`, 'success');
   };
 
   // Convert Lead to Customer File
@@ -1033,7 +1033,7 @@ export default function StaffRadarMap() {
             <div className="p-4 rounded-xl bg-surface-container-low border border-surface-container-high space-y-2 text-xs">
               <div className="font-bold text-on-surface flex items-center gap-1.5 text-xs">
                 <span className="material-symbols-outlined text-emerald-600 text-[16px]">my_location</span>
-                <span>Live GPS Sensor Telemetry:</span>
+                <span>Live GPS Location Info:</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-[11px]">
                 <div className="p-2 rounded bg-surface-container">
@@ -1068,7 +1068,7 @@ export default function StaffRadarMap() {
               <div className="font-bold text-on-surface flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-blue-600 text-[16px]">cloud_sync</span>
-                  <span>Google Places API Connection:</span>
+                  <span>Nearby Places Service Status:</span>
                 </div>
                 <span className="font-mono text-[11px] text-secondary">
                   Latency: {diagnostics?.apiLatencyMs || 0} ms
@@ -1083,7 +1083,7 @@ export default function StaffRadarMap() {
                   </strong>
                 </div>
                 <div>
-                  <span className="text-secondary">Active Endpoint: </span>
+                  <span className="text-secondary">Active Service: </span>
                   <span>{diagnostics?.googleApiType || 'Places API (New) v1/places:searchText'}</span>
                 </div>
                 <div>
@@ -1178,7 +1178,7 @@ export default function StaffRadarMap() {
               <div className="font-bold text-on-surface flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-600 text-[16px]">checklist</span>
-                  <span>Active Multi-Query Matrix ({activeQueries.length} Queries):</span>
+                  <span>Active Search Keywords ({activeQueries.length} Queries):</span>
                 </div>
                 <button
                   onClick={() => setActiveQueries(DEFAULT_ACTIVE_QUERIES)}
@@ -1198,7 +1198,7 @@ export default function StaffRadarMap() {
                     <button
                       onClick={() => handleToggleQuery(q)}
                       className="text-secondary hover:text-rose-600 cursor-pointer"
-                      title="Remove Query"
+                      title="Remove Keyword"
                     >
                       <span className="material-symbols-outlined text-[13px]">close</span>
                     </button>

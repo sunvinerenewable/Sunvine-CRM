@@ -14,6 +14,7 @@ ensureEnvLoaded();
 const localMemoryCache = new Map();
 
 function getRedisConfig() {
+  if (process.env.NODE_ENV === 'test') return null;
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   return (url && token) ? { url, token } : null;

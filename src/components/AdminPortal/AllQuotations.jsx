@@ -156,7 +156,13 @@ export default function AllQuotations() {
     if (hydrateAllFromSupabase) {
       hydrateAllFromSupabase();
     }
-  }, [hydrateAllFromSupabase]);
+    if (refreshQuotations) {
+      refreshQuotations({ force: true });
+    }
+    if (refreshCustomerFiles) {
+      refreshCustomerFiles({ force: true });
+    }
+  }, [hydrateAllFromSupabase, refreshQuotations, refreshCustomerFiles]);
 
   const handleApplyPresetDate = (label, start, end) => {
     setDatePresetLabel(label);
@@ -324,16 +330,7 @@ export default function AllQuotations() {
   const totalProposalsCount = filteredQuotes.length;
   const totalValue = filteredQuotes.reduce((acc, q) => acc + Number(q.total_amount || q.grandTotalCustomer || q.totalAmount || 0), 0);
   const totalCapacityKW = filteredQuotes.reduce((acc, q) => acc + (parseFloat(q.system_capacity_kw || q.systemCapacityKW || q.capacity || 0)), 0);
-  const totalCapacityMW = (totalCapacityKW / 1000).toFixed(2);
-  const formattedCapacity = (() => {
-    if (totalCapacityKW >= 1000) {
-      const mw = totalCapacityKW / 1000;
-      const val = (mw % 1 === 0 ? mw.toFixed(1) : mw.toFixed(2));
-      return { value: val, unit: 'MW' };
-    }
-    const val = (totalCapacityKW % 1 === 0 ? totalCapacityKW.toFixed(0) : totalCapacityKW.toFixed(2));
-    return { value: val, unit: 'kW' };
-  })();
+  const totalCapacityFormatted = Number.isInteger(totalCapacityKW) ? totalCapacityKW.toLocaleString('en-IN') : Number(totalCapacityKW.toFixed(2)).toLocaleString('en-IN');
   const avgValue = totalProposalsCount > 0 ? Math.round(totalValue / totalProposalsCount) : 0;
 
   // Dynamic Average Dealer Margin calculation (SR-21)
@@ -960,10 +957,7 @@ export default function AllQuotations() {
           </div>
           <div className="mt-3">
             <div className="flex items-baseline gap-2">
-              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">
-                {formattedCapacity.value}{' '}
-                <span className="text-sm font-normal text-secondary">{formattedCapacity.unit}</span>
-              </span>
+              <span className="font-headline-lg text-headline-xl text-[#0F1B2E] font-bold">{totalCapacityFormatted} kW</span>
             </div>
             <div className="mt-1.5 flex items-center gap-2">
               <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden flex">
@@ -1521,7 +1515,7 @@ export default function AllQuotations() {
                   <span className="text-2xl font-bold text-[#0F1B2E]">{commissionedAppsCount}</span>
                   <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">Commissioned</span>
                 </div>
-                <p className="text-xs text-secondary mt-1">Grid synchronized with net meter</p>
+                <p className="text-xs text-secondary mt-1">Grid connected with net meter</p>
               </div>
             </div>
 
@@ -1538,7 +1532,7 @@ export default function AllQuotations() {
                   <span className="text-2xl font-bold text-[#0F1B2E]">{totalAppCapacityKw.toFixed(1)} kW</span>
                   <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">Solar Load</span>
                 </div>
-                <p className="text-xs text-secondary mt-1">{(totalAppCapacityKw / 1000).toFixed(3)} MW Total Generation</p>
+                <p className="text-xs text-secondary mt-1">{Number(totalAppCapacityKw.toFixed(1))} kW Total Generation</p>
               </div>
             </div>
           </div>
@@ -1627,7 +1621,7 @@ export default function AllQuotations() {
                 <option value="FEASIBILITY_APPROVAL">Feasibility Approved</option>
                 <option value="PLANT_INSTALLATION">Plant Installation</option>
                 <option value="CEI_INSPECTION">CEI Inspection</option>
-                <option value="NET_METER_SYNC">Net Meter Synchronized</option>
+                <option value="NET_METER_SYNC">Net Meter Connected</option>
                 <option value="SUBSIDY_CLAIM">Subsidy Claimed</option>
                 <option value="HANDOVER_COMPLETED">Completed &amp; Handover</option>
               </select>
@@ -1825,7 +1819,7 @@ export default function AllQuotations() {
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    if (window.confirm(`Permanently delete ${file.customerName} (${file.id}) and all attached R2 documents? This cannot be undone.`)) {
+                                    if (window.confirm(`Permanently delete ${file.customerName} (${file.id}) and all attached documents? This cannot be undone.`)) {
                                       try {
                                         await deleteCustomerFile(file.id);
                                         addToast(`Application ${file.id} permanently deleted`, 'info');
@@ -1837,7 +1831,7 @@ export default function AllQuotations() {
                                     }
                                   }}
                                   className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Immediately delete row and wipe R2 storage"
+                                  title="Permanently delete application and attached documents"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">delete_forever</span>
                                   <span>Wipe Now</span>

@@ -72,7 +72,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     'Pending Documents',
     'DISCOM Processing',
     'Inspection Scheduled',
-    'Grid Synchronized',
+    'Grid Connected',
     'Subsidized',
     'Completed',
     'Stuck',
@@ -484,7 +484,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <p className="text-xs text-secondary">
-                  Document uploads are strictly non-blocking. PDF files are securely stored in Cloudflare R2 Vault.
+                  Document uploads are strictly non-blocking. PDF files are securely stored in the Document Vault.
                 </p>
                 {Object.values(file.documents || {}).some(d => d?.uploaded && d?.url) && (
                   <button

@@ -225,7 +225,7 @@ export default function HardwareMaster() {
           audience: 'all'
         });
       }
-      triggerToast(isCurrentlyArchived ? `Restored ${mod.brand} ${mod.model} in database!` : `Archived ${mod.brand} ${mod.model} in database!`);
+      triggerToast(isCurrentlyArchived ? `Restored ${mod.brand} ${mod.model} successfully!` : `Archived ${mod.brand} ${mod.model} successfully!`);
     }
   };
 
@@ -295,7 +295,7 @@ export default function HardwareMaster() {
 
       const res = await hardwareService.saveModule(updatedMod);
       if (res && res.success) {
-        triggerToast(`Saved ${updatedMod.brand} ${updatedMod.model} to Supabase database!`);
+        triggerToast(`Saved ${updatedMod.brand} ${updatedMod.model} to catalog!`);
       } else {
         triggerToast(`Saved locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
       }
@@ -331,7 +331,7 @@ export default function HardwareMaster() {
 
       const res = await hardwareService.saveModule(newMod);
       if (res && res.success) {
-        triggerToast(`Added ${newMod.brand} ${newMod.model} to Supabase database!`);
+        triggerToast(`Added ${newMod.brand} ${newMod.model} to catalog!`);
       } else {
         triggerToast(`Added locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
       }
@@ -392,7 +392,7 @@ export default function HardwareMaster() {
         setInvertersList(prev => (prev || []).map(i => i.id === inv.id ? updated : i));
       }
       await hardwareService.archiveInverter(inv.id, !isCurrentlyArchived);
-      triggerToast(isCurrentlyArchived ? `Restored ${inv.brand} ${inv.model} in database!` : `Archived ${inv.brand} ${inv.model} in database!`);
+      triggerToast(isCurrentlyArchived ? `Restored ${inv.brand} ${inv.model} successfully!` : `Archived ${inv.brand} ${inv.model} successfully!`);
     }
   };
 
@@ -450,7 +450,7 @@ export default function HardwareMaster() {
       }
       const res = await hardwareService.saveInverter(updatedInv);
       if (res && res.success) {
-        triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to Supabase database!`);
+        triggerToast(`Saved ${updatedInv.brand} ${updatedInv.model} to catalog!`);
       } else {
         triggerToast(`Saved locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
       }
@@ -483,7 +483,7 @@ export default function HardwareMaster() {
       }
       const res = await hardwareService.saveInverter(newInv);
       if (res && res.success) {
-        triggerToast(`Added ${newInv.brand} ${newInv.model} to Supabase database!`);
+        triggerToast(`Added ${newInv.brand} ${newInv.model} to catalog!`);
       } else {
         triggerToast(`Added locally. (Supabase not reached: ${res?.error || 'Project Paused / Offline'})`);
       }
@@ -497,14 +497,14 @@ export default function HardwareMaster() {
       itemName: `${mod.brand} ${mod.model}`,
       itemDetails: `${mod.wattage}W · ${mod.cellTech || ''} · ${mod.dimensions || ''}`,
       itemRate: mod.ratePerWp ? `${mod.ratePerWp}` : 'Benchmark Rate',
-      warning: 'This module will be permanently removed from the catalog, presets, and Supabase database.',
+      warning: 'This module will be permanently removed from the catalog and presets.',
       confirmButtonText: 'Permanently Delete Module',
       onConfirm: async () => {
         if (setModulesList) {
           setModulesList(prev => (prev || []).filter(m => m.id !== mod.id));
         }
         await hardwareService.deleteModule(mod.id);
-        triggerToast(`Removed ${mod.brand} ${mod.model} from database`);
+        triggerToast(`Removed ${mod.brand} ${mod.model} from catalog`);
         setDeleteModalState(null);
       }
     });
@@ -517,14 +517,14 @@ export default function HardwareMaster() {
       itemName: `${inv.brand} ${inv.model}`,
       itemDetails: `${inv.capacity || `${inv.capacityKW} kW`} · ${inv.phase || ''} · ${inv.warranty || ''}`,
       itemRate: inv.basePrice || 'Benchmark Price',
-      warning: 'This inverter model will be permanently removed from the catalog, presets, and Supabase database.',
+      warning: 'This inverter model will be permanently removed from the catalog and presets.',
       confirmButtonText: 'Permanently Delete Inverter',
       onConfirm: async () => {
         if (setInvertersList) {
           setInvertersList(prev => (prev || []).filter(i => i.id !== inv.id));
         }
         await hardwareService.deleteInverter(inv.id);
-        triggerToast(`Removed ${inv.brand} ${inv.model} from database`);
+        triggerToast(`Removed ${inv.brand} ${inv.model} from catalog`);
         setDeleteModalState(null);
       }
     });
@@ -538,7 +538,7 @@ export default function HardwareMaster() {
       const nextUnits = [...availableUnits, clean];
       setAvailableUnits(nextUnits);
       await systemSettingsService.saveCustomUnitsAndCategories(nextUnits, availableCategories);
-      triggerToast(`Custom unit "${clean}" saved to database!`);
+      triggerToast(`Custom unit "${clean}" saved successfully!`);
     }
     setBomForm(prev => ({ ...prev, unit: clean }));
     setCustomUnitInput('');
@@ -554,7 +554,7 @@ export default function HardwareMaster() {
       const nextCats = [...availableCategories, newCatObj];
       setAvailableCategories(nextCats);
       await systemSettingsService.saveCustomUnitsAndCategories(availableUnits, nextCats);
-      triggerToast(`Custom category "${clean}" saved to database!`);
+      triggerToast(`Custom category "${clean}" saved successfully!`);
     }
     setBomForm(prev => ({ ...prev, category: catKey }));
     setCustomCategoryInput('');
@@ -627,13 +627,13 @@ export default function HardwareMaster() {
       itemName: item.name,
       itemDetails: `Make: ${item.make || 'Approved Brand'} · Unit: ${item.unit || 'Nos'} · GST: ${item.gstRate || 18}%`,
       itemRate: `₹ ${Number(item.rate || item.defaultRate || 0).toLocaleString('en-IN')}`,
-      warning: 'This component will be permanently removed from BOM catalog, standard presets, and Supabase database.',
+      warning: 'This component will be permanently removed from the BOM catalog and standard presets.',
       confirmButtonText: 'Permanently Delete Component',
       onConfirm: async () => {
         if (deleteBomItem) {
           await deleteBomItem(item.id);
         }
-        triggerToast(`Removed ${item.name} from catalog and database`);
+        triggerToast(`Removed ${item.name} from catalog`);
         setDeleteModalState(null);
       }
     });
@@ -666,7 +666,7 @@ export default function HardwareMaster() {
       if (updateBomItem) {
         await updateBomItem(updatedItem);
       }
-      triggerToast(`Updated ${updatedItem.name} in database`);
+      triggerToast(`Updated ${updatedItem.name} in catalog`);
     } else {
       const newItem = {
         name: bomForm.name.trim(),
@@ -682,7 +682,7 @@ export default function HardwareMaster() {
       if (addBomItem) {
         await addBomItem(newItem);
       }
-      triggerToast(`Added ${newItem.name} to database`);
+      triggerToast(`Added ${newItem.name} to catalog`);
     }
   };
 
@@ -889,7 +889,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       });
     }
 
-    triggerToast(`Successfully imported and synced ${importedPreviewItems.length} module specifications to database!`);
+    triggerToast(`Successfully imported ${importedPreviewItems.length} module specifications!`);
     setShowImportModal(false);
     setImportedPreviewItems([]);
     setImportFileName('');
@@ -1080,7 +1080,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       });
     }
 
-    triggerToast(`Successfully imported & synced ${importedBomPreviewItems.length} BOM components to database!`);
+    triggerToast(`Successfully imported ${importedBomPreviewItems.length} BOM components!`);
     setShowImportBomModal(false);
     setImportedBomPreviewItems([]);
     setBomImportFileName('');
@@ -1099,7 +1099,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
         });
       }
       await hardwareService.bulkImportBomItems(STANDARD_BOM_CATALOG);
-      triggerToast('Successfully loaded and synced all 24 Master BOM components to database!');
+      triggerToast('Successfully loaded all 24 Master BOM components!');
     }
   };
 
@@ -1193,7 +1193,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
       });
     }
     setShowBulkPriceModal(false);
-    triggerToast(`Bulk pricing saved to Supabase database across ${(modulesList || []).length} modules!`);
+    triggerToast(`Bulk pricing saved across ${(modulesList || []).length} modules!`);
   };
 
   // Filtered lists
@@ -1282,17 +1282,17 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
             {isHardwareDbConnected ? (
               <span className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Supabase DB Connected
+                Catalog Active
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-amber-500/20" title="Supabase project is paused or unreachable. Ensure active URL in .env">
+              <span className="inline-flex items-center gap-1.5 bg-amber-500/10 text-amber-700 text-label-xs font-semibold px-2.5 py-0.5 rounded-full border border-amber-500/20" title="Hardware catalog service temporarily unavailable. Please verify connection.">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                Supabase Disconnected (Project Inactive)
+                Catalog Offline
               </span>
             )}
           </div>
           <p className="font-body-md text-body-md text-secondary mt-1">
-            Manage approved solar modules, string inverters, and BOS specifications persisted directly to Supabase cloud database.
+            Manage approved solar modules, string inverters, and BOS specifications.
           </p>
         </div>
         {/* Action Buttons */}
@@ -1407,20 +1407,20 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
           </div>
         </div>
 
-        {/* Card 4: Catalog Synchronization */}
+        {/* Card 4: Catalog Status */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-emerald-500/50 transition-all group">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Catalog Synchronization</span>
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Catalog Status</span>
             <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/60 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[20px]">sync</span>
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-3">
-            <span className="text-xl sm:text-2xl font-extrabold text-slate-900 font-heading">Live Supabase DB</span>
+            <span className="text-xl sm:text-2xl font-extrabold text-slate-900 font-heading">Live Catalog</span>
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-bold text-emerald-700">Realtime sync active</span>
+            <span className="text-xs font-bold text-emerald-700">Live catalog active</span>
           </div>
         </div>
       </section>
@@ -2058,7 +2058,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                   </h2>
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    Live Supabase DB Synced
+                    Live Catalog Synced
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 font-medium mt-1">
@@ -2386,14 +2386,14 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-headline-sm text-sm font-bold text-inverse-surface">
-                      Official PDF Capacity Specification Reference Matrix
+                      Official Capacity Specification Reference Guide
                     </h3>
                     <span className="px-2 py-0.5 rounded-full bg-primary-container/20 text-primary text-[10px] font-bold">
                       2.16 kW – 8.10 kW Reference
                     </span>
                   </div>
                   <p className="font-body-sm text-xs text-secondary mt-0.5">
-                    Standard DISCOM baseline matrix for cables, switchgear, and earthing quantities across system sizes.
+                    Standard DISCOM baseline guide for cables, switchgear, and earthing quantities across system sizes.
                   </p>
                 </div>
               </div>
@@ -2797,7 +2797,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                   type="submit"
                   className="px-4 py-2 text-xs font-bold bg-primary-container text-surface-container-lowest hover:bg-primary rounded-lg transition-all shadow-sm cursor-pointer"
                 >
-                  {editingInverter ? 'Save Changes to Database' : 'Publish to Catalog & Database'}
+                  {editingInverter ? 'Save Changes' : 'Publish to Catalog'}
                 </button>
               </div>
             </form>
@@ -3273,7 +3273,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
                     {editingBomItem ? 'Edit BOM Hardware Component' : 'Add BOM Hardware Component'}
                   </h3>
                   <p className="text-xs text-secondary mt-0.5">
-                    Persisted directly to Supabase cloud database and synced with quotation presets.
+                    Synchronized with quotation presets and live operations.
                   </p>
                 </div>
               </div>

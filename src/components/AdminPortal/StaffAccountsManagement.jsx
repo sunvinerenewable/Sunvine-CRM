@@ -223,7 +223,7 @@ export default function StaffAccountsManagement() {
     setRefreshing(true);
     try {
       if (typeof refreshCustomerFiles === 'function') await refreshCustomerFiles();
-      if (addToast) addToast({ title: 'Data Refreshed', message: 'Sales team files & quotations synced with live database', type: 'success' });
+      if (addToast) addToast({ title: 'Data Refreshed', message: 'Sales team files & quotations updated successfully', type: 'success' });
     } catch {
       // silent
     } finally {
@@ -247,7 +247,7 @@ export default function StaffAccountsManagement() {
       return { label: 'Solar Installation', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: 'solar_power' };
     }
     if (s.includes('sync') || s.includes('meter')) {
-      return { label: 'Net-Meter Synced', bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'sync_alt' };
+      return { label: 'Net-Meter Connected', bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'power' };
     }
     if (s.includes('subsidy')) {
       return { label: 'Subsidy Claim', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: 'payments' };
@@ -287,7 +287,7 @@ export default function StaffAccountsManagement() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="h-10 px-4 bg-white border border-[#E4E7EB] hover:bg-[#F6F8F7] text-slate-800 font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
-            title="Refresh Files &amp; Quotations from Database"
+            title="Refresh Files &amp; Quotations"
           >
             <span className={`material-symbols-outlined text-[18px] text-slate-600 ${refreshing ? 'animate-spin' : ''}`}>sync</span>
             <span>Refresh</span>
@@ -549,7 +549,7 @@ export default function StaffAccountsManagement() {
               <option value="feasibility">Feasibility Approved</option>
               <option value="discom">DISCOM Application</option>
               <option value="install">Solar Installation</option>
-              <option value="sync">Net-Meter Sync</option>
+              <option value="sync">Net-Meter Connected</option>
               <option value="complete">Commissioned</option>
             </select>
           ) : (

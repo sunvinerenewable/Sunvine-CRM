@@ -15,6 +15,8 @@ import { randomBytes } from 'node:crypto';
 
 // Set up JWT_SECRET before loading JWT / auth modules
 process.env.NODE_ENV = 'test';
+delete process.env.UPSTASH_REDIS_REST_URL;
+delete process.env.UPSTASH_REDIS_REST_TOKEN;
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = randomBytes(48).toString('hex');
 }
@@ -23,7 +25,7 @@ process.env.ALLOWED_ORIGINS = '';
 import { signJwt } from '../../../api/_lib/jwt.js';
 import authActionHandler from '../../../api/auth/[action].js';
 import manageCredentialsHandler from '../../../api/_lib/authManage.js';
-import { resetAllRateLimits } from '../../../api/_lib/rateLimiter.js';
+import { resetAllRateLimits, resetRateLimit } from '../../../api/_lib/rateLimiter.js';
 
 // ── Mock Res & Req Helpers ──────────────────────────────────────────────────
 
@@ -296,8 +298,9 @@ test('Report Error: public access allows client crash reporting without auth tok
 });
 
 test('Report Error: rate limits to 5 requests per minute per IP', async () => {
-  const testIp = '192.168.100.50';
+  const testIp = `192.168.${Math.floor(Math.random() * 200 + 10)}.${Math.floor(Math.random() * 200 + 10)}`;
   await resetAllRateLimits();
+  await resetRateLimit(`report-error:${testIp}`);
 
   // Send 5 allowed requests
   for (let i = 0; i < 5; i++) {

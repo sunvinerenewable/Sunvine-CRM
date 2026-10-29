@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/cors.js';
 import { randomBytes } from 'crypto';
 import { requireUser } from './_lib/requireAuth.js';
 import { getClientIp, checkDistributedRateLimit, checkRateLimit, recordFailedAttempt } from './_lib/rateLimiter.js';
@@ -715,11 +716,12 @@ export async function handleSave(req, res, jwt, db) {
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState, settings?.statutory_taxes?.gstSlabs);
 
   // Margin validation and capping uses server-validated kW (Item 3b)
-  const clientMargin = Number(body.dealer_margin_inr) || 0;
+  const clientMargin = Number(body.dealer_margin_inr) || Number(body.sales_margin_inr) || 0;
+  const isDirectQuote = Boolean(isDirectCompany || body.is_direct_company_quote === true);
   const { effectiveMargin, isMarginExceeded } = validateDealerMargin(
-    isDirectCompany ? 0 : clientMargin,
+    clientMargin,
     serverValidatedKw,
-    maxMarginCapPerKw
+    isDirectQuote ? 999999 : maxMarginCapPerKw
   );
 
   // PM Surya Ghar Subsidy uses server-validated kW
@@ -922,8 +924,12 @@ export async function handleSave(req, res, jwt, db) {
   }
 
   // Invalidate public proposal cache on save
-  if (data?.share_token || body?.share_token) {
-    await redisDel(`quote:public:${data?.share_token || body?.share_token}`).catch(() => {});
+  const tokenToPurge = data?.share_token || body?.share_token;
+  if (tokenToPurge) {
+    await Promise.all([
+      redisDel(`quote:public:v2:${tokenToPurge}`).catch(() => {}),
+      redisDel(`quote:public:${tokenToPurge}`).catch(() => {})
+    ]);
   }
 
   // ── Auto-sync to customer_files table (Lead Sourced - Direct DB First) ───────
@@ -1060,7 +1066,10 @@ export async function handleStatus(req, res, jwt, db) {
 
   // Invalidate public quotation cache
   if (existing.share_token) {
-    await redisDel(`quote:public:${existing.share_token}`).catch(() => {});
+    await Promise.all([
+      redisDel(`quote:public:v2:${existing.share_token}`).catch(() => {}),
+      redisDel(`quote:public:${existing.share_token}`).catch(() => {})
+    ]);
   }
 
   // ── SEC-019 & BUG-01: Audit log entry in audit_logs table ───────────────────
@@ -1263,7 +1272,7 @@ export async function handleDelete(req, res, jwt, db) {
   // Get share token and verify ownership
   const { data: existing, error: findErr } = await db
     .from('quotations')
-    .select('id, dealer_id, dealer_code, share_token')
+    .select('id, dealer_id, dealer_code, share_token, status')
     .eq('id', id)
     .maybeSingle();
 
@@ -1277,10 +1286,18 @@ export async function handleDelete(req, res, jwt, db) {
     if (!matchId && !matchCode) {
       return res.status(403).json({ error: 'Access denied: You cannot delete another dealer\'s quotation.' });
     }
+    if (existing.status !== 'Draft' && existing.status !== 'Rejected') {
+      return res.status(409).json({
+        error: `Cannot delete quotation with status "${existing.status}". Only Draft or Rejected quotations can be deleted.`
+      });
+    }
   }
 
   if (existing.share_token) {
-    await redisDel(`quote:public:${existing.share_token}`).catch(() => {});
+    await Promise.all([
+      redisDel(`quote:public:v2:${existing.share_token}`).catch(() => {}),
+      redisDel(`quote:public:${existing.share_token}`).catch(() => {})
+    ]);
   }
 
   let query = db.from('quotations').delete().eq('id', id);
@@ -1321,6 +1338,7 @@ export async function handleDelete(req, res, jwt, db) {
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  applyCors(req, res);
   // CORS preflight
   if (req.method === 'OPTIONS') return res.status(200).end();
 

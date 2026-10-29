@@ -373,7 +373,7 @@ export default function DocumentPreviewModal({ doc, onClose }) {
               </div>
               <h4 className="text-base font-bold text-slate-200">{doc.filename || 'Document Verified'}</h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Document is logged in Supabase records. Upload a new copy to view high-resolution Cloudflare R2 preview.
+                Document recorded in system. Upload a new copy to view high-resolution preview.
               </p>
             </div>
           )}

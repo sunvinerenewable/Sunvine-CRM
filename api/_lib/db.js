@@ -59,7 +59,8 @@ export function getDbPool() {
       connectionString: process.env.DATABASE_URL,
       ssl,
       max: 3,
-      idleTimeoutMillis: 30000
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
     });
   }
   return pool;

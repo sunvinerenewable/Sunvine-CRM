@@ -63,15 +63,17 @@ async function callLoginApi(payload) {
 
 export function getSessionToken() {
   if (typeof window === 'undefined') return null;
-  return sessionStorage.getItem('sunvine_session_token') || null;
+  return sessionStorage.getItem('sunvine_session_token') || localStorage.getItem('sunvine_session_token') || null;
 }
 
 export function setSessionToken(token) {
   if (typeof window === 'undefined') return;
   if (token) {
     sessionStorage.setItem('sunvine_session_token', token);
+    localStorage.setItem('sunvine_session_token', token);
   } else {
     sessionStorage.removeItem('sunvine_session_token');
+    localStorage.removeItem('sunvine_session_token');
   }
 }
 
@@ -114,7 +116,11 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'admin', identifier: cleanIdentifier, password });
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, user: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      return { success: true, user: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };
@@ -130,7 +136,11 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'dealer', identifier: cleanMobile, password });
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, dealer: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      return { success: true, dealer: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };
@@ -145,7 +155,11 @@ export const authService = {
     if (!rateCheck.allowed) return { success: false, error: rateCheck.message };
 
     const apiRes = await callLoginApi({ role: 'staff', identifier: cleanMobile, password, staffRole: selectedRole });
-    if (apiRes.ok) { clearClientLimit(rateKey); return { success: true, staff: apiRes.data.user }; }
+    if (apiRes.ok) {
+      clearClientLimit(rateKey);
+      if (apiRes.data?.token) setSessionToken(apiRes.data.token);
+      return { success: true, staff: apiRes.data.user };
+    }
     if (apiRes.isRateLimited) return { success: false, error: apiRes.error };
     recordClientFail(rateKey);
     return { success: false, error: apiRes.error };

@@ -1,3 +1,4 @@
+import { applyCors } from './_lib/cors.js';
 import { createClient } from '@supabase/supabase-js';
 import { verifyJwt } from './_lib/jwt.js';
 import { requireUser } from './_lib/requireAuth.js';
@@ -194,6 +195,7 @@ async function getSolarBanks(db) {
 // ── Main Handler ───────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
+  applyCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   if (req.method !== 'GET' && req.method !== 'POST') {

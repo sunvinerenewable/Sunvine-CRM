@@ -603,7 +603,7 @@ export default function DealerSettings() {
 
                 <label className="flex items-center justify-between p-3.5 rounded-lg border border-outline-variant/20 hover:bg-surface-container-low cursor-pointer transition-colors">
                   <div>
-                    <span className="font-semibold text-on-surface block text-sm">Automatic A4 PDF Cache</span>
+                    <span className="font-semibold text-on-surface block text-sm">Quick PDF Generation</span>
                     <span className="text-xs text-secondary">Pre-generate high-resolution Mirana-compliant printable quotation pages</span>
                   </div>
                   <input

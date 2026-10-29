@@ -5,6 +5,7 @@ import { adminAccountService } from '../../services/adminAccountService';
 import { pushNotificationService } from '../../services/pushNotificationService';
 import { settingsService } from '../../services/settingsService';
 import { normalizeCompanyProfile } from '../../data/defaultPresets';
+import { DEFAULT_WHATSAPP_TEMPLATE } from '../../utils/quotationShare';
 
 export default function AdminSettings() {
   const { addToast } = useToast();
@@ -62,6 +63,7 @@ export default function AdminSettings() {
     helpdesk: '',
     terms: '',
     validityText: '',
+    whatsappTemplate: '',
     bankName: '',
     accountNumber: '',
     ifsc: '',
@@ -91,6 +93,7 @@ export default function AdminSettings() {
           helpdesk: norm.helpdesk || '',
           terms: norm.terms || '',
           validityText: norm.validityText || '',
+          whatsappTemplate: norm.whatsappTemplate || norm.whatsapp_template || '',
           bankName: norm.bank?.bankName || '',
           accountNumber: norm.bank?.accountNumber || '',
           ifsc: norm.bank?.ifsc || '',
@@ -167,6 +170,8 @@ export default function AdminSettings() {
         helpdesk: companyForm.helpdesk.trim(),
         terms: companyForm.terms.trim(),
         validityText: companyForm.validityText.trim(),
+        whatsappTemplate: companyForm.whatsappTemplate?.trim() || '',
+        whatsapp_template: companyForm.whatsappTemplate?.trim() || '',
         bank: bankPayload,
         bankDetails: bankPayload,
         bank_details: bankPayload
@@ -186,10 +191,10 @@ export default function AdminSettings() {
       }
 
       setCompanyFormDirty(false);
-      addToast('Company Profile and Bank details saved directly to database!', 'success');
+      addToast('Company Profile and Bank details saved successfully!', 'success');
     } catch (err) {
       console.error('[AdminSettings] Save Company Profile Error:', err);
-      addToast(err.message || 'Error saving company profile to database', 'error');
+      addToast(err.message || 'Error saving company profile', 'error');
     } finally {
       setIsCompanySaving(false);
     }
@@ -216,6 +221,7 @@ export default function AdminSettings() {
             helpdesk: norm.helpdesk || '',
             terms: norm.terms || '',
             validityText: norm.validityText || '',
+            whatsappTemplate: norm.whatsappTemplate || norm.whatsapp_template || '',
             bankName: norm.bank?.bankName || '',
             accountNumber: norm.bank?.accountNumber || '',
             ifsc: norm.bank?.ifsc || '',
@@ -223,11 +229,11 @@ export default function AdminSettings() {
             accountHolder: norm.bank?.accountHolder || ''
           });
           setCompanyFormDirty(false);
-          addToast('Synced latest company & bank profile from database', 'info');
+          addToast('Refreshed company & bank profile details', 'info');
         }
       }
     } catch (err) {
-      addToast('Failed to refresh from database: ' + err.message, 'error');
+      addToast('Failed to refresh profile details: ' + err.message, 'error');
     } finally {
       setIsCompanyRefreshing(false);
     }
@@ -602,7 +608,7 @@ export default function AdminSettings() {
         })));
       }
     } catch (err) {
-      setError(err.message || 'Failed to connect to PostgreSQL database.');
+      setError(err.message || 'Failed to connect to system service.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -812,7 +818,7 @@ export default function AdminSettings() {
           password: adminForm.password ? adminForm.password.trim() : undefined
         });
         if (!res.success) throw new Error(res.error || 'Failed to update admin');
-        setSuccessToast(`Admin ${adminForm.fullName} updated in live database.`);
+        setSuccessToast(`Admin ${adminForm.fullName} updated successfully.`);
       } else {
         const res = await adminAccountService.createAdmin({
           fullName: adminForm.fullName,
@@ -822,7 +828,7 @@ export default function AdminSettings() {
           password: adminForm.password.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to create admin');
-        setSuccessToast(`Admin ${adminForm.fullName} created in live database.`);
+        setSuccessToast(`Admin ${adminForm.fullName} added successfully.`);
       }
 
       setShowAdminModal(false);
@@ -956,7 +962,7 @@ export default function AdminSettings() {
           assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to update dealer');
-        setSuccessToast(`Dealer ${dealerForm.firmName} updated in live database.`);
+        setSuccessToast(`Dealer ${dealerForm.firmName} updated successfully.`);
       } else {
         const res = await adminAccountService.createDealer({
           dealerCode: dealerForm.dealerCode,
@@ -979,7 +985,7 @@ export default function AdminSettings() {
           assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to create dealer');
-        setSuccessToast(`Dealer ${dealerForm.firmName} created in live database.`);
+        setSuccessToast(`Dealer ${dealerForm.firmName} added successfully.`);
       }
 
       setShowDealerModal(false);
@@ -1072,7 +1078,7 @@ export default function AdminSettings() {
           password: staffForm.password ? staffForm.password.trim() : undefined
         });
         if (!res.success) throw new Error(res.error || 'Failed to update staff');
-        setSuccessToast(`Staff ${staffForm.name} updated in live database.`);
+        setSuccessToast(`Staff ${staffForm.name} updated successfully.`);
       } else {
         const res = await adminAccountService.createStaff({
           id: staffForm.id,
@@ -1085,7 +1091,7 @@ export default function AdminSettings() {
           password: staffForm.password.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to create staff');
-        setSuccessToast(`Staff ${staffForm.name} created in live database.`);
+        setSuccessToast(`Staff ${staffForm.name} added successfully.`);
       }
 
       setShowStaffModal(false);
@@ -1136,7 +1142,7 @@ export default function AdminSettings() {
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update admin password.');
-        setSuccessToast(`Password updated for Admin ${passwordModal.account.full_name} in live database.`);
+        setSuccessToast(`Password updated successfully for Admin ${passwordModal.account.full_name}.`);
       } else if (passwordModal.accountType === 'dealer') {
         const res = await adminAccountService.updateDealer({
           id: passwordModal.account.id,
@@ -1144,14 +1150,14 @@ export default function AdminSettings() {
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update dealer password.');
-        setSuccessToast(`Password updated for Dealer ${passwordModal.account.firm_name || passwordModal.account.firmName} in live database.`);
+        setSuccessToast(`Password updated successfully for Dealer ${passwordModal.account.firm_name || passwordModal.account.firmName}.`);
       } else {
         const res = await adminAccountService.updateStaff({
           id: passwordModal.account.id,
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update staff password.');
-        setSuccessToast(`Password updated for Staff ${passwordModal.account.name} in live database.`);
+        setSuccessToast(`Password updated successfully for Staff ${passwordModal.account.name}.`);
       }
 
       setPasswordModal({ isOpen: false, accountType: '', account: null, newPassword: '', confirmPassword: '', showPass: false });
@@ -1191,16 +1197,16 @@ export default function AdminSettings() {
       if (deleteModal.accountType === 'admin') {
         const res = await adminAccountService.deleteAdmin(deleteModal.account.id);
         if (!res.success) throw new Error(res.error || 'Failed to delete admin');
-        setSuccessToast(`Admin ${deleteModal.account.full_name} removed from live database.`);
+        setSuccessToast(`Admin ${deleteModal.account.full_name} removed successfully.`);
       } else if (deleteModal.accountType === 'dealer') {
         const targetId = deleteModal.account.dealer_code || deleteModal.account.dealerCode || deleteModal.account.id;
         const res = await adminAccountService.deleteDealer(targetId);
         if (!res.success) throw new Error(res.error || 'Failed to delete dealer');
-        setSuccessToast(`Dealer ${deleteModal.account.firm_name || deleteModal.account.firmName} removed from live database.`);
+        setSuccessToast(`Dealer ${deleteModal.account.firm_name || deleteModal.account.firmName} removed successfully.`);
       } else {
         const res = await adminAccountService.deleteStaff(deleteModal.account.id);
         if (!res.success) throw new Error(res.error || 'Failed to delete staff');
-        setSuccessToast(`Staff ${deleteModal.account.name} removed from live database.`);
+        setSuccessToast(`Staff ${deleteModal.account.name} removed successfully.`);
       }
 
       setDeleteModal({ isOpen: false, accountType: '', account: null });
@@ -1220,9 +1226,9 @@ export default function AdminSettings() {
     setIsSyncingDocs(true);
     try {
       await refreshMasterDocuments?.();
-      setSuccessToast('Document Master & Category Rules synced with live database.');
+      setSuccessToast('Document Checklist & Category Rules updated successfully.');
     } catch (err) {
-      setError(err?.message || 'Failed to sync with live database.');
+      setError(err?.message || 'Failed to update rules.');
     } finally {
       setIsSyncingDocs(false);
     }
@@ -1649,7 +1655,7 @@ export default function AdminSettings() {
                         <th className="py-3 px-4">Mobile Number</th>
                         <th className="py-3 px-4">Email</th>
                         <th className="py-3 px-4">Role</th>
-                        <th className="py-3 px-4">Database State</th>
+                        <th className="py-3 px-4">Account Status</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -1759,7 +1765,7 @@ export default function AdminSettings() {
               ) : filteredDealers.length === 0 ? (
                 <div className="p-12 text-center text-slate-500">
                   <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">storefront</span>
-                  <p className="text-sm font-medium">No dealer partners found in database.</p>
+                  <p className="text-sm font-medium">No dealer partners found.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1842,7 +1848,7 @@ export default function AdminSettings() {
                             <td className="py-3.5 px-4">
                               <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                <span>Active in DB</span>
+                                <span>Active</span>
                               </span>
                             </td>
 
@@ -1985,7 +1991,7 @@ export default function AdminSettings() {
                               <td className="py-3.5 px-4">
                                 <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                  <span>Active in DB</span>
+                                  <span>Active</span>
                                 </span>
                               </td>
 
@@ -2043,7 +2049,7 @@ export default function AdminSettings() {
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <span className="material-symbols-outlined text-emerald-600">rule_folder</span>
-                  <span>Project Category Rules Matrix</span>
+                  <span>Project Category Rules</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Select an application category below to customize mandatory, optional, and disabled document requirements.
@@ -2057,12 +2063,12 @@ export default function AdminSettings() {
                   onClick={handleSyncDocs}
                   disabled={isSyncingDocs}
                   className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold border border-emerald-300 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
-                  title="Force instant sync of Document Master & Category Rules directly from Supabase PostgreSQL database"
+                  title="Refresh Document Checklist & Category Rules"
                 >
                   <span className={`material-symbols-outlined text-sm ${isSyncingDocs ? 'animate-spin' : ''}`}>
                     sync
                   </span>
-                  <span>{isSyncingDocs ? 'Syncing Live DB...' : 'Sync Live DB'}</span>
+                  <span>{isSyncingDocs ? 'Updating...' : 'Refresh Checklist'}</span>
                 </button>
 
                 <button
@@ -2908,6 +2914,106 @@ export default function AdminSettings() {
                     placeholder="1. Net-metering approval is subject to DISCOM guidelines. 2. Subsidy is processed directly through the National PM Surya Ghar Portal. 3. Warranty as per manufacturer terms."
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: WhatsApp Quotation Sharing Template */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 md:p-8 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 mb-6 gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center font-bold">
+                    <span className="material-symbols-outlined text-xl">chat</span>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                      WhatsApp Quotation Share Template
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">Pre-filled text</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500">Configure the automated pre-filled message sent to customer's contact number on clicking "Share WhatsApp"</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleCompanyFieldChange('whatsappTemplate', DEFAULT_WHATSAPP_TEMPLATE)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+                >
+                  <span className="material-symbols-outlined text-sm">restart_alt</span>
+                  Reset to Default Template
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Dynamic variables helper */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Click any tag to append to your template:
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { tag: '{customer_name}', label: 'Customer Name' },
+                      { tag: '{system_capacity}', label: 'Capacity (e.g. 3.3 kW)' },
+                      { tag: '{quotation_id}', label: 'Quotation Ref' },
+                      { tag: '{total_amount}', label: 'Total Amount' },
+                      { tag: '{subsidy_amount}', label: 'PM Subsidy' },
+                      { tag: '{net_payable}', label: 'Net Payable' },
+                      { tag: '{link}', label: 'Online Proposal Link' },
+                      { tag: '{company_name}', label: 'Company Name' },
+                      { tag: '{company_phone}', label: 'Company Phone' }
+                    ].map(v => (
+                      <button
+                        key={v.tag}
+                        type="button"
+                        onClick={() => {
+                          const current = companyForm.whatsappTemplate || '';
+                          handleCompanyFieldChange('whatsappTemplate', current ? `${current} ${v.tag}` : v.tag);
+                        }}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-mono bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-300 border border-slate-200 text-slate-700 transition-all cursor-pointer"
+                        title={`Click to append ${v.tag}`}
+                      >
+                        <span className="font-bold">{v.tag}</span> <span className="text-slate-400 font-sans text-[10px]">({v.label})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    WhatsApp Message Text
+                  </label>
+                  <textarea
+                    rows={8}
+                    value={companyForm.whatsappTemplate}
+                    onChange={(e) => handleCompanyFieldChange('whatsappTemplate', e.target.value)}
+                    placeholder={DEFAULT_WHATSAPP_TEMPLATE}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 leading-relaxed"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    WhatsApp markdown formatting supported: <code className="text-slate-600">*bold*</code>, <code className="text-slate-600">_italic_</code>. Clicking "Share WhatsApp" on quotation preview immediately opens WhatsApp to the customer's phone number with this pre-filled message.
+                  </p>
+                </div>
+
+                {/* Real-time WhatsApp Chat Bubble Simulation */}
+                <div className="mt-4 p-4 rounded-xl bg-[#0b141a] border border-[#202c33]">
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[#202c33] text-emerald-400 text-xs font-semibold">
+                    <span className="material-symbols-outlined text-sm">visibility</span>
+                    <span>Live WhatsApp Chat Bubble Preview</span>
+                  </div>
+                  <div className="max-w-md bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-none p-3.5 text-xs shadow-md space-y-1 font-sans whitespace-pre-wrap leading-relaxed">
+                    {(companyForm.whatsappTemplate || DEFAULT_WHATSAPP_TEMPLATE)
+                      .replace(/\{customer_name\}|\{customerName\}/gi, 'Sumit Chauhan')
+                      .replace(/\{system_capacity\}|\{systemCapacity\}|\{capacity\}/gi, '3.3 kW')
+                      .replace(/\{quotation_id\}|\{quotationId\}|\{quote_id\}|\{id\}/gi, 'SV-2026-QJ0GT-700M')
+                      .replace(/\{total_amount\}|\{totalAmount\}|\{amount\}/gi, '₹ 1,75,000')
+                      .replace(/\{subsidy_amount\}|\{subsidyAmount\}|\{subsidy\}/gi, '₹ 78,000')
+                      .replace(/\{net_payable\}|\{netPayable\}/gi, '₹ 97,000')
+                      .replace(/\{company_name\}|\{companyName\}/gi, companyForm.companyName || 'Sunvine Renewable Energy')
+                      .replace(/\{company_phone\}|\{companyPhone\}|\{helpline\}/gi, companyForm.whatsapp || companyForm.helpdesk || '+91 94294 65600')
+                      .replace(/\{link\}|\{proposal_link\}|\{url\}/gi, 'https://solar.sunvine.in/?view=quote&token=demo123')
+                    }
+                    <div className="text-[10px] text-emerald-200/60 text-right mt-1 font-mono">10:45 AM ✓✓</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3992,7 +4098,7 @@ export default function AdminSettings() {
                       }}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 disabled:bg-slate-100 disabled:text-slate-500"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Unique database identifier &amp; storage prefix</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Unique category identifier &amp; folder code</p>
                   </div>
 
                   <div>

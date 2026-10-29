@@ -1185,6 +1185,36 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
+  // Live refresh quotations directly from database with concurrency and throttle protection (Rule 1)
+  const isFetchingQuotationsRef = useRef(false);
+  const lastQuotationsFetchTimeRef = useRef(0);
+
+  const refreshQuotations = useCallback(async ({ force = false } = {}) => {
+    const now = Date.now();
+    if (!force && now - lastQuotationsFetchTimeRef.current < 2000) {
+      return;
+    }
+    if (isFetchingQuotationsRef.current) {
+      return;
+    }
+
+    lastQuotationsFetchTimeRef.current = now;
+    isFetchingQuotationsRef.current = true;
+
+    try {
+      const freshQuotes = await quotationService.getAllQuotations(100);
+      if (freshQuotes && Array.isArray(freshQuotes)) {
+        setQuotations(freshQuotes);
+        cacheManager.set('quotations_feed', freshQuotes);
+        return freshQuotes;
+      }
+    } catch (err) {
+      console.warn('[AppContext] refreshQuotations error:', err);
+    } finally {
+      isFetchingQuotationsRef.current = false;
+    }
+  }, []);
+
   // Live refresh staff directory directly from database with concurrency and throttle protection
   const isFetchingStaffRef = useRef(false);
   const lastStaffFetchTimeRef = useRef(0);
@@ -1499,7 +1529,11 @@ export const AppProvider = ({ children }) => {
     let isMounted = true;
     async function verifyAuthSession() {
       try {
-        const res = await fetch('/api/auth/verify', { method: 'GET', credentials: 'include' });
+        const token = typeof window !== 'undefined'
+          ? (sessionStorage.getItem('sunvine_session_token') || localStorage.getItem('sunvine_session_token'))
+          : null;
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch('/api/auth/verify', { method: 'GET', headers, credentials: 'include' });
         if (!isMounted) return;
         if (res.ok) {
           const data = await res.json().catch(() => null);
@@ -3334,6 +3368,7 @@ export const AppProvider = ({ children }) => {
     customerFiles,
     setCustomerFiles,
     refreshCustomerFiles,
+    refreshQuotations,
     refreshStaffList,
     customerFilesError,
     addStaff,
@@ -3485,6 +3520,7 @@ export const AppProvider = ({ children }) => {
     staffList,
     customerFiles,
     refreshCustomerFiles,
+    refreshQuotations,
     refreshStaffList,
     customerFilesError,
     pricingMaster,

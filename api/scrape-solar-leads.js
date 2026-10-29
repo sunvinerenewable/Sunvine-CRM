@@ -1,30 +1,25 @@
-import { requireUser } from '../_lib/requireAuth.js';
-import { getCorsHeaders, handleOptionsResponse } from '../_lib/cors.js';
+import { applyCors } from './_lib/cors.js';
+import crypto from 'crypto';
+import { requireUser } from './_lib/requireAuth.js';
 
-export async function onRequest(context) {
-  const { request, env } = context;
-  const corsHeaders = getCorsHeaders(request, env);
+// Vercel Serverless Function to Scrape Live Solar Companies & Leads by Area/Keyword
+export default async function handler(req, res) {
+  applyCors(req, res);
 
-  if (request.method === 'OPTIONS') {
-    return handleOptionsResponse(request, env);
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  if (request.method !== 'POST') {
-    return Response.json({ error: 'Method Not Allowed. Use POST.' }, { status: 405, headers: corsHeaders });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed. Use POST.' });
   }
 
-  const { payload: user, errorResponse } = await requireUser(request, env);
-  if (errorResponse) {
-    for (const [k, v] of corsHeaders.entries()) errorResponse.headers.set(k, v);
-    return errorResponse;
-  }
+  // ── Auth check ────────────────────────────────────────────────────────────
+  const user = await requireUser(req, res);
+  if (!user) return;
 
   try {
-    let body = {};
-    try {
-      body = await request.json();
-    } catch (_) {}
-
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const location = body.location || body.city || 'Ahmedabad';
     const keyword = body.keyword || 'solar EPC companies';
     const centerLat = body.lat || 23.0225;
@@ -67,6 +62,7 @@ export async function onRequest(context) {
             const rawTitle = match[2].replace(/<[^>]+>/g, '').trim();
             const snippet = match[3].replace(/<[^>]+>/g, '').trim();
 
+            // Filter out generic aggregator directories or irrelevant pages
             if (
               actualUrl.includes('wikipedia.org') ||
               actualUrl.includes('youtube.com') ||
@@ -76,6 +72,7 @@ export async function onRequest(context) {
               continue;
             }
 
+            // Clean title to extract company name
             let cleanName = rawTitle
               .split('|')[0]
               .split('—')[0]
@@ -92,9 +89,11 @@ export async function onRequest(context) {
             }
             seenNames.add(cleanName.toLowerCase());
 
+            // Extract phone number ONLY if authentically present in snippet
             const phoneMatch = snippet.match(/(?:\+91[\-\s]?)?[6-9]\d{9}|\b0\d{2,4}[\-\s]?\d{6,8}\b/);
             const extractedPhone = phoneMatch ? phoneMatch[0] : null;
 
+            // Determine category based on snippet keywords
             const lowerSnippet = snippet.toLowerCase() + ' ' + rawTitle.toLowerCase();
             let category = 'Solar EPC Contractor & Installer';
             let type = 'epc';
@@ -134,18 +133,18 @@ export async function onRequest(context) {
       }
     }
 
-    return Response.json({
+    return res.status(200).json({
       success: true,
       location,
       keyword,
       count: leads.length,
       leads: leads.sort((a, b) => a.distanceKm - b.distanceKm)
-    }, { status: 200, headers: corsHeaders });
+    });
   } catch (error) {
     console.error('Scraper handler error:', error);
-    return Response.json({
+    return res.status(500).json({
       success: false,
       error: error.message
-    }, { status: 500, headers: corsHeaders });
+    });
   }
 }

@@ -283,7 +283,7 @@ export default function StaffFiles() {
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
+    showLoader(`Uploading ${fileList.length > 1 ? `${fileList.length} files` : 'document'} securely...`);
     try {
       const uploadedDocsList = [];
 
@@ -371,7 +371,7 @@ export default function StaffFiles() {
     const slotData = file.documents?.[docKey];
     if (!slotData) return;
 
-    showLoader('Removing document from Cloudflare R2 Vault...');
+    showLoader('Removing document...');
     try {
       const fileList = normalizeDocList(slotData);
       const targetDoc = targetDocIdOrUrl
@@ -407,7 +407,7 @@ export default function StaffFiles() {
         setSelectedFileForDocs(prev => ({ ...prev, documents: updatedDocs }));
       }
 
-      addToast('Document removed from Cloudflare R2', 'info');
+      addToast('Document removed successfully', 'info');
     } catch (e) {
       console.error('[StaffFiles] handleDeleteDoc failed:', e);
       addToast(e.message || 'Failed to remove document', 'error');
@@ -579,15 +579,15 @@ export default function StaffFiles() {
                   if (refreshCustomerFiles) {
                     await refreshCustomerFiles({ force: true });
                   }
-                  addToast('Live database sync complete.', 'success');
+                  addToast('Files updated successfully.', 'success');
                 } catch (err) {
-                  addToast('Database refresh finished.', 'info');
+                  addToast('Refresh complete.', 'info');
                 } finally {
                   setIsManualSyncing(false);
                 }
               }}
               disabled={isManualSyncing}
-              title="Sync Live with Database"
+              title="Refresh Files"
               className="px-2.5 py-1.5 bg-surface-container-low hover:bg-surface-container border border-surface-container-high text-on-surface rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs shrink-0"
             >
               <span className={`material-symbols-outlined text-[16px] text-emerald-600 ${isManualSyncing ? 'animate-spin' : ''}`}>
