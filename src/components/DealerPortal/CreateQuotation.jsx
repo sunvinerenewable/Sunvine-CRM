@@ -4618,7 +4618,7 @@ export default function CreateQuotation() {
                 Generate official 4-page branded PDF ready for preview &amp; WhatsApp sharing.
               </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 min-w-0">
+            <div className="grid grid-cols-3 gap-2 min-w-0">
               <button
                 onClick={handleReset}
                 type="button"
@@ -4637,16 +4637,6 @@ export default function CreateQuotation() {
               >
                 <span className="material-symbols-outlined text-[16px] text-secondary shrink-0">bookmark_border</span>
                 <span className="truncate">{isSubmitting ? 'Saving...' : 'Save Draft'}</span>
-              </button>
-              <button
-                onClick={handlePreview}
-                disabled={isSubmitting}
-                type="button"
-                className="h-10 px-2 rounded-lg bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 border border-sky-500/30 transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer font-bold text-xs disabled:opacity-50 min-w-0"
-                title="Preview quotation proposal"
-              >
-                <span className="material-symbols-outlined text-[16px] shrink-0">visibility</span>
-                <span className="truncate">Preview</span>
               </button>
               <button
                 onClick={handleGenerateQuotation}
