@@ -404,21 +404,33 @@ export function isPanelWattageCompatible(capacityKw, panelWattage, noOfModules =
   if (!Number.isFinite(cap) || cap <= 0 || !Number.isFinite(watt) || watt <= 0) return false;
 
   const totalWatts = Math.round(cap * 1000);
-  const exactModules = totalWatts / watt;
-  const roundedModules = Math.round(exactModules);
-  if (roundedModules < 1) return false;
 
-  // Whole number of panels multiplied by wattage must equal system capacity within <= 5W tolerance
-  const wattDiff = Math.abs((roundedModules * watt) - totalWatts);
-  if (wattDiff > 5) return false;
-
+  // 1. If explicit module count is provided for this slab, check if mods * watt is within standard solar module power band (+-18%) of nominal slab capacity
   if (noOfModules !== null && noOfModules !== undefined && Number(noOfModules) > 0) {
     const mods = Number(noOfModules);
-    const specificDiff = Math.abs((mods * watt) - totalWatts);
-    if (specificDiff > 5) return false;
+    const slabWatts = mods * watt;
+    const diffPct = Math.abs(slabWatts - totalWatts) / totalWatts;
+    return diffPct <= 0.18;
   }
 
-  return true;
+  // 2. Exact match within <= 5W tolerance
+  const exactModules = totalWatts / watt;
+  const roundedModules = Math.round(exactModules);
+  if (roundedModules >= 1) {
+    const wattDiff = Math.abs((roundedModules * watt) - totalWatts);
+    if (wattDiff <= 5) return true;
+  }
+
+  // 3. Nominal slab variance check (+-18% of nominal capacity based on standard ~550W baseline module count)
+  const nominalMods = Math.round(totalWatts / 550);
+  if (nominalMods >= 1) {
+    const derivedWatts = nominalMods * watt;
+    if (Math.abs(derivedWatts - totalWatts) / totalWatts <= 0.18) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**

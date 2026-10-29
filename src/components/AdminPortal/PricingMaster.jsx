@@ -329,36 +329,38 @@ export default function PricingMaster() {
     return result;
   }, [modulesList]);
 
-  // Compatibility logic: Returns true if panel wattage can mathematically form this system capacity using a whole number of panels
-  const isPanelCompatibleWithSystem = (capacityKW, panelWattage) => {
-    return isPanelWattageCompatible(capacityKW, panelWattage);
+  // Compatibility logic: Returns true if panel wattage can form system capacity or matches slab module count
+  const isPanelCompatibleWithSystem = (capacityKW, panelWattage, noOfModules = null) => {
+    return isPanelWattageCompatible(capacityKW, panelWattage, noOfModules);
   };
 
   // Robust Resolver: Resolves configured price for a given slab and panel.
-  // Returns null if the panel was not added or is incompatible with the slab capacity (rendered as "-" in the matrix).
+  // Prioritizes direct stored price from database, then legacy column keys. Never hides an administrator's entered price.
   const getPriceForPanel = (row, panel) => {
     if (!row || !panel) return null;
 
-    // Strict compatibility check: If panel wattage cannot form row.capacityKW with integer modules, return null
-    if (!isPanelWattageCompatible(row.capacityKW, panel.wattage)) {
-      return null;
-    }
-
+    // 1. Direct price from dynamic panelPrices object
     if (row.panelPrices && typeof row.panelPrices === 'object') {
       const direct = row.panelPrices[panel.id] ?? row.panelPrices[panel.key] ?? row.panelPrices[panel.legacyKey];
       if (direct !== undefined && direct !== null) {
         const num = Number(direct);
-        return num > 0 ? num : null;
+        if (num > 0) return num;
       }
     }
 
+    // 2. Legacy price from standard column keys
     if (panel.legacyKey && row[panel.legacyKey] !== undefined && row[panel.legacyKey] !== null) {
       const num = Number(row[panel.legacyKey]);
-      if (num > 0) {
-        return num;
-      }
+      if (num > 0) return num;
     }
 
+    // 3. Normalized brand fallback for Adani (550W vs 555W)
+    if (normalizeBrand(panel.brand) === 'adani' && row.adaniBiFiPrice) {
+      const num = Number(row.adaniBiFiPrice);
+      if (num > 0) return num;
+    }
+
+    // 4. Fallback: if panel is compatible with slab and has 0 or null, return null (renders as "-")
     return null;
   };
 
@@ -532,29 +534,42 @@ ${origin}/?tab=pricing_master
     }
   };
 
+  const [isSavingMatrix, setIsSavingMatrix] = useState(false);
+
   // Handle saving matrix changes
-  const handleSaveMatrix = (updatedMatrix) => {
+  const handleSaveMatrix = async (updatedMatrix) => {
     const matrixToSave = updatedMatrix || localBosMatrix;
     if (pdfBosMatrix && JSON.stringify(matrixToSave) === JSON.stringify(pdfBosMatrix)) {
       setIsInlineEditingMatrix(false);
       triggerToast('No changes detected in BOS Price Matrix.');
       return;
     }
-    if (setPdfBosMatrix) {
-      setPdfBosMatrix(matrixToSave);
+    setIsSavingMatrix(true);
+    try {
+      if (setPdfBosMatrix) {
+        setPdfBosMatrix(matrixToSave);
+      }
+      const res = await pricingService.saveBosMatrix(matrixToSave);
+      if (res?.success === false) {
+        triggerToast('Failed to save BOS Price List: ' + (res.error || 'Database error'));
+        return;
+      }
+      setIsInlineEditingMatrix(false);
+      if (addNotification) {
+        addNotification({
+          type: 'success',
+          icon: 'table_chart',
+          title: 'BOS Price List Updated',
+          description: `BOS price slabs updated across ${matrixToSave.length} capacities. Synced to all ${totalDealersCount} dealers.`,
+          targetTab: 'pricing_master'
+        });
+      }
+      triggerToast(`BOS Price List saved successfully (${matrixToSave.length} capacity slabs)!`);
+    } catch (err) {
+      triggerToast('Error saving BOS Price List: ' + err.message);
+    } finally {
+      setIsSavingMatrix(false);
     }
-    pricingService.saveBosMatrix(matrixToSave);
-    setIsInlineEditingMatrix(false);
-    if (addNotification) {
-      addNotification({
-        type: 'success',
-        icon: 'table_chart',
-        title: 'BOS Price List Updated',
-        description: `BOS price slabs updated across ${matrixToSave.length} capacities. Synced to all ${totalDealersCount} dealers.`,
-        targetTab: 'pricing_master'
-      });
-    }
-    triggerToast(`BOS Price List saved successfully (${matrixToSave.length} capacity slabs)!`);
   };
 
   // Handle inline cell changes in Matrix
@@ -614,12 +629,12 @@ ${origin}/?tab=pricing_master
     const items = [];
     const addedIds = new Set();
 
-    // 1. Extract from dynamic panelPrices object (only if compatible)
+    // 1. Extract from dynamic panelPrices object (load all configured panel prices)
     if (row.panelPrices && typeof row.panelPrices === 'object') {
       Object.entries(row.panelPrices).forEach(([panelId, price]) => {
         if (price && Number(price) > 0) {
           const matched = allAvailablePanels.find(p => p.id === panelId || p.key === panelId || p.legacyKey === panelId);
-          if (matched && isPanelWattageCompatible(row.capacityKW, matched.wattage)) {
+          if (matched) {
             items.push({ panelId: matched.id, price: Number(price) });
             addedIds.add(matched.id);
           }
@@ -627,14 +642,12 @@ ${origin}/?tab=pricing_master
       });
     }
 
-    // 2. Extract from legacy fields if compatible and not already in items
+    // 2. Extract from legacy fields if not already in items
     allAvailablePanels.forEach(p => {
       if (addedIds.has(p.id)) return;
       if (p.legacyKey && row[p.legacyKey] && Number(row[p.legacyKey]) > 0) {
-        if (isPanelWattageCompatible(row.capacityKW, p.wattage)) {
-          items.push({ panelId: p.id, price: Number(row[p.legacyKey]) });
-          addedIds.add(p.id);
-        }
+        items.push({ panelId: p.id, price: Number(row[p.legacyKey]) });
+        addedIds.add(p.id);
       }
     });
 
@@ -691,14 +704,26 @@ ${origin}/?tab=pricing_master
 
     const capKw = Number(slabForm.capacityKW) || slabForm.capacityKW;
     const modCount = Number(slabForm.noOfModules) || Math.round((Number(capKw) * 1000) / 550);
+    const existingRow = (editingRowIndex !== null && editingRowIndex >= 0) ? (localBosMatrix[editingRowIndex] || {}) : {};
+    const mergedPanelPrices = { ...(existingRow.panelPrices || {}), ...newPanelPrices };
+    const mergedLegacyMap = {
+      adaniBiFiPrice: legacyMap.adaniBiFiPrice || existingRow.adaniBiFiPrice || 0,
+      apsBiFiPrice: legacyMap.apsBiFiPrice || existingRow.apsBiFiPrice || 0,
+      rayzonePrice: legacyMap.rayzonePrice || existingRow.rayzonePrice || 0,
+      waaree540Price: legacyMap.waaree540Price || existingRow.waaree540Price || 0,
+      waaree585Price: legacyMap.waaree585Price || existingRow.waaree585Price || 0,
+      apsTopcon600Price: legacyMap.apsTopcon600Price || existingRow.apsTopcon600Price || 0
+    };
+
     const newRow = {
+      ...existingRow,
       capacityKW: capKw,
       noOfModules: modCount,
-      inverterCapacityKW: slabForm.inverterCapacityKW ? String(slabForm.inverterCapacityKW) : `${capKw}KW`,
+      inverterCapacityKW: slabForm.inverterCapacityKW ? String(slabForm.inverterCapacityKW) : (existingRow.inverterCapacityKW || `${capKw}KW`),
       topcon585CapacityKW: Number(((modCount * 585) / 1000).toFixed(3)),
       topcon600CapacityKW: Number(((modCount * 600) / 1000).toFixed(3)),
-      panelPrices: newPanelPrices,
-      ...legacyMap
+      ...mergedLegacyMap,
+      panelPrices: mergedPanelPrices
     };
 
     let updated;
@@ -708,7 +733,6 @@ ${origin}/?tab=pricing_master
       triggerToast(`Updated ${newRow.capacityKW} kW pricing slab!`);
     } else {
       updated = [...localBosMatrix, newRow];
-      // Sort by capacityKW ascending
       updated.sort((a, b) => (Number(a.capacityKW) || 0) - (Number(b.capacityKW) || 0));
       triggerToast(`Added new ${newRow.capacityKW} kW pricing slab!`);
     }
@@ -717,8 +741,14 @@ ${origin}/?tab=pricing_master
     if (setPdfBosMatrix) {
       setPdfBosMatrix(updated);
     }
-    pricingService.saveBosMatrix(updated);
     setShowAddSlabModal(false);
+    pricingService.saveBosMatrix(updated).then(res => {
+      if (res?.success === false) {
+        triggerToast('Warning: Failed to save slab to database: ' + (res.error || 'Network error'));
+      }
+    }).catch(err => {
+      triggerToast('Error saving slab: ' + err.message);
+    });
   };
 
   const handleDeleteSlab = async (index) => {
@@ -1438,6 +1468,7 @@ ${origin}/?tab=pricing_master
 
                     <button
                       type="button"
+                      disabled={isSavingMatrix}
                       onClick={() => {
                         if (isInlineEditingMatrix) {
                           handleSaveMatrix();
@@ -1446,15 +1477,17 @@ ${origin}/?tab=pricing_master
                         }
                       }}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
-                        isInlineEditingMatrix
+                        isSavingMatrix
+                          ? 'opacity-60 cursor-not-allowed bg-emerald-700 text-white'
+                          : isInlineEditingMatrix
                           ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
                           : 'bg-surface-container hover:bg-surface-container-high text-on-surface'
                       }`}
                     >
                       <span className="material-symbols-outlined text-[16px]">
-                        {isInlineEditingMatrix ? 'check' : 'edit'}
+                        {isSavingMatrix ? 'sync' : isInlineEditingMatrix ? 'check' : 'edit'}
                       </span>
-                      <span>{isInlineEditingMatrix ? 'Save Rates' : 'Edit Rates'}</span>
+                      <span>{isSavingMatrix ? 'Saving...' : isInlineEditingMatrix ? 'Save Rates' : 'Edit Rates'}</span>
                     </button>
                   </div>
                 </div>
@@ -1629,7 +1662,7 @@ ${origin}/?tab=pricing_master
                                     <div className="text-[10px] font-semibold text-secondary uppercase tracking-wider truncate">
                                       {panel.brand} {panel.wattage}W
                                     </div>
-                                    {isCompat ? (
+                                    {(isCompat || price) ? (
                                       <input
                                         type="number"
                                         value={price || ''}
@@ -1747,7 +1780,7 @@ ${origin}/?tab=pricing_master
                                 const price = getPriceForPanel(row, panel);
 
                                 if (isInlineEditingMatrix) {
-                                  if (!isCompat) {
+                                  if (!isCompat && !price) {
                                     return (
                                       <td key={panel.id} className="px-2 py-2 text-center min-w-[115px] border-r border-surface-container-high/40">
                                         <span className="text-secondary/30 font-mono text-xs select-none" title={`Incompatible with ${row.capacityKW} kW`}>-</span>
@@ -3874,7 +3907,7 @@ ${origin}/?tab=pricing_master
                       onClick={() => {
                         const available = slabForm.bypassCompatibilityFilter
                           ? allAvailablePanels
-                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage, slabForm.noOfModules));
                         const unused = available.find(p => !(slabForm.panelItems || []).some(item => item.panelId === p.id));
                         setSlabForm({
                           ...slabForm,
@@ -3917,7 +3950,7 @@ ${origin}/?tab=pricing_master
                       onClick={() => {
                         const available = slabForm.bypassCompatibilityFilter
                           ? allAvailablePanels
-                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                          : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage, slabForm.noOfModules));
                         setSlabForm({
                           ...slabForm,
                           panelItems: [{ panelId: available[0]?.id || '', price: '' }]
@@ -3946,7 +3979,7 @@ ${origin}/?tab=pricing_master
                           {slabForm.panelItems.map((item, itemIdx) => {
                             const availablePanels = slabForm.bypassCompatibilityFilter
                               ? allAvailablePanels
-                              : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                              : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage, slabForm.noOfModules));
 
                             const selectedPanel = allAvailablePanels.find(p => p.id === item.panelId);
                             const calcMods = selectedPanel && slabForm.capacityKW
@@ -4033,7 +4066,7 @@ ${origin}/?tab=pricing_master
                         onClick={() => {
                           const available = slabForm.bypassCompatibilityFilter
                             ? allAvailablePanels
-                            : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage));
+                            : allAvailablePanels.filter(p => isPanelWattageCompatible(slabForm.capacityKW, p.wattage, slabForm.noOfModules));
                           const unused = available.find(p => !(slabForm.panelItems || []).some(item => item.panelId === p.id));
                           setSlabForm({
                             ...slabForm,
