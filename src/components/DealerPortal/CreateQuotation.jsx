@@ -1579,17 +1579,18 @@ export default function CreateQuotation() {
       // Clear edit/active pointers and reset form fields for next quotation
       handleReset();
 
-      // Smooth auto-close: 600ms transition then redirect to quotations list
-      showLoader('Opening Quotations...');
-      setTimeout(() => {
-        hideLoader();
-        setIsSubmitting(false);
-        const targetTab = isAdmin ? 'all_quotes' : 'my_quotes';
-        if (typeof window !== 'undefined') {
-          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-        }
-        setActiveTab(targetTab);
-      }, 600);
+      // Immediately hide loader, finish submitting, and navigate smoothly to Quotations
+      hideLoader();
+      setIsSubmitting(false);
+      const isVerificationStaff = isStaff && (
+        String(currentStaff?.department || '').toLowerCase() === 'verification' ||
+        String(currentStaff?.role || '').toLowerCase().includes('verification')
+      );
+      const targetTab = isAdmin ? 'all_quotes' : isStaff ? (isVerificationStaff ? 'verification_desk' : 'staff_dashboard') : 'my_quotes';
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      }
+      setActiveTab(targetTab);
     } catch (e) {
       setSaveStatus('');
       setIsSubmitting(false);

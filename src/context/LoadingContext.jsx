@@ -14,7 +14,7 @@ const LoadingContext = createContext({
 });
 
 export function LoadingProvider({ children }) {
-  const [loadingCount, setLoadingCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const safetyTimeoutRef = useRef(null);
 
@@ -27,19 +27,20 @@ export function LoadingProvider({ children }) {
 
   const hideLoader = useCallback(() => {
     clearSafetyTimeout();
-    setLoadingCount(prev => Math.max(0, prev - 1));
+    setIsLoading(false);
+    setMessage('');
   }, [clearSafetyTimeout]);
 
   const showLoader = useCallback((msg = 'Processing...') => {
     clearSafetyTimeout();
     setMessage(msg);
-    setLoadingCount(prev => prev + 1);
+    setIsLoading(true);
 
-    // Failsafe: Automatically dismiss after 15s to guarantee UI never gets stuck
+    // Failsafe: Automatically dismiss after 8s to guarantee UI never gets stuck
     safetyTimeoutRef.current = setTimeout(() => {
-      setLoadingCount(0);
+      setIsLoading(false);
       setMessage('');
-    }, 15000);
+    }, 8000);
   }, [clearSafetyTimeout]);
 
   /**
@@ -63,8 +64,6 @@ export function LoadingProvider({ children }) {
       window.__sunvineLoader = { show: showLoader, hide: hideLoader };
     }
   }, [showLoader, hideLoader]);
-
-  const isLoading = loadingCount > 0;
 
   return (
     <LoadingContext.Provider value={{ isLoading, message, showLoader, hideLoader, withLoader }}>
