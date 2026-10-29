@@ -14,7 +14,8 @@ export default function MyQuotations() {
     clearActiveDraftQuote, 
     setActiveTab, 
     setPreviewQuotation,
-    deleteQuotation
+    deleteQuotation,
+    portalFeatures
   } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -114,14 +115,16 @@ export default function MyQuotations() {
           </p>
         </div>
         <div className="self-start sm:self-auto flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('my_applications')}
-            className="flex items-center gap-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface px-space-md py-space-sm rounded-lg shadow-xs font-label-md transition-all cursor-pointer"
-            type="button"
-          >
-            <span className="material-symbols-outlined text-[18px]">assignment</span>
-            <span>Track Applications</span>
-          </button>
+          {Boolean(portalFeatures?.applications) && (
+            <button
+              onClick={() => setActiveTab('my_applications')}
+              className="flex items-center gap-space-xs bg-surface-container hover:bg-surface-container-high text-on-surface px-space-md py-space-sm rounded-lg shadow-xs font-label-md transition-all cursor-pointer"
+              type="button"
+            >
+              <span className="material-symbols-outlined text-[18px]">assignment</span>
+              <span>Track Applications</span>
+            </button>
+          )}
           <button
             onClick={() => {
               if (clearEditingQuotation) clearEditingQuotation();
@@ -242,14 +245,16 @@ export default function MyQuotations() {
                     >
                       <span className="material-symbols-outlined text-[16px]">description</span>
                     </button>
-                    <button
-                      onClick={() => setConvertingQuote(q)}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:bg-primary-container/20 transition-colors cursor-pointer"
-                      title="Book Order / Convert to Customer File"
-                      type="button"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
-                    </button>
+                    {Boolean(portalFeatures?.applications) && (
+                      <button
+                        onClick={() => setConvertingQuote(q)}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:bg-primary-container/20 transition-colors cursor-pointer"
+                        title="Book Order / Convert to Customer File"
+                        type="button"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => openWhatsAppChat(q)}
                       className="w-7 h-7 rounded-lg flex items-center justify-center text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
@@ -369,14 +374,16 @@ export default function MyQuotations() {
                         >
                           <span className="material-symbols-outlined text-[18px]">description</span>
                         </button>
-                        <button
-                          onClick={() => setConvertingQuote(q)}
-                          className="p-1.5 rounded hover:bg-primary-container/20 text-primary transition-colors cursor-pointer"
-                          title="Book Order / Convert to Customer File"
-                          type="button"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                        </button>
+                        {Boolean(portalFeatures?.applications) && (
+                          <button
+                            onClick={() => setConvertingQuote(q)}
+                            className="p-1.5 rounded hover:bg-primary-container/20 text-primary transition-colors cursor-pointer"
+                            title="Book Order / Convert to Customer File"
+                            type="button"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => openWhatsAppChat(q)}
                           className="p-1.5 rounded hover:bg-surface-container text-[#25D366] hover:bg-[#25D366]/15 transition-colors cursor-pointer"
@@ -407,11 +414,13 @@ export default function MyQuotations() {
       )}
 
       {/* Convert Quotation to Booked Order / Customer File Modal */}
-      <ConvertQuotationModal
-        quotation={convertingQuote}
-        isOpen={Boolean(convertingQuote)}
-        onClose={() => setConvertingQuote(null)}
-      />
+      {Boolean(portalFeatures?.applications) && (
+        <ConvertQuotationModal
+          quotation={convertingQuote}
+          isOpen={Boolean(convertingQuote)}
+          onClose={() => setConvertingQuote(null)}
+        />
+      )}
     </div>
   );
 }

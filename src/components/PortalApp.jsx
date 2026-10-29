@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
 import Navigation from './Navigation';
 import ViewSkeleton from './Shared/ViewSkeleton';
@@ -46,7 +46,32 @@ const DocumentationHub = lazyWithRetry(() => import('./Shared/DocumentationHub')
 const ComingSoonPlaceholder = lazyWithRetry(() => import('./Shared/ComingSoonPlaceholder'));
 
 function PortalContent() {
-  const { isAuthenticated, authView, role, activeTab, currentStaff } = useApp();
+  const { isAuthenticated, authView, role, activeTab, setActiveTab, currentStaff, portalFeatures } = useApp();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (role === 'dealer') {
+      if (activeTab === 'my_applications' && !portalFeatures?.applications) {
+        setActiveTab('dashboard');
+      } else if (activeTab === 'dealer_ledger' && !portalFeatures?.ledger) {
+        setActiveTab('dashboard');
+      } else if (activeTab === 'dealer_performance' && !portalFeatures?.performance) {
+        setActiveTab('dashboard');
+      } else if (activeTab === 'lead_generation' && !portalFeatures?.leads) {
+        setActiveTab('dashboard');
+      }
+    } else if (role === 'staff') {
+      if (activeTab === 'staff_files' && !portalFeatures?.applications) {
+        setActiveTab('staff_dashboard');
+      } else if (activeTab === 'admin_ledger' && !portalFeatures?.ledger) {
+        setActiveTab('staff_dashboard');
+      } else if (activeTab === 'staff_performance' && !portalFeatures?.performance) {
+        setActiveTab('staff_dashboard');
+      } else if ((activeTab === 'lead_generation' || activeTab === 'staff_new_lead' || activeTab === 'staff_map') && !portalFeatures?.leads) {
+        setActiveTab('staff_dashboard');
+      }
+    }
+  }, [isAuthenticated, role, activeTab, portalFeatures, setActiveTab]);
   const isVerificationStaff = Boolean(
     String(currentStaff?.department || '').toLowerCase() === 'verification' ||
     String(currentStaff?.role || '').toLowerCase().includes('verification')
@@ -200,7 +225,7 @@ function PortalContent() {
       case 'dashboard':
         return <DealerDashboard />;
       case 'dealer_ledger':
-        return (
+        return portalFeatures?.ledger ? (
           <ComingSoonPlaceholder
             title="My Financial Statement & Ledger"
             subtitle="Feature Under Construction"
@@ -214,17 +239,17 @@ function PortalContent() {
               'Instant Remittance Receipts'
             ]}
           />
-        );
+        ) : <DealerDashboard />;
       case 'create_quote':
         return <CreateQuotation />;
       case 'my_quotes':
         return <MyQuotations />;
       case 'my_applications':
-        return <MyApplications />;
+        return portalFeatures?.applications ? <MyApplications /> : <DealerDashboard />;
       case 'dealer_performance':
-        return <BusinessPerformance />;
+        return portalFeatures?.performance ? <BusinessPerformance /> : <DealerDashboard />;
       case 'lead_generation':
-        return <LeadGenerationComingSoon />;
+        return portalFeatures?.leads ? <LeadGenerationComingSoon /> : <DealerDashboard />;
       case 'docs':
         return <DocumentationHub />;
       case 'profile':
