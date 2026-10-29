@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { getClientIp, checkDistributedRateLimit } from './_lib/rateLimiter.js';
-import { requireUser } from './_lib/requireAuth.js';
-import { applyCors } from './_lib/cors.js';
-import { ensureEnvLoaded } from './_lib/db.js';
+import { getClientIp, checkDistributedRateLimit } from './rateLimiter.js';
+import { requireUser } from './requireAuth.js';
+import { applyCors } from './cors.js';
+import { ensureEnvLoaded } from './db.js';
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -122,7 +122,7 @@ export default async function handler(req, res) {
       }
 
       isCanonicalApplication = true;
-      const { getDocumentTypeSlug } = await import('./_lib/documentStorage.js');
+      const { getDocumentTypeSlug } = await import('./documentStorage.js');
       const docSlug = getDocumentTypeSlug(targetDocType || 'document');
       cleanFolder = `applications/${cleanFileId}/${docSlug}`;
 

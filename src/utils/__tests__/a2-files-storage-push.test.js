@@ -18,12 +18,12 @@ process.env.ALLOWED_ORIGINS = 'https://portal.sunvinesolar.com,http://localhost:
 process.env.R2_BUCKET_NAME = 'sunvine-documents-vault';
 
 import { signJwt } from '../../../api/_lib/jwt.js';
-import pushSubscriptionHandler from '../../../api/push-subscription.js';
-import pushNotifyHandler from '../../../api/push-notify.js';
+import pushSubscriptionHandler from '../../../api/_lib/pushSubscription.js';
+import pushNotifyHandler from '../../../api/_lib/pushNotify.js';
 import customerFilesHandler, { extractAllDocPaths } from '../../../api/customer-files.js';
-import storageDownloadHandler from '../../../api/storage-download.js';
-import storageDeleteHandler from '../../../api/storage-delete.js';
-import storagePresignHandler from '../../../api/storage-presign.js';
+import storageDownloadHandler from '../../../api/_lib/storageDownload.js';
+import storageDeleteHandler from '../../../api/_lib/storageDelete.js';
+import storagePresignHandler from '../../../api/_lib/storagePresign.js';
 
 // ── Mock Helpers ────────────────────────────────────────────────────────────
 

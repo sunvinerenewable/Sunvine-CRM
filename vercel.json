@@ -15,22 +15,7 @@
     "api/places-nearby.js": {
       "maxDuration": 10
     },
-    "api/push-notify.js": {
-      "maxDuration": 10
-    },
-    "api/push-subscription.js": {
-      "maxDuration": 10
-    },
     "api/quotations.js": {
-      "maxDuration": 10
-    },
-    "api/storage-delete.js": {
-      "maxDuration": 10
-    },
-    "api/storage-download.js": {
-      "maxDuration": 10
-    },
-    "api/storage-presign.js": {
       "maxDuration": 10
     },
     "api/auth/[action].js": {
@@ -38,6 +23,12 @@
     },
     "api/scrape-solar-leads.js": {
       "maxDuration": 20
+    },
+    "api/storage/[action].js": {
+      "maxDuration": 10
+    },
+    "api/push/[action].js": {
+      "maxDuration": 10
     }
   },
   "headers": [
@@ -108,6 +99,26 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/push-subscription",
+      "destination": "/api/push/subscription"
+    },
+    {
+      "source": "/api/push-notify",
+      "destination": "/api/push/notify"
+    },
+    {
+      "source": "/api/storage-delete",
+      "destination": "/api/storage/delete"
+    },
+    {
+      "source": "/api/storage-download",
+      "destination": "/api/storage/download"
+    },
+    {
+      "source": "/api/storage-presign",
+      "destination": "/api/storage/presign"
+    },
     {
       "source": "/api/cron/purge-trash",
       "destination": "/api/customer-files?action=purge-trash"

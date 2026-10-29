@@ -1,7 +1,7 @@
 import webpush from 'web-push';
-import { ensureEnvLoaded, query } from './_lib/db.js';
-import { requireUser } from './_lib/requireAuth.js';
-import { applyCors } from './_lib/cors.js';
+import { ensureEnvLoaded, query } from './db.js';
+import { requireUser } from './requireAuth.js';
+import { applyCors } from './cors.js';
 
 ensureEnvLoaded();
 

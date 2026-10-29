@@ -1,8 +1,8 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { createClient } from '@supabase/supabase-js';
-import { requireUser } from './_lib/requireAuth.js';
-import { applyCors } from './_lib/cors.js';
-import { ensureEnvLoaded } from './_lib/db.js';
+import { requireUser } from './requireAuth.js';
+import { applyCors } from './cors.js';
+import { ensureEnvLoaded } from './db.js';
 
 ensureEnvLoaded();
 
