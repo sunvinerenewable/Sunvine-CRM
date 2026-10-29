@@ -2068,7 +2068,7 @@ export default function AdminSettings() {
                   <span className={`material-symbols-outlined text-sm ${isSyncingDocs ? 'animate-spin' : ''}`}>
                     sync
                   </span>
-                  <span>{isSyncingDocs ? 'Syncing Live DB...' : 'Sync Live DB'}</span>
+                  <span>{isSyncingDocs ? 'Updating...' : 'Refresh Checklist'}</span>
                 </button>
 
                 <button

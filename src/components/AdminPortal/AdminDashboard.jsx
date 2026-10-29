@@ -858,10 +858,10 @@ export default function AdminDashboard() {
               disabled={isSyncing}
               type="button"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-surface-container-high bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
-              title="Refresh latest dealer records"
+              title="Refresh dealer performance data"
             >
               <span className={`material-symbols-outlined text-[16px] text-primary ${isSyncing ? 'animate-spin' : ''}`}>sync</span>
-              <span>{isSyncing ? 'Syncing...' : (lastSyncedTime ? `Synced (${lastSyncedTime})` : 'Sync Now')}</span>
+              <span>{isSyncing ? 'Refreshing...' : (lastSyncedTime ? `Updated (${lastSyncedTime})` : 'Refresh')}</span>
             </button>
             <button
               onClick={() => setActiveTab('dealers_mgmt')}

@@ -461,7 +461,7 @@ export default function NotificationPanel({
         <div className="px-4 py-2.5 border-t border-surface-container-high/80 bg-surface-container-low/60 flex items-center justify-between text-secondary font-label-xs text-[11px] shrink-0 rounded-b-2xl pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0"></span>
-            <span className="font-semibold text-on-surface">DISCOM &amp; EPC Sync Active</span>
+            <span className="font-semibold text-on-surface">DISCOM &amp; Partner Rates Active</span>
           </div>
           <span className="text-secondary opacity-75 hidden md:inline">Press Esc to close</span>
         </div>

@@ -2394,7 +2394,7 @@ ${origin}/?tab=pricing_master
                   <div className="flex items-center gap-2">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs font-semibold border border-emerald-200">
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span>Real-Time Sync Active</span>
+                      <span>Live Rates Active</span>
                     </span>
                   </div>
                 </div>
@@ -2411,7 +2411,7 @@ ${origin}/?tab=pricing_master
                   <div className="p-4 rounded-xl border border-surface-container-highest bg-surface-container-low/50 flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary text-xl mt-0.5">sync_alt</span>
                     <div>
-                      <div className="font-bold text-on-surface text-sm">Discom Tariff Grids Synced</div>
+                      <div className="font-bold text-on-surface text-sm">Discom Tariff Rates Active</div>
                       <p className="text-xs text-secondary mt-0.5">PGVCL, DGVCL, UGVCL, and MGVCL net-metering slabs unified.</p>
                     </div>
                   </div>
@@ -2428,7 +2428,7 @@ ${origin}/?tab=pricing_master
                 <div className="mt-4 pt-4 border-t border-surface-container-low flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs text-secondary">
                     <span className="material-symbols-outlined text-emerald-600 text-base">check_circle</span>
-                    <span>Last synced: {pricingMaster?.lastSynced || 'Today, just now'}</span>
+                    <span>Last updated: {pricingMaster?.lastSynced || 'Today, just now'}</span>
                   </div>
                   <span className="text-xs text-secondary">Changes published via top action bar instantly trigger in-app updates</span>
                 </div>
@@ -2657,7 +2657,7 @@ ${origin}/?tab=pricing_master
                       <p className="font-body-sm text-body-sm text-secondary">These hardware specifications auto-populate when a dealer creates a new residential or light-commercial estimate.</p>
                     </div>
                   </div>
-                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Cloud IoT Sync</span>
+                  <span className="font-label-xs text-label-xs bg-surface-container px-2.5 py-1 rounded text-secondary font-semibold">Smart Monitoring</span>
                 </div>
                 <div className="w-full">
                   <div className="border border-surface-container-highest rounded-lg p-4 bg-surface-container-low">
@@ -2666,7 +2666,7 @@ ${origin}/?tab=pricing_master
                         <span className="material-symbols-outlined text-primary text-xl">electrical_services</span>
                         <h3 className="font-label-md text-label-md font-bold text-on-surface">Default Solar Inverter</h3>
                       </div>
-                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Cloud IoT Sync</span>
+                      <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-2 py-0.5 rounded font-semibold">Smart Monitoring</span>
                     </div>
                     <div className="space-y-3">
                       <div>
@@ -2756,7 +2756,7 @@ ${origin}/?tab=pricing_master
                         <th className="px-3 py-2 text-xs">Phase Topology</th>
                         <th className="px-3 py-2 text-xs text-center">Peak Efficiency</th>
                         <th className="px-3 py-2 text-right">Warranty Term</th>
-                        <th className="px-3 py-2 text-center">Cloud Sync</th>
+                        <th className="px-3 py-2 text-center">Monitoring</th>
                         <th className="px-3 py-2 text-center">Dealer Pricing</th>
                         <th className="px-3 py-2 text-center">Action</th>
                       </tr>
@@ -3176,7 +3176,7 @@ ${origin}/?tab=pricing_master
                     <div className="flex items-center gap-2 self-start sm:self-center">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-low text-secondary text-xs font-semibold border border-surface-container-highest">
                         <span className="material-symbols-outlined text-[16px] text-primary">cloud_done</span>
-                        <span>Auto-Synced • Publish via Top Header</span>
+                        <span>Auto-Calculated • Publish via Top Header</span>
                       </span>
                     </div>
                   </div>
@@ -3430,7 +3430,7 @@ ${origin}/?tab=pricing_master
                   <div className="mt-6 p-4 rounded-xl bg-surface-container-low border border-surface-container-highest flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary text-xl mt-0.5">verified_user</span>
                     <div className="text-xs text-secondary leading-relaxed">
-                      <strong className="text-on-surface font-semibold">Real-Time Sync Notice:</strong> Changes made here immediately update the dealer quotation calculation engine for <strong className="text-primary">{selectedBomCapacity} kW</strong> systems across all empanelled Gujarat dealers. Dealers select only the system size, module, and inverter—all BOM calculations roll up automatically!
+                      <strong className="text-on-surface font-semibold">Live Rate Notice:</strong> Changes made here immediately update the dealer quotation calculation engine for <strong className="text-primary">{selectedBomCapacity} kW</strong> systems across all empanelled Gujarat dealers. Dealers select only the system size, module, and inverter—all BOM calculations roll up automatically!
                     </div>
                   </div>
                 </div>

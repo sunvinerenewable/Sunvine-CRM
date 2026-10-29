@@ -659,7 +659,7 @@ export default function MyApplications() {
         </div>
 
         <div className="p-4 rounded-xl bg-surface-container-lowest border border-surface-container-high flex flex-col justify-between shadow-xs">
-          <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Installation &amp; Sync</span>
+          <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Installation &amp; Commissioning</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="font-mono text-2xl font-bold text-indigo-400">{metrics.installationCount}</span>
             <span className="text-[10px] text-secondary">Stage 6-8</span>

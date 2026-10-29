@@ -72,7 +72,7 @@ export default function CustomerFileDetailModal({ file, onClose }) {
     'Pending Documents',
     'DISCOM Processing',
     'Inspection Scheduled',
-    'Grid Synchronized',
+    'Grid Connected',
     'Subsidized',
     'Completed',
     'Stuck',

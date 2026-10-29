@@ -138,7 +138,7 @@ export default function AdminLogin() {
             <span className="text-surface-variant/50">•</span>
             <span>Latency: <strong>14ms</strong></span>
             <span className="text-surface-variant/50">•</span>
-            <span className="text-primary-fixed">All Discom Grids Synced</span>
+            <span className="text-primary-fixed">All Discom Rates Active</span>
           </div>
           <div className="font-body-sm text-body-sm text-surface-variant/60">
             © 2025 Sunvine Renewable Energy Private Limited. Internal Executive System.

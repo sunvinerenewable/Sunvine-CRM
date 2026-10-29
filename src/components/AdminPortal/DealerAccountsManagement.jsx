@@ -236,7 +236,7 @@ export default function DealerAccountsManagement() {
       return { label: 'Solar Installation', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: 'solar_power' };
     }
     if (s.includes('sync') || s.includes('meter')) {
-      return { label: 'Net-Meter Synced', bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'sync_alt' };
+      return { label: 'Net-Meter Connected', bg: 'bg-teal-50 text-teal-700 border-teal-200', icon: 'power' };
     }
     if (s.includes('subsidy')) {
       return { label: 'Subsidy Claim', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: 'payments' };
@@ -538,7 +538,7 @@ export default function DealerAccountsManagement() {
               <option value="feasibility">Feasibility Approved</option>
               <option value="discom">DISCOM Application</option>
               <option value="install">Solar Installation</option>
-              <option value="sync">Net-Meter Sync</option>
+              <option value="sync">Net-Meter Connected</option>
               <option value="complete">Commissioned</option>
             </select>
           ) : (

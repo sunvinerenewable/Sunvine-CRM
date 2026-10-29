@@ -1551,12 +1551,12 @@ export default function CreateQuotation() {
 
     setIsSubmitting(true);
     setSaveStatus('Saving quotation draft...');
-    showLoader('Securing Quotation with Cloud...');
+    showLoader('Saving draft...');
     try {
       if (isEdit && updateQuotation) {
-        updateQuotation(quotePayload);
+        await updateQuotation(quotePayload);
       } else if (addQuotation) {
-        addQuotation(quotePayload);
+        await addQuotation(quotePayload);
       }
       if (saveDesignRecord && (quotationRoofConfig || selectedStructureLayout)) {
         saveDesignRecord({
@@ -1570,23 +1570,35 @@ export default function CreateQuotation() {
         });
       }
 
-      setSaveStatus(isEdit ? 'Quotation updated successfully!' : 'Draft saved successfully to cloud!');
       addToast({
         title: isEdit ? 'Quotation Updated' : 'Draft Saved',
         message: `Quotation #${quotePayload.id} for ${custName} saved successfully.${isMarginExceeded ? ' Note: Margin exceeds tier cap and requires compliance audit.' : ''}`,
         type: isMarginExceeded ? 'warning' : 'success'
       });
-      setTimeout(() => setSaveStatus(''), 3000);
+
+      // Clear edit/active pointers and reset form fields for next quotation
+      handleReset();
+
+      // Smooth auto-close: 600ms transition then redirect to quotations list
+      showLoader('Opening Quotations...');
+      setTimeout(() => {
+        hideLoader();
+        setIsSubmitting(false);
+        const targetTab = isAdmin ? 'all_quotes' : 'my_quotes';
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+        }
+        setActiveTab(targetTab);
+      }, 600);
     } catch (e) {
       setSaveStatus('');
-      addToast({
-        title: 'Save Failed',
-        message: e?.message || 'Could not save quotation to storage.',
-        type: 'error'
-      });
-    } finally {
       setIsSubmitting(false);
       hideLoader();
+      addToast({
+        title: 'Save Failed',
+        message: e?.message || 'Could not save quotation.',
+        type: 'error'
+      });
     }
   };
 

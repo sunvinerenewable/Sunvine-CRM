@@ -1515,7 +1515,7 @@ export default function AllQuotations() {
                   <span className="text-2xl font-bold text-[#0F1B2E]">{commissionedAppsCount}</span>
                   <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full">Commissioned</span>
                 </div>
-                <p className="text-xs text-secondary mt-1">Grid synchronized with net meter</p>
+                <p className="text-xs text-secondary mt-1">Grid connected with net meter</p>
               </div>
             </div>
 
@@ -1621,7 +1621,7 @@ export default function AllQuotations() {
                 <option value="FEASIBILITY_APPROVAL">Feasibility Approved</option>
                 <option value="PLANT_INSTALLATION">Plant Installation</option>
                 <option value="CEI_INSPECTION">CEI Inspection</option>
-                <option value="NET_METER_SYNC">Net Meter Synchronized</option>
+                <option value="NET_METER_SYNC">Net Meter Connected</option>
                 <option value="SUBSIDY_CLAIM">Subsidy Claimed</option>
                 <option value="HANDOVER_COMPLETED">Completed &amp; Handover</option>
               </select>

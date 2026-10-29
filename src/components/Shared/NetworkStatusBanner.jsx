@@ -41,7 +41,7 @@ export default function NetworkStatusBanner() {
         className="no-print fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-50 bg-emerald-700 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-bottom-3 duration-200"
       >
         <span className="material-symbols-outlined text-[18px]">wifi</span>
-        <span>Internet connection restored. All systems synchronized.</span>
+        <span>Internet connection restored. All data up to date.</span>
         <button
           type="button"
           onClick={() => setShowRestoredNotice(false)}

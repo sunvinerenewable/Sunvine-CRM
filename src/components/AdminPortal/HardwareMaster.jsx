@@ -1407,10 +1407,10 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
           </div>
         </div>
 
-        {/* Card 4: Catalog Synchronization */}
+        {/* Card 4: Catalog Status */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:shadow-sm hover:border-emerald-500/50 transition-all group">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Catalog Synchronization</span>
+            <span className="text-[11px] font-bold tracking-wider uppercase text-slate-500 group-hover:text-emerald-700 transition-colors">Catalog Status</span>
             <span className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/60 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[20px]">sync</span>
             </span>
@@ -1420,7 +1420,7 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
           </div>
           <div className="flex items-center gap-1.5 mt-2.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-xs font-bold text-emerald-700">Realtime sync active</span>
+            <span className="text-xs font-bold text-emerald-700">Live catalog active</span>
           </div>
         </div>
       </section>
