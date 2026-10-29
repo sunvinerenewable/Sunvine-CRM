@@ -403,6 +403,12 @@ export default function CreateQuotation() {
           tech: `${watt}W ${m.cellTech || 'Solar Module'}`
         });
       });
+      makes.sort((a, b) => {
+        const wattA = Number(a.watt) || 0;
+        const wattB = Number(b.watt) || 0;
+        if (wattA !== wattB) return wattA - wattB;
+        return (a.brand || '').localeCompare(b.brand || '');
+      });
       return makes;
     }
 

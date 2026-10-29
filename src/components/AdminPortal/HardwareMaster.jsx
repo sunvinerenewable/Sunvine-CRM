@@ -1210,6 +1210,11 @@ Adani Solar,550W Vertex Dual Glass,Mono PERC,550,21.5%,18.90,25 Years Performanc
     if (moduleFilter === 'perc' && !(mod.cellTech || '').toLowerCase().includes('perc')) return false;
     if (moduleFilter === 'commercial' && Number(mod.wattage) < 585) return false;
     return true;
+  }).sort((a, b) => {
+    const wattA = Number(a.wattage) || 0;
+    const wattB = Number(b.wattage) || 0;
+    if (wattA !== wattB) return wattA - wattB;
+    return (a.brand || '').localeCompare(b.brand || '');
   });
 
   const filteredInverters = (invertersList || []).filter(inv => {

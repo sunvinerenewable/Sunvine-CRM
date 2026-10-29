@@ -317,6 +317,15 @@ export default function PricingMaster() {
       }
     });
 
+    // Organize all panels strictly in ascending order by wattage (e.g. 540W -> 550W -> 555W -> 585W -> 600W -> 610W -> 615W)
+    // For panels with matching wattage, sort alphabetically by brand
+    result.sort((a, b) => {
+      const wattA = Number(a.wattage) || 0;
+      const wattB = Number(b.wattage) || 0;
+      if (wattA !== wattB) return wattA - wattB;
+      return (a.brand || '').localeCompare(b.brand || '');
+    });
+
     return result;
   }, [modulesList]);
 
@@ -2560,7 +2569,12 @@ ${origin}/?tab=pricing_master
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-container-highest font-body-sm text-xs text-on-surface">
-                      {(modulesList || []).map((mod, idx) => {
+                      {[...(modulesList || [])].sort((a, b) => {
+                        const wattA = Number(a.wattage) || 0;
+                        const wattB = Number(b.wattage) || 0;
+                        if (wattA !== wattB) return wattA - wattB;
+                        return (a.brand || '').localeCompare(b.brand || '');
+                      }).map((mod, idx) => {
                         const rawRate = typeof mod.ratePerWp === 'string' ? parseFloat(mod.ratePerWp.replace(/[^0-9.]/g, '')) : Number(mod.ratePerWp);
                         const bench = rawRate || 18.25;
                         const modId = mod.id || `mod-${mod.brand}-${mod.wattage}`;
