@@ -558,7 +558,20 @@ export const AppProvider = ({ children }) => {
   const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', null));
 
   // Admin Master Governance & Policy Settings
-  const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
+  const [governanceSettings, setGovernanceSettings] = useState(() => {
+    const cached = cacheManager.get('governance_settings', null);
+    if (cached && typeof cached === 'object') {
+      return {
+        ...DEFAULT_GOVERNANCE_SETTINGS,
+        ...cached,
+        portal_features: {
+          ...DEFAULT_GOVERNANCE_SETTINGS.portal_features,
+          ...(cached.portal_features || {})
+        }
+      };
+    }
+    return DEFAULT_GOVERNANCE_SETTINGS;
+  });
 
   // Solar Hardware Catalogs (Primary: Supabase DB + SWR local memory)
   const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', []));
@@ -944,7 +957,16 @@ export const AppProvider = ({ children }) => {
           bank_details: s.bank_details || s.bankDetails
         }));
         if (s.governanceSettings) {
-          setGovernanceSettings(s.governanceSettings);
+          const mergedGov = {
+            ...DEFAULT_GOVERNANCE_SETTINGS,
+            ...s.governanceSettings,
+            portal_features: {
+              ...DEFAULT_GOVERNANCE_SETTINGS.portal_features,
+              ...(s.governanceSettings.portal_features || {})
+            }
+          };
+          setGovernanceSettings(mergedGov);
+          cacheManager.set('governance_settings', mergedGov);
         }
       }
       setIsSettingsLoaded(true);
@@ -3006,6 +3028,7 @@ export const AppProvider = ({ children }) => {
     };
 
     setGovernanceSettings(nextGovernance);
+    cacheManager.set('governance_settings', nextGovernance);
 
     try {
       await systemSettingsService.savePortalFeatures(nextGovernance);
@@ -3024,6 +3047,7 @@ export const AppProvider = ({ children }) => {
 
     const updated = { ...governanceSettings, ...newSettings };
     setGovernanceSettings(updated);
+    cacheManager.set('governance_settings', updated);
     try {
       await settingsService.saveSystemSettings('governanceSettings', updated);
     } catch (e) {

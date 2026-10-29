@@ -3196,7 +3196,7 @@ export default function AdminSettings() {
                     type="button"
                     disabled={togglingFeature === 'applications'}
                     onClick={() => handleToggleFeature('applications')}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 ${
                       portalFeatures?.applications ? 'bg-emerald-600' : 'bg-slate-300'
                     }`}
                     role="switch"
@@ -3204,8 +3204,8 @@ export default function AdminSettings() {
                   >
                     <span
                       aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        portalFeatures?.applications ? 'translate-x-6' : 'translate-x-0'
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                        portalFeatures?.applications ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -3258,7 +3258,7 @@ export default function AdminSettings() {
                     type="button"
                     disabled={togglingFeature === 'ledger'}
                     onClick={() => handleToggleFeature('ledger')}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 ${
                       portalFeatures?.ledger ? 'bg-emerald-600' : 'bg-slate-300'
                     }`}
                     role="switch"
@@ -3266,8 +3266,8 @@ export default function AdminSettings() {
                   >
                     <span
                       aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        portalFeatures?.ledger ? 'translate-x-6' : 'translate-x-0'
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                        portalFeatures?.ledger ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -3320,7 +3320,7 @@ export default function AdminSettings() {
                     type="button"
                     disabled={togglingFeature === 'performance'}
                     onClick={() => handleToggleFeature('performance')}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 ${
                       portalFeatures?.performance ? 'bg-emerald-600' : 'bg-slate-300'
                     }`}
                     role="switch"
@@ -3328,8 +3328,8 @@ export default function AdminSettings() {
                   >
                     <span
                       aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        portalFeatures?.performance ? 'translate-x-6' : 'translate-x-0'
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                        portalFeatures?.performance ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
@@ -3382,7 +3382,7 @@ export default function AdminSettings() {
                     type="button"
                     disabled={togglingFeature === 'leads'}
                     onClick={() => handleToggleFeature('leads')}
-                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 ${
                       portalFeatures?.leads ? 'bg-emerald-600' : 'bg-slate-300'
                     }`}
                     role="switch"
@@ -3390,8 +3390,8 @@ export default function AdminSettings() {
                   >
                     <span
                       aria-hidden="true"
-                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                        portalFeatures?.leads ? 'translate-x-6' : 'translate-x-0'
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out ${
+                        portalFeatures?.leads ? 'translate-x-5' : 'translate-x-0'
                       }`}
                     />
                   </button>
