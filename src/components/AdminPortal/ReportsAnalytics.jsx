@@ -256,7 +256,7 @@ export default function ReportsAnalytics() {
             >
               <option value="files">Customer Files Pipeline</option>
               <option value="quotations">Solar Quotations</option>
-              <option value="staff">Sales Staff Matrix</option>
+              <option value="staff">Sales Staff Performance</option>
               <option value="dealers">Dealer Network</option>
               <option value="finance">Cash vs Loan Portfolio</option>
             </select>

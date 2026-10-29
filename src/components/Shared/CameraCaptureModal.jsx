@@ -14,7 +14,7 @@ function ProgressBar({ progress }) {
           >
             progress_activity
           </span>
-          Uploading to Cloudflare R2 Vault…
+          Uploading document securely…
         </span>
         <span className="font-mono font-bold text-emerald-400">{progress}%</span>
       </div>
@@ -433,7 +433,7 @@ export default function CameraCaptureModal({
           {/* Info footnote */}
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 text-white/40 text-[10px]">
             <span className="material-symbols-outlined text-[13px] text-emerald-400 shrink-0">verified_user</span>
-            <span>Files are encrypted &amp; stored securely in Cloudflare R2 Vault. GPS EXIF stripped for privacy.</span>
+            <span>Files are encrypted &amp; stored securely. Location details verified for accuracy.</span>
           </div>
         </div>
 

@@ -1819,7 +1819,7 @@ export default function AllQuotations() {
                                 <button
                                   type="button"
                                   onClick={async () => {
-                                    if (window.confirm(`Permanently delete ${file.customerName} (${file.id}) and all attached R2 documents? This cannot be undone.`)) {
+                                    if (window.confirm(`Permanently delete ${file.customerName} (${file.id}) and all attached documents? This cannot be undone.`)) {
                                       try {
                                         await deleteCustomerFile(file.id);
                                         addToast(`Application ${file.id} permanently deleted`, 'info');
@@ -1831,7 +1831,7 @@ export default function AllQuotations() {
                                     }
                                   }}
                                   className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold rounded-lg text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="Immediately delete row and wipe R2 storage"
+                                  title="Permanently delete application and attached documents"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">delete_forever</span>
                                   <span>Wipe Now</span>

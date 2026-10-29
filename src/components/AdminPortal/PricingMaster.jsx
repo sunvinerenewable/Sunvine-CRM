@@ -250,7 +250,7 @@ export default function PricingMaster() {
 
   const [inverterTopology, setInverterTopology] = useState('1-Phase / 3-Phase Grid-Tied Cloud Wi-Fi');
   const [inverterEfficiency, setInverterEfficiency] = useState('98.6% Euro Efficiency');
-  const [inverterWarranty, setInverterWarranty] = useState('8 Years Full Replacement + Remote Telemetry');
+  const [inverterWarranty, setInverterWarranty] = useState('8 Years Full Replacement + Remote Monitoring');
 
   // Bank details matching official PDF
   const [beneficiaryName, setBeneficiaryName] = useState(pricingMaster?.bankDetails?.accountName || 'SUNVINE RENEWABLE');
@@ -540,12 +540,12 @@ ${origin}/?tab=pricing_master
       addNotification({
         type: 'success',
         icon: 'table_chart',
-        title: 'BOS Price List Matrix Updated',
+        title: 'BOS Price List Updated',
         description: `BOS price slabs updated across ${matrixToSave.length} capacities. Synced to all ${totalDealersCount} dealers.`,
         targetTab: 'pricing_master'
       });
     }
-    triggerToast(`BOS Price Matrix saved successfully (${matrixToSave.length} capacity slabs)!`);
+    triggerToast(`BOS Price List saved successfully (${matrixToSave.length} capacity slabs)!`);
   };
 
   // Handle inline cell changes in Matrix
@@ -731,7 +731,7 @@ ${origin}/?tab=pricing_master
     setInverterBenchmarkMatrix(toSave);
     pricingService.saveInverterBenchmarks(toSave);
     setIsInlineEditingInverters(false);
-    triggerToast('Inverter Sizing & Benchmark Pricing Matrix saved to database!');
+    triggerToast('Inverter Sizing & Benchmark Pricing saved successfully!');
   };
 
   const handleInverterCellChange = (idx, field, value) => {
@@ -811,12 +811,12 @@ ${origin}/?tab=pricing_master
   };
 
   const handleResetMatrixToDefault = () => {
-    if (window.confirm('Reset the BOS Price Matrix to the official PDF defaults?')) {
+    if (window.confirm('Reset the BOS Price List to the standard defaults?')) {
       setLocalBosMatrix(PDF_BOS_PRICE_MATRIX);
       if (setPdfBosMatrix) {
         setPdfBosMatrix(PDF_BOS_PRICE_MATRIX);
       }
-      triggerToast('Reset BOS Price Matrix to official PDF defaults');
+      triggerToast('Reset BOS Price List to standard defaults');
     }
   };
 
@@ -1096,7 +1096,7 @@ ${origin}/?tab=pricing_master
                     {activeTab === 'inverters' && 'Solar Inverters'}
                     {activeTab === 'bom' && 'Default Bill of Material (BOM)'}
                     {activeTab === 'bank' && 'Company Bank Details & Terms'}
-                    {activeTab === 'dealer_custom' && 'Dealer Custom Pricing Matrix'}
+                    {activeTab === 'dealer_custom' && 'Dealer Custom Pricing'}
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-primary text-surface-container-lowest font-bold shrink-0">
                     Active
@@ -1136,7 +1136,7 @@ ${origin}/?tab=pricing_master
                     id: 'base',
                     icon: 'payments',
                     title: 'System Presets (Plant Slabs)',
-                    subtitle: 'Panel-Wise Complete Quotation Matrix',
+                    subtitle: 'Panel-Wise Quotation Pricing Table',
                     badge: `${localBosMatrix?.length || 13} Slabs`
                   },
                   {
@@ -1150,7 +1150,7 @@ ${origin}/?tab=pricing_master
                     id: 'inverters',
                     icon: 'electric_bolt',
                     title: 'Solar Inverters',
-                    subtitle: `${invertersList?.length ?? 0} Inverter Models & Sizing Matrix`,
+                    subtitle: `${invertersList?.length ?? 0} Inverter Models & Sizing Guide`,
                     badge: `${invertersList?.length ?? 0} Inverters`
                   },
                   {
@@ -1170,7 +1170,7 @@ ${origin}/?tab=pricing_master
                   {
                     id: 'dealer_custom',
                     icon: 'tune',
-                    title: 'Dealer Custom Pricing Matrix',
+                    title: 'Dealer Pricing Rates', 
                     subtitle: `${totalDealersCount} Partner Pricing Rules`,
                     badge: `${totalDealersCount} Dealers`
                   }
@@ -1357,7 +1357,7 @@ ${origin}/?tab=pricing_master
             </span>
           </button>
 
-          {/* TAB 6: Dealer Custom Pricing Matrix */}
+          {/* TAB 6: Dealer Custom Pricing */}
           <button
             type="button"
             onClick={() => handleTabChange('dealer_custom')}
@@ -1402,7 +1402,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2">
                         <h2 className="font-headline-md text-headline-md text-inverse-surface font-bold">
-                          Sunvine Official BOS Price List Matrix
+                          Sunvine Official BOS Price List
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-primary-container/20 text-primary text-[11px] font-bold">
                           {filteredBosMatrixWithIdx.length === localBosMatrix.length 
@@ -1445,7 +1445,7 @@ ${origin}/?tab=pricing_master
                       <span className="material-symbols-outlined text-[16px]">
                         {isInlineEditingMatrix ? 'check' : 'edit'}
                       </span>
-                      <span>{isInlineEditingMatrix ? 'Save Matrix' : 'Edit Matrix'}</span>
+                      <span>{isInlineEditingMatrix ? 'Save Rates' : 'Edit Rates'}</span>
                     </button>
                   </div>
                 </div>
@@ -1809,7 +1809,7 @@ ${origin}/?tab=pricing_master
                       className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-label-md text-xs font-bold rounded-lg shadow-sm cursor-pointer flex items-center gap-1.5"
                     >
                       <span className="material-symbols-outlined text-[18px]">save</span>
-                      <span>Save Matrix Changes</span>
+                      <span>Save Pricing Changes</span>
                     </button>
                   </div>
                 )}
@@ -1826,7 +1826,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
-                          Inverter Sizing &amp; Benchmark Pricing Matrix
+                          Inverter Sizing &amp; Benchmark Pricing Guide
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                           {inverterBenchmarkMatrix.length} Ratings
@@ -2213,12 +2213,12 @@ ${origin}/?tab=pricing_master
                       <span className="material-symbols-outlined text-xl">account_balance</span>
                     </div>
                     <div>
-                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Central Govt. PM Surya Ghar Subsidy Matrix</h2>
+                      <h2 className="font-headline-md text-headline-md text-inverse-surface">Central Govt. PM Surya Ghar Subsidy Table</h2>
                       <p className="font-body-sm text-body-sm text-secondary">National DBT Portal guidelines for Direct Benefit Transfer applied to quote sheets.</p>
                     </div>
                   </div>
                   <span className="font-label-xs text-label-xs bg-primary-container/15 text-primary px-3 py-1 rounded-full font-bold self-start sm:self-center">
-                    MNRE National Portal DBT Matrix 2024-25
+                    MNRE National Portal DBT Rates 2024-25
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -2624,7 +2624,7 @@ ${origin}/?tab=pricing_master
                   <div>
                     <h4 className="text-xs font-bold text-on-surface">Need dealer-specific panel rates or special margins?</h4>
                     <p className="text-[11px] text-secondary">
-                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing Matrix.
+                      To prevent duplicates and maintain a single source of truth, custom dealer overrides are centralized in the Dealer Custom Pricing.
                     </p>
                   </div>
                 </div>
@@ -2831,7 +2831,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="font-headline-md text-base sm:text-headline-md text-inverse-surface font-bold">
-                          Inverter Sizing &amp; Benchmark Pricing Matrix
+                          Inverter Sizing &amp; Benchmark Pricing Guide
                         </h2>
                         <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                           {inverterBenchmarkMatrix.length} Ratings
@@ -3114,7 +3114,7 @@ ${origin}/?tab=pricing_master
                   <div>
                     <h4 className="text-xs font-bold text-on-surface">Need dealer-specific inverter rates or special margins?</h4>
                     <p className="text-[11px] text-secondary">
-                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing Matrix.
+                      All partner-wise custom pricing and negotiated inverter rates are managed centrally in the Dealer Custom Pricing.
                     </p>
                   </div>
                 </div>
@@ -3586,7 +3586,7 @@ ${origin}/?tab=pricing_master
                     <div>
                       <h4 className="text-xs font-bold text-on-surface">Need dealer-specific BOM rates or custom margins?</h4>
                       <p className="text-[11px] text-secondary">
-                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing Matrix.
+                        All partner-wise component overrides and negotiated rates are managed centrally in the Dealer Custom Pricing.
                       </p>
                     </div>
                   </div>
@@ -3683,7 +3683,7 @@ ${origin}/?tab=pricing_master
                     </div>
                     <div>
                       <h2 className="font-headline-md text-headline-md text-inverse-surface">Commercial Milestones &amp; Legal Terms</h2>
-                      <p className="font-body-sm text-body-sm text-secondary">Default clause presets appended to dealer quotation terms from Sunvine price matrix.</p>
+                      <p className="font-body-sm text-body-sm text-secondary">Default clause presets appended to quotation terms from official price list.</p>
                     </div>
                   </div>
                 </div>

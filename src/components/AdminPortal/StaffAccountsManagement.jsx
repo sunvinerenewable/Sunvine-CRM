@@ -223,7 +223,7 @@ export default function StaffAccountsManagement() {
     setRefreshing(true);
     try {
       if (typeof refreshCustomerFiles === 'function') await refreshCustomerFiles();
-      if (addToast) addToast({ title: 'Data Refreshed', message: 'Sales team files & quotations synced with live database', type: 'success' });
+      if (addToast) addToast({ title: 'Data Refreshed', message: 'Sales team files & quotations updated successfully', type: 'success' });
     } catch {
       // silent
     } finally {
@@ -287,7 +287,7 @@ export default function StaffAccountsManagement() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="h-10 px-4 bg-white border border-[#E4E7EB] hover:bg-[#F6F8F7] text-slate-800 font-semibold rounded-lg shadow-xs transition-colors flex items-center gap-2 text-xs sm:text-sm cursor-pointer disabled:opacity-50"
-            title="Refresh Files &amp; Quotations from Database"
+            title="Refresh Files &amp; Quotations"
           >
             <span className={`material-symbols-outlined text-[18px] text-slate-600 ${refreshing ? 'animate-spin' : ''}`}>sync</span>
             <span>Refresh</span>

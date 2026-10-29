@@ -652,7 +652,7 @@ export default function QuotationPreview({
         </div>
         <h3 className="text-base font-bold text-on-surface mb-1">Loading Solar Proposal...</h3>
         <p className="text-xs text-secondary">
-          Retrieving verified proposal {displayId ? <span className="font-mono font-semibold text-on-surface">{displayId}</span> : 'from database...'}
+          Retrieving verified proposal {displayId ? <span className="font-mono font-semibold text-on-surface">{displayId}</span> : '...'}
         </p>
       </div>
     );

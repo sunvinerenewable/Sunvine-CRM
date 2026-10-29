@@ -994,7 +994,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="text-[#2E7D32] font-bold text-xs">✔</span>
-                <span>WiFi Cloud Telemetry &amp; Mobile App Handover</span>
+                <span>WiFi Cloud Monitoring &amp; Mobile App Handover</span>
               </div>
             </div>
           </div>

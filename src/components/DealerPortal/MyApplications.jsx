@@ -228,7 +228,7 @@ export default function MyApplications() {
     const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
     const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-    showLoader(`Securing ${fileList.length > 1 ? `${fileList.length} files` : 'document'} in Cloudflare R2 Vault...`);
+    showLoader(`Uploading ${fileList.length > 1 ? `${fileList.length} files` : 'document'} securely...`);
     try {
       const uploadedDocsList = [];
 
@@ -316,7 +316,7 @@ export default function MyApplications() {
     const slotData = uploadTargetFile.documents?.[docKey];
     if (!slotData) return;
 
-    showLoader('Removing document from Cloudflare R2 Vault...');
+    showLoader('Removing document...');
     try {
       const fileList = normalizeDocList(slotData);
       const targetDoc = targetDocIdOrUrl
@@ -350,7 +350,7 @@ export default function MyApplications() {
         await updateCustomerFile(uploadTargetFile.id, { documents: updatedDocs });
       }
       setUploadTargetFile(prev => ({ ...prev, documents: updatedDocs }));
-      addToast('Document removed from Cloudflare R2', 'info');
+      addToast('Document removed successfully', 'info');
     } catch (e) {
       console.error('[MyApplications] Delete error:', e);
       addToast(e.message || 'Failed to remove document', 'error');

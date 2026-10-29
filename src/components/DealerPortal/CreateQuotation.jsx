@@ -2552,7 +2552,7 @@ export default function CreateQuotation() {
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-300/80 px-2 py-0.5 rounded-full">
                               <span className="material-symbols-outlined text-[13px] text-emerald-700">auto_awesome</span>
-                              Auto Database Matrix (-₹2k/kW)
+                              Standard Pricing (-₹2k/kW)
                             </span>
                           )}
                         </div>
@@ -2567,7 +2567,7 @@ export default function CreateQuotation() {
                         type="button"
                         onClick={() => setCustomPresetBasePrice(null)}
                         className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors self-start sm:self-auto cursor-pointer"
-                        title="Revert to auto matrix price"
+                        title="Reset to standard price"
                       >
                         <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                         Reset to Auto ({formatINR(activePresetBasePrice)})
@@ -4052,7 +4052,7 @@ export default function CreateQuotation() {
                           <button
                             type="button"
                             onClick={() => setCustomPresetBasePrice(null)}
-                            title="Reset to automatic matrix price"
+                            title="Reset to standard price"
                             className="text-secondary hover:text-emerald-700 p-0.5 rounded transition-colors cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-[15px]">restart_alt</span>

@@ -191,10 +191,10 @@ export default function AdminSettings() {
       }
 
       setCompanyFormDirty(false);
-      addToast('Company Profile and Bank details saved directly to database!', 'success');
+      addToast('Company Profile and Bank details saved successfully!', 'success');
     } catch (err) {
       console.error('[AdminSettings] Save Company Profile Error:', err);
-      addToast(err.message || 'Error saving company profile to database', 'error');
+      addToast(err.message || 'Error saving company profile', 'error');
     } finally {
       setIsCompanySaving(false);
     }
@@ -229,11 +229,11 @@ export default function AdminSettings() {
             accountHolder: norm.bank?.accountHolder || ''
           });
           setCompanyFormDirty(false);
-          addToast('Synced latest company & bank profile from database', 'info');
+          addToast('Refreshed company & bank profile details', 'info');
         }
       }
     } catch (err) {
-      addToast('Failed to refresh from database: ' + err.message, 'error');
+      addToast('Failed to refresh profile details: ' + err.message, 'error');
     } finally {
       setIsCompanyRefreshing(false);
     }
@@ -608,7 +608,7 @@ export default function AdminSettings() {
         })));
       }
     } catch (err) {
-      setError(err.message || 'Failed to connect to PostgreSQL database.');
+      setError(err.message || 'Failed to connect to system service.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -818,7 +818,7 @@ export default function AdminSettings() {
           password: adminForm.password ? adminForm.password.trim() : undefined
         });
         if (!res.success) throw new Error(res.error || 'Failed to update admin');
-        setSuccessToast(`Admin ${adminForm.fullName} updated in live database.`);
+        setSuccessToast(`Admin ${adminForm.fullName} updated successfully.`);
       } else {
         const res = await adminAccountService.createAdmin({
           fullName: adminForm.fullName,
@@ -828,7 +828,7 @@ export default function AdminSettings() {
           password: adminForm.password.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to create admin');
-        setSuccessToast(`Admin ${adminForm.fullName} created in live database.`);
+        setSuccessToast(`Admin ${adminForm.fullName} added successfully.`);
       }
 
       setShowAdminModal(false);
@@ -962,7 +962,7 @@ export default function AdminSettings() {
           assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to update dealer');
-        setSuccessToast(`Dealer ${dealerForm.firmName} updated in live database.`);
+        setSuccessToast(`Dealer ${dealerForm.firmName} updated successfully.`);
       } else {
         const res = await adminAccountService.createDealer({
           dealerCode: dealerForm.dealerCode,
@@ -985,7 +985,7 @@ export default function AdminSettings() {
           assignedStaffName: dealerForm.assignedStaffName || 'Direct to Company (HQ Desk)'
         });
         if (!res.success) throw new Error(res.error || 'Failed to create dealer');
-        setSuccessToast(`Dealer ${dealerForm.firmName} created in live database.`);
+        setSuccessToast(`Dealer ${dealerForm.firmName} added successfully.`);
       }
 
       setShowDealerModal(false);
@@ -1078,7 +1078,7 @@ export default function AdminSettings() {
           password: staffForm.password ? staffForm.password.trim() : undefined
         });
         if (!res.success) throw new Error(res.error || 'Failed to update staff');
-        setSuccessToast(`Staff ${staffForm.name} updated in live database.`);
+        setSuccessToast(`Staff ${staffForm.name} updated successfully.`);
       } else {
         const res = await adminAccountService.createStaff({
           id: staffForm.id,
@@ -1091,7 +1091,7 @@ export default function AdminSettings() {
           password: staffForm.password.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to create staff');
-        setSuccessToast(`Staff ${staffForm.name} created in live database.`);
+        setSuccessToast(`Staff ${staffForm.name} added successfully.`);
       }
 
       setShowStaffModal(false);
@@ -1142,7 +1142,7 @@ export default function AdminSettings() {
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update admin password.');
-        setSuccessToast(`Password updated for Admin ${passwordModal.account.full_name} in live database.`);
+        setSuccessToast(`Password updated successfully for Admin ${passwordModal.account.full_name}.`);
       } else if (passwordModal.accountType === 'dealer') {
         const res = await adminAccountService.updateDealer({
           id: passwordModal.account.id,
@@ -1150,14 +1150,14 @@ export default function AdminSettings() {
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update dealer password.');
-        setSuccessToast(`Password updated for Dealer ${passwordModal.account.firm_name || passwordModal.account.firmName} in live database.`);
+        setSuccessToast(`Password updated successfully for Dealer ${passwordModal.account.firm_name || passwordModal.account.firmName}.`);
       } else {
         const res = await adminAccountService.updateStaff({
           id: passwordModal.account.id,
           password: passwordModal.newPassword.trim()
         });
         if (!res.success) throw new Error(res.error || 'Failed to update staff password.');
-        setSuccessToast(`Password updated for Staff ${passwordModal.account.name} in live database.`);
+        setSuccessToast(`Password updated successfully for Staff ${passwordModal.account.name}.`);
       }
 
       setPasswordModal({ isOpen: false, accountType: '', account: null, newPassword: '', confirmPassword: '', showPass: false });
@@ -1197,16 +1197,16 @@ export default function AdminSettings() {
       if (deleteModal.accountType === 'admin') {
         const res = await adminAccountService.deleteAdmin(deleteModal.account.id);
         if (!res.success) throw new Error(res.error || 'Failed to delete admin');
-        setSuccessToast(`Admin ${deleteModal.account.full_name} removed from live database.`);
+        setSuccessToast(`Admin ${deleteModal.account.full_name} removed successfully.`);
       } else if (deleteModal.accountType === 'dealer') {
         const targetId = deleteModal.account.dealer_code || deleteModal.account.dealerCode || deleteModal.account.id;
         const res = await adminAccountService.deleteDealer(targetId);
         if (!res.success) throw new Error(res.error || 'Failed to delete dealer');
-        setSuccessToast(`Dealer ${deleteModal.account.firm_name || deleteModal.account.firmName} removed from live database.`);
+        setSuccessToast(`Dealer ${deleteModal.account.firm_name || deleteModal.account.firmName} removed successfully.`);
       } else {
         const res = await adminAccountService.deleteStaff(deleteModal.account.id);
         if (!res.success) throw new Error(res.error || 'Failed to delete staff');
-        setSuccessToast(`Staff ${deleteModal.account.name} removed from live database.`);
+        setSuccessToast(`Staff ${deleteModal.account.name} removed successfully.`);
       }
 
       setDeleteModal({ isOpen: false, accountType: '', account: null });
@@ -1226,9 +1226,9 @@ export default function AdminSettings() {
     setIsSyncingDocs(true);
     try {
       await refreshMasterDocuments?.();
-      setSuccessToast('Document Master & Category Rules synced with live database.');
+      setSuccessToast('Document Checklist & Category Rules updated successfully.');
     } catch (err) {
-      setError(err?.message || 'Failed to sync with live database.');
+      setError(err?.message || 'Failed to update rules.');
     } finally {
       setIsSyncingDocs(false);
     }
@@ -1655,7 +1655,7 @@ export default function AdminSettings() {
                         <th className="py-3 px-4">Mobile Number</th>
                         <th className="py-3 px-4">Email</th>
                         <th className="py-3 px-4">Role</th>
-                        <th className="py-3 px-4">Database State</th>
+                        <th className="py-3 px-4">Account Status</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
@@ -1765,7 +1765,7 @@ export default function AdminSettings() {
               ) : filteredDealers.length === 0 ? (
                 <div className="p-12 text-center text-slate-500">
                   <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">storefront</span>
-                  <p className="text-sm font-medium">No dealer partners found in database.</p>
+                  <p className="text-sm font-medium">No dealer partners found.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1848,7 +1848,7 @@ export default function AdminSettings() {
                             <td className="py-3.5 px-4">
                               <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                <span>Active in DB</span>
+                                <span>Active</span>
                               </span>
                             </td>
 
@@ -1991,7 +1991,7 @@ export default function AdminSettings() {
                               <td className="py-3.5 px-4">
                                 <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-medium">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                  <span>Active in DB</span>
+                                  <span>Active</span>
                                 </span>
                               </td>
 
@@ -2049,7 +2049,7 @@ export default function AdminSettings() {
               <div>
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
                   <span className="material-symbols-outlined text-emerald-600">rule_folder</span>
-                  <span>Project Category Rules Matrix</span>
+                  <span>Project Category Rules</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Select an application category below to customize mandatory, optional, and disabled document requirements.
@@ -2063,7 +2063,7 @@ export default function AdminSettings() {
                   onClick={handleSyncDocs}
                   disabled={isSyncingDocs}
                   className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-semibold border border-emerald-300 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
-                  title="Force instant sync of Document Master & Category Rules directly from Supabase PostgreSQL database"
+                  title="Refresh Document Checklist & Category Rules"
                 >
                   <span className={`material-symbols-outlined text-sm ${isSyncingDocs ? 'animate-spin' : ''}`}>
                     sync
@@ -4098,7 +4098,7 @@ export default function AdminSettings() {
                       }}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-sm font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:border-emerald-500 disabled:bg-slate-100 disabled:text-slate-500"
                     />
-                    <p className="text-[10px] text-slate-400 mt-1">Unique database identifier &amp; storage prefix</p>
+                    <p className="text-[10px] text-slate-400 mt-1">Unique category identifier &amp; folder code</p>
                   </div>
 
                   <div>

@@ -84,7 +84,7 @@ export default function AdminLogin() {
               National Solar EPC Operations &amp; <span className="text-primary-container">Channel Management</span> Console
             </h1>
             <p className="font-body-md text-body-md text-surface-variant/80 max-w-xl leading-relaxed">
-              Centralized telemetry, DISCOM tariff synchronization, and real-time dealer financial governance across 48 national nodes.
+              Centralized operations, DISCOM tariff rates, and real-time dealer financial management.
             </p>
           </div>
 

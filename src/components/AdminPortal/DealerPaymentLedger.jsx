@@ -384,7 +384,7 @@ export default function DealerPaymentLedger({ preselectedDealerId = null, isDeal
         {isLoading ? (
           <div className="p-12 text-center text-slate-400 text-xs">
             <span className="material-symbols-outlined text-[32px] animate-spin text-emerald-500 mb-2">progress_activity</span>
-            <p>Loading ledger entries directly from database...</p>
+            <p>Loading ledger entries...</p>
           </div>
         ) : filteredEntries.length === 0 ? (
           <div className="p-12 text-center text-slate-400 text-xs">

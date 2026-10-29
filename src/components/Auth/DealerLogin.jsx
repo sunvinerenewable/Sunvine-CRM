@@ -96,7 +96,7 @@ export default function DealerLogin() {
               <span className="text-primary-container">Protecting Tomorrow.</span>
             </h2>
             <p className="font-body-sm text-xs text-secondary-fixed-dim max-w-[270px] mt-0.5">
-              High-precision solar telemetry &amp; dealer quotation engine.
+              Fast, accurate solar quotations and customer project management.
             </p>
           </div>
         </section>
