@@ -716,12 +716,11 @@ export async function handleSave(req, res, jwt, db) {
   const bomTotals = calcBOMTotals(sanitizedBom, isInterState, settings?.statutory_taxes?.gstSlabs);
 
   // Margin validation and capping uses server-validated kW (Item 3b)
-  const clientMargin = Number(body.dealer_margin_inr) || Number(body.sales_margin_inr) || 0;
-  const isDirectQuote = Boolean(isDirectCompany || body.is_direct_company_quote === true);
+  const clientMargin = Number(body.dealer_margin_inr) || 0;
   const { effectiveMargin, isMarginExceeded } = validateDealerMargin(
-    clientMargin,
+    isDirectCompany ? 0 : clientMargin,
     serverValidatedKw,
-    isDirectQuote ? 999999 : maxMarginCapPerKw
+    maxMarginCapPerKw
   );
 
   // PM Surya Ghar Subsidy uses server-validated kW
