@@ -164,7 +164,7 @@ export const pricingService = {
       if (res.ok) {
         const json = await res.json();
         if (json?.success) {
-          invalidateCatalogCache(['catalog:bos', 'catalog:all']);
+          invalidateCatalogCache(['catalog:bos', 'catalog:bos_matrix', 'catalog:all']);
           return { success: true, data: json };
         }
       }
@@ -188,7 +188,7 @@ export const pricingService = {
         })
       });
       if (res.ok) {
-        invalidateCatalogCache(['catalog:bos', 'catalog:all']);
+        invalidateCatalogCache(['catalog:bos', 'catalog:bos_matrix', 'catalog:all']);
         return { success: true };
       }
       return { success: true };

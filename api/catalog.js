@@ -174,9 +174,26 @@ async function getBosMatrix(db) {
   const { data } = await cacheAside('catalog:bos_matrix', 43200, async () => {
     const { data: rows } = await db
       .from('bos_pricing_matrix')
-      .select('capacity_slab, panel_brand, bos_price_per_wp, gst_rate')
-      .order('capacity_slab', { ascending: true });
-    return rows || [];
+      .select('id, capacity_kw, no_of_modules, inverter_capacity_kw, adani_bifi_price, aps_bifi_price, rayzone_price, waaree_540_price, topcon585_capacity_kw, waaree_585_price, topcon600_capacity_kw, aps_topcon_600_price, panel_prices')
+      .order('capacity_kw', { ascending: true });
+
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    return rows.map(row => ({
+      id: row.id,
+      capacityKW: Number(row.capacity_kw),
+      noOfModules: Number(row.no_of_modules),
+      inverterCapacityKW: row.inverter_capacity_kw,
+      adaniBiFiPrice: Number(row.adani_bifi_price) || 0,
+      apsBiFiPrice: Number(row.aps_bifi_price) || 0,
+      rayzonePrice: Number(row.rayzone_price) || 0,
+      waaree540Price: Number(row.waaree_540_price) || 0,
+      topcon585CapacityKW: Number(row.topcon585_capacity_kw) || (Number(row.capacity_kw) * 1.06),
+      waaree585Price: Number(row.waaree_585_price) || 0,
+      topcon600CapacityKW: Number(row.topcon600_capacity_kw) || (Number(row.capacity_kw) * 1.09),
+      apsTopcon600Price: Number(row.aps_topcon_600_price) || 0,
+      panelPrices: row.panel_prices || {}
+    }));
   });
   return data;
 }

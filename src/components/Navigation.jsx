@@ -14,7 +14,8 @@ export default function Navigation() {
     clearEditingQuotation,
     clearActiveDraftQuote,
     notificationsOpen,
-    setNotificationsOpen
+    setNotificationsOpen,
+    portalFeatures
   } = useApp();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -117,9 +118,24 @@ export default function Navigation() {
     { id: 'docs', label: 'Policies & Docs', mobileLabel: 'Docs', icon: 'description' },
   ];
 
-  const staffMenu = isVerificationStaff ? verificationStaffMenu : salesStaffMenu;
+  const filteredDealerMenu = dealerMenu.filter(item => {
+    if (item.id === 'my_applications' && !portalFeatures?.applications) return false;
+    if (item.id === 'dealer_ledger' && !portalFeatures?.ledger) return false;
+    if (item.id === 'dealer_performance' && !portalFeatures?.performance) return false;
+    if (item.id === 'lead_generation' && !portalFeatures?.leads) return false;
+    return true;
+  });
 
-  const menuItems = role === 'admin' ? adminMenu : role === 'staff' ? staffMenu : dealerMenu;
+  const staffMenuRaw = isVerificationStaff ? verificationStaffMenu : salesStaffMenu;
+  const filteredStaffMenu = staffMenuRaw.filter(item => {
+    if (item.id === 'staff_files' && !portalFeatures?.applications) return false;
+    if (item.id === 'admin_ledger' && !portalFeatures?.ledger) return false;
+    if (item.id === 'staff_performance' && !portalFeatures?.performance) return false;
+    if ((item.id === 'lead_generation' || item.id === 'staff_new_lead' || item.id === 'staff_map') && !portalFeatures?.leads) return false;
+    return true;
+  });
+
+  const menuItems = role === 'admin' ? adminMenu : role === 'staff' ? filteredStaffMenu : filteredDealerMenu;
 
   return (
     <>

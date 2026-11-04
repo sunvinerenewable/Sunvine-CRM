@@ -80,7 +80,13 @@ export const DEFAULT_GOVERNANCE_SETTINGS = {
   retentionMonths: 36,
   discomApiStatus: 'Online - 12ms ping',
   gedaSyncStatus: 'Connected (Hourly)',
-  lastBackupTimestamp: 'Today, 01:15 AM'
+  lastBackupTimestamp: 'Today, 01:15 AM',
+  portal_features: {
+    applications: false,
+    ledger: false,
+    performance: false,
+    leads: false
+  }
 };
 
 const defaultContextValue = {
@@ -552,7 +558,20 @@ export const AppProvider = ({ children }) => {
   const [tierMargins, setTierMargins] = useState(() => cacheManager.get('tier_margins', null));
 
   // Admin Master Governance & Policy Settings
-  const [governanceSettings, setGovernanceSettings] = useState(DEFAULT_GOVERNANCE_SETTINGS);
+  const [governanceSettings, setGovernanceSettings] = useState(() => {
+    const cached = cacheManager.get('governance_settings', null);
+    if (cached && typeof cached === 'object') {
+      return {
+        ...DEFAULT_GOVERNANCE_SETTINGS,
+        ...cached,
+        portal_features: {
+          ...DEFAULT_GOVERNANCE_SETTINGS.portal_features,
+          ...(cached.portal_features || {})
+        }
+      };
+    }
+    return DEFAULT_GOVERNANCE_SETTINGS;
+  });
 
   // Solar Hardware Catalogs (Primary: Supabase DB + SWR local memory)
   const [modulesList, setModulesList] = useState(() => cacheManager.get('modules_list', []));
@@ -938,7 +957,16 @@ export const AppProvider = ({ children }) => {
           bank_details: s.bank_details || s.bankDetails
         }));
         if (s.governanceSettings) {
-          setGovernanceSettings(s.governanceSettings);
+          const mergedGov = {
+            ...DEFAULT_GOVERNANCE_SETTINGS,
+            ...s.governanceSettings,
+            portal_features: {
+              ...DEFAULT_GOVERNANCE_SETTINGS.portal_features,
+              ...(s.governanceSettings.portal_features || {})
+            }
+          };
+          setGovernanceSettings(mergedGov);
+          cacheManager.set('governance_settings', mergedGov);
         }
       }
       setIsSettingsLoaded(true);
@@ -2979,6 +3007,38 @@ export const AppProvider = ({ children }) => {
     });
   };
 
+  const portalFeatures = useMemo(() => ({
+    applications: Boolean(governanceSettings?.portal_features?.applications),
+    ledger: Boolean(governanceSettings?.portal_features?.ledger),
+    performance: Boolean(governanceSettings?.portal_features?.performance),
+    leads: Boolean(governanceSettings?.portal_features?.leads)
+  }), [governanceSettings]);
+
+  const updatePortalFeatures = useCallback(async (newFeatures) => {
+    const updatedFeatures = {
+      applications: Boolean(newFeatures?.applications),
+      ledger: Boolean(newFeatures?.ledger),
+      performance: Boolean(newFeatures?.performance),
+      leads: Boolean(newFeatures?.leads)
+    };
+
+    const nextGovernance = {
+      ...(governanceSettings || {}),
+      portal_features: updatedFeatures
+    };
+
+    setGovernanceSettings(nextGovernance);
+    cacheManager.set('governance_settings', nextGovernance);
+
+    try {
+      await systemSettingsService.savePortalFeatures(nextGovernance);
+      return { success: true };
+    } catch (err) {
+      console.warn('[AppContext] Failed to save portal features to DB:', err);
+      return { success: false, error: err.message };
+    }
+  }, [governanceSettings]);
+
   const updateGovernanceSettings = async (newSettings) => {
     const isDifferent = Object.keys(newSettings || {}).some(key => {
       return String(newSettings[key]) !== String(governanceSettings?.[key]);
@@ -2987,6 +3047,7 @@ export const AppProvider = ({ children }) => {
 
     const updated = { ...governanceSettings, ...newSettings };
     setGovernanceSettings(updated);
+    cacheManager.set('governance_settings', updated);
     try {
       await settingsService.saveSystemSettings('governanceSettings', updated);
     } catch (e) {
@@ -3393,6 +3454,8 @@ export const AppProvider = ({ children }) => {
     updateTierMargins,
     governanceSettings,
     updateGovernanceSettings,
+    portalFeatures,
+    updatePortalFeatures,
     modulesList,
     setModulesList,
     invertersList,
@@ -3579,6 +3642,8 @@ export const AppProvider = ({ children }) => {
     updatePricingPresets,
     updateTierMargins,
     updateGovernanceSettings,
+    portalFeatures,
+    updatePortalFeatures,
     addDealer,
     updateDealer,
     deleteDealer,
