@@ -34,6 +34,8 @@ export default function QuotationPreview({
   const [copiedLinkFeedback, setCopiedLinkFeedback] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGenerated, setIsGenerated] = useState(false);
   const [statusNotice, setStatusNotice] = useState('');
   const [remoteFetchedQuote, setRemoteFetchedQuote] = useState(null);
   const [isLoadingRemote, setIsLoadingRemote] = useState(false);
@@ -634,6 +636,58 @@ export default function QuotationPreview({
     setStatusNotice('');
   };
 
+    const handleGenerate = async () => {
+    if (!activeQuotation || isGenerating) return;
+    setIsGenerating(true);
+    setStatusNotice('Generating and issuing quotation...');
+    try {
+      const payload = {
+        ...activeQuotation,
+        status: activeQuotation.status && activeQuotation.status !== 'Draft' && activeQuotation.status !== 'Preview'
+          ? activeQuotation.status
+          : 'Active / Sent',
+        generatedAt: new Date().toISOString()
+      };
+
+      let saved = null;
+      if (appContext.updateQuotation && activeQuotation.id) {
+        saved = await appContext.updateQuotation(payload);
+      } else if (appContext.addQuotation) {
+        saved = await appContext.addQuotation(payload);
+      } else {
+        const res = await quotationService.saveQuotation(payload);
+        saved = res?.data || payload;
+      }
+
+      const finalQuote = saved || payload;
+      setRemoteFetchedQuote(finalQuote);
+      if (appContext.setPreviewQuotation) appContext.setPreviewQuotation(finalQuote);
+      setIsGenerated(true);
+
+      if (addToast) {
+        addToast({
+          title: 'Quotation Generated',
+          message: `Quotation #${finalQuote.id || activeQuotation.id} has been generated and issued successfully.`,
+          type: 'success'
+        });
+      }
+      setStatusNotice('Quotation generated successfully!');
+    } catch (err) {
+      console.error('[QuotationPreview] Generation failed:', err);
+      if (addToast) {
+        addToast({
+          title: 'Generation Failed',
+          message: err?.message || 'Could not generate quotation. Please try again.',
+          type: 'error'
+        });
+      }
+      setStatusNotice('Generation failed. Please try again.');
+    } finally {
+      setIsGenerating(false);
+      setTimeout(() => setStatusNotice(''), 4000);
+    }
+  };
+
   const handleOpenOnlineView = async () => {
     if (!activeQuotation) return;
     setStatusNotice('Verifying proposal...');
@@ -721,36 +775,37 @@ export default function QuotationPreview({
       {/* Unified Edge-to-Edge Sticky Header: Pinned directly beneath global navbar with zero left/right empty space */}
       <div className={`no-print sticky ${isPublicView ? 'top-0' : 'top-16'} z-30 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_12px_rgba(0,0,0,0.04)] px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 transition-all`}>
         {/* Main Header Bar: Back/Brand, Customer Info, Stepper Pipeline, Primary Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+        <div className="flex items-center justify-between gap-2 sm:gap-3">
           {/* Top/Left: Back / Brand Badge + Customer Info */}
-          <div className="flex items-center gap-2 sm:gap-3.5 min-w-0 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 sm:gap-3.5 min-w-0 flex-1 sm:flex-initial">
             {!isPublicView ? (
               <button
                 onClick={() => setActiveTab('create_quote')}
-                className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs hover:border-slate-300 transition-all active:scale-95 shrink-0 cursor-pointer"
+                className="inline-flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs hover:border-slate-300 transition-all active:scale-95 shrink-0 cursor-pointer"
                 title="Return to Details & Pricing"
               >
-                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                <span className="material-symbols-outlined text-[15px] sm:text-[16px]">arrow_back</span>
                 <span>Back</span>
               </button>
             ) : (
-              <div className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0">
+              <div className="inline-flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200/80 text-emerald-800 text-xs font-bold shrink-0">
                 <span className="material-symbols-outlined text-[16px] sm:text-[18px] text-emerald-600">solar_power</span>
                 <span className="hidden sm:inline">Sunvine Solar Proposal</span>
                 <span className="sm:hidden">Sunvine Solar</span>
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+              <div className="flex items-center gap-1 sm:gap-2 min-w-0">
                 <h2 className="font-bold text-slate-900 text-xs sm:text-base leading-tight truncate">
                   {activeQuotation.customerName}
                 </h2>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] sm:text-[11px] font-extrabold bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 shrink-0">
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] sm:text-[11px] font-extrabold bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 shrink-0">
                   {activeQuotation.systemCapacityKW || activeQuotation.capacity || '5'} KW
                 </span>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium font-mono mt-0.5 truncate">
-                Ref: <span className="font-bold text-slate-700">{activeQuotation.id}</span> • {activeQuotation.date}
+              <p className="text-[9px] sm:text-[11px] text-slate-500 font-medium font-mono mt-0.5 truncate">
+                <span className="hidden xs:inline">Ref: </span><span className="font-bold text-slate-700">{activeQuotation.id}</span>
+                <span className="hidden sm:inline"> • {activeQuotation.date}</span>
               </p>
             </div>
           </div>
@@ -782,72 +837,32 @@ export default function QuotationPreview({
             </div>
           )}
 
-          {/* Right/Bottom: Primary Action Buttons (Grid on Mobile, Flex on Desktop) */}
-          <div className={`${isPublicView ? 'grid grid-cols-2' : 'grid grid-cols-3'} sm:flex sm:items-center gap-1.5 sm:gap-2.5 w-full sm:w-auto shrink-0`}>
+          {/* Right/Bottom: Primary Action Buttons */}
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
             {!isPublicView ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleCopyOnlineLink}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer min-w-0"
-                  title="Copy direct online proposal link to share with customer"
-                >
-                  <span className="material-symbols-outlined text-[16px] sm:text-[17px] shrink-0">
-                    {copiedLinkFeedback ? 'check' : 'link'}
-                  </span>
-                  <span className="truncate">{copiedLinkFeedback ? 'Copied!' : 'Copy Link'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenOnlineView}
-                  className="hidden md:inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold shadow-2xs hover:shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
-                  title="View Proposal online as customer in a new tab"
-                >
-                  <span className="material-symbols-outlined text-[17px]">open_in_new</span>
-                  <span>View Online</span>
-                </button>
-
-                <button
-                  onClick={handleShareWhatsApp}
-                  disabled={isGeneratingPdf}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#25D366] hover:bg-[#1EBE5B] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
-                  title="Share proposal on WhatsApp with pre-filled message"
-                >
-                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGeneratingPdf ? 'animate-spin' : ''}`}>
-                    {isGeneratingPdf ? 'sync' : 'chat'}
-                  </span>
-                  <span className="truncate">
-                    {isGeneratingPdf ? 'Connecting...' : (
-                      <>
-                        <span className="sm:hidden">WhatsApp</span>
-                        <span className="hidden sm:inline">Share WhatsApp</span>
-                      </>
-                    )}
-                  </span>
-                </button>
-
-                <button
-                  onClick={handleDownloadPdf}
-                  disabled={isDownloadingPdf}
-                  className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-4 py-2 rounded-xl bg-[#0F1B2E] hover:bg-[#1A2C47] text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 disabled:opacity-60 cursor-pointer min-w-0"
-                  title="Download official 4-page Proposal PDF"
-                >
-                  <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isDownloadingPdf ? 'animate-spin' : ''}`}>
-                    {isDownloadingPdf ? 'sync' : 'download'}
-                  </span>
-                  <span className="truncate">
-                    {isDownloadingPdf ? (
-                      'Downloading...'
-                    ) : (
-                      <>
-                        <span className="sm:hidden">Download</span>
-                        <span className="hidden sm:inline">Download PDF</span>
-                      </>
-                    )}
-                  </span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className="inline-flex items-center justify-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-[#6CBF3D] hover:bg-[#4F9A2C] active:scale-95 text-white text-xs sm:text-sm font-bold shadow-sm hover:shadow-md transition-all disabled:opacity-60 cursor-pointer shrink-0"
+                title="Generate and issue quotation directly from preview"
+              >
+                <span className={`material-symbols-outlined text-[16px] sm:text-[18px] shrink-0 ${isGenerating ? 'animate-spin' : ''}`}>
+                  {isGenerating ? 'sync' : (isGenerated ? 'verified' : 'check_circle')}
+                </span>
+                <span className="truncate">
+                  {isGenerating ? (
+                    'Generating...'
+                  ) : isGenerated ? (
+                    'Generated'
+                  ) : (
+                    <>
+                      <span className="hidden sm:inline">Generate Quotation</span>
+                      <span className="sm:hidden">Generate</span>
+                    </>
+                  )}
+                </span>
+              </button>
             ) : (
               <>
                 <a
