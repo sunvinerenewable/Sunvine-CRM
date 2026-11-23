@@ -255,7 +255,16 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
         backgroundColor: '#ffffff',
         scrollX: 0,
         scrollY: 0,
-        windowWidth: 794
+        windowWidth: 794,
+        onclone: (clonedDoc) => {
+          const exportContainer = clonedDoc.querySelector('.pdf-export-container');
+          if (exportContainer && exportContainer.parentElement) {
+            exportContainer.parentElement.style.position = 'static';
+            exportContainer.parentElement.style.left = '0';
+            exportContainer.parentElement.style.top = '0';
+            exportContainer.parentElement.style.opacity = '1';
+          }
+        }
       });
 
       const lossless = targets[i].hasAttribute('data-pdf-lossless');

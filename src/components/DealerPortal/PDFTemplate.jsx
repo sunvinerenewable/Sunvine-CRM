@@ -162,28 +162,26 @@ function ResidentialPackageBom({ items = [], activePage, isPdfExport }) {
       shaded: number === '6'
     }))
   ]) : items.map((item, index) => ({ ...item, number: String(index + 1) }));
-  const cell = 'border-b border-r border-black px-3 align-middle';
-
   return (
     <div data-pdf-lossless className={`pdf-page pdf-page-content mx-auto box-border h-[297mm] w-[210mm] max-h-[297mm] flex-col overflow-hidden bg-white px-7 py-6 text-black ${isPdfExport ? 'm-0' : 'mb-8 border border-gray-300 shadow-xl'} print:!m-0 print:!h-[295mm] print:!max-h-[295mm] print:!border-none print:!shadow-none ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
       <img src="/sunvine_logo_transparent.webp" alt="Sunvine Renewable" className="mb-5 h-10 self-end object-contain" />
       <h2 className="mb-3 border-l-4 border-[#9AC43A] pl-2 text-xl font-bold leading-7">BILL OF MATERIAL : 2.18KW SOLAR ON GRID SYSTEM</h2>
-      <table className="w-full table-fixed border-separate border-spacing-0 border-l border-t border-black text-[11px] leading-[16px] [font-family:Arial,sans-serif]">
-        <thead className="bg-[#75A2BA] text-center text-sm font-bold">
-          <tr className="h-10">
-            <th scope="col" className={cell + ' w-[8%]'}>SR. NO.</th>
-            <th scope="col" className={cell + ' w-[46%]'}>ITEM</th>
-            <th scope="col" className={cell + ' w-[21%]'}>QTY.</th>
-            <th scope="col" className={cell + ' w-[25%]'}>MAKE</th>
+      <table className="w-full table-fixed border-collapse border border-black text-[11px] leading-snug [font-family:Arial,Helvetica,sans-serif]">
+        <thead className="bg-[#75A2BA] text-center text-xs font-bold text-black">
+          <tr>
+            <th scope="col" className="w-[12%] border border-black px-1 py-2.5 text-center font-bold tracking-tight whitespace-nowrap align-middle">SR. NO.</th>
+            <th scope="col" className="w-[46%] border border-black px-3 py-2.5 text-left font-bold tracking-tight align-middle">ITEM</th>
+            <th scope="col" className="w-[18%] border border-black px-1.5 py-2.5 text-center font-bold tracking-tight whitespace-nowrap align-middle">QTY.</th>
+            <th scope="col" className="w-[24%] border border-black px-1.5 py-2.5 text-center font-bold tracking-tight whitespace-nowrap align-middle">MAKE</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(({ number, name, qty, make, shaded }) => (
             <tr key={number} className={shaded ? 'bg-[#CCDEE8] font-bold' : undefined}>
-              <td className={cell + ' text-center'}><div className="py-2">{number}</div></td>
-              <th scope="row" className={cell + ' text-left ' + (shaded ? 'uppercase' : 'font-normal')}><div className="py-2">{name}</div></th>
-              <td className={cell + ' text-center'}><div className="py-2">{qty}</div></td>
-              <td className={cell + ' text-center'}><div className="py-2">{make}</div></td>
+              <td className="border border-black px-1 py-2 text-center font-medium align-middle">{number}</td>
+              <td className={`border border-black px-3 py-2 text-left align-middle ${shaded ? 'font-bold uppercase tracking-wide' : 'font-normal'}`}>{name}</td>
+              <td className="border border-black px-1.5 py-2 text-center font-medium align-middle">{qty}</td>
+              <td className="border border-black px-2 py-2 text-center font-medium align-middle leading-snug">{make}</td>
             </tr>
           ))}
         </tbody>
