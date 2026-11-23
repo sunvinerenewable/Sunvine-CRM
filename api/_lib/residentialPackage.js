@@ -42,8 +42,11 @@ export async function handleResidentialPackage(req, res, user) {
 
     if (req.method === 'POST' && action === 'package-create') {
       const values = Object.keys(limits).map(field => typeof body[field] === 'string' ? body[field].trim() : '');
-      if (values.some((value, index) => !value || value.length > Object.values(limits)[index])
-        || !/^[+\d][\d ()-]{6,19}$/.test(values[1])
+      const [customer_name, phone, address, city] = values;
+      if (!customer_name || customer_name.length > limits.customer_name
+        || !phone || phone.length > limits.phone || !/^[+\d][\d ()-]{6,19}$/.test(phone)
+        || address.length > limits.address
+        || !city || city.length > limits.city
         || !['General / OBC', 'SC / ST'].includes(body.category)) {
         return res.status(400).json({ error: 'Valid customer details and a subsidy category are required.' });
       }

@@ -1,4 +1,4 @@
-create table public.residential_package_settings (
+create table if not exists public.residential_package_settings (
   id text primary key check (id = 'residential-218'),
   adani_price integer not null check (adani_price > 0),
   waaree_price integer not null check (waaree_price > 0),
@@ -24,14 +24,14 @@ insert into public.residential_package_settings values (
     {"name":"Earthing rod and lightning arrestor","qty":"As per requirement","make":"Vasundhara"},
     {"name":"Stud, nut, washer, cable ties, PVC elbows, saddle clips, pipe and fittings","qty":"As per requirement","make":""}
   ]'::jsonb
-);
+) on conflict (id) do nothing;
 
-create table public.residential_package_quotes (
+create table if not exists public.residential_package_quotes (
   id uuid primary key,
   created_by text not null,
   customer_name text not null,
   phone text not null,
-  address text not null,
+  address text,
   city text not null,
   category text not null check (category in ('General / OBC', 'SC / ST')),
   snapshot jsonb not null,
@@ -39,9 +39,9 @@ create table public.residential_package_quotes (
 );
 
 alter table public.customer_files
-  add column residential_package_quote_id uuid unique references public.residential_package_quotes(id),
-  add column residential_package_brand text,
-  add column residential_package_price integer;
+  add column if not exists residential_package_quote_id uuid unique references public.residential_package_quotes(id),
+  add column if not exists residential_package_brand text,
+  add column if not exists residential_package_price integer;
 
 alter table public.residential_package_settings enable row level security;
 alter table public.residential_package_quotes enable row level security;

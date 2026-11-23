@@ -43,12 +43,11 @@ async function request(action, data) {
 }
 
 export default function ResidentialPackageQuotes() {
-  const { customerFiles = [], setActiveTab } = useApp();
+  const { setActiveTab } = useApp();
   const [settings, setSettings] = useState(null);
   const [quote, setQuote] = useState(null);
   const [discount, setDiscount] = useState('');
   const [customer, setCustomer] = useState(emptyCustomer);
-  const [selectedCustomer, setSelectedCustomer] = useState('');
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -74,18 +73,6 @@ export default function ResidentialPackageQuotes() {
     try { await operation(); }
     catch (err) { setError(err.message); }
     finally { setBusy(false); }
-  }
-
-  function selectCustomer(id) {
-    setSelectedCustomer(id);
-    requestId.current = null;
-    const file = customerFiles.find(item => item.id === id);
-    setCustomer(current => ({
-      ...(file ? {
-        customer_name: file.customerName || '', phone: file.phone || '', address: file.address || '', city: file.city || ''
-      } : emptyCustomer),
-      category: current.category
-    }));
   }
 
   function createQuote(event) {
@@ -116,7 +103,7 @@ export default function ResidentialPackageQuotes() {
             id: 'SV-PKG-' + quote.id.slice(0, 8).toUpperCase(),
             date: new Date(quote.created_at).toLocaleDateString('en-IN'),
             customerName: quote.customer_name, customerPhone: quote.phone,
-            location: quote.address + ', ' + quote.city, city: quote.city,
+            location: [quote.address, quote.city].filter(Boolean).join(', ') || quote.city, city: quote.city,
             systemCapacityKW: 2.18, moduleCount: 4, moduleWattage: 545, inverterCapacity: '2.2 kW', selectedModuleMake: 'Adani / Waaree',
             projectType: 'Residential', inverterType: '2.2 kW single-phase grid-tied',
             residentialPackage: quote
@@ -171,25 +158,20 @@ export default function ResidentialPackageQuotes() {
             <section className={cardStyle}>
               <CardHeading icon="person" title="Customer Details" description="Customer contact and installation address" />
               <div className="grid gap-4 sm:grid-cols-2">
-                <label className="text-sm font-semibold sm:col-span-2">Customer
-                  <select className={fieldStyle} value={selectedCustomer} onChange={event => selectCustomer(event.target.value)}>
-                    <option value="">New enquiry</option>
-                    {customerFiles.filter(file => !file.isDeleted).map(file => (
-                      <option key={file.id} value={file.id}>{file.customerName} · {file.phone}</option>
-                    ))}
-                  </select>
-                </label>
-                {Object.entries(customerFields).map(([field, label]) => (
-                  <label key={field} className={field === 'customer_name' || field === 'address' ? 'text-sm font-semibold sm:col-span-2' : 'text-sm font-semibold'}>
-                    {label} <span className="text-red-700">*</span>
-                    <input className={fieldStyle} required type={field === 'phone' ? 'tel' : 'text'} value={customer[field]}
-                      maxLength={{ customer_name: 255, phone: 20, address: 500, city: 100 }[field]}
-                      onChange={event => {
-                        requestId.current = null;
-                        setCustomer({ ...customer, [field]: event.target.value });
-                      }} />
-                  </label>
-                ))}
+                {Object.entries(customerFields).map(([field, label]) => {
+                  const isRequired = field !== 'address';
+                  return (
+                    <label key={field} className={field === 'customer_name' || field === 'address' ? 'text-sm font-semibold sm:col-span-2' : 'text-sm font-semibold'}>
+                      {label} {isRequired && <span className="text-red-700">*</span>}
+                      <input className={fieldStyle} required={isRequired} type={field === 'phone' ? 'tel' : 'text'} value={customer[field]}
+                        maxLength={{ customer_name: 255, phone: 20, address: 500, city: 100 }[field]}
+                        onChange={event => {
+                          requestId.current = null;
+                          setCustomer({ ...customer, [field]: event.target.value });
+                        }} />
+                    </label>
+                  );
+                })}
               </div>
             </section>
             <section className={cardStyle}>

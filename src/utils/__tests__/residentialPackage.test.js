@@ -64,3 +64,27 @@ test('package quote creation snapshots approved database settings', async t => {
   assert.equal(response.body.quote.snapshot.adani_price, 110512);
   assert.equal(response.body.quote.snapshot.discount, 1000);
 });
+
+test('package quote allows empty optional address', async t => {
+  const previous = process.env.DATABASE_URL;
+  const previousVercel = process.env.VERCEL;
+  process.env.VERCEL = '1';
+  process.env.DATABASE_URL = 'postgresql://127.0.0.1:1/test';
+  t.after(() => {
+    if (previous === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previous;
+    if (previousVercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = previousVercel;
+  });
+  const snapshot = { adani_price: 110512, central_subsidy: 62800, general_subsidy: 33600, discount: 0 };
+  const dbQuery = t.mock.method(pg.Pool.prototype, 'query', async (sql, params) => {
+    assert.deepEqual(params, [id, 'admin-test', 'Package test', '1234567890', '', 'Rajkot', 'General / OBC', 0]);
+    return { rows: [{ id, snapshot }] };
+  });
+  const response = await call('package-create', {
+    id, customer_name: 'Package test', phone: '1234567890', address: '',
+    city: 'Rajkot', category: 'General / OBC', discount: 0
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(dbQuery.mock.callCount(), 1);
+});
