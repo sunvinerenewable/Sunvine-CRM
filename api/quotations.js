@@ -1,3 +1,4 @@
+import { handleResidentialPackage } from './_lib/residentialPackage.js';
 import { createClient } from '@supabase/supabase-js';
 import { applyCors } from './_lib/cors.js';
 import { randomBytes } from 'crypto';
@@ -1354,6 +1355,12 @@ export default async function handler(req, res) {
   // All other actions require authenticated user
   const jwt = await requireUser(req, res);
   if (!jwt) return;
+
+  const packageAction = req.method === 'GET' ? req.query?.action : req.body?.action;
+  if (typeof packageAction === 'string' && packageAction.startsWith('package-')) {
+    res.setHeader('Cache-Control', 'no-store');
+    return handleResidentialPackage(req, res, jwt);
+  }
 
   // Rate limit
   const ip = getClientIp(req);

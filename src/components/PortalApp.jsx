@@ -26,6 +26,7 @@ const DealerSettings = lazyWithRetry(() => import('./DealerPortal/DealerSettings
 // Top-Level Lazy-Loaded Staff Portal Views
 const StaffDashboard = lazyWithRetry(() => import('./StaffPortal/StaffDashboard'));
 const StaffFiles = lazyWithRetry(() => import('./StaffPortal/StaffFiles'));
+const ResidentialPackageQuotes = lazyWithRetry(() => import('./AdminPortal/ResidentialPackageQuotes'));
 const VerificationDesk = lazyWithRetry(() => import('./StaffPortal/VerificationDesk'));
 
 // Top-Level Lazy-Loaded Admin Portal Views
@@ -112,6 +113,8 @@ function PortalContent() {
 
     if (role === 'admin') {
       switch (activeTab) {
+        case 'residential_package':
+          return <ResidentialPackageQuotes />;
         case 'admin_dashboard':
           return <AdminDashboard />;
         case 'admin_ledger':
