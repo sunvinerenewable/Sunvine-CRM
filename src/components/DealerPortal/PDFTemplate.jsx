@@ -167,7 +167,12 @@ function ResidentialPackageBom({ items = [], activePage, isPdfExport }) {
   return (
     <div data-pdf-lossless className={`pdf-page pdf-page-content mx-auto box-border h-[297mm] w-[210mm] max-h-[297mm] flex-col overflow-hidden bg-white px-7 py-6 text-black ${isPdfExport ? 'm-0' : 'mb-8 border border-gray-300 shadow-xl'} print:!m-0 print:!h-[295mm] print:!max-h-[295mm] print:!border-none print:!shadow-none ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
       <img src="/sunvine_logo_transparent.webp" alt="Sunvine Renewable" className="mb-5 h-10 self-end object-contain" />
-      <h2 className="mb-3 border-l-4 border-[#9AC43A] pl-2 text-xl font-bold leading-7">BILL OF MATERIAL : 2.18KW SOLAR ON GRID SYSTEM</h2>
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="h-6 w-1 rounded-full bg-[#9AC43A]" />
+        <h2 className="text-xl font-bold tracking-tight text-black">
+          BILL OF MATERIAL : 2.18KW SOLAR ON GRID SYSTEM
+        </h2>
+      </div>
       <div className="w-full border-t border-l border-black text-[11px] leading-snug [font-family:Arial,Helvetica,sans-serif]">
         {/* Table Header */}
         <div className="flex w-full bg-[#75A2BA] text-xs font-bold text-black border-b border-black">
@@ -186,32 +191,21 @@ function ResidentialPackageBom({ items = [], activePage, isPdfExport }) {
         </div>
 
         {/* Rows */}
-        {rows.map(({ number, name, qty, make, shaded, isSectionHeader }) => (
-          isSectionHeader ? (
-            <div key={number} className="flex w-full border-b border-black bg-[#CCDEE8] font-bold">
-              <div className="w-[12%] shrink-0 border-r border-black px-1 py-2 flex items-center justify-center text-center">
-                <span>{number}</span>
-              </div>
-              <div className="w-[88%] shrink-0 border-r border-black px-3 py-2 flex items-center justify-start text-left uppercase tracking-wide">
-                <span>{name}</span>
-              </div>
+        {rows.map(({ number, name, qty, make, shaded }) => (
+          <div key={number} className={`flex w-full border-b border-black min-h-[32px] ${shaded ? 'bg-[#CCDEE8] font-bold' : ''}`}>
+            <div className="w-[12%] shrink-0 border-r border-black px-1 py-1.5 flex items-center justify-center text-center font-medium">
+              <span>{number}</span>
             </div>
-          ) : (
-            <div key={number} className={`flex w-full border-b border-black ${shaded ? 'bg-[#CCDEE8] font-bold' : ''}`}>
-              <div className="w-[12%] shrink-0 border-r border-black px-1 py-2 flex items-center justify-center text-center font-medium">
-                <span>{number}</span>
-              </div>
-              <div className={`w-[46%] shrink-0 border-r border-black px-3 py-2 flex items-center justify-start text-left ${shaded ? 'font-bold uppercase tracking-wide' : 'font-normal'}`}>
-                <div className="w-full">{name}</div>
-              </div>
-              <div className="w-[18%] shrink-0 border-r border-black px-1.5 py-2 flex items-center justify-center text-center font-medium">
-                <span>{qty}</span>
-              </div>
-              <div className="w-[24%] shrink-0 border-r border-black px-2 py-2 flex items-center justify-center text-center font-medium leading-snug">
-                <div className="w-full text-center">{make}</div>
-              </div>
+            <div className={`w-[46%] shrink-0 border-r border-black px-3 py-1.5 flex items-center justify-start text-left ${shaded ? 'font-bold uppercase tracking-wide' : 'font-normal'}`}>
+              <div className="w-full">{name}</div>
             </div>
-          )
+            <div className="w-[18%] shrink-0 border-r border-black px-1.5 py-1.5 flex items-center justify-center text-center font-medium">
+              <span>{qty || ''}</span>
+            </div>
+            <div className="w-[24%] shrink-0 border-r border-black px-2 py-1.5 flex items-center justify-center text-center font-medium leading-snug">
+              <div className="w-full text-center">{make || ''}</div>
+            </div>
+          </div>
         ))}
       </div>
       <p className="mt-8 px-4 text-[10px] font-bold leading-tight">
