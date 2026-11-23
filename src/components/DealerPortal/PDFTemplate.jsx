@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { resolveCapacityBom, getStandardBOSSpecs } from '../../data/standardBomData';
 import { calculateSubsidy, DEFAULT_SPECIFIC_YIELD, DEFAULT_TARIFF_PER_UNIT } from '../../shared/pricing/calculations';
@@ -103,11 +103,15 @@ function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake =
   return 'MNRE / BIS Approved';
 }
 
-export function ResidentialPackagePricing({ quote }) {
+export function ResidentialPackagePricing({ quote, isPdfExport = false }) {
+  const [activeBrand, setActiveBrand] = useState('adani');
   const { snapshot, category } = quote;
   const discount = snapshot.discount ?? 0;
   const state = snapshot[category === 'SC / ST' ? 'sc_st_subsidy' : 'general_subsidy'];
   const total = snapshot.central_subsidy + state;
+  const adaniNet = snapshot.adani_price - discount - total;
+  const waareeNet = snapshot.waaree_price - discount - total;
+
   const rows = [
     ['Project price (GST included)', snapshot.adani_price, snapshot.waaree_price],
     ...(discount > 0 ? [
@@ -117,37 +121,100 @@ export function ResidentialPackagePricing({ quote }) {
     ['Central subsidy', snapshot.central_subsidy, snapshot.central_subsidy],
     ['Gujarat subsidy · ' + category, state, state],
     ['Total subsidy', total, total],
-    ['Estimated net cost after subsidy', snapshot.adani_price - discount - total, snapshot.waaree_price - discount - total]
+    ['Estimated net cost after subsidy', adaniNet, waareeNet]
   ];
+
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-slate-200">
-      <table className="w-full table-fixed text-xs text-[#0B2545]">
-        <thead className="bg-[#0B2545] text-white">
-          <tr>
-            <th className="w-[50%] p-3 text-left font-bold uppercase tracking-wide text-[11px]">Price summary</th>
-            <th className="w-[25%] p-3 text-right pr-6 font-bold uppercase tracking-wide text-[11px]">Adani</th>
-            <th className="w-[25%] p-3 text-right pr-6 font-bold uppercase tracking-wide text-[11px]">Waaree</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([label, adani, waaree], idx) => {
-            const isLast = idx === rows.length - 1;
-            return (
-              <tr key={label} className={`border-t border-slate-200 ${isLast ? 'bg-emerald-50 font-bold text-emerald-950' : 'bg-white'}`}>
-                <td className={`p-3 text-left ${isLast ? 'font-black text-sm text-[#0B2545]' : 'font-medium text-slate-800'}`}>
-                  {label}
-                </td>
-                <td className={`whitespace-nowrap p-3 text-right pr-6 font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
-                  {adani < 0 ? `- ₹${formatINR(Math.abs(adani))}` : `₹${formatINR(adani)}`}
-                </td>
-                <td className={`whitespace-nowrap p-3 text-right pr-6 font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
-                  {waaree < 0 ? `- ₹${formatINR(Math.abs(waaree))}` : `₹${formatINR(waaree)}`}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="my-2 sm:my-3 w-full">
+      {/* MOBILE COMPACT VIEW (< sm): Segmented Brand Selector + 2-Column Clean Breakdown */}
+      {!isPdfExport && (
+        <div className="block sm:hidden">
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0B2545]/10 rounded-lg mb-2">
+            <button
+              type="button"
+              onClick={() => setActiveBrand('adani')}
+              className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all cursor-pointer ${
+                activeBrand === 'adani'
+                  ? 'bg-[#0B2545] text-white shadow font-bold'
+                  : 'bg-white/80 text-slate-700 hover:bg-white font-medium'
+              }`}
+            >
+              <span className="text-[10px] uppercase tracking-wider opacity-80">Adani</span>
+              <span className="text-xs font-mono font-bold">{adaniNet < 0 ? `- ₹${formatINR(Math.abs(adaniNet))}` : `₹${formatINR(adaniNet)}`}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveBrand('waaree')}
+              className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-md transition-all cursor-pointer ${
+                activeBrand === 'waaree'
+                  ? 'bg-[#0B2545] text-white shadow font-bold'
+                  : 'bg-white/80 text-slate-700 hover:bg-white font-medium'
+              }`}
+            >
+              <span className="text-[10px] uppercase tracking-wider opacity-80">Waaree</span>
+              <span className="text-xs font-mono font-bold">{waareeNet < 0 ? `- ₹${formatINR(Math.abs(waareeNet))}` : `₹${formatINR(waareeNet)}`}</span>
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="bg-[#0B2545] px-3 py-2 text-white flex justify-between items-center">
+              <span className="text-[11px] font-bold uppercase tracking-tight">Price summary</span>
+              <span className="text-[11px] font-bold uppercase tracking-tight text-emerald-300">
+                {activeBrand === 'adani' ? 'Adani offer' : 'Waaree offer'}
+              </span>
+            </div>
+            <table className="w-full text-xs text-[#0B2545]">
+              <tbody className="divide-y divide-slate-200">
+                {rows.map(([label, adani, waaree], idx) => {
+                  const isLast = idx === rows.length - 1;
+                  const val = activeBrand === 'adani' ? adani : waaree;
+                  return (
+                    <tr key={label} className={isLast ? 'bg-emerald-50 font-bold text-emerald-950' : 'bg-white'}>
+                      <td className={`px-2.5 py-2 text-left leading-snug ${isLast ? 'font-black text-xs text-[#0B2545]' : 'font-medium text-slate-700'}`}>
+                        {label}
+                      </td>
+                      <td className={`whitespace-nowrap px-2.5 py-2 text-right font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
+                        {val < 0 ? `- ₹${formatINR(Math.abs(val))}` : `₹${formatINR(val)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* DESKTOP & PDF TABLE (sm+ breakpoint and always in PDF export) */}
+      <div className={`${isPdfExport ? 'block' : 'hidden sm:block'} w-full overflow-hidden rounded-lg border border-slate-200`}>
+        <table className="w-full table-fixed text-xs text-[#0B2545]">
+          <thead className="bg-[#0B2545] text-white">
+            <tr>
+              <th className="w-[50%] px-3 py-2.5 text-left font-bold uppercase tracking-wide text-[11px]">Price summary</th>
+              <th className="w-[25%] px-3 py-2.5 text-right font-bold uppercase tracking-wide text-[11px]">Adani</th>
+              <th className="w-[25%] px-3 py-2.5 text-right font-bold uppercase tracking-wide text-[11px]">Waaree</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {rows.map(([label, adani, waaree], idx) => {
+              const isLast = idx === rows.length - 1;
+              return (
+                <tr key={label} className={`border-t border-slate-200 ${isLast ? 'bg-emerald-50 font-bold text-emerald-950' : 'bg-white'}`}>
+                  <td className={`px-3 py-2 text-left leading-snug ${isLast ? 'font-black text-sm text-[#0B2545]' : 'font-medium text-slate-800'}`}>
+                    {label}
+                  </td>
+                  <td className={`whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
+                    {adani < 0 ? `- ₹${formatINR(Math.abs(adani))}` : `₹${formatINR(adani)}`}
+                  </td>
+                  <td className={`whitespace-nowrap px-3 py-2 text-right font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
+                    {waaree < 0 ? `- ₹${formatINR(Math.abs(waaree))}` : `₹${formatINR(waaree)}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -678,7 +745,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
             </div>
           </div>
 
-          {packageQuote ? <ResidentialPackagePricing quote={packageQuote} /> : <>
+          {packageQuote ? <ResidentialPackagePricing quote={packageQuote} isPdfExport={isPdfExport} /> : <>
           <div className="flex items-center justify-between my-2">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-3.5 bg-[#2E7D32] inline-block rounded-xs"></span>

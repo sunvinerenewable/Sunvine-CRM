@@ -14,7 +14,7 @@ const customerFields = { customer_name: 'Customer name', phone: 'Mobile', addres
 const emptyCustomer = { customer_name: '', phone: '', address: '', city: '', category: '' };
 const fieldStyle = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-surface-container-high bg-surface-container-lowest px-3 py-2 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
 const buttonStyle = 'min-h-11 cursor-pointer rounded-lg bg-primary px-4 text-sm font-bold text-on-primary hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50';
-const cardStyle = 'min-w-0 rounded-xl border border-surface-container-high bg-surface-container-lowest p-4 shadow-sm sm:p-5 md:p-6';
+const cardStyle = 'min-w-0 rounded-xl border border-surface-container-high bg-surface-container-lowest p-3 sm:p-5 md:p-6 shadow-sm';
 
 function CardHeading({ icon, title, description }) {
   return (
@@ -77,6 +77,10 @@ export default function ResidentialPackageQuotes() {
 
   function createQuote(event) {
     event.preventDefault();
+    if (customer.phone.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
     requestId.current ||= crypto.randomUUID();
     return run(async () => {
       const result = await request('package-create', { ...customer, id: requestId.current, discount: Number(discount) });
@@ -163,12 +167,29 @@ export default function ResidentialPackageQuotes() {
                   return (
                     <label key={field} className={field === 'customer_name' || field === 'address' ? 'text-sm font-semibold sm:col-span-2' : 'text-sm font-semibold'}>
                       {label} {isRequired && <span className="text-red-700">*</span>}
-                      <input className={fieldStyle} required={isRequired} type={field === 'phone' ? 'tel' : 'text'} value={customer[field]}
-                        maxLength={{ customer_name: 255, phone: 20, address: 500, city: 100 }[field]}
+                      <input
+                        className={fieldStyle}
+                        required={isRequired}
+                        type={field === 'phone' ? 'tel' : 'text'}
+                        inputMode={field === 'phone' ? 'numeric' : undefined}
+                        pattern={field === 'phone' ? '[0-9]{10}' : undefined}
+                        title={field === 'phone' ? 'Please enter a valid 10-digit mobile number' : undefined}
+                        placeholder={field === 'phone' ? '10-digit mobile number' : ''}
+                        value={customer[field]}
+                        maxLength={{ customer_name: 255, phone: 10, address: 500, city: 100 }[field]}
                         onChange={event => {
                           requestId.current = null;
-                          setCustomer({ ...customer, [field]: event.target.value });
-                        }} />
+                          let value = event.target.value;
+                          if (field === 'phone') {
+                            let digits = value.replace(/\D/g, '');
+                            if (digits.length > 10 && digits.startsWith('91')) {
+                              digits = digits.slice(2);
+                            }
+                            value = digits.slice(0, 10);
+                          }
+                          setCustomer({ ...customer, [field]: value });
+                        }}
+                      />
                     </label>
                   );
                 })}
@@ -183,7 +204,7 @@ export default function ResidentialPackageQuotes() {
                 <div><dt className="text-secondary">Inverter</dt><dd className="font-bold">2.2 kW single-phase</dd></div>
               </dl>
             </section>
-            <button className={buttonStyle} disabled={busy}>Save Package Quote</button>
+            <button className={`${buttonStyle} w-full sm:w-auto`} disabled={busy}>Save Package Quote</button>
           </form>
 
           <div className="min-w-0 space-y-6 xl:col-span-5">
@@ -206,7 +227,7 @@ export default function ResidentialPackageQuotes() {
                     setDiscount(event.target.value);
                   }} />
               </label>
-              <div className="mt-4 rounded-xl border border-[#6CBF3D] bg-emerald-50 px-3 text-slate-900">
+              <div className="mt-4 rounded-xl border border-[#6CBF3D] bg-emerald-50 p-1.5 sm:p-3 text-slate-900">
                 {customer.category
                   ? <ResidentialPackagePricing quote={{ category: customer.category, snapshot: { ...settings, discount: Number(discount) } }} />
                   : <p className="py-4 text-sm">Select a category to see the subsidy and estimated net cost for both brands.</p>}
