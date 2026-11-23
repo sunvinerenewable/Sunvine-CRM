@@ -258,8 +258,9 @@ export async function generateQuotationPdfBlob(element, quoteId = 'SV-2026-Q801'
         windowWidth: 794
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.98);
-      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      const lossless = targets[i].hasAttribute('data-pdf-lossless');
+      const imgData = lossless ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.98);
+      pdf.addImage(imgData, lossless ? 'PNG' : 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
     }
 
     const blob = pdf.output('blob');

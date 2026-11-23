@@ -62,6 +62,9 @@ export function getDbPool() {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000
     });
+    pool.on('error', (error) => {
+      console.warn('[db] Idle PostgreSQL connection lost', error.code || error.message);
+    });
   }
   return pool;
 }

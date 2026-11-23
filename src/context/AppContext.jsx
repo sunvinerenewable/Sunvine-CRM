@@ -120,6 +120,7 @@ const TAB_TO_PATH = {
   // Dealer & Common
   dashboard: '/dashboard',
   create_quote: '/new-quotation',
+  residential_package: '/admin/residential-package',
   admin_create_quote: '/admin/new-quotation',
   preview_quote: '/preview-quotation',
   my_quotes: '/my-quotations',
@@ -161,6 +162,7 @@ const PATH_TO_TAB = Object.entries(TAB_TO_PATH).reduce((acc, [tab, path]) => {
   '/': 'dashboard',
   '/dashboard': 'dashboard',
   '/profile': 'dealer_settings',
+  '/admin/residential-package': 'residential_package',
   '/admin/new-quotation': 'create_quote',
   '/admin/dashboard': 'admin_dashboard',
   '/staff': 'staff_dashboard',

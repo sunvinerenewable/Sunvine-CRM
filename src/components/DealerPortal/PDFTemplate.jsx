@@ -103,6 +103,98 @@ function resolveItemMake(item, effectiveModuleMake = '', effectiveInverterMake =
   return 'MNRE / BIS Approved';
 }
 
+export function ResidentialPackagePricing({ quote }) {
+  const { snapshot, category } = quote;
+  const discount = snapshot.discount ?? 0;
+  const state = snapshot[category === 'SC / ST' ? 'sc_st_subsidy' : 'general_subsidy'];
+  const total = snapshot.central_subsidy + state;
+  const rows = [
+    ['Project price (GST included)', snapshot.adani_price, snapshot.waaree_price],
+    ...(discount > 0 ? [
+      ['Discount', -discount, -discount],
+      ['Project price after discount', snapshot.adani_price - discount, snapshot.waaree_price - discount]
+    ] : []),
+    ['Central subsidy', snapshot.central_subsidy, snapshot.central_subsidy],
+    ['Gujarat subsidy · ' + category, state, state],
+    ['Total subsidy', total, total],
+    ['Estimated net cost after subsidy', snapshot.adani_price - discount - total, snapshot.waaree_price - discount - total]
+  ];
+  return (
+    <div className="my-3 overflow-hidden rounded-md border border-slate-200">
+      <table className="w-full text-left text-xs text-[#0B2545]">
+        <thead className="bg-[#0B2545] text-white">
+          <tr><th className="p-3">Price summary</th><th className="p-3">Adani</th><th className="p-3">Waaree</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, adani, waaree]) => (
+            <tr key={label} className="border-t border-slate-200 last:bg-emerald-50 last:font-bold">
+              <th scope="row" className="p-3">{label}</th>
+              <td className="whitespace-nowrap p-3">₹{formatINR(adani)}</td>
+              <td className="whitespace-nowrap p-3">₹{formatINR(waaree)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ResidentialPackageBom({ items = [], activePage, isPdfExport }) {
+  const sections = [
+    ['1', 'Solar Modules', [[0, '1.1', <>PV MODULE, <strong>545WP MONO BIFACIAL</strong> Panel</>, 'WAAREE / ADANI']]],
+    ['2', 'Inverter Details', [[1, '2.1', <>String type single - Phase Grid Tied Inverter <strong>2.2 KW</strong></>, <>VSOLE<br />Any Reputed</>]]],
+    ['3', 'Module Mounting Structure', [[2, '3.1', <>Hot Dip Galvanized Pipe<br />(60,80 Micron - 2MM thickness)</>, <>FORTUNE /<br />HINDUSTAR SIZE:<br />60X40 / 40X40<br />Any Reputed</>], [3, '3.2', 'J - bolt SS', ''], [4, '3.3', 'Anchor fastener', '']]],
+    ['4', 'DC Cables', [[5, '4.1', <>1C X 4 sq.mm (Red) Type-1, (Black) Type-1,<br />PVC Tape RYBK sets, Gitte screw</>, <>POLYCAB<br />Any Reputed</>]]],
+    ['5', 'AC Cables', [[6, '5.1', <>1C X 4 sq.mm Cu Flex. 4C X sq.mm Cu Flex.<br />4C X sq.mm Al armored<br />Earthing Cable Cu Flex. 4mm</>, <>POLYCAB<br />Any Reputed</>]]],
+    ['6', null, [[7, '6', 'ACDB + DCDB', <>L&amp;T (L&amp;K) / HAVELLS<br />/ SCHNEIDER<br />Any Reputed</>, '1 + 1']]],
+    ['7', null, [[8, '7']]],
+    ['8', 'Earthing & Accessories', [[9, '8.1', 'Earthing rod'], [9, '8.2', 'Lightning arrestor']]],
+    ['9', 'Other Accessories', [[10, '9.1', 'Stud, nut and washer'], [10, '9.2', 'Cable ties and PVC elbows'], [10, '9.3', 'Saddle clips, PVC pipe and fittings']]]
+  ];
+  const rows = items.length === 11 ? sections.flatMap(([number, title, entries]) => [
+    ...(title ? [{ number, name: title, shaded: true }] : []),
+    ...entries.map(([index, number, name, make, qty]) => ({
+      ...items[index],
+      number,
+      name: name || items[index].name,
+      make: make ?? items[index].make,
+      qty: qty ?? items[index].qty,
+      shaded: number === '6'
+    }))
+  ]) : items.map((item, index) => ({ ...item, number: String(index + 1) }));
+  const cell = 'border-b border-r border-black px-3 align-middle';
+
+  return (
+    <div data-pdf-lossless className={`pdf-page pdf-page-content mx-auto box-border h-[297mm] w-[210mm] max-h-[297mm] flex-col overflow-hidden bg-white px-7 py-6 text-black ${isPdfExport ? 'm-0' : 'mb-8 border border-gray-300 shadow-xl'} print:!m-0 print:!h-[295mm] print:!max-h-[295mm] print:!border-none print:!shadow-none ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
+      <img src="/sunvine_logo_transparent.webp" alt="Sunvine Renewable" className="mb-5 h-10 self-end object-contain" />
+      <h2 className="mb-3 border-l-4 border-[#9AC43A] pl-2 text-xl font-bold leading-7">BILL OF MATERIAL : 2.18KW SOLAR ON GRID SYSTEM</h2>
+      <table className="w-full table-fixed border-separate border-spacing-0 border-l border-t border-black text-[11px] leading-[16px] [font-family:Arial,sans-serif]">
+        <thead className="bg-[#75A2BA] text-center text-sm font-bold">
+          <tr className="h-10">
+            <th scope="col" className={cell + ' w-[8%]'}>SR. NO.</th>
+            <th scope="col" className={cell + ' w-[46%]'}>ITEM</th>
+            <th scope="col" className={cell + ' w-[21%]'}>QTY.</th>
+            <th scope="col" className={cell + ' w-[25%]'}>MAKE</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ number, name, qty, make, shaded }) => (
+            <tr key={number} className={shaded ? 'bg-[#CCDEE8] font-bold' : undefined}>
+              <td className={cell + ' text-center'}><div className="py-2">{number}</div></td>
+              <th scope="row" className={cell + ' text-left ' + (shaded ? 'uppercase' : 'font-normal')}><div className="py-2">{name}</div></th>
+              <td className={cell + ' text-center'}><div className="py-2">{qty}</div></td>
+              <td className={cell + ' text-center'}><div className="py-2">{make}</div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-8 px-4 text-[10px] font-bold leading-tight">
+        Note: If a listed material is unavailable, it may be replaced with a comparable material from a reputable brand without prior notice.
+      </p>
+    </div>
+  );
+}
+
 export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport = false }) {
   const appContext = useApp() || {};
   const systemSettings = quotation?.systemSettings || appContext?.systemSettings || null;
@@ -179,6 +271,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
     return getStandardBOSSpecs(resolvedCapKW, resolvedCount);
   }, [resolvedCapKW, resolvedCount]);
 
+  const packageQuote = quotation?.residentialPackage;
   const bomDisplayItems = useMemo(() => {
     const s = standardBOSSpecs;
     return [
@@ -536,9 +629,6 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 <span>Site: {location || `${city}, Gujarat`}</span>
                 {customerPhone && <span className="ml-2 font-mono">| Mo: {customerPhone}</span>}
               </div>
-              <div className="text-[10px] text-[#2E7D32] font-bold mt-0.5">
-                Scheme: {projectType === 'Commercial' ? 'Commercial / Industrial Captive Solar' : 'PM Surya Ghar: Muft Bijli Yojana (Central Subsidy)'}
-              </div>
             </div>
 
             <div>
@@ -547,15 +637,15 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
                 {resolvedCapKW} kW On-Grid Solar PV Plant
               </div>
               <div className="text-[11px] text-gray-700 mt-0.5">
-                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} TOPCon ({parseFloat(((resolvedCount * resolvedWatt) / 1000).toFixed(3))} kWp)
+                {resolvedCount} Pcs × {resolvedWatt}W {effectiveModuleMake} {packageQuote ? 'mono bifacial' : 'TOPCon'} ({parseFloat(((resolvedCount * resolvedWatt) / 1000).toFixed(3))} kWp)
               </div>
               <div className="text-[10px] text-gray-600 mt-0.5">
-                Inverter: {inverterType.split('(')[0]?.trim() || inverterType} • Roof: ~{resolvedArea} Sq. Ft.
+                Inverter: {inverterType.split('(')[0]?.trim() || inverterType}{!packageQuote && ` · Roof: ~${resolvedArea} Sq. Ft.`}
               </div>
             </div>
           </div>
 
-          {/* Heading: Commercial Price Breakdown */}
+          {packageQuote ? <ResidentialPackagePricing quote={packageQuote} /> : <>
           <div className="flex items-center justify-between my-2">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-3.5 bg-[#2E7D32] inline-block rounded-xs"></span>
@@ -852,6 +942,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
             </div>
           </div>
 
+          </>}
           {/* Official Bank Coordinates & Company Legal Identifiers */}
           <div className="bg-[#F8FAFC] border border-slate-200 rounded-md p-2 text-xs">
             <div className="flex items-center justify-between pb-1 border-b border-slate-200 mb-1">
@@ -893,6 +984,9 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
       {/* ========================================================
           PAGE 3: ENGINEERING BILL OF MATERIALS (BOM) & COMPLIANCE
           ======================================================== */}
+      {packageQuote ? (
+        <ResidentialPackageBom items={packageQuote.snapshot.bom} activePage={activePage} isPdfExport={isPdfExport} />
+      ) : (
       <div className={`pdf-page pdf-page-content relative w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:!p-5 flex flex-col justify-between bg-white ${isPdfExport ? 'border-none shadow-none m-0 mb-0' : 'border border-gray-300 shadow-xl mb-8'} print:!border-none print:!shadow-none print:!m-0 print:!mb-0 print:!h-[295mm] print:!max-h-[295mm] overflow-hidden box-border ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
         <div>
           {/* Top Header */}
@@ -974,7 +1068,7 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
             </table>
           </div>
 
-          {/* Scope of Work & Statutory Checklist */}
+
           <div className="bg-[#F8FAFC] border border-slate-200 rounded-md p-3 mb-2">
             <div className="text-[10px] font-extrabold text-[#0B2545] uppercase tracking-wider mb-1">
               Comprehensive EPC Scope of Work &amp; Statutory Approvals Included
@@ -1012,6 +1106,8 @@ export default function PDFTemplate({ quotation, activePage = 'all', isPdfExport
           <span>Page 3 of 4</span>
         </div>
       </div>
+
+      )}
 
       {/* ========================================================
           PAGE 4: TERMS & CONDITIONS (EXACT UNTOUCHED TEXT)
