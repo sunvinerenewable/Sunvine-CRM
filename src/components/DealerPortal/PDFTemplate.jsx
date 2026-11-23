@@ -121,18 +121,31 @@ export function ResidentialPackagePricing({ quote }) {
   ];
   return (
     <div className="my-3 overflow-hidden rounded-md border border-slate-200">
-      <table className="w-full text-left text-xs text-[#0B2545]">
+      <table className="w-full table-fixed text-xs text-[#0B2545]">
         <thead className="bg-[#0B2545] text-white">
-          <tr><th className="p-3">Price summary</th><th className="p-3">Adani</th><th className="p-3">Waaree</th></tr>
+          <tr>
+            <th className="w-[50%] p-3 text-left font-bold uppercase tracking-wide text-[11px]">Price summary</th>
+            <th className="w-[25%] p-3 text-right pr-6 font-bold uppercase tracking-wide text-[11px]">Adani</th>
+            <th className="w-[25%] p-3 text-right pr-6 font-bold uppercase tracking-wide text-[11px]">Waaree</th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map(([label, adani, waaree]) => (
-            <tr key={label} className="border-t border-slate-200 last:bg-emerald-50 last:font-bold">
-              <th scope="row" className="p-3">{label}</th>
-              <td className="whitespace-nowrap p-3">₹{formatINR(adani)}</td>
-              <td className="whitespace-nowrap p-3">₹{formatINR(waaree)}</td>
-            </tr>
-          ))}
+          {rows.map(([label, adani, waaree], idx) => {
+            const isLast = idx === rows.length - 1;
+            return (
+              <tr key={label} className={`border-t border-slate-200 ${isLast ? 'bg-emerald-50 font-bold text-emerald-950' : 'bg-white'}`}>
+                <td className={`p-3 text-left ${isLast ? 'font-black text-sm text-[#0B2545]' : 'font-medium text-slate-800'}`}>
+                  {label}
+                </td>
+                <td className={`whitespace-nowrap p-3 text-right pr-6 font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
+                  {adani < 0 ? `- ₹${formatINR(Math.abs(adani))}` : `₹${formatINR(adani)}`}
+                </td>
+                <td className={`whitespace-nowrap p-3 text-right pr-6 font-mono tabular-nums ${isLast ? 'font-black text-sm text-emerald-700' : 'font-semibold text-slate-900'}`}>
+                  {waaree < 0 ? `- ₹${formatINR(Math.abs(waaree))}` : `₹${formatINR(waaree)}`}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -167,9 +180,9 @@ function ResidentialPackageBom({ items = [], activePage, isPdfExport }) {
   return (
     <div data-pdf-lossless className={`pdf-page pdf-page-content mx-auto box-border h-[297mm] w-[210mm] max-h-[297mm] flex-col overflow-hidden bg-white px-7 py-6 text-black ${isPdfExport ? 'm-0' : 'mb-8 border border-gray-300 shadow-xl'} print:!m-0 print:!h-[295mm] print:!max-h-[295mm] print:!border-none print:!shadow-none ${activePage === 'all' || activePage === 3 ? 'flex' : 'hidden print:flex'}`}>
       <img src="/sunvine_logo_transparent.webp" alt="Sunvine Renewable" className="mb-5 h-10 self-end object-contain" />
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="h-6 w-1 rounded-full bg-[#9AC43A]" />
-        <h2 className="text-xl font-bold tracking-tight text-black">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-5 w-1 rounded-full bg-[#9AC43A] shrink-0 inline-block" />
+        <h2 className="text-xl font-bold tracking-tight text-black leading-none">
           BILL OF MATERIAL : 2.18KW SOLAR ON GRID SYSTEM
         </h2>
       </div>
