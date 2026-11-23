@@ -48,7 +48,7 @@ docs/ROLLOUT.md
 # Secrets
 .env
 .env.local
-.env.*.local
+.env.*.localP
 DATABASE_URL
 
 # Rollout runs and database dumps

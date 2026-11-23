@@ -87,6 +87,7 @@ export default function Navigation() {
     { id: 'admin_audit', label: 'Audit Logs Trail', mobileLabel: 'Audit', icon: 'receipt_long' },
     { id: 'lead_generation', label: 'Lead Generation', mobileLabel: 'Leads', icon: 'radar' },
     { id: 'create_quote', label: 'New Direct Quote', mobileLabel: 'New Quote', icon: 'note_add' },
+    { id: 'residential_package', label: '2.18 kW Package Quote', mobileLabel: '2.18 kW Quote', icon: 'solar_power' },
     { id: 'pricing_master', label: 'Pricing & Presets', mobileLabel: 'Pricing', icon: 'tune' },
     { id: 'hardware_master', label: 'Hardware Catalog', mobileLabel: 'Hardware', icon: 'memory' },
     { id: 'all_quotes', label: 'All Quotations & Applications', mobileLabel: 'Quotes & Apps', icon: 'folder_shared' },

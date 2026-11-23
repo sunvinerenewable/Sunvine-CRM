@@ -18,6 +18,7 @@ export default function QuotationPreview({
   publicQuoteId = null,
   shareToken = null,
   quotation: propQuotation = null,
+  onBack,
   isLoadingProp = false
 }) {
   const appContext = useApp() || {};
@@ -26,6 +27,7 @@ export default function QuotationPreview({
   const pricingMaster = appContext.pricingMaster;
   const setActiveTab = appContext.setActiveTab || (() => {});
   const role = appContext.role;
+  const backToDetails = onBack || (() => setActiveTab('create_quote'));
   const { addToast } = useToast();
   const [activePage, setActivePage] = useState('all'); // 'all' | 1 | 2 | 3 | 4
   const [baseScale, setBaseScale] = useState(1);
@@ -187,7 +189,7 @@ export default function QuotationPreview({
 
   // Keep URL query parameter (?id=...) and sessionStorage in sync with active quotation
   useEffect(() => {
-    if (typeof window === 'undefined' || !activeQuotation?.id) return;
+    if (typeof window === 'undefined' || !activeQuotation?.id || activeQuotation.residentialPackage) return;
     try {
       sessionStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
       localStorage.setItem('sunvine_preview_quote_id', activeQuotation.id);
@@ -522,6 +524,10 @@ export default function QuotationPreview({
 
   const handleDownloadPdf = async () => {
     if (!activeQuotation || !pdfExportRef.current) return;
+    if (activeQuotation.residentialPackage && pdfExportRef.current.querySelectorAll('.pdf-page').length !== 4) {
+      addToast?.({ title: 'PDF unavailable', message: 'Configure the verified company billing profile first.', type: 'error' });
+      return;
+    }
     setIsDownloadingPdf(true);
     try {
       const quoteId = (activeQuotation.id || 'SV-2026-Q801').replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -756,7 +762,7 @@ export default function QuotationPreview({
         <h3 className="font-headline-md text-headline-md text-on-surface mb-1">No Quotation Selected</h3>
         <p className="font-body-md text-secondary mb-4">Please generate a quotation or pick one from your quotation directory.</p>
         <button
-          onClick={() => setActiveTab('create_quote')}
+          onClick={backToDetails}
           className="px-4 py-2 bg-primary-container text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary"
         >
           Create New Quotation
@@ -780,7 +786,7 @@ export default function QuotationPreview({
           <div className="flex items-center gap-1.5 sm:gap-3.5 min-w-0 flex-1 sm:flex-initial">
             {!isPublicView ? (
               <button
-                onClick={() => setActiveTab('create_quote')}
+                onClick={backToDetails}
                 className="inline-flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold shadow-2xs hover:border-slate-300 transition-all active:scale-95 shrink-0 cursor-pointer"
                 title="Return to Details & Pricing"
               >
@@ -815,7 +821,7 @@ export default function QuotationPreview({
             <div className="hidden lg:flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shadow-2xs">
               <button
                 type="button"
-                onClick={() => setActiveTab('create_quote')}
+                onClick={backToDetails}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white/80 font-semibold text-xs transition-all cursor-pointer"
                 title="Go back to Step 1: Details & Pricing"
               >
@@ -839,7 +845,7 @@ export default function QuotationPreview({
 
           {/* Right/Bottom: Primary Action Buttons */}
           <div className="flex items-center justify-end gap-1.5 sm:gap-2.5 shrink-0">
-            {!isPublicView ? (
+            {!isPublicView && !activeQuotation.residentialPackage ? (
               <button
                 type="button"
                 onClick={handleGenerate}
@@ -865,7 +871,7 @@ export default function QuotationPreview({
               </button>
             ) : (
               <>
-                <a
+                {isPublicView && <a
                   href={`https://api.whatsapp.com/send?phone=918000050580&text=${encodeURIComponent(`Hello Sunvine Team, I am inquiring about Proposal Reference ${activeQuotation.id} for ${activeQuotation.customerName}.`)}`}
                   target="_blank"
                   rel="noreferrer"
@@ -874,7 +880,7 @@ export default function QuotationPreview({
                 >
                   <span className="material-symbols-outlined text-[16px] sm:text-[18px] shrink-0">chat</span>
                   <span className="truncate">WhatsApp Advisor</span>
-                </a>
+                </a>}
 
                 <button
                   onClick={handleDownloadPdf}
